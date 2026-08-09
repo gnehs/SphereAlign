@@ -166,7 +166,7 @@ pub fn extract_selected_pairs(
         stage: ExtractionStage::Scanning,
         sequence: None,
         fraction: 0.0,
-        message: "scanning paired fisheye candidates".to_string(),
+        message: "正在掃描雙魚眼配對候選影格".to_string(),
     });
 
     let lens0 = collect_candidates(&request.lens0_candidates)?;
@@ -191,7 +191,7 @@ pub fn extract_selected_pairs(
                 total_intervals,
                 ExtractionStage::Cancelled,
                 None,
-                &format!("cancelled before interval {interval}"),
+                &format!("已在第 {interval} 個區間前取消"),
             );
             break;
         }
@@ -202,7 +202,7 @@ pub fn extract_selected_pairs(
             total_intervals,
             ExtractionStage::Scoring,
             None,
-            &format!("scoring {} paired candidates", pairs.len()),
+            &format!("正在評分 {} 組配對候選影格", pairs.len()),
         );
 
         let mut scored = Vec::with_capacity(pairs.len());
@@ -245,7 +245,7 @@ pub fn extract_selected_pairs(
                 total_intervals,
                 ExtractionStage::Cancelled,
                 None,
-                "cancelled while scoring candidates",
+                "已在評分候選影格時取消",
             );
             break;
         }
@@ -328,7 +328,7 @@ pub fn extract_selected_pairs(
                 total_intervals,
                 ExtractionStage::Skipped,
                 Some(pair.0.sequence),
-                "selected pair already exists; skipped",
+                "選定的配對影格已存在，已略過",
             );
             continue;
         }
@@ -341,7 +341,7 @@ pub fn extract_selected_pairs(
                 total_intervals,
                 ExtractionStage::Cancelled,
                 Some(pair.0.sequence),
-                "cancelled before output commit",
+                "已在寫入輸出前取消",
             );
             break;
         }
@@ -351,7 +351,7 @@ pub fn extract_selected_pairs(
             total_intervals,
             ExtractionStage::Writing,
             Some(pair.0.sequence),
-            "copying selected pair",
+            "正在複製選定的配對影格",
         );
         copy_atomic(&pair.0.path, &output_lens0)?;
         copy_atomic(&pair.1.path, &output_lens1)?;
@@ -370,7 +370,7 @@ pub fn extract_selected_pairs(
             total_intervals,
             ExtractionStage::Completed,
             Some(pair.0.sequence),
-            "selected pair committed",
+            "已寫入選定的配對影格",
         );
     }
 
@@ -381,7 +381,7 @@ pub fn extract_selected_pairs(
             total_intervals,
             ExtractionStage::Cancelled,
             None,
-            "extraction cancelled",
+            "影格擷取已取消",
         );
     }
     let metadata = SelectionMetadata {

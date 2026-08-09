@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 static JOB_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -728,12 +728,23 @@ fn run_mask(
         })
         .unwrap_or_else(Vec::new);
     let confidence = setting_f64(&manifest.settings, "/mask/confidence", 0.25);
+    let mask_sky = setting_bool(&manifest.settings, "/mask/maskSky", false);
+    let model_cache_dir = if classes.is_empty() && !mask_sky {
+        None
+    } else {
+        Some(
+            app.path()
+                .app_data_dir()
+                .map_err(|error| format!("無法取得應用程式模型資料夾：{error}"))?
+                .join("models"),
+        )
+    };
     let request = MaskRequest {
         images_dir: root.join("images"),
         masks_dir: root.join("masks"),
         colmap_masks_dir: root.join("masks_colmap"),
         classes,
-        mask_sky: setting_bool(&manifest.settings, "/mask/maskSky", false),
+        mask_sky,
         confidence: if confidence > 1.0 {
             confidence / 100.0
         } else {
@@ -748,6 +759,7 @@ fn run_mask(
             .and_then(Value::as_str)
             .filter(|path| !path.trim().is_empty())
             .map(PathBuf::from),
+        model_cache_dir,
         yolo_model: None,
         skyseg_model: None,
         execution_provider: manifest

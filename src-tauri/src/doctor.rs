@@ -185,22 +185,20 @@ pub fn report() -> DoctorReport {
 
     let mut warnings = Vec::new();
     if !ffmpeg.available || !ffprobe.available {
-        warnings.push("Extract requires both system ffmpeg and ffprobe".to_owned());
+        warnings.push("影格擷取需要系統已安裝 FFmpeg 與 ffprobe".to_owned());
     }
     if !colmap.available {
-        warnings.push(
-            "COLMAP is unavailable; alignment will remain in a resumable pending state".to_owned(),
-        );
+        warnings.push("找不到 COLMAP；對齊階段會維持可繼續的待執行狀態".to_owned());
     } else if let Some(version) = &colmap.version {
         if !version.contains("4.") {
-            warnings.push("COLMAP 3.x is supported for incremental alignment, but gravity/global mapper capabilities are not claimed without COLMAP 4.x".to_owned());
+            warnings.push(
+                "COLMAP 3.x 可用於增量對齊；若未安裝 COLMAP 4.x，將不啟用重力與全域對齊功能"
+                    .to_owned(),
+            );
         }
     }
     if cfg!(target_os = "macos") && !accelerators[1].available {
-        warnings.push(
-            "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder"
-                .to_owned(),
-        );
+        warnings.push("FFmpeg 不支援 VideoToolbox；影格擷取將使用 CPU 解碼".to_owned());
     }
 
     DoctorReport {

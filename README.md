@@ -48,7 +48,13 @@ colmap-{filename}/
 - 每張 mask 先寫 partial file，再原子替換；尺寸與解碼驗證通過才會在續作時略過。
 - 未選任何物件且未遮天空時，不需要模型，只產生 fisheye 有效區 mask。
 
-模型會依序從任務指定資料夾、`GS360_MODEL_DIR`、`models/`、`.models/` 尋找。支援的常見檔名與目錄可參考 `src-tauri/src/masking/models.rs`。
+模型會依序從任務指定資料夾、`GS360_MODEL_DIR`、Tauri 應用程式資料目錄的 `models/`、工作目錄的 `models/` 與 `.models/` 尋找。缺少必要模型時會在首次執行 Mask 時自動下載至應用程式資料目錄；YOLO 一定按需下載，SkySeg 只在啟用天空遮罩時下載。下載會先寫入暫存檔，且須通過固定大小與 SHA-256 驗證後才會啟用。
+
+- YOLO11 segmentation：沿用 `gs360masker` 已驗證的 `yolo11s-seg.onnx`，原始模型由 Ultralytics 提供。
+- SkySeg：固定至 Hugging Face `JianyuanWang/skyseg` 的指定 revision。
+- 若環境無法連線，可手動放置模型；支援的檔名與目錄可參考 `src-tauri/src/masking/models.rs`。
+
+Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行時下載不會免除其授權義務。專案公開原始碼前仍應選定相容的專案授權並保留模型來源與授權聲明。SkySeg 模型頁標示為 MIT。詳見 [Ultralytics License](https://www.ultralytics.com/license) 與 [JianyuanWang/skyseg](https://huggingface.co/JianyuanWang/skyseg)。
 
 ### Align
 
@@ -64,7 +70,7 @@ colmap-{filename}/
 - Rust stable toolchain
 - 系統 `ffmpeg`、`ffprobe`（必須在 `PATH`）
 - Align 需要系統 `colmap`（必須在 `PATH`）
-- 物件／天空 Mask 需要相應 ONNX 模型
+- 首次執行物件／天空 Mask 時需要網路下載相應 ONNX 模型，或預先放入支援的模型目錄
 
 預設 build 在 Apple silicon 優先使用 CoreML、Windows 優先使用 DirectML，失敗時會退回 CPU。Cargo 另提供 `cuda`、`xnnpack` 等 opt-in features；發佈版本仍必須搭配相容的 ONNX Runtime provider 套件實機驗證。COLMAP GPU 是否可用取決於使用者安裝的 COLMAP build，後端在 doctor 未偵測到 CUDA 時會強制使用 CPU。
 

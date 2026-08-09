@@ -33,6 +33,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
 ndarray = "0.17"
 telemetry-parser = { git = "https://github.com/AdrianEddy/telemetry-parser.git", rev = "77a3b810a0e0f64688a90546c5aaf24c9dba00bd" }

@@ -127,12 +127,20 @@ interface ProgressEventPayload {
 }
 
 const STAGES: Array<{ key: StageKey; label: string; description: string; icon: LucideIcon }> = [
-  { key: "extract", label: "Extract", description: "雙魚眼影格、內參與 IMU", icon: ScanLine },
-  { key: "mask", label: "Mask", description: "動態物件與天空遮罩", icon: CircleDashed },
-  { key: "align", label: "Align", description: "多組 OSV / rig 對齊", icon: Workflow },
+  { key: "extract", label: "影格擷取", description: "雙魚眼影格、內參與 IMU", icon: ScanLine },
+  { key: "mask", label: "遮罩", description: "動態物件與天空遮罩", icon: CircleDashed },
+  { key: "align", label: "對齊", description: "多組 OSV／相機組對齊", icon: Workflow },
 ];
 
 const MASK_CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
+const MASK_CLASS_LABELS: Record<string, string> = {
+  person: "人員",
+  bicycle: "腳踏車",
+  car: "汽車",
+  motorcycle: "機車",
+  bus: "公車",
+  truck: "卡車",
+};
 const DEFAULT_SETTINGS: PipelineSettings = {
   extract: { baseFps: 2, denseFps: 8, skipBlurry: true },
   mask: { classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 72, modelDir: "" },
@@ -144,15 +152,84 @@ const EMPTY_DOCTOR: DoctorReport = {
   summary: "執行環境診斷以確認可用能力",
   checkedAt: "尚未檢查",
   items: [
-    { label: "GPU / accelerator", value: "尚未檢查", detail: "不預設任何硬體能力", status: "unknown" },
+    { label: "GPU／加速器", value: "尚未檢查", detail: "不預設任何硬體加速能力", status: "unknown" },
     { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
-    { label: "Runtime", value: "尚未檢查", detail: "確認作業系統與執行環境", status: "unknown" },
-    { label: "Storage", value: "尚未檢查", detail: "確認輸出磁碟可用空間", status: "unknown" },
+    { label: "執行環境", value: "尚未檢查", detail: "確認作業系統與執行環境", status: "unknown" },
+    { label: "儲存空間", value: "尚未檢查", detail: "確認輸出磁碟可用空間", status: "unknown" },
   ],
   warnings: [],
 };
 
 const IS_TAURI_RUNTIME = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+
+const USER_MESSAGE_TRANSLATIONS: Record<string, string> = {
+  "scanning paired fisheye candidates": "正在掃描雙魚眼配對候選影格",
+  "cancelled before interval": "已在處理下一個區間前取消",
+  "cancelled while scoring candidates": "已在評分候選影格時取消",
+  "selected pair already exists; skipped": "選定的配對影格已存在，已略過",
+  "cancelled before output commit": "已在寫入輸出前取消",
+  "copying selected pair": "正在複製選定的配對影格",
+  "selected pair committed": "已寫入選定的配對影格",
+  "extraction cancelled": "影格擷取已取消",
+  "scanning native fisheye images": "正在掃描原生雙魚眼影像",
+  "loading YOLO11/skyseg models": "正在載入 YOLO11／SkySeg 模型",
+  "masking cancelled": "遮罩處理已取消",
+  "verified mask exists; skipped": "已確認遮罩存在，已略過",
+  "running YOLO11/skyseg": "正在執行 YOLO11／SkySeg 推論",
+  "masking cancelled before output commit": "已在寫入遮罩前取消",
+  "committing mask files": "正在寫入遮罩檔案",
+  "mask completed": "遮罩處理完成",
+  "Stage started": "處理階段已開始",
+  "Stage cancelled; committed artifacts are resumable": "處理階段已取消，已寫入的結果可繼續使用",
+  "Stage completed": "處理階段已完成",
+  "Existing dual-fisheye frames were discovered": "已找到現有的雙魚眼影格",
+  "Existing masks were discovered": "已找到現有遮罩",
+  "Existing COLMAP reconstruction was discovered": "已找到現有的 COLMAP 重建結果",
+  "Previous run was interrupted; this stage can be resumed": "上次處理中斷，此階段可繼續執行",
+  "This project manifest was recovered from existing artifacts": "已依現有處理結果復原專案資訊",
+  "Extract requires both system ffmpeg and ffprobe": "影格擷取需要系統已安裝 FFmpeg 與 ffprobe",
+  "COLMAP is unavailable; alignment will remain in a resumable pending state": "找不到 COLMAP；對齊階段會維持可繼續的待執行狀態",
+  "COLMAP 3.x is supported for incremental alignment, but gravity/global mapper capabilities are not claimed without COLMAP 4.x": "COLMAP 3.x 可用於增量對齊；若未安裝 COLMAP 4.x，將不啟用重力與全域對齊功能",
+  "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder": "FFmpeg 不支援 VideoToolbox；影格擷取將使用 CPU 解碼",
+};
+
+function localiseUserMessage(value: string) {
+  const exact = USER_MESSAGE_TRANSLATIONS[value];
+  if (exact) return exact;
+  return value
+    .replace(/cancelled before interval (\d+)/g, "已在第 $1 個區間前取消")
+    .replace(/scoring (\d+) paired candidates/g, "正在評分 $1 組配對候選影格")
+    .replace(/(\d+) masks failed; see pipeline log/g, "$1 個遮罩處理失敗，請查看處理紀錄")
+    .replace(/System ffmpeg was not found on PATH/g, "在系統 PATH 中找不到 FFmpeg")
+    .replace(/System ffprobe was not found on PATH/g, "在系統 PATH 中找不到 ffprobe")
+    .replace(/COLMAP was not found on PATH/g, "在系統 PATH 中找不到 COLMAP")
+    .replace(/COLMAP bootstrap did not produce sparse\/0/g, "COLMAP 初始建模未產生 sparse/0")
+    .replace(/^invalid extraction input: /, "影格擷取輸入無效：")
+    .replace(/^extraction image error: /, "影格擷取影像錯誤：")
+    .replace(/^extraction I\/O error: /, "影格擷取檔案錯誤：")
+    .replace(/^invalid mask input: /, "遮罩輸入無效：")
+    .replace(/^mask model error: /, "遮罩模型錯誤：")
+    .replace(/^mask inference error: /, "遮罩推論錯誤：")
+    .replace(/^mask image error: /, "遮罩影像錯誤：")
+    .replace(/^mask I\/O error: /, "遮罩檔案錯誤：")
+    .replace(/^mask operation cancelled$/, "遮罩處理已取消");
+}
+
+function platformLabel(value: string) {
+  const labels: Record<string, string> = { macos: "macOS", windows: "Windows", linux: "Linux" };
+  return labels[value.toLowerCase()] ?? value;
+}
+
+function formatUpdatedAt(value?: string) {
+  if (!value) return "尚無更新時間";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function taskProgress(task: Task) {
+  return Math.round(Object.values(task.stages).reduce((sum, stage) => sum + stage.progress, 0) / STAGES.length);
+}
 
 function normaliseStageStatus(value: unknown): StageStatus {
   const raw = String(value ?? "pending").toLowerCase();
@@ -184,7 +261,7 @@ function cloneStages(raw: unknown): Record<StageKey, StageState> {
     result[stage.key] = {
       status: normaliseStageStatus(item.status),
       progress: toProgress(item.progress),
-      message: typeof item.message === "string" && item.message ? item.message : "尚未執行",
+      message: typeof item.message === "string" && item.message ? localiseUserMessage(item.message) : "尚未執行",
       jobId: typeof item.jobId === "string" ? item.jobId : undefined,
     };
     return result;
@@ -205,7 +282,7 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
     outputPath,
     settings: body.settings && typeof body.settings === "object" ? (body.settings as Record<string, unknown>) : {},
     stages: cloneStages(body.stages),
-    warnings: Array.isArray(body.warnings) ? body.warnings.map(String) : [],
+    warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [],
     updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : undefined,
   };
 }
@@ -216,7 +293,7 @@ function readProgress(payload: unknown): ProgressEventPayload {
     stage: normaliseStage(body.stage ?? body.name),
     progress: toProgress(body.progress ?? body.percent),
     status: normaliseStageStatus(body.status ?? body.state),
-    message: typeof body.message === "string" ? body.message : undefined,
+    message: typeof body.message === "string" ? localiseUserMessage(body.message) : undefined,
     jobId: typeof body.jobId === "string" ? body.jobId : undefined,
     done: Boolean(body.done ?? body.completed),
   };
@@ -227,7 +304,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const body = value as Record<string, unknown>;
   const tools = Array.isArray(body.tools) ? body.tools : [];
   const accelerators = Array.isArray(body.accelerators) ? body.accelerators : [];
-  const warnings = Array.isArray(body.warnings) ? body.warnings.map(String) : [];
+  const warnings = Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [];
   const itemText = (entry: unknown) => {
     if (typeof entry === "string") return entry;
     if (entry && typeof entry === "object") {
@@ -250,15 +327,16 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const colmap = tools.find((entry) => entryName(entry).toLowerCase() === "colmap");
   const acceleratorCandidates = accelerators.filter((entry) => /(cuda|metal|videotoolbox|gpu|nvidia|apple)/i.test(`${entryName(entry)} ${itemText(entry)}`));
   const accelerator = acceleratorCandidates.find(available) ?? acceleratorCandidates[0];
-  const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => key).join(" · ") : "";
-  const platform = typeof body.platform === "string" ? body.platform : typeof body.os === "string" ? body.os : fallback.platform;
+  const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
+  const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
+  const platform = platformLabel(typeof body.platform === "string" ? body.platform : typeof body.os === "string" ? body.os : fallback.platform);
   const items: DiagnosticItem[] = [
-    { label: "GPU / accelerator", value: accelerator && available(accelerator) ? itemText(accelerator) : "未偵測到可用加速", detail: capabilityValue || "CUDA / VideoToolbox 狀態由 doctor 回報", status: accelerator && available(accelerator) ? "ready" : "warning" },
+    { label: "GPU／加速器", value: accelerator && available(accelerator) ? itemText(accelerator) : "未偵測到可用加速", detail: capabilityValue || "CUDA／VideoToolbox 狀態由環境診斷回報", status: accelerator && available(accelerator) ? "ready" : "warning" },
     { label: "FFmpeg", value: ffmpeg && available(ffmpeg) ? itemText(ffmpeg) : "未偵測到", detail: ffmpeg && available(ffmpeg) ? "系統 PATH 可用" : "請安裝或加入 PATH", status: ffmpeg && available(ffmpeg) ? "ready" : "warning" },
-    { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? "可執行 native fisheye rig 對齊" : "Align 會保持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
-    { label: "Runtime", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri runtime", status: "ready" },
+    { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? "可執行原生雙魚眼相機組對齊" : "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
+    { label: "執行環境", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri 執行環境", status: "ready" },
   ];
-  return { platform, summary: typeof body.summary === "string" ? body.summary : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings };
+  return { platform, summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings };
 }
 
 async function invokeSafely<T>(command: string, args?: Record<string, unknown>) {
@@ -287,7 +365,7 @@ function sourceFromPath(path: string, index: number): OsvSource {
 function iconForDiagnostic(label: string) {
   if (label.includes("GPU")) return Cpu;
   if (label.includes("FFmpeg")) return Video;
-  if (label.includes("Storage")) return HardDrive;
+  if (label.includes("儲存空間")) return HardDrive;
   return MonitorCog;
 }
 
@@ -310,6 +388,7 @@ function stageStatusLabel(status: StageStatus) {
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [sourcePaths, setSourcePaths] = useState<string[]>([]);
@@ -325,6 +404,7 @@ function App() {
   const activeJobIds = useRef<Record<string, string>>({});
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
+  const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
 
   const addLog = useCallback((message: string) => {
     setLogs((current) => [message, ...current].slice(0, 10));
@@ -342,7 +422,7 @@ function App() {
         setSourcePaths([]);
         setSourceInspection("");
         addLog(`已載入可續作專案 ${manifest.name}`);
-        setToast(manifest.warnings.length ? `已載入半成品：${manifest.warnings.length} 項警告` : `已載入半成品：${manifest.name}`);
+        setToast(manifest.warnings.length ? `已載入未完成專案：${manifest.warnings.length} 項警告` : `已載入未完成專案：${manifest.name}`);
         return;
       }
     }
@@ -418,7 +498,7 @@ function App() {
 
   const openModelPicker = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("模型資料夾會在本機 runtime 中使用");
+      setToast("模型資料夾會由本機執行環境使用");
       return;
     }
     try {
@@ -433,7 +513,7 @@ function App() {
 
   const openProject = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("瀏覽器預覽不會讀取本機 manifest");
+      setToast("瀏覽器預覽不會讀取本機專案資訊");
       return;
     }
     try {
@@ -444,7 +524,7 @@ function App() {
         setTasks((current) => [manifest, ...current]);
         addLog(`已開啟 ${manifest.name}`);
       } else {
-        setToast("找不到可載入的 manifest");
+        setToast("找不到可載入的專案資訊");
       }
     } catch (error) {
       console.info("[GS360] load project", error);
@@ -456,7 +536,7 @@ function App() {
     setDoctorLoading(true);
     const result = await invokeSafely("doctor");
     if (result) setDoctor(parseDoctor(result, EMPTY_DOCTOR));
-    else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機 runtime" });
+    else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機執行環境" });
     setDoctorLoading(false);
   }, []);
 
@@ -519,11 +599,11 @@ function App() {
       setTasks((current) => [manifest, ...current]);
       addLog(`已建立 ${manifest.name}`);
     } else if (!IS_TAURI_RUNTIME) {
-      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), warnings: ["瀏覽器預覽：尚未連接本機 runtime"], previewOnly: true };
+      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), warnings: ["瀏覽器預覽：尚未連接本機執行環境"], previewOnly: true };
       setTasks((current) => [preview, ...current]);
       addLog(`預覽任務已加入 ${preview.name}`);
     } else {
-      setToast("建立任務失敗，請查看 runtime 訊息");
+      setToast("建立任務失敗，請查看執行環境訊息");
       return;
     }
     setTaskDialogOpen(false);
@@ -541,7 +621,7 @@ function App() {
     if (result?.jobId) {
       activeJobIds.current[task.projectId] = result.jobId;
       updateTaskStage(task.projectId, stageKey, { status: "running", progress: task.stages[stageKey].progress, message: "正在準備工作", jobId: result.jobId });
-    } else setToast("無法啟動階段，請查看 runtime 訊息");
+    } else setToast("無法啟動階段，請查看執行環境訊息");
   }, [settingsDraft, updateTaskStage]);
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
@@ -571,9 +651,9 @@ function App() {
   const renderSettingsFields = () => (
     <div className="settings-form">
       <FieldGroup>
-        <Field><FieldLabel>Extract / 影格</FieldLabel><FieldContent><div className="field-pair"><Field><FieldLabel htmlFor="base-fps">baseFps</FieldLabel><Input id="base-fps" type="number" min={1} max={30} value={settingsDraft.extract.baseFps} onChange={(event) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, baseFps: Number(event.currentTarget.value) || 1 } }))} /></Field><Field><FieldLabel htmlFor="dense-fps">denseFps</FieldLabel><Input id="dense-fps" type="number" min={1} max={60} value={settingsDraft.extract.denseFps} onChange={(event) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, denseFps: Number(event.currentTarget.value) || 1 } }))} /></Field></div><FieldDescription>雙魚眼影格取樣與模糊篩選候選密度。</FieldDescription><div className="control-line"><Checkbox checked={settingsDraft.extract.skipBlurry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, skipBlurry: checked === true } }))} /><span>跳過模糊影格</span></div></FieldContent></Field>
-        <Field><FieldLabel>Mask / 類別與天空</FieldLabel><FieldContent><div className="mask-chip-list">{MASK_CLASSES.map((maskClass) => { const selected = settingsDraft.mask.classes.includes(maskClass); return <Button key={maskClass} type="button" variant={selected ? "secondary" : "outline"} size="sm" aria-pressed={selected} onClick={() => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, classes: selected ? current.mask.classes.filter((value) => value !== maskClass) : [...current.mask.classes, maskClass] } }))}>{maskClass}</Button>; })}</div><div className="control-line"><Checkbox checked={settingsDraft.mask.maskSky} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, maskSky: checked === true } }))} /><span>遮天空</span><span className="range-label">confidence {settingsDraft.mask.confidence}%</span></div><input className="range-input" type="range" min={40} max={98} value={settingsDraft.mask.confidence} onChange={(event) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, confidence: Number(event.currentTarget.value) } }))} /><div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: event.currentTarget.value } }))} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div></FieldContent></Field>
-        <Field><FieldLabel>Align / 對齊</FieldLabel><FieldContent><div className="settings-stack"><label className="control-line"><Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} /><span>COLMAP GPU（CUDA）</span><small>未偵測到時自動使用 CPU</small></label><div className="rig-note"><Workflow /><span><strong>two-pass rig 固定流程</strong><small>先 bootstrap，再固定 rig 重建</small></span></div></div></FieldContent></Field>
+        <Field><FieldLabel>影格擷取</FieldLabel><FieldContent><div className="field-pair"><Field><FieldLabel htmlFor="base-fps">基本影格率</FieldLabel><Input id="base-fps" type="number" min={1} max={30} value={settingsDraft.extract.baseFps} onChange={(event) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, baseFps: Number(event.currentTarget.value) || 1 } }))} /></Field><Field><FieldLabel htmlFor="dense-fps">候選影格率</FieldLabel><Input id="dense-fps" type="number" min={1} max={60} value={settingsDraft.extract.denseFps} onChange={(event) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, denseFps: Number(event.currentTarget.value) || 1 } }))} /></Field></div><FieldDescription>設定雙魚眼影格取樣頻率，以及模糊篩選時的候選密度。</FieldDescription><div className="control-line"><Checkbox checked={settingsDraft.extract.skipBlurry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, skipBlurry: checked === true } }))} /><span>跳過模糊影格</span></div></FieldContent></Field>
+        <Field><FieldLabel>遮罩／物件與天空</FieldLabel><FieldContent><div className="mask-chip-list">{MASK_CLASSES.map((maskClass) => { const selected = settingsDraft.mask.classes.includes(maskClass); return <Button key={maskClass} type="button" variant={selected ? "secondary" : "outline"} size="sm" aria-pressed={selected} onClick={() => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, classes: selected ? current.mask.classes.filter((value) => value !== maskClass) : [...current.mask.classes, maskClass] } }))}>{MASK_CLASS_LABELS[maskClass]}</Button>; })}</div><div className="control-line"><Checkbox checked={settingsDraft.mask.maskSky} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, maskSky: checked === true } }))} /><span>遮蔽天空</span><span className="range-label">信心度 {settingsDraft.mask.confidence}%</span></div><input className="range-input" type="range" min={40} max={98} aria-label="遮罩信心度" value={settingsDraft.mask.confidence} onChange={(event) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, confidence: Number(event.currentTarget.value) } }))} /><div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: event.currentTarget.value } }))} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div></FieldContent></Field>
+        <Field><FieldLabel>對齊</FieldLabel><FieldContent><div className="settings-stack"><label className="control-line"><Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} /><span>使用 COLMAP GPU（CUDA）</span><small>無法使用時會自動改用 CPU</small></label><div className="rig-note"><Workflow /><span><strong>雙階段相機組固定流程</strong><small>先建立初始模型，再固定相機組進行重建</small></span></div></div></FieldContent></Field>
       </FieldGroup>
     </div>
   );
@@ -583,7 +663,7 @@ function App() {
       <header className="window-bar">
         {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
         <span className="window-title">GS360 Studio</span>
-        <div className="window-actions"><Badge variant="outline" className="runtime-badge">{IS_TAURI_RUNTIME ? "本機 runtime" : "瀏覽器預覽"}</Badge><Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
+        <div className="window-actions"><Badge variant="outline" className="runtime-badge">{IS_TAURI_RUNTIME ? "本機執行環境" : "瀏覽器預覽"}</Badge><Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
       </header>
 
       <main className="studio-main">
@@ -591,16 +671,16 @@ function App() {
         {tasks.length === 0 ? (
           <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
             <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
-            <p className="eyebrow">WORKSPACE / LOCAL</p>
+            <p className="eyebrow">本機工作區</p>
             <h1>尚無任務</h1>
-            <p className="empty-description">拖放 OSV 或處理到一半的資料夾到這裡，<br />或先建立一個可續作的重建任務。</p>
+            <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以先建立新的重建任務。</p>
             <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload />選擇檔案</Button><Button size="lg" variant="outline" onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div>
-            <p className="drop-hint">支援多檔同一空間 · 雙魚眼素材 · project folder</p>
+            <p className="drop-hint">支援同一空間的多個檔案 · 雙魚眼素材 · 專案資料夾</p>
           </section>
         ) : (
           <section className="tasks-view">
-            <header className="content-header"><div><p className="eyebrow">WORKSPACE / LOCAL</p><h1>重建任務</h1><p>每一步都可獨立執行、取消與續作。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟 project</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
-            <div className="task-list">{tasks.map((task) => { const overall = Math.round(Object.values(task.stages).reduce((sum, stage) => sum + stage.progress, 0) / 3); return <article className="task-row" key={task.projectId}><div className="task-row-top"><div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div><Button variant="ghost" size="icon-sm" aria-label={`${task.name} 更多選項`}><MoreHorizontal /></Button></div><div className="task-progress-line"><Progress value={overall}><ProgressValue /></Progress><span>{overall}%</span></div><div className="stage-row-list">{STAGES.map((stage) => { const current = task.stages[stage.key]; const Icon = stage.icon; return <div className="task-stage" key={stage.key}><div className="task-stage-label"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span></div><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge><Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square /> : current.status === "completed" ? <RotateCcw /> : <Play />}{stageAction(current.status)}</Button></div>; })}</div></article>; })}</div>
+            <header className="content-header"><div><p className="eyebrow">本機工作區</p><h1>重建任務</h1><p>每個階段都能獨立執行、取消或繼續。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
+            <div className="task-list">{tasks.map((task) => { const overall = taskProgress(task); return <article className="task-row" key={task.projectId}><div className="task-row-top"><div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div><Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button></div><div className="task-progress-line"><Progress value={overall}><ProgressValue /></Progress><span>{overall}%</span></div><div className="stage-row-list">{STAGES.map((stage) => { const current = task.stages[stage.key]; const Icon = stage.icon; return <div className="task-stage" key={stage.key}><div className="task-stage-label"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span></div><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge><Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button></div>; })}</div></article>; })}</div>
           </section>
         )}
       </main>
@@ -611,13 +691,13 @@ function App() {
 
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
         <DialogContent className="task-dialog" showCloseButton>
-          <DialogHeader><DialogTitle>新增重建任務</DialogTitle><DialogDescription>選擇多組 OSV 或雙魚眼素材，它們會在同一個 project manifest 中保留。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>新增重建任務</DialogTitle><DialogDescription>選擇多組 OSV 或雙魚眼素材，所有來源都會保存在同一份專案資訊中。</DialogDescription></DialogHeader>
           <div className="dialog-scroll">
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
-                <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：Mountain pass / 2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
-                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或處理到一半的資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入處理到一半的資料夾。"}</p></FieldContent></Field>
-                <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} placeholder="預設與第一個來源並列：colmap-{filename}" onChange={(event) => setOutputDraft(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button></div><FieldDescription>建立後會在輸出資料夾保存 manifest，可從中斷處續作。</FieldDescription></FieldContent></Field>
+                <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：山區路線／2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
+                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
+                <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button></div><FieldDescription>建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。</FieldDescription></FieldContent></Field>
               </FieldGroup>
               {renderSettingsFields()}
             </div>
@@ -626,13 +706,61 @@ function App() {
         </DialogContent>
       </Dialog>
 
+      {selectedTask && (
+        <Sheet open onOpenChange={(open) => { if (!open) setSelectedTaskId(null); }}>
+          <SheetContent className="task-detail-sheet" side="right">
+            <SheetHeader>
+              <SheetTitle>{selectedTask.name}</SheetTitle>
+              <SheetDescription>查看任務進度、來源與各處理階段的最新狀態。</SheetDescription>
+            </SheetHeader>
+            <div className="task-detail-scroll">
+              <section className="task-detail-overview">
+                <div className="task-detail-heading"><span>整體進度</span><strong>{taskProgress(selectedTask)}%</strong></div>
+                <Progress value={taskProgress(selectedTask)}><ProgressValue /></Progress>
+                <dl className="task-detail-meta">
+                  <div><dt>輸出資料夾</dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || "尚未指定"}</dd></div>
+                  <div><dt>來源數量</dt><dd>{selectedTask.inputPaths.length} 個</dd></div>
+                  <div><dt>最後更新</dt><dd>{formatUpdatedAt(selectedTask.updatedAt)}</dd></div>
+                </dl>
+              </section>
+
+              <section className="task-detail-section">
+                <div className="task-detail-section-title"><h2>處理階段</h2><span>{STAGES.length} 個階段</span></div>
+                <div className="task-detail-stages">
+                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; return (
+                    <div className="task-detail-stage" key={stage.key}>
+                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
+                      <div className="task-detail-stage-progress"><Progress value={current.progress}><ProgressValue /></Progress><span>{current.progress}%</span></div>
+                      <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                    </div>
+                  ); })}
+                </div>
+              </section>
+
+              <section className="task-detail-section">
+                <div className="task-detail-section-title"><h2>來源</h2><span>{selectedTask.inputPaths.length} 個檔案</span></div>
+                {selectedTask.inputPaths.length > 0 ? <div className="task-detail-sources">{selectedTask.inputPaths.map((path, index) => <div key={`${index}-${path}`} title={path}><Video /><span>{path}</span></div>)}</div> : <p className="task-detail-empty">此任務沒有記錄來源檔案。</p>}
+              </section>
+
+              {selectedTask.warnings.length > 0 && (
+                <section className="task-detail-section">
+                  <div className="task-detail-section-title"><h2>警告</h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
+                  <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{warning}</span></div>)}</div>
+                </section>
+              )}
+            </div>
+            <SheetFooter><Button variant="outline" onClick={() => setSelectedTaskId(null)}>完成</Button></SheetFooter>
+          </SheetContent>
+        </Sheet>
+      )}
+
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>以本機 runtime 回報為準；不預設 GPU、FFmpeg 或模型已就緒。</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>以本機執行環境回報為準；不預設 GPU、FFmpeg 或模型已就緒。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
-            <section className="settings-section"><div className="settings-section-heading"><h2>介面</h2><span>本機</span></div><div className="settings-item"><span><strong>介面語言</strong><small>目前版本採台灣繁體中文</small></span><Badge variant="outline">繁體中文</Badge></div><div className="settings-item"><span><strong>任務啟動方式</strong><small>所有 stage 都由使用者手動執行</small></span><Badge variant="outline">不自動執行</Badge></div></section>
-            <section className="settings-section"><div className="settings-section-heading"><h2>Runtime</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor()} aria-label="重新檢查環境"><RefreshCw /></Button></div><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
-            <section className="settings-section"><div className="settings-section-heading"><h2>模型</h2><span>Mask</span></div><div className="settings-item"><span><strong>來源模型</strong><small title={settingsDraft.mask.modelDir || undefined}>{settingsDraft.mask.modelDir || "依 models/、.models/ 或 GS360_MODEL_DIR 自動探索"}</small></span><Badge variant="outline">{settingsDraft.mask.modelDir ? "已指定" : "自動探索"}</Badge></div><div className="settings-item"><span><strong>系統 FFmpeg</strong><small>不下載、不內嵌額外執行檔</small></span><Badge variant="outline">依 doctor</Badge></div></section>
+            <section className="settings-section"><div className="settings-section-heading"><h2>介面</h2><span>本機</span></div><div className="settings-item"><span><strong>介面語言</strong><small>目前版本採台灣繁體中文</small></span><Badge variant="outline">繁體中文</Badge></div><div className="settings-item"><span><strong>任務啟動方式</strong><small>所有處理階段都由使用者手動執行</small></span><Badge variant="outline">不自動執行</Badge></div></section>
+            <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor()} aria-label="重新檢查環境"><RefreshCw /></Button></div><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
+            <section className="settings-section"><div className="settings-section-heading"><h2>模型</h2><span>遮罩</span></div><div className="settings-item"><span><strong>來源模型</strong><small title={settingsDraft.mask.modelDir || undefined}>{settingsDraft.mask.modelDir || "依 models/、.models/ 或 GS360_MODEL_DIR 自動探索"}</small></span><Badge variant="outline">{settingsDraft.mask.modelDir ? "已指定" : "自動探索"}</Badge></div><div className="settings-item"><span><strong>系統 FFmpeg</strong><small>不下載、不內嵌額外執行檔</small></span><Badge variant="outline">依環境診斷</Badge></div></section>
           </div>
           <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>完成</Button></SheetFooter>
         </SheetContent>

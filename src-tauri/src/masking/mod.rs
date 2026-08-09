@@ -19,7 +19,7 @@ mod models;
 mod skyseg;
 
 pub use inference::YoloSegPipeline;
-pub use models::ModelPaths;
+pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
 
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma};
@@ -127,8 +127,10 @@ pub struct MaskRequest {
     pub valid_radius_ratio: f32,
     /// Skip only when both output files decode and match the source dimensions.
     pub skip_verified: bool,
-    /// Optional model root.  See [`ModelPaths::discover`].
+    /// Optional user-supplied model root. See [`ModelPaths::resolve`].
     pub model_dir: Option<PathBuf>,
+    /// Application-owned directory used for verified first-use downloads.
+    pub model_cache_dir: Option<PathBuf>,
     /// Optional explicit YOLO11 model path.
     pub yolo_model: Option<PathBuf>,
     /// Optional explicit skyseg model path.
@@ -149,6 +151,7 @@ impl Default for MaskRequest {
             valid_radius_ratio: 0.497,
             skip_verified: true,
             model_dir: None,
+            model_cache_dir: None,
             yolo_model: None,
             skyseg_model: None,
             execution_provider: None,
@@ -250,12 +253,19 @@ pub struct NativeMaskEngine {
 }
 
 impl NativeMaskEngine {
-    pub fn load(request: &MaskRequest) -> MaskResult<Self> {
-        let paths = ModelPaths::discover(
+    pub fn load(
+        request: &MaskRequest,
+        cancel: &CancelToken,
+        on_download: &dyn Fn(ModelDownloadProgress),
+    ) -> MaskResult<Self> {
+        let paths = ModelPaths::resolve(
             request.model_dir.as_deref(),
+            request.model_cache_dir.as_deref(),
             request.yolo_model.as_deref(),
             request.skyseg_model.as_deref(),
             request.mask_sky,
+            cancel,
+            on_download,
         )?;
         let yolo = YoloSegPipeline::load(&paths, request.execution_provider.as_deref())?;
         let skyseg = if request.mask_sky {
@@ -315,7 +325,7 @@ pub fn process_mask_batch(
         colmap_mask_path: request.colmap_masks_dir.clone(),
         stage: MaskStage::Discovering,
         fraction: 0.0,
-        message: "scanning native fisheye images".to_string(),
+        message: "正在掃描原生雙魚眼影像".to_string(),
     });
     on_progress(MaskProgress {
         index: 0,
@@ -325,9 +335,25 @@ pub fn process_mask_batch(
         colmap_mask_path: request.colmap_masks_dir.clone(),
         stage: MaskStage::LoadingModel,
         fraction: 0.0,
-        message: "loading YOLO11/skyseg models".to_string(),
+        message: "正在載入 YOLO11／SkySeg 模型".to_string(),
     });
-    let engine = NativeMaskEngine::load(request)?;
+    let engine = NativeMaskEngine::load(request, cancel, &|event| {
+        let percent = event
+            .downloaded
+            .saturating_mul(100)
+            .checked_div(event.total)
+            .unwrap_or(0);
+        on_progress(MaskProgress {
+            index: 0,
+            total: 0,
+            input: request.images_dir.clone(),
+            mask_path: request.masks_dir.clone(),
+            colmap_mask_path: request.colmap_masks_dir.clone(),
+            stage: MaskStage::LoadingModel,
+            fraction: 0.0,
+            message: format!("首次使用，正在下載 {} 模型（{}%）", event.label, percent),
+        });
+    })?;
     process_with_engine(request, cancel, &engine, on_progress)
 }
 
@@ -400,7 +426,7 @@ where
                 &colmap_path,
                 MaskStage::Cancelled,
                 index as f32 / total.max(1) as f32,
-                "masking cancelled",
+                "遮罩處理已取消",
             );
             break;
         }
@@ -448,7 +474,7 @@ where
                 &colmap_path,
                 MaskStage::Skipped,
                 (index + 1) as f32 / total.max(1) as f32,
-                "verified mask exists; skipped",
+                "已確認遮罩存在，已略過",
             );
             continue;
         }
@@ -462,7 +488,7 @@ where
             &colmap_path,
             MaskStage::Inference,
             index as f32 / total.max(1) as f32,
-            "running YOLO11/skyseg",
+            "正在執行 YOLO11／SkySeg 推論",
         );
         let exclusions = match engine.generate_exclusion_mask(
             &image,
@@ -483,7 +509,7 @@ where
                     &colmap_path,
                     MaskStage::Cancelled,
                     index as f32 / total.max(1) as f32,
-                    "masking cancelled",
+                    "遮罩處理已取消",
                 );
                 break;
             }
@@ -543,7 +569,7 @@ where
                 &colmap_path,
                 MaskStage::Cancelled,
                 index as f32 / total.max(1) as f32,
-                "masking cancelled before output commit",
+                "已在寫入遮罩前取消",
             );
             break;
         }
@@ -558,7 +584,7 @@ where
             &colmap_path,
             MaskStage::Writing,
             index as f32 / total.max(1) as f32,
-            "committing mask files",
+            "正在寫入遮罩檔案",
         );
         if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep, false)
             .and_then(|_| write_mask_atomic(&colmap_path, width, height, &keep, true))
@@ -591,7 +617,7 @@ where
             &colmap_path,
             MaskStage::Completed,
             (index + 1) as f32 / total.max(1) as f32,
-            "mask completed",
+            "遮罩處理完成",
         );
     }
 
@@ -978,6 +1004,21 @@ mod tests {
         let summary = process_mask_batch_with_engine(&request, &token, &engine, |_| {})?;
         assert!(summary.cancelled);
         assert!(!request.masks_dir.exists());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "downloads and verifies about 216 MB of production model data"]
+    fn downloads_and_loads_production_models() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = request(&dir);
+        request.classes = vec!["person".to_string()];
+        request.mask_sky = true;
+        request.model_cache_dir = Some(dir.path().join("models"));
+        request.execution_provider = Some("CPU".to_string());
+
+        let engine = NativeMaskEngine::load(&request, &CancelToken::new(), &|_| {})?;
+        assert!(engine.skyseg.is_some());
         Ok(())
     }
 }

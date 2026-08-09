@@ -524,7 +524,7 @@ fn infer_stage_checkpoints(root: &Path) -> BTreeMap<String, StageCheckpoint> {
         stages.insert(
             "extract".to_owned(),
             completed_checkpoint(
-                "Existing dual-fisheye frames were discovered",
+                "已找到現有的雙魚眼影格",
                 vec![images.to_string_lossy().into_owned()],
             ),
         );
@@ -535,7 +535,7 @@ fn infer_stage_checkpoints(root: &Path) -> BTreeMap<String, StageCheckpoint> {
         stages.insert(
             "mask".to_owned(),
             completed_checkpoint(
-                "Existing masks were discovered",
+                "已找到現有遮罩",
                 [masks, colmap_masks]
                     .into_iter()
                     .filter(|path| path.exists())
@@ -549,7 +549,7 @@ fn infer_stage_checkpoints(root: &Path) -> BTreeMap<String, StageCheckpoint> {
         stages.insert(
             "align".to_owned(),
             completed_checkpoint(
-                "Existing COLMAP reconstruction was discovered",
+                "已找到現有的 COLMAP 重建結果",
                 vec![
                     root.join("database.db").to_string_lossy().into_owned(),
                     sparse.to_string_lossy().into_owned(),
@@ -710,9 +710,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
                 settings: json!({}),
                 stages: infer_stage_checkpoints(&root),
                 capabilities,
-                warnings: vec![
-                    "This project manifest was recovered from existing artifacts".to_owned(),
-                ],
+                warnings: vec!["已依現有處理結果復原專案資訊".to_owned()],
                 created_at: now_timestamp(),
                 updated_at: now_timestamp(),
             };
@@ -744,8 +742,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
     for checkpoint in manifest.stages.values_mut() {
         if matches!(checkpoint.status, StageStatus::Running) {
             checkpoint.status = StageStatus::Cancelled;
-            checkpoint.message =
-                "Previous run was interrupted; this stage can be resumed".to_owned();
+            checkpoint.message = "上次處理中斷，此階段可繼續執行".to_owned();
             checkpoint.updated_at = now_timestamp();
             recovered_running_stage = true;
         }
@@ -982,7 +979,7 @@ mod tests {
         assert!(manifest
             .warnings
             .iter()
-            .any(|warning| warning.contains("recovered")));
+            .any(|warning| warning.contains("復原專案資訊")));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1027,7 +1024,7 @@ mod tests {
             recovered.stages["mask"].status,
             StageStatus::Cancelled
         ));
-        assert!(recovered.stages["mask"].message.contains("resumed"));
+        assert!(recovered.stages["mask"].message.contains("可繼續執行"));
         let persisted = load(&root).unwrap();
         assert!(matches!(
             persisted.stages["mask"].status,
