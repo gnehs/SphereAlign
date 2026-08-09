@@ -655,7 +655,6 @@ button:active {
 }
 
 .mask-chip-list [data-slot="button"] {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--studio-font-sm);
 }
 
@@ -739,7 +738,8 @@ button:active {
   flex: 1;
 }
 
-.settings-sheet {
+.settings-sheet,
+.task-detail-sheet {
   width: min(420px, 100vw);
   max-width: 420px;
   padding: 0;
@@ -747,18 +747,26 @@ button:active {
   background: var(--studio-surface);
 }
 
-.settings-sheet [data-slot="sheet-header"] {
+.task-detail-sheet {
+  width: min(480px, 100vw);
+  max-width: 480px;
+}
+
+.settings-sheet [data-slot="sheet-header"],
+.task-detail-sheet [data-slot="sheet-header"] {
   padding: 25px 24px 17px;
   border-bottom: 1px solid var(--studio-line);
 }
 
-.settings-sheet [data-slot="sheet-title"] {
+.settings-sheet [data-slot="sheet-title"],
+.task-detail-sheet [data-slot="sheet-title"] {
   color: var(--studio-text);
   font-size: 18px;
   font-weight: 680;
 }
 
-.settings-sheet [data-slot="sheet-description"] {
+.settings-sheet [data-slot="sheet-description"],
+.task-detail-sheet [data-slot="sheet-description"] {
   margin-top: 7px;
   color: var(--studio-muted);
   font-size: var(--studio-font-base);
@@ -769,6 +777,229 @@ button:active {
   flex: 1;
   overflow: auto;
   padding: 7px 24px 24px;
+}
+
+.task-detail-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 0 24px 24px;
+}
+
+.task-detail-overview,
+.task-detail-section {
+  padding: 19px 0;
+  border-bottom: 1px solid var(--studio-line);
+}
+
+.task-detail-heading,
+.task-detail-section-title,
+.task-detail-stage-main,
+.task-detail-stage-progress,
+.task-detail-sources > div,
+.task-detail-warnings > div {
+  display: flex;
+  align-items: center;
+}
+
+.task-detail-heading,
+.task-detail-section-title {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-detail-heading {
+  margin-bottom: 9px;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+}
+
+.task-detail-heading strong {
+  color: var(--studio-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--studio-font-base);
+}
+
+.task-detail-overview [data-slot="progress-track"],
+.task-detail-stage-progress [data-slot="progress-track"] {
+  height: 5px;
+  border-radius: 99px;
+}
+
+.task-detail-overview [data-slot="progress-value"],
+.task-detail-stage-progress [data-slot="progress-value"] {
+  display: none;
+}
+
+.task-detail-meta {
+  display: flex;
+  flex-direction: column;
+  margin: 16px 0 0;
+}
+
+.task-detail-meta > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  padding: 8px 0;
+  border-top: 1px solid var(--studio-line);
+  gap: 12px;
+}
+
+.task-detail-meta dt {
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+}
+
+.task-detail-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--studio-text);
+  font-size: var(--studio-font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail-section-title {
+  margin-bottom: 11px;
+}
+
+.task-detail-section-title h2 {
+  margin: 0;
+  color: var(--studio-text);
+  font-size: var(--studio-font-base);
+  font-weight: 680;
+}
+
+.task-detail-section-title > span {
+  color: var(--studio-faint);
+  font-size: var(--studio-font-sm);
+}
+
+.task-detail-stages {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--studio-line);
+}
+
+.task-detail-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 0;
+  gap: 10px 12px;
+}
+
+.task-detail-stage + .task-detail-stage {
+  border-top: 1px solid var(--studio-line);
+}
+
+.task-detail-stage-main {
+  grid-column: 1 / -1;
+  min-width: 0;
+  gap: 9px;
+}
+
+.task-detail-stage-main > svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--studio-faint);
+}
+
+.task-detail-stage-main > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-detail-stage-main strong {
+  color: var(--studio-text);
+  font-size: var(--studio-font-base);
+  font-weight: 620;
+}
+
+.task-detail-stage-main small {
+  overflow: hidden;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail-stage-main [data-slot="badge"] {
+  flex: 0 0 auto;
+  font-size: var(--studio-font-sm);
+}
+
+.task-detail-stage-progress {
+  min-width: 0;
+  gap: 8px;
+}
+
+.task-detail-stage-progress [data-slot="progress"] {
+  flex: 1;
+}
+
+.task-detail-stage-progress > span {
+  width: 30px;
+  color: var(--studio-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--studio-font-sm);
+  text-align: right;
+}
+
+.task-detail-sources,
+.task-detail-warnings {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--studio-line);
+}
+
+.task-detail-sources > div,
+.task-detail-warnings > div {
+  min-width: 0;
+  padding: 10px 0;
+  gap: 8px;
+}
+
+.task-detail-sources > div + div,
+.task-detail-warnings > div + div {
+  border-top: 1px solid var(--studio-line);
+}
+
+.task-detail-sources svg,
+.task-detail-warnings svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--studio-faint);
+}
+
+.task-detail-sources span,
+.task-detail-warnings span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail-warnings svg,
+.task-detail-warnings span {
+  color: var(--studio-amber);
+}
+
+.task-detail-warnings span {
+  white-space: normal;
+}
+
+.task-detail-empty {
+  margin: 0;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
 }
 
 .settings-section {
@@ -904,7 +1135,8 @@ button:active {
   display: block;
 }
 
-.settings-sheet [data-slot="sheet-footer"] {
+.settings-sheet [data-slot="sheet-footer"],
+.task-detail-sheet [data-slot="sheet-footer"] {
   padding: 15px 24px 22px;
   border-top: 1px solid var(--studio-line);
 }
@@ -941,7 +1173,8 @@ button:active {
   .studio-footer button { margin-left: auto; }
   .empty-actions { align-items: stretch; flex-direction: column; width: min(280px, 100%); }
   .task-dialog { padding: 20px 16px 16px; }
-  .settings-sheet { width: min(100vw, 420px); }
+  .settings-sheet,
+  .task-detail-sheet { width: 100vw; }
 }
 
 @media (prefers-reduced-motion: reduce) {

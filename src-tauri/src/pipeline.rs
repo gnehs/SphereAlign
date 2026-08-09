@@ -176,7 +176,7 @@ pub fn start_stage(
             &stage,
             StageStatus::Running,
             0.0,
-            "Stage started",
+            "處理階段已開始",
             Vec::new(),
             Vec::new(),
         );
@@ -202,7 +202,7 @@ pub fn start_stage(
                 &stage,
                 StageStatus::Cancelled,
                 0.0,
-                "Stage cancelled; committed artifacts are resumable",
+                "處理階段已取消，已寫入的結果可繼續使用",
                 Vec::new(),
                 Vec::new(),
             );
@@ -224,7 +224,7 @@ pub fn start_stage(
                         &stage,
                         StageStatus::Completed,
                         1.0,
-                        "Stage completed",
+                        "處理階段已完成",
                         artifacts,
                         Vec::new(),
                     );
@@ -453,10 +453,10 @@ fn run_extract(
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
     if manifest.input_paths.is_empty() {
-        return Err("此資料夾沒有原始影片；可直接執行現有影格適用的 Mask 或對齊階段".to_owned());
+        return Err("此資料夾沒有原始影片；可直接執行現有影格適用的遮罩或對齊階段".to_owned());
     }
-    let ffmpeg = find_executable("ffmpeg").ok_or("System ffmpeg was not found on PATH")?;
-    let ffprobe = find_executable("ffprobe").ok_or("System ffprobe was not found on PATH")?;
+    let ffmpeg = find_executable("ffmpeg").ok_or("在系統 PATH 中找不到 FFmpeg")?;
+    let ffprobe = find_executable("ffprobe").ok_or("在系統 PATH 中找不到 ffprobe")?;
     let output = PathBuf::from(&manifest.output_path);
     let base_fps = setting_f64(&manifest.settings, "/extract/baseFps", 2.0).clamp(0.1, 30.0);
     let dense_fps = setting_f64(&manifest.settings, "/extract/denseFps", 8.0).clamp(base_fps, 60.0);
@@ -785,7 +785,7 @@ fn run_mask(
     })
     .map_err(|error| error.to_string())?;
     if summary.failed > 0 {
-        return Err(format!("{} masks failed; see pipeline log", summary.failed));
+        return Err(format!("{} 個遮罩處理失敗，請查看處理紀錄", summary.failed));
     }
     Ok(vec![
         root.join("masks").to_string_lossy().into_owned(),
@@ -880,18 +880,13 @@ fn run_align(
     manifest: &ProjectManifest,
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
-    let colmap = find_executable("colmap").ok_or("COLMAP was not found on PATH")?;
+    let colmap = find_executable("colmap").ok_or("在系統 PATH 中找不到 COLMAP")?;
     let root = PathBuf::from(&manifest.output_path);
     write_rig_and_pairs(&root)?;
     let db = root.join("database.db");
     let sparse = root.join("sparse");
     if db.is_file() && sparse_model_exists(&sparse) {
-        emit_log(
-            app,
-            id,
-            "info",
-            "已驗證現有 COLMAP reconstruction，略過重算",
-        );
+        emit_log(app, id, "info", "已驗證現有 COLMAP 重建結果，略過重算");
         return Ok(vec![
             db.to_string_lossy().into_owned(),
             root.join("rig_config.json").to_string_lossy().into_owned(),
@@ -981,7 +976,7 @@ fn run_align(
     }
     let boot0 = bootstrap.join("0");
     if !boot0.is_dir() {
-        return Err("COLMAP bootstrap did not produce sparse/0".into());
+        return Err("COLMAP 初始建模未產生 sparse/0".into());
     }
     emit_progress(
         app,
@@ -989,7 +984,7 @@ fn run_align(
         &StageName::Align,
         "rig",
         0.75,
-        "正在估計雙鏡頭 rig",
+        "正在估計雙鏡頭相機組",
         "running",
         false,
     );
