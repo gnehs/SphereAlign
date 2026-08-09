@@ -1,0 +1,14 @@
+README.md
+SKILL.md
+config.example.yaml
+manifest.txt
+references/ADAPTERS.md
+references/ARCHITECTURE.md
+references/DJI_OSMO_360.md
+references/OUTPUT_PROFILES.md
+scripts/__pycache__/doctor.cpython-313.pyc
+scripts/__pycache__/prepare_capture.cpython-313.pyc
+scripts/doctor.py
+scripts/install.ps1
+scripts/install.sh
+scripts/prepare_capture.py

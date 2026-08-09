@@ -1,0 +1,77 @@
+pipeline:
+  output_profile: lichtfeld   # lichtfeld | native_fisheye | pinhole_tiles
+  keep_intermediates: true
+
+input:
+  adapter: auto              # auto | dji_osmo360 | insta360 | gopro_max
+
+analysis:
+  proxy_size: 512
+  base_fps: 2.0
+  dense_fps: 8.0
+  min_fps: 1.0
+  optical_flow_weight: 0.55
+  scene_change_weight: 0.30
+  imu_rotation_weight: 0.15
+  transition_threshold: 0.45
+  max_gap_seconds: 1.0
+  repair_window_frames: 3
+
+blur:
+  enabled: true
+  # 相對資料集門檻比固定 Laplacian 數值更能跨相機工作
+  reject_percentile: 12.0
+  absolute_floor: 12.0
+  require_both_lenses_sharp: false
+
+mask:
+  enabled: true
+  backend: torchvision_maskrcnn  # torchvision_maskrcnn | external | none
+  confidence: 0.55
+  inference_max_size: 1536
+  dilate_px_at_4k: 18
+  ignore_classes:
+    - person
+    - bicycle
+    - car
+    - motorcycle
+    - bus
+    - truck
+  # 可額外排除 tripod / photographer 等自訂 mask，由 external backend 實作
+
+fisheye:
+  canonical: true
+  model: OPENCV_FISHEYE
+  valid_radius_ratio: 0.497
+  # factory intrinsics 存在時優先用 factory；否則由 COLMAP refine
+  prefer_factory_intrinsics: true
+
+matching:
+  temporal_neighbors: 5
+  cross_lens_neighbors: 2
+  long_loop_every: 45
+  long_loop_radius: 2
+  max_num_matches: 8192
+  rig_verification: true
+
+sfm:
+  enabled: true
+  backend: colmap            # colmap | glomap (adapter planned)
+  two_pass_rig: true
+  fix_rig_after_bootstrap: true
+  refine_focal_length: true
+  refine_extra_params: true
+  use_gpu: true
+
+imu:
+  enabled: true
+  use_for_keyframes: true
+  use_for_rotation_validation: true
+  # stock COLMAP 不直接支援完整 quaternion prior；留給未來自訂 BA/VIO backend
+  gravity_prior_backend: auto   # auto | pycolmap | none
+  orientation_prior_backend: none
+
+validation:
+  min_registered_ratio: 0.80
+  max_keyframe_gap_seconds: 1.25
+  warn_mean_reprojection_error_px: 2.0
