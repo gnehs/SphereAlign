@@ -189,13 +189,17 @@ fn numeric_value(value: &Value) -> Option<f64> {
 }
 
 fn probe_duration_seconds(probe: &Value) -> Option<f64> {
-    probe
-        .pointer("/format/duration")
-        .and_then(numeric_value)
+    let streams = probe.get("streams").and_then(Value::as_array);
+    let shortest_video = streams
+        .into_iter()
+        .flatten()
+        .filter(|stream| stream.get("codec_type").and_then(Value::as_str) == Some("video"))
+        .filter_map(|stream| stream.get("duration").and_then(numeric_value))
+        .reduce(f64::min);
+    shortest_video
+        .or_else(|| probe.pointer("/format/duration").and_then(numeric_value))
         .or_else(|| {
-            probe
-                .get("streams")
-                .and_then(Value::as_array)
+            streams
                 .into_iter()
                 .flatten()
                 .filter_map(|stream| stream.get("duration").and_then(numeric_value))
@@ -2433,13 +2437,19 @@ mod tests {
     fn candidate_progress_uses_probe_duration_and_candidate_rate() {
         let probe = json!({
             "format": { "duration": "12.25" },
-            "streams": [{ "duration": "10.0" }]
+            "streams": [
+                { "codec_type": "video", "duration": "10.0" },
+                { "codec_type": "audio", "duration": "12.25" }
+            ]
         });
-        assert_eq!(probe_duration_seconds(&probe), Some(12.25));
-        assert_eq!(expected_candidate_frames(&probe, 8.0), Some(98));
+        assert_eq!(probe_duration_seconds(&probe), Some(10.0));
+        assert_eq!(expected_candidate_frames(&probe, 8.0), Some(80));
 
         let stream_only = json!({
-            "streams": [{ "duration": "9.5" }, { "duration": "9.25" }]
+            "streams": [
+                { "codec_type": "video", "duration": "9.5" },
+                { "codec_type": "video", "duration": "9.25" }
+            ]
         });
         assert_eq!(probe_duration_seconds(&stream_only), Some(9.25));
         assert_eq!(expected_candidate_frames(&stream_only, 2.0), Some(19));

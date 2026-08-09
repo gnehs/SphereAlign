@@ -310,7 +310,11 @@ fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), String> 
     let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     let result = (|| -> Result<(), String> {
         fs::write(&partial, bytes).map_err(|error| error.to_string())?;
-        fs::File::open(&partial)
+        // sync_all maps to FlushFileBuffers on Windows, which rejects a
+        // read-only handle with os error 5.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&partial)
             .and_then(|file| file.sync_all())
             .map_err(|error| error.to_string())?;
         rename_replace(&partial, path)

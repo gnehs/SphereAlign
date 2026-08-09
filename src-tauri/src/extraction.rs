@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -847,8 +847,27 @@ fn stage_copy(source: &Path, destination: &Path) -> ExtractionResult<PathBuf> {
         counter
     ));
     let result = (|| -> ExtractionResult<()> {
-        fs::copy(source, &staged)?;
-        fs::File::open(&staged)?.sync_all()?;
+        let mut source_file = fs::File::open(source).map_err(|error| {
+            ExtractionError::Io(format!("無法讀取來源影格 {}：{error}", source.display()))
+        })?;
+        let mut staged_file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&staged)
+            .map_err(|error| {
+                ExtractionError::Io(format!("無法建立暫存影格 {}：{error}", staged.display()))
+            })?;
+        io::copy(&mut source_file, &mut staged_file).map_err(|error| {
+            ExtractionError::Io(format!(
+                "無法複製影格 {} 至 {}：{error}",
+                source.display(),
+                staged.display()
+            ))
+        })?;
+        staged_file.sync_all().map_err(|error| {
+            ExtractionError::Io(format!("無法同步暫存影格 {}：{error}", staged.display()))
+        })?;
         Ok(())
     })();
     if result.is_err() {
@@ -1200,8 +1219,30 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> ExtractionResult<()> {
         counter
     ));
     let result = (|| -> ExtractionResult<()> {
-        fs::write(&temporary, bytes)?;
-        fs::File::open(&temporary)?.sync_all()?;
+        let mut temporary_file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| {
+                ExtractionError::Io(format!(
+                    "無法建立暫存 metadata {}：{error}",
+                    temporary.display()
+                ))
+            })?;
+        temporary_file.write_all(bytes).map_err(|error| {
+            ExtractionError::Io(format!(
+                "無法寫入暫存 metadata {}：{error}",
+                temporary.display()
+            ))
+        })?;
+        temporary_file.sync_all().map_err(|error| {
+            ExtractionError::Io(format!(
+                "無法同步暫存 metadata {}：{error}",
+                temporary.display()
+            ))
+        })?;
+        drop(temporary_file);
         rename_replace(&temporary, path)
     })();
     if result.is_err() {
@@ -1340,6 +1381,26 @@ mod tests {
                 .to_string_lossy()
                 .starts_with('.')));
         }
+    }
+
+    #[test]
+    fn durable_writes_use_writable_handles_and_replace_existing_files() {
+        let dir = TempDir::new().unwrap();
+        let metadata = dir.path().join("metadata/selection.json");
+
+        write_bytes_atomic(&metadata, br#"{"version":1}"#).unwrap();
+        write_bytes_atomic(&metadata, br#"{"version":2}"#).unwrap();
+
+        assert_eq!(fs::read(&metadata).unwrap(), br#"{"version":2}"#);
+        assert!(fs::read_dir(metadata.parent().unwrap())
+            .unwrap()
+            .all(|entry| {
+                !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with('.')
+            }));
     }
 
     #[test]

@@ -1081,7 +1081,12 @@ fn write_mask_atomic(
     // Keep rename on the same directory/filesystem.  A complete temporary file
     // is never visible at the final path, and a stale `.part` can be removed on
     // the next run without invalidating an existing mask.
-    let sync_result = fs::File::open(&temporary).and_then(|file| file.sync_all());
+    // Windows FlushFileBuffers requires a handle opened with GENERIC_WRITE.
+    // File::open is read-only and returns os error 5 when sync_all reaches it.
+    let sync_result = fs::OpenOptions::new()
+        .write(true)
+        .open(&temporary)
+        .and_then(|file| file.sync_all());
     if let Err(error) = sync_result {
         let _ = fs::remove_file(&temporary);
         return Err(MaskError::from(error));
