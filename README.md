@@ -47,7 +47,7 @@ colmap-{filename}/
 - 支援 person、bicycle、car、motorcycle、bus、truck，以及天空遮罩。
 - 物件、fisheye 圓外，以及 DJI OSV metadata 標記的固定光學遮擋區為黑色；校正曲線會依輸出解析度縮放，不額外內縮可用圓。手與自拍棒不由光學遮罩排除，仍交給物件 mask 流程處理。
 - 原生鏡頭超過 180° 的雙鏡頭重疊區仍保留；目前的 optical mask 只表示「無法成像／固定遮擋」，不把邊緣畫質下降當成硬裁切。若要仿 DJI Studio 只取每顆鏡頭約 180° 的高品質區，應在鏡頭模型轉換後另產生 reconstruction-quality mask。
-- 每張 mask 先寫 partial file，再原子替換。目前輸出尚未攜帶模型／設定／演算法版本資訊，因此重跑 Mask 時會重新產生，避免沿用尺寸正確但內容過期的遮罩。
+- 每張 mask 先寫 partial file，再原子替換。重跑 Mask 時，只有一般 mask 與 COLMAP mask 都能解碼且尺寸與來源影像一致才會自動略過；缺少、損壞或尺寸不符的輸出會重新產生。
 - 未選任何物件且未遮天空時，不需要模型，只產生 fisheye 有效區 mask；OSV 缺少或無法解析校正資訊時會安全退回完整 fisheye 圓。
 
 模型會依序從任務指定資料夾、`GS360_MODEL_DIR`、Tauri 應用程式資料目錄的 `models/`、工作目錄的 `models/` 與 `.models/` 尋找。缺少必要模型時會在首次執行 Mask 時自動下載至應用程式資料目錄；YOLO 一定按需下載，SkySeg 只在啟用天空遮罩時下載。下載會先寫入暫存檔，且須通過固定大小與 SHA-256 驗證後才會啟用。

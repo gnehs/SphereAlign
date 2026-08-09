@@ -347,6 +347,11 @@ pub fn process_mask_batch(
     on_progress: impl Fn(MaskProgress) + Sync,
 ) -> MaskResult<MaskSummary> {
     validate_request(request)?;
+    if request.skip_verified {
+        if let Some(summary) = skip_fully_verified_batch(request, cancel, &on_progress)? {
+            return Ok(summary);
+        }
+    }
     if request.classes.is_empty() && !request.mask_sky {
         return process_with_engine(request, cancel, &NoExclusionsEngine, on_progress);
     }
@@ -401,6 +406,80 @@ pub fn process_mask_batch(
         ),
     });
     process_with_engine(request, cancel, &engine, on_progress)
+}
+
+/// Return a completed summary before model discovery when every output pair is
+/// already usable. No progress is emitted until the full batch is verified, so
+/// a partial batch still follows the normal inference path.
+fn skip_fully_verified_batch(
+    request: &MaskRequest,
+    cancel: &CancelToken,
+    on_progress: &impl Fn(MaskProgress),
+) -> MaskResult<Option<MaskSummary>> {
+    let files = collect_images(&request.images_dir)?;
+    let total = files.len();
+    let summary = |skipped, cancelled| MaskSummary {
+        total,
+        succeeded: skipped,
+        skipped,
+        failed: 0,
+        cancelled,
+        failures: Vec::new(),
+    };
+    if cancel.is_cancelled() {
+        return Ok(Some(summary(0, true)));
+    }
+
+    let mut outputs = Vec::with_capacity(total);
+    for input in &files {
+        if cancel.is_cancelled() {
+            return Ok(Some(summary(0, true)));
+        }
+        let Ok((mask_path, colmap_path)) = output_paths(request, input) else {
+            return Ok(None);
+        };
+        if !mask_path.is_file() || !colmap_path.is_file() {
+            return Ok(None);
+        }
+        outputs.push((input, mask_path, colmap_path));
+    }
+
+    for (input, mask_path, colmap_path) in &outputs {
+        if cancel.is_cancelled() {
+            return Ok(Some(summary(0, true)));
+        }
+        let image = match ImageReader::open(input).and_then(|reader| reader.with_guessed_format()) {
+            Ok(reader) => match reader.decode() {
+                Ok(image) => image,
+                Err(_) => return Ok(None),
+            },
+            Err(_) => return Ok(None),
+        };
+        let (width, height) = image.dimensions();
+        if !is_valid_mask_file(&mask_path, width, height)
+            || !is_valid_mask_file(&colmap_path, width, height)
+        {
+            return Ok(None);
+        }
+    }
+
+    for (index, (input, mask_path, colmap_path)) in outputs.iter().enumerate() {
+        if cancel.is_cancelled() {
+            return Ok(Some(summary(index, true)));
+        }
+        emit_progress(
+            on_progress,
+            index,
+            total,
+            input,
+            mask_path,
+            colmap_path,
+            MaskStage::Skipped,
+            (index + 1) as f32 / total as f32,
+            "已確認遮罩存在，已略過",
+        );
+    }
+    Ok(Some(summary(total, false)))
 }
 
 struct NoExclusionsEngine;
@@ -1227,19 +1306,48 @@ mod tests {
         };
         process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         let first_calls = engine.calls.load(Ordering::Relaxed);
+        let mask_path = request.masks_dir.join("lens0/frame.png");
+        let colmap_mask_path = request.colmap_masks_dir.join("lens0/frame.png.png");
+        let mask_before = fs::read(&mask_path)?;
+        let colmap_mask_before = fs::read(&colmap_mask_path)?;
         let summary =
             process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         assert_eq!(summary.skipped, 1);
         assert_eq!(engine.calls.load(Ordering::Relaxed), first_calls);
-        fs::write(
-            request.colmap_masks_dir.join("lens0/frame.png.png"),
-            b"broken",
-        )?;
+        assert_eq!(fs::read(&mask_path)?, mask_before);
+        assert_eq!(fs::read(&colmap_mask_path)?, colmap_mask_before);
+        fs::write(&colmap_mask_path, b"broken")?;
         let summary =
             process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         assert_eq!(summary.succeeded, 1);
         assert_eq!(summary.skipped, 0);
         assert_eq!(engine.calls.load(Ordering::Relaxed), first_calls + 1);
+        Ok(())
+    }
+
+    #[test]
+    fn fully_verified_batch_skips_before_loading_models() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = request(&dir);
+        request.classes = vec!["person".to_string()];
+        request.yolo_model = Some(dir.path().join("missing-yolo.onnx"));
+        fs::create_dir_all(request.images_dir.join("lens0"))?;
+        fs::create_dir_all(request.masks_dir.join("lens0"))?;
+        fs::create_dir_all(request.colmap_masks_dir.join("lens0"))?;
+
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100]))
+            .save(request.images_dir.join("lens0/frame.png"))?;
+        ImageBuffer::<Luma<u8>, _>::from_pixel(2, 2, Luma([255]))
+            .save(request.masks_dir.join("lens0/frame.png"))?;
+        ImageBuffer::<Luma<u8>, _>::from_pixel(2, 2, Luma([255]))
+            .save(request.colmap_masks_dir.join("lens0/frame.png.png"))?;
+
+        // The explicit model path is missing. Reaching model discovery would
+        // fail, so success proves the verified outputs are handled first.
+        let summary = process_mask_batch(&request, &CancelToken::new(), |_| {})?;
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(summary.skipped, 1);
         Ok(())
     }
 

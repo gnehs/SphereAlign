@@ -1728,10 +1728,9 @@ fn run_mask(
         .clamp(0.01, 0.99) as f32,
         valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
         optical_occlusions,
-        // Existing mask files do not carry model/settings/algorithm provenance.
-        // Recompute them so a corrected model threshold or postprocessor cannot
-        // silently reuse a dimensionally valid but stale mask.
-        skip_verified: false,
+        // Resume partial runs without repeating expensive inference. The mask
+        // module skips only when both outputs decode and match the source size.
+        skip_verified: true,
         model_dir: manifest
             .settings
             .pointer("/mask/modelDir")
