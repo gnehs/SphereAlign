@@ -247,15 +247,7 @@ impl YoloSegPipeline {
             )?);
         }
 
-        let masks = decode_masks(proto, &detections, letterbox)?;
-        let mut merged = vec![0u8; pixel_count(width, height)?];
-        for mask in masks {
-            for (dst, src) in merged.iter_mut().zip(mask) {
-                if src != 0 {
-                    *dst = 255;
-                }
-            }
-        }
+        let merged = decode_merged_mask(proto, &detections, letterbox)?;
         SegmentationMask::new(width, height, merged)
     }
 
@@ -413,11 +405,11 @@ fn decode_detections(
     non_max_suppression(detections)
 }
 
-fn decode_masks(
+fn decode_merged_mask(
     proto: ArrayD<f32>,
     detections: &[Detection],
     letterbox: LetterboxInfo,
-) -> MaskResult<Vec<Vec<u8>>> {
+) -> MaskResult<Vec<u8>> {
     let proto = proto.into_dimensionality::<Ix4>().map_err(|error| {
         MaskError::inference(format!("unexpected YOLO prototype shape: {error}"))
     })?;
@@ -431,16 +423,22 @@ fn decode_masks(
     }
     let mask_h = shape[1];
     let mask_w = shape[2];
-    let mut masks = Vec::with_capacity(detections.len());
+    let plane_len = mask_w * mask_h;
+    let proto = proto
+        .as_slice()
+        .ok_or_else(|| MaskError::inference("YOLO prototype output is not contiguous"))?;
+    let output_width = letterbox.original_width as usize;
+    let output_height = letterbox.original_height as usize;
+    let mut merged = vec![0u8; pixel_count(letterbox.original_width, letterbox.original_height)?];
     for detection in detections {
-        let mut low_res = vec![0.0f32; mask_w * mask_h];
-        for y in 0..mask_h {
-            for x in 0..mask_w {
-                let mut value = 0.0;
-                for channel in 0..MASK_DIM {
-                    value += detection.mask_coeffs[channel] * proto[[channel, y, x]];
-                }
-                low_res[y * mask_w + x] = value;
+        let mut low_res = vec![0.0f32; plane_len];
+        // Walk each contiguous prototype plane once. This avoids ndarray's
+        // checked three-dimensional indexing in the innermost 32-channel dot
+        // product while preserving the exact accumulation order per channel.
+        for (channel, coefficient) in detection.mask_coeffs.iter().copied().enumerate() {
+            let plane = &proto[channel * plane_len..(channel + 1) * plane_len];
+            for (destination, source) in low_res.iter_mut().zip(plane) {
+                *destination += coefficient * source;
             }
         }
         // YOLO prototypes describe the 640x640 letterboxed input. Remove that
@@ -448,39 +446,31 @@ fn decode_masks(
         // original-image coordinate space as the decoded bounding box. This is
         // the ordering used by Ultralytics' process_mask_native/scale_masks.
         let upsampled = scale_mask_to_original(&low_res, mask_w as u32, mask_h as u32, letterbox)?;
-        let mut binary = upsampled
-            .into_iter()
-            // sigmoid(logit) > 0.5 is equivalent to logit > 0.
-            .map(|value| if value > 0.0 { 255 } else { 0 })
-            .collect::<Vec<_>>();
-        crop_binary_mask_to_box(
-            &mut binary,
-            letterbox.original_width,
-            letterbox.original_height,
-            detection.bbox_xyxy,
-        );
-        masks.push(binary);
-    }
-    Ok(masks)
-}
-
-fn crop_binary_mask_to_box(
-    mask: &mut [u8],
-    mask_width: u32,
-    mask_height: u32,
-    bbox_xyxy: [f32; 4],
-) {
-    let x0 = bbox_xyxy[0].floor().clamp(0.0, mask_width as f32) as usize;
-    let y0 = bbox_xyxy[1].floor().clamp(0.0, mask_height as f32) as usize;
-    let x1 = bbox_xyxy[2].ceil().clamp(0.0, mask_width as f32) as usize;
-    let y1 = bbox_xyxy[3].ceil().clamp(0.0, mask_height as f32) as usize;
-    for y in 0..mask_height as usize {
-        for x in 0..mask_width as usize {
-            if x < x0 || x >= x1 || y < y0 || y >= y1 {
-                mask[y * mask_width as usize + x] = 0;
+        let (x0, y0, x1, y1) = clipped_box_bounds(output_width, output_height, detection.bbox_xyxy);
+        for y in y0..y1 {
+            let row = y * output_width;
+            for x in x0..x1 {
+                // sigmoid(logit) > 0.5 is equivalent to logit > 0.
+                if upsampled[row + x] > 0.0 {
+                    merged[row + x] = 255;
+                }
             }
         }
     }
+    Ok(merged)
+}
+
+fn clipped_box_bounds(
+    mask_width: usize,
+    mask_height: usize,
+    bbox_xyxy: [f32; 4],
+) -> (usize, usize, usize, usize) {
+    (
+        bbox_xyxy[0].floor().clamp(0.0, mask_width as f32) as usize,
+        bbox_xyxy[1].floor().clamp(0.0, mask_height as f32) as usize,
+        bbox_xyxy[2].ceil().clamp(0.0, mask_width as f32) as usize,
+        bbox_xyxy[3].ceil().clamp(0.0, mask_height as f32) as usize,
+    )
 }
 
 fn scale_mask_to_original(
@@ -747,6 +737,43 @@ mod tests {
     #[test]
     fn handles_odd_letterbox_padding_like_ultralytics() {
         assert_eq!(mask_content_bounds(160, 160, 1000, 333), (0, 53, 160, 106));
+    }
+
+    #[test]
+    fn merges_masks_only_inside_each_detection_box() {
+        let mut proto = Array4::<f32>::zeros((1, MASK_DIM, 2, 2));
+        proto[[0, 0, 0, 0]] = 1.0;
+        proto[[0, 0, 0, 1]] = 1.0;
+        proto[[0, 0, 1, 0]] = 1.0;
+        proto[[0, 0, 1, 1]] = 1.0;
+        let mut coefficients = [0.0; MASK_DIM];
+        coefficients[0] = 1.0;
+        let detections = vec![Detection {
+            bbox_xyxy: [1.0, 1.0, 3.0, 3.0],
+            score: 1.0,
+            class_id: 0,
+            mask_coeffs: coefficients,
+        }];
+        let letterbox = LetterboxInfo {
+            scale: 1.0,
+            pad_x: 0.0,
+            pad_y: 0.0,
+            original_width: 4,
+            original_height: 4,
+        };
+
+        let merged = decode_merged_mask(proto.into_dyn(), &detections, letterbox).unwrap();
+
+        for y in 0..4 {
+            for x in 0..4 {
+                let expected = if (1..3).contains(&x) && (1..3).contains(&y) {
+                    255
+                } else {
+                    0
+                };
+                assert_eq!(merged[y * 4 + x], expected);
+            }
+        }
     }
 
     #[test]

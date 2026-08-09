@@ -25,18 +25,24 @@ pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
 
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma};
+use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::fisheye::{
     LensOpticalOcclusions, OpticalOcclusion, ValidRegion, DJI_VALID_RADIUS_RATIO,
 };
+
+/// Three in-flight images keep decode, GPU inference, post-processing, and
+/// durable writes overlapped without allowing full-resolution buffers to grow
+/// with the host's CPU count.
+const MASK_PIPELINE_WORKERS: usize = 3;
 
 /// A fallible result returned by this module.
 pub type MaskResult<T> = Result<T, MaskError>;
@@ -321,7 +327,7 @@ impl MaskEngine for NativeMaskEngine {
 pub fn process_mask_batch(
     request: &MaskRequest,
     cancel: &CancelToken,
-    on_progress: impl Fn(MaskProgress),
+    on_progress: impl Fn(MaskProgress) + Sync,
 ) -> MaskResult<MaskSummary> {
     validate_request(request)?;
     if request.classes.is_empty() && !request.mask_sky {
@@ -407,7 +413,7 @@ pub fn process_mask_batch_with_engine<E>(
     request: &MaskRequest,
     cancel: &CancelToken,
     engine: &E,
-    on_progress: impl Fn(MaskProgress),
+    on_progress: impl Fn(MaskProgress) + Sync,
 ) -> MaskResult<MaskSummary>
 where
     E: MaskEngine + ?Sized,
@@ -420,13 +426,52 @@ fn process_with_engine<E>(
     request: &MaskRequest,
     cancel: &CancelToken,
     engine: &E,
-    on_progress: impl Fn(MaskProgress),
+    on_progress: impl Fn(MaskProgress) + Sync,
 ) -> MaskResult<MaskSummary>
 where
     E: MaskEngine + ?Sized,
 {
     let files = collect_images(&request.images_dir)?;
     let total = files.len();
+    if total == 0 {
+        return Ok(MaskSummary {
+            total,
+            succeeded: 0,
+            skipped: 0,
+            failed: 0,
+            cancelled: false,
+            failures: Vec::new(),
+        });
+    }
+
+    let completed = AtomicUsize::new(0);
+    let progress_lock = Mutex::new(());
+    let workers = total.min(MASK_PIPELINE_WORKERS);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .thread_name(|index| format!("mask-pipeline-{index}"))
+        .build()
+        .map_err(|error| MaskError::inference(format!("create mask pipeline: {error}")))?;
+    let outcomes = pool.install(|| {
+        files
+            .par_iter()
+            .enumerate()
+            .map(|(index, input)| {
+                process_one_image(
+                    request,
+                    cancel,
+                    engine,
+                    &on_progress,
+                    &completed,
+                    &progress_lock,
+                    total,
+                    index,
+                    input,
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+
     let mut summary = MaskSummary {
         total,
         succeeded: 0,
@@ -435,223 +480,172 @@ where
         cancelled: false,
         failures: Vec::new(),
     };
-
-    for (index, input) in files.iter().enumerate() {
-        let (mask_path, colmap_path) = output_paths(request, input)?;
-        if cancel.is_cancelled() {
-            summary.cancelled = true;
-            emit_progress(
-                &on_progress,
-                index,
-                total,
-                input,
-                &mask_path,
-                &colmap_path,
-                MaskStage::Cancelled,
-                index as f32 / total.max(1) as f32,
-                "遮罩處理已取消",
-            );
-            break;
-        }
-
-        let image = match ImageReader::open(input)
-            .and_then(|reader| reader.with_guessed_format())
-            .map_err(MaskError::from)
-            .and_then(|reader| reader.decode().map_err(MaskError::from))
-        {
-            Ok(image) => image,
-            Err(error) => {
+    for (input, outcome) in files.iter().zip(outcomes) {
+        match outcome {
+            FileOutcome::Succeeded => summary.succeeded += 1,
+            FileOutcome::Skipped => {
+                summary.succeeded += 1;
+                summary.skipped += 1;
+            }
+            FileOutcome::Failed(error) => {
                 summary.failed += 1;
                 summary.failures.push(MaskFailure {
                     input: input.clone(),
-                    error: error.to_string(),
+                    error,
                 });
-                emit_progress(
-                    &on_progress,
-                    index,
-                    total,
-                    input,
-                    &mask_path,
-                    &colmap_path,
-                    MaskStage::Failed,
-                    (index + 1) as f32 / total.max(1) as f32,
-                    &error.to_string(),
-                );
-                continue;
             }
-        };
-
-        let (width, height) = image.dimensions();
-        if request.skip_verified
-            && is_valid_mask_file(&mask_path, width, height)
-            && is_valid_mask_file(&colmap_path, width, height)
-        {
-            summary.succeeded += 1;
-            summary.skipped += 1;
-            emit_progress(
-                &on_progress,
-                index,
-                total,
-                input,
-                &mask_path,
-                &colmap_path,
-                MaskStage::Skipped,
-                (index + 1) as f32 / total.max(1) as f32,
-                "已確認遮罩存在，已略過",
-            );
-            continue;
+            FileOutcome::Cancelled => summary.cancelled = true,
         }
-
-        emit_progress(
-            &on_progress,
-            index,
-            total,
-            input,
-            &mask_path,
-            &colmap_path,
-            MaskStage::Inference,
-            index as f32 / total.max(1) as f32,
-            "正在執行 YOLO11／SkySeg 推論",
-        );
-        let exclusions = match engine.generate_exclusion_mask(
-            &image,
-            &request.classes,
-            request.confidence,
-            request.mask_sky,
-            cancel,
-        ) {
-            Ok(mask) => mask,
-            Err(MaskError::Cancelled) => {
-                summary.cancelled = true;
-                emit_progress(
-                    &on_progress,
-                    index,
-                    total,
-                    input,
-                    &mask_path,
-                    &colmap_path,
-                    MaskStage::Cancelled,
-                    index as f32 / total.max(1) as f32,
-                    "遮罩處理已取消",
-                );
-                break;
-            }
-            Err(error) => {
-                summary.failed += 1;
-                summary.failures.push(MaskFailure {
-                    input: input.clone(),
-                    error: error.to_string(),
-                });
-                emit_progress(
-                    &on_progress,
-                    index,
-                    total,
-                    input,
-                    &mask_path,
-                    &colmap_path,
-                    MaskStage::Failed,
-                    (index + 1) as f32 / total.max(1) as f32,
-                    &error.to_string(),
-                );
-                continue;
-            }
-        };
-
-        if exclusions.width != width || exclusions.height != height {
-            summary.failed += 1;
-            let error = format!(
-                "backend returned {}x{} for source {}x{}",
-                exclusions.width, exclusions.height, width, height
-            );
-            summary.failures.push(MaskFailure {
-                input: input.clone(),
-                error: error.clone(),
-            });
-            emit_progress(
-                &on_progress,
-                index,
-                total,
-                input,
-                &mask_path,
-                &colmap_path,
-                MaskStage::Failed,
-                (index + 1) as f32 / total.max(1) as f32,
-                &error,
-            );
-            continue;
-        }
-
-        if cancel.is_cancelled() {
-            summary.cancelled = true;
-            emit_progress(
-                &on_progress,
-                index,
-                total,
-                input,
-                &mask_path,
-                &colmap_path,
-                MaskStage::Cancelled,
-                index as f32 / total.max(1) as f32,
-                "已在寫入遮罩前取消",
-            );
-            break;
-        }
-
-        let optical_occlusion = optical_occlusion_for_input(request, input);
-        let keep = build_keep_mask(
-            width,
-            height,
-            request.valid_radius_ratio,
-            optical_occlusion,
-            &exclusions.data,
-        );
-        emit_progress(
-            &on_progress,
-            index,
-            total,
-            input,
-            &mask_path,
-            &colmap_path,
-            MaskStage::Writing,
-            index as f32 / total.max(1) as f32,
-            "正在寫入遮罩檔案",
-        );
-        if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep, false)
-            .and_then(|_| write_mask_atomic(&colmap_path, width, height, &keep, true))
-        {
-            summary.failed += 1;
-            summary.failures.push(MaskFailure {
-                input: input.clone(),
-                error: error.to_string(),
-            });
-            emit_progress(
-                &on_progress,
-                index,
-                total,
-                input,
-                &mask_path,
-                &colmap_path,
-                MaskStage::Failed,
-                (index + 1) as f32 / total.max(1) as f32,
-                &error.to_string(),
-            );
-            continue;
-        }
-        summary.succeeded += 1;
-        emit_progress(
-            &on_progress,
-            index,
-            total,
-            input,
-            &mask_path,
-            &colmap_path,
-            MaskStage::Completed,
-            (index + 1) as f32 / total.max(1) as f32,
-            "遮罩處理完成",
-        );
     }
 
     Ok(summary)
+}
+
+enum FileOutcome {
+    Succeeded,
+    Skipped,
+    Failed(String),
+    Cancelled,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_one_image<E>(
+    request: &MaskRequest,
+    cancel: &CancelToken,
+    engine: &E,
+    on_progress: &(impl Fn(MaskProgress) + Sync),
+    completed: &AtomicUsize,
+    progress_lock: &Mutex<()>,
+    total: usize,
+    index: usize,
+    input: &Path,
+) -> FileOutcome
+where
+    E: MaskEngine + ?Sized,
+{
+    let (mask_path, colmap_path) = match output_paths(request, input) {
+        Ok(paths) => paths,
+        Err(error) => return FileOutcome::Failed(error.to_string()),
+    };
+    let report = |stage: MaskStage, fraction: f32, message: &str| {
+        let _guard = progress_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let completed_fraction = completed.load(Ordering::Acquire) as f32 / total as f32;
+        emit_progress(
+            on_progress,
+            index,
+            total,
+            input,
+            &mask_path,
+            &colmap_path,
+            stage,
+            fraction.max(completed_fraction),
+            message,
+        );
+    };
+    let finish = || (completed.fetch_add(1, Ordering::AcqRel) + 1) as f32 / total as f32;
+
+    if cancel.is_cancelled() {
+        report(
+            MaskStage::Cancelled,
+            completed.load(Ordering::Acquire) as f32 / total as f32,
+            "遮罩處理已取消",
+        );
+        return FileOutcome::Cancelled;
+    }
+
+    let image = match ImageReader::open(input)
+        .and_then(|reader| reader.with_guessed_format())
+        .map_err(MaskError::from)
+        .and_then(|reader| reader.decode().map_err(MaskError::from))
+    {
+        Ok(image) => image,
+        Err(error) => {
+            let message = error.to_string();
+            report(MaskStage::Failed, finish(), &message);
+            return FileOutcome::Failed(message);
+        }
+    };
+
+    let (width, height) = image.dimensions();
+    if request.skip_verified
+        && is_valid_mask_file(&mask_path, width, height)
+        && is_valid_mask_file(&colmap_path, width, height)
+    {
+        report(MaskStage::Skipped, finish(), "已確認遮罩存在，已略過");
+        return FileOutcome::Skipped;
+    }
+
+    report(
+        MaskStage::Inference,
+        completed.load(Ordering::Acquire) as f32 / total as f32,
+        "正在執行 YOLO11／SkySeg 推論",
+    );
+    let exclusions = match engine.generate_exclusion_mask(
+        &image,
+        &request.classes,
+        request.confidence,
+        request.mask_sky,
+        cancel,
+    ) {
+        Ok(mask) => mask,
+        Err(MaskError::Cancelled) => {
+            report(
+                MaskStage::Cancelled,
+                completed.load(Ordering::Acquire) as f32 / total as f32,
+                "遮罩處理已取消",
+            );
+            return FileOutcome::Cancelled;
+        }
+        Err(error) => {
+            let message = error.to_string();
+            report(MaskStage::Failed, finish(), &message);
+            return FileOutcome::Failed(message);
+        }
+    };
+
+    if exclusions.width != width || exclusions.height != height {
+        let message = format!(
+            "backend returned {}x{} for source {}x{}",
+            exclusions.width, exclusions.height, width, height
+        );
+        report(MaskStage::Failed, finish(), &message);
+        return FileOutcome::Failed(message);
+    }
+
+    if cancel.is_cancelled() {
+        report(
+            MaskStage::Cancelled,
+            completed.load(Ordering::Acquire) as f32 / total as f32,
+            "已在寫入遮罩前取消",
+        );
+        return FileOutcome::Cancelled;
+    }
+
+    let optical_occlusion = optical_occlusion_for_input(request, input);
+    let keep = build_keep_mask(
+        width,
+        height,
+        request.valid_radius_ratio,
+        optical_occlusion,
+        &exclusions.data,
+    );
+    report(
+        MaskStage::Writing,
+        completed.load(Ordering::Acquire) as f32 / total as f32,
+        "正在寫入遮罩檔案",
+    );
+    if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep, false)
+        .and_then(|_| write_mask_atomic(&colmap_path, width, height, &keep, true))
+    {
+        let message = error.to_string();
+        report(MaskStage::Failed, finish(), &message);
+        return FileOutcome::Failed(message);
+    }
+
+    report(MaskStage::Completed, finish(), "遮罩處理完成");
+    FileOutcome::Succeeded
 }
 
 fn validate_request(request: &MaskRequest) -> MaskResult<()> {
@@ -948,11 +942,35 @@ mod tests {
     use super::*;
     use image::{ImageBuffer, Rgb};
     use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     struct FakeEngine {
         calls: AtomicUsize,
         exclusion: u8,
+    }
+
+    struct ConcurrentEngine {
+        in_flight: AtomicUsize,
+        max_in_flight: AtomicUsize,
+    }
+
+    impl MaskEngine for ConcurrentEngine {
+        fn generate_exclusion_mask(
+            &self,
+            image: &DynamicImage,
+            _classes: &[String],
+            _confidence: f32,
+            _mask_sky: bool,
+            _cancel: &CancelToken,
+        ) -> MaskResult<SegmentationMask> {
+            let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight.fetch_max(in_flight, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(30));
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            let (width, height) = image.dimensions();
+            SegmentationMask::new(width, height, vec![0; width as usize * height as usize])
+        }
     }
 
     impl MaskEngine for FakeEngine {
@@ -1104,6 +1122,35 @@ mod tests {
     }
 
     #[test]
+    fn overlaps_bounded_mask_work_and_keeps_progress_monotonic() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let request = request(&dir);
+        fs::create_dir_all(&request.images_dir)?;
+        for index in 0..6 {
+            ImageBuffer::<Rgb<u8>, _>::from_pixel(8, 8, Rgb([100, 100, 100]))
+                .save(request.images_dir.join(format!("frame-{index}.png")))?;
+        }
+        let engine = ConcurrentEngine {
+            in_flight: AtomicUsize::new(0),
+            max_in_flight: AtomicUsize::new(0),
+        };
+        let fractions = Mutex::new(Vec::new());
+        let summary =
+            process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |progress| {
+                fractions.lock().unwrap().push(progress.fraction);
+            })?;
+
+        assert_eq!(summary.succeeded, 6);
+        assert_eq!(summary.failed, 0);
+        assert!(engine.max_in_flight.load(Ordering::SeqCst) >= 2);
+        assert!(engine.max_in_flight.load(Ordering::SeqCst) <= MASK_PIPELINE_WORKERS);
+        let fractions = fractions.into_inner().unwrap();
+        assert!(fractions.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert_eq!(fractions.last().copied(), Some(1.0));
+        Ok(())
+    }
+
+    #[test]
     fn cancellation_does_not_commit_partial_output() -> MaskResult<()> {
         let dir = TempDir::new()?;
         let request = request(&dir);
@@ -1133,6 +1180,46 @@ mod tests {
 
         let engine = NativeMaskEngine::load(&request, &CancelToken::new(), &|_| {})?;
         assert!(engine.skyseg.is_some());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires production model paths, a test image, and a physical GPU"]
+    fn processes_production_models_through_the_concurrent_pipeline() -> MaskResult<()> {
+        let yolo = std::env::var_os("GS360_TEST_YOLO_MODEL")
+            .map(PathBuf::from)
+            .expect("GS360_TEST_YOLO_MODEL is required");
+        let skyseg = std::env::var_os("GS360_TEST_SKYSEG_MODEL")
+            .map(PathBuf::from)
+            .expect("GS360_TEST_SKYSEG_MODEL is required");
+        let image = std::env::var_os("GS360_TEST_PERSON_IMAGE")
+            .map(PathBuf::from)
+            .expect("GS360_TEST_PERSON_IMAGE is required");
+        let provider =
+            std::env::var("GS360_TEST_GPU_PROVIDER").unwrap_or_else(|_| "CoreML".to_string());
+        let dir = TempDir::new()?;
+        let mut request = request(&dir);
+        fs::create_dir_all(&request.images_dir)?;
+        for index in 0..6 {
+            fs::copy(
+                &image,
+                request.images_dir.join(format!("frame-{index}.jpg")),
+            )?;
+        }
+        request.classes = vec!["person".to_string()];
+        request.mask_sky = true;
+        request.skip_verified = false;
+        request.yolo_model = Some(yolo);
+        request.skyseg_model = Some(skyseg);
+        request.execution_provider = Some(provider);
+        let cancel = CancelToken::new();
+        let engine = NativeMaskEngine::load(&request, &cancel, &|_| {})?;
+
+        let summary = process_mask_batch_with_engine(&request, &cancel, &engine, |_| {})?;
+
+        assert_eq!(summary.succeeded, 6);
+        assert_eq!(summary.failed, 0);
+        assert!(!summary.cancelled);
         Ok(())
     }
 }
