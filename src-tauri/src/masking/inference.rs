@@ -300,10 +300,14 @@ fn preprocess_yolo(image: &DynamicImage) -> MaskResult<(Array4<f32>, LetterboxIn
     image::imageops::replace(&mut canvas, &resized, pad_x, pad_y);
 
     let mut input = Array4::<f32>::zeros((1, 3, INPUT_SIZE as usize, INPUT_SIZE as usize));
-    for (x, y, pixel) in canvas.enumerate_pixels() {
-        input[[0, 0, y as usize, x as usize]] = pixel[0] as f32 / 255.0;
-        input[[0, 1, y as usize, x as usize]] = pixel[1] as f32 / 255.0;
-        input[[0, 2, y as usize, x as usize]] = pixel[2] as f32 / 255.0;
+    let plane_len = (INPUT_SIZE * INPUT_SIZE) as usize;
+    let input_data = input
+        .as_slice_mut()
+        .ok_or_else(|| MaskError::inference("YOLO input tensor is not contiguous"))?;
+    for (index, pixel) in canvas.pixels().enumerate() {
+        input_data[index] = pixel[0] as f32 / 255.0;
+        input_data[plane_len + index] = pixel[1] as f32 / 255.0;
+        input_data[plane_len * 2 + index] = pixel[2] as f32 / 255.0;
     }
     Ok((
         input,
@@ -323,6 +327,17 @@ fn decode_detections(
     confidence: f32,
     letterbox: LetterboxInfo,
 ) -> MaskResult<Vec<Detection>> {
+    if target_class_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    if target_class_ids
+        .iter()
+        .any(|class_id| *class_id >= CLASS_COUNT)
+    {
+        return Err(MaskError::invalid_input(
+            "YOLO target class id is outside the COCO class range",
+        ));
+    }
     let output = output
         .into_dimensionality::<Ix3>()
         .map_err(|error| MaskError::inference(format!("unexpected YOLO output shape: {error}")))?;
@@ -365,10 +380,7 @@ fn decode_detections(
         }
         let mut best_class = None;
         let mut best_score = f32::NEG_INFINITY;
-        for class_id in 0..CLASS_COUNT {
-            if !target_class_ids.is_empty() && !target_class_ids.contains(&class_id) {
-                continue;
-            }
+        for &class_id in target_class_ids {
             let score = at(4 + class_id, prediction);
             if score > best_score {
                 best_score = score;
@@ -445,7 +457,7 @@ fn decode_merged_mask(
         // padding before resizing to the source image, then crop in the same
         // original-image coordinate space as the decoded bounding box. This is
         // the ordering used by Ultralytics' process_mask_native/scale_masks.
-        let upsampled = scale_mask_to_original(&low_res, mask_w as u32, mask_h as u32, letterbox)?;
+        let upsampled = scale_mask_to_original(low_res, mask_w as u32, mask_h as u32, letterbox)?;
         let (x0, y0, x1, y1) = clipped_box_bounds(output_width, output_height, detection.bbox_xyxy);
         for y in y0..y1 {
             let row = y * output_width;
@@ -474,7 +486,7 @@ fn clipped_box_bounds(
 }
 
 fn scale_mask_to_original(
-    mask: &[f32],
+    mask: Vec<f32>,
     width: u32,
     height: u32,
     letterbox: LetterboxInfo,
@@ -483,7 +495,7 @@ fn scale_mask_to_original(
     if mask.len() != expected {
         return Err(MaskError::inference("mask dimensions do not match data"));
     }
-    let buffer = ImageBuffer::<Luma<f32>, Vec<f32>>::from_vec(width, height, mask.to_vec())
+    let buffer = ImageBuffer::<Luma<f32>, Vec<f32>>::from_vec(width, height, mask)
         .ok_or_else(|| MaskError::inference("failed to build intermediate mask"))?;
     let (left, top, right, bottom) = mask_content_bounds(
         width,
@@ -737,6 +749,40 @@ mod tests {
     #[test]
     fn handles_odd_letterbox_padding_like_ultralytics() {
         assert_eq!(mask_content_bounds(160, 160, 1000, 333), (0, 53, 160, 106));
+    }
+
+    #[test]
+    fn preprocesses_yolo_input_as_contiguous_chw_planes() {
+        let mut pixels = image::RgbImage::from_pixel(INPUT_SIZE, INPUT_SIZE, image::Rgb([0, 0, 0]));
+        pixels.put_pixel(0, 0, image::Rgb([255, 128, 0]));
+        pixels.put_pixel(1, 0, image::Rgb([64, 32, 16]));
+        pixels.put_pixel(0, 1, image::Rgb([8, 4, 2]));
+        let image = DynamicImage::ImageRgb8(pixels);
+        let (input, letterbox) = preprocess_yolo(&image).unwrap();
+
+        assert_eq!(letterbox.pad_y, 0.0);
+        assert!((input[[0, 0, 0, 0]] - 1.0).abs() < f32::EPSILON);
+        assert!((input[[0, 1, 0, 0]] - 128.0 / 255.0).abs() < f32::EPSILON);
+        assert_eq!(input[[0, 2, 0, 0]], 0.0);
+        assert!((input[[0, 0, 0, 1]] - 64.0 / 255.0).abs() < f32::EPSILON);
+        assert!((input[[0, 1, 1, 0]] - 4.0 / 255.0).abs() < f32::EPSILON);
+        assert!((input[[0, 2, 1, 0]] - 2.0 / 255.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn rejects_out_of_range_target_class_ids() {
+        let output = Array4::<f32>::zeros((1, 1, 1, 1)).into_dyn();
+        let letterbox = LetterboxInfo {
+            scale: 1.0,
+            pad_x: 0.0,
+            pad_y: 0.0,
+            original_width: 1,
+            original_height: 1,
+        };
+
+        let error = decode_detections(output, &[CLASS_COUNT], 0.25, letterbox).unwrap_err();
+
+        assert!(error.to_string().contains("outside the COCO class range"));
     }
 
     #[test]

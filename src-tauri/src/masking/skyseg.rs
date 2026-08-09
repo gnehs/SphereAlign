@@ -1,5 +1,6 @@
 //! U-2-Net/skyseg ONNX inference.
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -73,17 +74,7 @@ impl SkysegPipeline {
         if cancel.is_cancelled() {
             return Err(MaskError::Cancelled);
         }
-        let rgb = image
-            .resize_exact(INPUT_SIZE, INPUT_SIZE, FilterType::Triangle)
-            .to_rgb8();
-        let mut input = Array4::<f32>::zeros((1, 3, INPUT_SIZE as usize, INPUT_SIZE as usize));
-        for (x, y, pixel) in rgb.enumerate_pixels() {
-            let values = [pixel[0], pixel[1], pixel[2]];
-            for channel in 0..3 {
-                input[[0, channel, y as usize, x as usize]] =
-                    (values[channel] as f32 / 255.0 - MEAN[channel]) / STD[channel];
-            }
-        }
+        let input = preprocess_skyseg(image)?;
         let raw_output = {
             let mut session = self
                 .session
@@ -107,7 +98,10 @@ impl SkysegPipeline {
             return Err(MaskError::Cancelled);
         }
 
-        let values: Vec<f32> = raw_output.iter().copied().collect();
+        let values: Cow<'_, [f32]> = match raw_output.as_slice() {
+            Some(values) => Cow::Borrowed(values),
+            None => Cow::Owned(raw_output.iter().copied().collect()),
+        };
         let expected = (INPUT_SIZE * INPUT_SIZE) as usize;
         if values.len() < expected {
             return Err(MaskError::inference(format!(
@@ -145,9 +139,43 @@ impl SkysegPipeline {
     }
 }
 
+fn preprocess_skyseg(image: &DynamicImage) -> MaskResult<Array4<f32>> {
+    let rgb = image
+        .resize_exact(INPUT_SIZE, INPUT_SIZE, FilterType::Triangle)
+        .to_rgb8();
+    let mut input = Array4::<f32>::zeros((1, 3, INPUT_SIZE as usize, INPUT_SIZE as usize));
+    let plane_len = (INPUT_SIZE * INPUT_SIZE) as usize;
+    let input_data = input
+        .as_slice_mut()
+        .ok_or_else(|| MaskError::inference("skyseg input tensor is not contiguous"))?;
+    for (index, pixel) in rgb.pixels().enumerate() {
+        input_data[index] = (pixel[0] as f32 / 255.0 - MEAN[0]) / STD[0];
+        input_data[plane_len + index] = (pixel[1] as f32 / 255.0 - MEAN[1]) / STD[1];
+        input_data[plane_len * 2 + index] = (pixel[2] as f32 / 255.0 - MEAN[2]) / STD[2];
+    }
+    Ok(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preprocesses_skyseg_input_as_contiguous_normalized_chw_planes() {
+        let mut pixels = image::RgbImage::from_pixel(INPUT_SIZE, INPUT_SIZE, image::Rgb([0, 0, 0]));
+        pixels.put_pixel(0, 0, image::Rgb([255, 128, 0]));
+        pixels.put_pixel(1, 0, image::Rgb([64, 32, 16]));
+        pixels.put_pixel(0, 1, image::Rgb([8, 4, 2]));
+        let image = DynamicImage::ImageRgb8(pixels);
+        let input = preprocess_skyseg(&image).unwrap();
+
+        assert!((input[[0, 0, 0, 0]] - (1.0 - MEAN[0]) / STD[0]).abs() < f32::EPSILON);
+        assert!((input[[0, 1, 0, 0]] - (128.0 / 255.0 - MEAN[1]) / STD[1]).abs() < f32::EPSILON);
+        assert!((input[[0, 2, 0, 0]] - (0.0 - MEAN[2]) / STD[2]).abs() < f32::EPSILON);
+        assert!((input[[0, 0, 0, 1]] - (64.0 / 255.0 - MEAN[0]) / STD[0]).abs() < f32::EPSILON);
+        assert!((input[[0, 1, 1, 0]] - (4.0 / 255.0 - MEAN[1]) / STD[1]).abs() < f32::EPSILON);
+        assert!((input[[0, 2, 1, 0]] - (2.0 / 255.0 - MEAN[2]) / STD[2]).abs() < f32::EPSILON);
+    }
 
     #[test]
     #[ignore = "requires GS360_TEST_SKYSEG_MODEL and a physical GPU"]

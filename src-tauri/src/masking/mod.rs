@@ -24,6 +24,7 @@ pub use inference::YoloSegPipeline;
 pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
 
+use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -43,6 +44,22 @@ use crate::fisheye::{
 /// durable writes overlapped without allowing full-resolution buffers to grow
 /// with the host's CPU count.
 const MASK_PIPELINE_WORKERS: usize = 3;
+/// Semantic exclusions do not need source-image precision. Keep all model
+/// preprocessing, mask merging, and valid-region composition bounded, then
+/// expand the final binary mask exactly once for COLMAP/source compatibility.
+const MASK_WORKING_LONG_EDGE: u32 = 640;
+
+fn mask_pipeline_worker_limit() -> usize {
+    #[cfg(test)]
+    if let Some(value) = std::env::var("GS360_TEST_PIPELINE_WORKERS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+    {
+        return value;
+    }
+    MASK_PIPELINE_WORKERS
+}
 
 /// A fallible result returned by this module.
 pub type MaskResult<T> = Result<T, MaskError>;
@@ -446,7 +463,7 @@ where
 
     let completed = AtomicUsize::new(0);
     let progress_lock = Mutex::new(());
-    let workers = total.min(MASK_PIPELINE_WORKERS);
+    let workers = total.min(mask_pipeline_worker_limit());
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(workers)
         .thread_name(|index| format!("mask-pipeline-{index}"))
@@ -577,6 +594,9 @@ where
         return FileOutcome::Skipped;
     }
 
+    let image = resize_for_mask_working_resolution(image);
+    let (mask_width, mask_height) = image.dimensions();
+
     report(
         MaskStage::Inference,
         completed.load(Ordering::Acquire) as f32 / total as f32,
@@ -605,10 +625,10 @@ where
         }
     };
 
-    if exclusions.width != width || exclusions.height != height {
+    if exclusions.width != mask_width || exclusions.height != mask_height {
         let message = format!(
-            "backend returned {}x{} for source {}x{}",
-            exclusions.width, exclusions.height, width, height
+            "backend returned {}x{} for mask working size {}x{}",
+            exclusions.width, exclusions.height, mask_width, mask_height
         );
         report(MaskStage::Failed, finish(), &message);
         return FileOutcome::Failed(message);
@@ -625,12 +645,20 @@ where
 
     let optical_occlusion = optical_occlusion_for_input(request, input);
     let keep = build_keep_mask(
-        width,
-        height,
+        mask_width,
+        mask_height,
         request.valid_radius_ratio,
         optical_occlusion,
         &exclusions.data,
     );
+    let keep = match resize_binary_mask(keep, mask_width, mask_height, width, height) {
+        Ok(mask) => mask,
+        Err(error) => {
+            let message = error.to_string();
+            report(MaskStage::Failed, finish(), &message);
+            return FileOutcome::Failed(message);
+        }
+    };
     report(
         MaskStage::Writing,
         completed.load(Ordering::Acquire) as f32 / total as f32,
@@ -798,6 +826,46 @@ fn build_keep_mask(
     keep
 }
 
+fn resize_for_mask_working_resolution(image: DynamicImage) -> DynamicImage {
+    let (width, height) = image.dimensions();
+    let (working_width, working_height) = mask_working_dimensions(width, height);
+    if (working_width, working_height) == (width, height) {
+        image
+    } else {
+        image.resize_exact(working_width, working_height, FilterType::Triangle)
+    }
+}
+
+fn mask_working_dimensions(width: u32, height: u32) -> (u32, u32) {
+    let longest_edge = width.max(height);
+    if longest_edge <= MASK_WORKING_LONG_EDGE || longest_edge == 0 {
+        return (width, height);
+    }
+    let scale = f64::from(MASK_WORKING_LONG_EDGE) / f64::from(longest_edge);
+    (
+        (f64::from(width) * scale).round().max(1.0) as u32,
+        (f64::from(height) * scale).round().max(1.0) as u32,
+    )
+}
+
+fn resize_binary_mask(
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    output_width: u32,
+    output_height: u32,
+) -> MaskResult<Vec<u8>> {
+    if (width, height) == (output_width, output_height) {
+        return Ok(data);
+    }
+    let image = ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width, height, data)
+        .ok_or_else(|| MaskError::image("failed to build working-resolution mask"))?;
+    Ok(
+        image::imageops::resize(&image, output_width, output_height, FilterType::Nearest)
+            .into_raw(),
+    )
+}
+
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn write_mask_atomic(
@@ -955,6 +1023,10 @@ mod tests {
         max_in_flight: AtomicUsize,
     }
 
+    struct RecordingDimensionsEngine {
+        dimensions: Mutex<Option<(u32, u32)>>,
+    }
+
     impl MaskEngine for ConcurrentEngine {
         fn generate_exclusion_mask(
             &self,
@@ -988,6 +1060,25 @@ mod tests {
                 width,
                 height,
                 vec![self.exclusion; (width as usize) * (height as usize)],
+            )
+        }
+    }
+
+    impl MaskEngine for RecordingDimensionsEngine {
+        fn generate_exclusion_mask(
+            &self,
+            image: &DynamicImage,
+            _classes: &[String],
+            _confidence: f32,
+            _mask_sky: bool,
+            _cancel: &CancelToken,
+        ) -> MaskResult<SegmentationMask> {
+            let dimensions = image.dimensions();
+            *self.dimensions.lock().unwrap() = Some(dimensions);
+            SegmentationMask::new(
+                dimensions.0,
+                dimensions.1,
+                vec![0; dimensions.0 as usize * dimensions.1 as usize],
             )
         }
     }
@@ -1052,6 +1143,37 @@ mod tests {
         assert_eq!(pixel(99, 49), 255);
         assert_eq!(pixel(49, 88), 255);
         assert_eq!(pixel(49, 90), 0);
+    }
+
+    #[test]
+    fn runs_masks_at_bounded_resolution_and_writes_source_dimensions() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let request = request(&dir);
+        fs::create_dir_all(&request.images_dir)?;
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(2048, 1024, Rgb([100, 100, 100]))
+            .save(request.images_dir.join("frame.png"))?;
+        let engine = RecordingDimensionsEngine {
+            dimensions: Mutex::new(None),
+        };
+
+        let summary =
+            process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
+        let output = ImageReader::open(request.masks_dir.join("frame.png"))?
+            .decode()?
+            .to_luma8();
+
+        assert_eq!(summary.succeeded, 1);
+        assert_eq!(*engine.dimensions.lock().unwrap(), Some((640, 320)));
+        assert_eq!(output.dimensions(), (2048, 1024));
+        Ok(())
+    }
+
+    #[test]
+    fn nearest_neighbor_resize_preserves_binary_mask_values() -> MaskResult<()> {
+        let resized = resize_binary_mask(vec![0, 255], 2, 1, 4, 2)?;
+
+        assert_eq!(resized, vec![0, 0, 255, 255, 0, 0, 255, 255]);
+        Ok(())
     }
 
     #[test]
@@ -1197,10 +1319,15 @@ mod tests {
             .expect("GS360_TEST_PERSON_IMAGE is required");
         let provider =
             std::env::var("GS360_TEST_GPU_PROVIDER").unwrap_or_else(|_| "CoreML".to_string());
+        let frame_count = std::env::var("GS360_TEST_FRAME_COUNT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(6);
         let dir = TempDir::new()?;
         let mut request = request(&dir);
         fs::create_dir_all(&request.images_dir)?;
-        for index in 0..6 {
+        for index in 0..frame_count {
             fs::copy(
                 &image,
                 request.images_dir.join(format!("frame-{index}.jpg")),
@@ -1217,9 +1344,18 @@ mod tests {
 
         let summary = process_mask_batch_with_engine(&request, &cancel, &engine, |_| {})?;
 
-        assert_eq!(summary.succeeded, 6);
+        assert_eq!(summary.succeeded, frame_count);
         assert_eq!(summary.failed, 0);
         assert!(!summary.cancelled);
+        if frame_count > 1 {
+            let first = ImageReader::open(request.masks_dir.join("frame-0.jpg"))?
+                .decode()?
+                .to_luma8();
+            let second = ImageReader::open(request.masks_dir.join("frame-1.jpg"))?
+                .decode()?
+                .to_luma8();
+            assert_eq!(first, second);
+        }
         Ok(())
     }
 }
