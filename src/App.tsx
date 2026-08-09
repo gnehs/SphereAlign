@@ -123,6 +123,12 @@ interface ProgressEventPayload {
   done?: boolean;
 }
 
+interface AutoPipelineRun {
+  task: Pick<Task, "rootPath" | "outputPath" | "settings">;
+  stage?: StageKey;
+  jobId?: string;
+}
+
 const STAGES: Array<{ key: StageKey; label: string; description: string; icon: LucideIcon }> = [
   { key: "extract", label: "影格擷取", description: "雙魚眼影格、內參與 IMU", icon: ScanLine },
   { key: "mask", label: "遮罩", description: "動態物件與天空遮罩", icon: CircleDashed },
@@ -225,7 +231,16 @@ function formatUpdatedAt(value?: string) {
 }
 
 function taskProgress(task: Task) {
-  return Math.round(Object.values(task.stages).reduce((sum, stage) => sum + stage.progress, 0) / STAGES.length);
+  return Math.round(Object.values(task.stages).reduce((sum, stage) => sum + (stage.status === "completed" ? 100 : stage.progress), 0) / STAGES.length);
+}
+
+function taskProgressSummary(task: Task) {
+  const runningIndex = STAGES.findIndex(({ key }) => task.stages[key].status === "running");
+  if (runningIndex >= 0) return `第 ${runningIndex + 1} / ${STAGES.length} 階段 · ${STAGES[runningIndex].label}`;
+  const interruptedIndex = STAGES.findIndex(({ key }) => ["failed", "cancelled"].includes(task.stages[key].status));
+  if (interruptedIndex >= 0) return `停在第 ${interruptedIndex + 1} / ${STAGES.length} 階段 · ${STAGES[interruptedIndex].label}`;
+  const nextIndex = STAGES.findIndex(({ key }) => task.stages[key].status !== "completed");
+  return nextIndex >= 0 ? `等待第 ${nextIndex + 1} / ${STAGES.length} 階段 · ${STAGES[nextIndex].label}` : `${STAGES.length} / ${STAGES.length} 階段完成`;
 }
 
 function normaliseStageStatus(value: unknown): StageStatus {
@@ -399,6 +414,7 @@ function App() {
   const [, setLogs] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeJobIds = useRef<Record<string, string>>({});
+  const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
@@ -540,36 +556,6 @@ function App() {
   useEffect(() => { void runDoctor(); }, [runDoctor]);
 
   useEffect(() => {
-    let disposed = false;
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenLog: (() => void) | undefined;
-    const register = async () => {
-      const [progressStop, logStop] = await Promise.all([
-        listen<unknown>("pipeline-progress", (event) => {
-          const payload = readProgress(event.payload);
-          const stageKey = payload.stage;
-          if (!stageKey) return;
-          const targetProjectId = payload.jobId
-            ? Object.entries(activeJobIds.current).find(([, jobId]) => jobId === payload.jobId)?.[0]
-            : undefined;
-          setTasks((current) => current.map((task) => {
-            if (!targetProjectId || task.projectId !== targetProjectId) return task;
-            return { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], progress: payload.progress, status: payload.done ? (payload.status === "failed" ? "failed" : payload.status === "cancelled" ? "cancelled" : "completed") : payload.status || "running", message: payload.message || task.stages[stageKey].message, jobId: payload.jobId || task.stages[stageKey].jobId } } };
-          }));
-          if (payload.done && targetProjectId) delete activeJobIds.current[targetProjectId];
-        }),
-        listen<unknown>("pipeline-log", (event) => {
-          const body = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
-          addLog(typeof body.message === "string" ? body.message : String(event.payload));
-        }),
-      ]);
-      if (disposed) { progressStop(); logStop(); } else { unlistenProgress = progressStop; unlistenLog = logStop; }
-    };
-    if (IS_TAURI_RUNTIME) void register();
-    return () => { disposed = true; unlistenProgress?.(); unlistenLog?.(); };
-  }, [addLog]);
-
-  useEffect(() => {
     if (!IS_TAURI_RUNTIME) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -587,16 +573,67 @@ function App() {
     return () => { disposed = true; unlisten?.(); };
   }, [applySourcePaths]);
 
+  const updateTaskStage = useCallback((taskId: string, stageKey: StageKey, patch: Partial<StageState>) => {
+    setTasks((current) => current.map((task) => task.projectId === taskId ? { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], ...patch } } } : task));
+  }, []);
+
+  const startAutoStage = useCallback(async (taskId: string, stageKey: StageKey) => {
+    const run = autoPipelineRuns.current[taskId];
+    if (!run || run.stage || run.jobId || activeJobIds.current[taskId]) return;
+    run.stage = stageKey;
+    const result = await invokeSafely<{ jobId?: string }>("start_stage", {
+      request: {
+        projectPath: run.task.rootPath || run.task.outputPath,
+        stage: stageKey,
+        settings: run.task.settings,
+      },
+    });
+    const currentRun = autoPipelineRuns.current[taskId];
+    if (!result?.jobId) {
+      if (currentRun === run) {
+        delete autoPipelineRuns.current[taskId];
+        setToast("無法自動啟動階段，請查看執行環境訊息");
+      }
+      return;
+    }
+    if (currentRun !== run || run.stage !== stageKey) {
+      // A user cancellation can race with the command response. Do not leave
+      // a backend job running after its auto-pipeline session was stopped.
+      await invokeSafely("cancel_job", { jobId: result.jobId });
+      return;
+    }
+    const progressAlreadyReceived = run.jobId === result.jobId;
+    run.jobId = result.jobId;
+    activeJobIds.current[taskId] = result.jobId;
+    updateTaskStage(taskId, stageKey, progressAlreadyReceived
+      ? { status: "running", jobId: result.jobId }
+      : { status: "running", progress: 0, message: "正在準備工作", jobId: result.jobId });
+  }, [updateTaskStage]);
+
+  const startAutoPipeline = useCallback((task: Task) => {
+    if (!IS_TAURI_RUNTIME || task.previewOnly) return;
+    if (autoPipelineRuns.current[task.projectId] || activeJobIds.current[task.projectId]) return;
+    const firstStage = STAGES.find(({ key }) => task.stages[key].status !== "completed");
+    if (!firstStage) return;
+    autoPipelineRuns.current[task.projectId] = {
+      task: { rootPath: task.rootPath, outputPath: task.outputPath, settings: task.settings },
+    };
+    void startAutoStage(task.projectId, firstStage.key);
+  }, [startAutoStage]);
+
   const createTask = useCallback(async () => {
     if (!sourcePaths.length) { setToast("請先選擇至少一個 OSV 或雙魚眼來源"); return; }
     const request = { inputPaths: sourcePaths, outputPath: outputDraft || undefined, name: nameDraft || undefined, settings: { ...settingsDraft } };
     const result = await invokeSafely("create_project", { request });
     const manifest = manifestFromUnknown(result);
+    let createdTask: Task | null = null;
     if (manifest) {
+      createdTask = manifest;
       setTasks((current) => [manifest, ...current]);
       addLog(`已建立 ${manifest.name}`);
     } else if (!IS_TAURI_RUNTIME) {
       const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), warnings: ["瀏覽器預覽：尚未連接本機執行環境"], previewOnly: true };
+      createdTask = preview;
       setTasks((current) => [preview, ...current]);
       addLog(`預覽任務已加入 ${preview.name}`);
     } else {
@@ -606,14 +643,15 @@ function App() {
     setTaskDialogOpen(false);
     setSourcePaths([]);
     setSourceInspection("");
-  }, [addLog, nameDraft, outputDraft, settingsDraft, sourcePaths]);
-
-  const updateTaskStage = useCallback((taskId: string, stageKey: StageKey, patch: Partial<StageState>) => {
-    setTasks((current) => current.map((task) => task.projectId === taskId ? { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], ...patch } } } : task));
-  }, []);
+    if (createdTask) startAutoPipeline(createdTask);
+  }, [addLog, nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
 
   const startStage = useCallback(async (task: Task, stageKey: StageKey, mode: "start" | "resume" | "retry") => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會執行後端工作"); return; }
+    if (activeJobIds.current[task.projectId] || autoPipelineRuns.current[task.projectId]) {
+      setToast("此任務已有處理階段執行中，請稍候");
+      return;
+    }
     const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: task.settings || settingsDraft } });
     if (result?.jobId) {
       activeJobIds.current[task.projectId] = result.jobId;
@@ -623,11 +661,78 @@ function App() {
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會取消後端工作"); return; }
+    const autoRun = autoPipelineRuns.current[task.projectId];
+    if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
     const jobId = task.stages[stageKey].jobId || activeJobIds.current[task.projectId];
     if (!jobId) return;
     const cancelled = await invokeSafely<boolean>("cancel_job", { jobId });
-    if (cancelled !== null) updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續" });
+    if (cancelled === true) {
+      if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
+      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續" });
+    }
   }, [updateTaskStage]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenLog: (() => void) | undefined;
+    const register = async () => {
+      const [progressStop, logStop] = await Promise.all([
+        listen<unknown>("pipeline-progress", (event) => {
+          const payload = readProgress(event.payload);
+          const stageKey = payload.stage;
+          if (!stageKey) return;
+          const directTargetProjectId = payload.jobId
+            ? Object.entries(activeJobIds.current).find(([, jobId]) => jobId === payload.jobId)?.[0]
+            : undefined;
+          const pendingAutoRuns = payload.jobId && !directTargetProjectId
+            ? Object.entries(autoPipelineRuns.current).filter(([, run]) => run.stage === stageKey && !run.jobId)
+            : [];
+          const targetProjectId = directTargetProjectId || (pendingAutoRuns.length === 1 ? pendingAutoRuns[0][0] : undefined);
+          if (targetProjectId && payload.jobId && !directTargetProjectId) {
+            const pendingRun = autoPipelineRuns.current[targetProjectId];
+            if (pendingRun && pendingRun.stage === stageKey && !pendingRun.jobId) {
+              pendingRun.jobId = payload.jobId;
+              activeJobIds.current[targetProjectId] = payload.jobId;
+            }
+          }
+          setTasks((current) => current.map((task) => {
+            if (!targetProjectId || task.projectId !== targetProjectId) return task;
+            return { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], progress: payload.progress, status: payload.done ? (payload.status === "failed" ? "failed" : payload.status === "cancelled" ? "cancelled" : "completed") : payload.status || "running", message: payload.message || task.stages[stageKey].message, jobId: payload.jobId || task.stages[stageKey].jobId } } };
+          }));
+          if (targetProjectId && (payload.status === "failed" || payload.status === "cancelled")) {
+            delete autoPipelineRuns.current[targetProjectId];
+            if (activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
+          }
+          if (!payload.done || !targetProjectId) return;
+          if (activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
+          const run = autoPipelineRuns.current[targetProjectId];
+          if (!run || run.stage !== stageKey || (run.jobId && run.jobId !== payload.jobId)) return;
+          run.jobId = undefined;
+          if (payload.status !== "completed") {
+            delete autoPipelineRuns.current[targetProjectId];
+            return;
+          }
+          const currentIndex = STAGES.findIndex(({ key }) => key === stageKey);
+          const nextStage = currentIndex >= 0 ? STAGES[currentIndex + 1] : undefined;
+          if (!nextStage) {
+            delete autoPipelineRuns.current[targetProjectId];
+            addLog("自動管線已完成影格擷取、遮罩與對齊");
+            return;
+          }
+          run.stage = undefined;
+          void startAutoStage(targetProjectId, nextStage.key);
+        }),
+        listen<unknown>("pipeline-log", (event) => {
+          const body = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
+          addLog(typeof body.message === "string" ? body.message : String(event.payload));
+        }),
+      ]);
+      if (disposed) { progressStop(); logStop(); } else { unlistenProgress = progressStop; unlistenLog = logStop; }
+    };
+    if (IS_TAURI_RUNTIME) void register();
+    return () => { disposed = true; unlistenProgress?.(); unlistenLog?.(); };
+  }, [addLog, startAutoStage]);
 
   const handleStageAction = useCallback((task: Task, stageKey: StageKey) => {
     const status = task.stages[stageKey].status;
@@ -675,8 +780,50 @@ function App() {
           </section>
         ) : (
           <section className="tasks-view">
-            <header className="content-header"><div><h1>重建任務</h1><p>每個階段都能獨立執行、取消或繼續。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
-            <div className="task-list">{tasks.map((task) => { const overall = taskProgress(task); return <article className="task-row" key={task.projectId}><div className="task-row-top"><div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div><Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button></div><div className="task-progress-line"><Progress value={overall}><ProgressValue /></Progress><span>{overall}%</span></div><div className="stage-row-list">{STAGES.map((stage) => { const current = task.stages[stage.key]; const Icon = stage.icon; return <div className="task-stage" key={stage.key}><div className="task-stage-label"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span></div><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge><Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button></div>; })}</div></article>; })}</div>
+            <header className="content-header"><div><h1>重建任務</h1><p>新增任務後會依序執行影格擷取、遮罩與對齊；各階段仍可獨立取消或重試。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
+            <div className="task-list">
+              {tasks.map((task) => {
+                const overall = taskProgress(task);
+                return (
+                  <article className="task-row" key={task.projectId}>
+                    <div className="task-row-top">
+                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div>
+                      <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button>
+                    </div>
+                    <div className="task-progress-block">
+                      <div className="task-progress-summary"><span>整體進度</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                      <Progress value={overall} aria-label={`${task.name} 整體進度`}><ProgressValue /></Progress>
+                    </div>
+                    <div className="stage-row-list">
+                      {STAGES.map((stage) => {
+                        const current = task.stages[stage.key];
+                        const stageProgress = Math.round(current.progress);
+                        const Icon = stage.icon;
+                        return (
+                          <div className="task-stage" data-status={current.status} key={stage.key}>
+                            <div className="task-stage-label">
+                              <Icon />
+                              <div className="task-stage-copy">
+                                <strong>{stage.label}</strong>
+                                <small>{current.message || stage.description}</small>
+                                {current.status === "running" && (
+                                  <div className={`task-stage-progress${stageProgress <= 0 ? " is-waiting" : ""}`}>
+                                    <Progress value={stageProgress} aria-label={`${stage.label}進度`}><ProgressValue /></Progress>
+                                    <span>{stageProgress}%</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge>
+                            <Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         )}
       </main>

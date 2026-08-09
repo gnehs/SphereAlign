@@ -226,9 +226,10 @@ button:active {
 .task-row-top,
 .task-identity,
 .task-name-line,
-.task-progress-line,
+.task-progress-summary,
 .task-stage,
 .task-stage-label,
+.task-stage-progress,
 .input-with-button,
 .source-item,
 .control-line,
@@ -288,61 +289,65 @@ button:active {
   white-space: nowrap;
 }
 
-.task-progress-line {
+.task-progress-block {
   margin: 19px 0 13px 47px;
-  gap: 10px;
 }
 
-.task-progress-line [data-slot="progress"] {
-  flex: 1;
-  align-items: center;
-  gap: 0;
+.task-progress-summary {
+  margin-bottom: 7px;
+  gap: 8px;
 }
 
-.task-progress-line [data-slot="progress-track"] {
+.task-progress-summary > span {
+  color: var(--studio-text);
+  font-size: var(--studio-font-sm);
+  font-weight: 620;
+}
+
+.task-progress-summary > small {
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+}
+
+.task-progress-summary > strong {
+  margin-left: auto;
+  color: var(--studio-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--studio-font-sm);
+  font-weight: 620;
+}
+
+.task-progress-block [data-slot="progress-track"] {
   height: 4px;
   border-radius: 99px;
   background: #e9edf2;
 }
 
-.task-progress-line [data-slot="progress-indicator"] {
+.task-progress-block [data-slot="progress-indicator"] {
   border-radius: inherit;
   background: var(--studio-blue);
   transition: width 220ms var(--studio-ease);
 }
 
-.task-progress-line [data-slot="progress-value"] {
+.task-progress-block [data-slot="progress-value"] {
   display: none;
-}
-
-.task-progress-line > span {
-  flex: 0 0 34px;
-  color: var(--studio-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--studio-font-sm);
-  text-align: right;
 }
 
 .stage-row-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   margin-left: 47px;
   border-top: 1px solid var(--studio-line);
 }
 
 .task-stage {
   min-width: 0;
-  padding: 13px 13px 0 0;
+  padding: 12px 0;
   gap: 8px;
-  border-right: 1px solid var(--studio-line);
 }
 
 .task-stage + .task-stage {
-  padding-left: 13px;
-}
-
-.task-stage:last-child {
-  border-right: 0;
+  border-top: 1px solid var(--studio-line);
 }
 
 .task-stage-label {
@@ -358,9 +363,10 @@ button:active {
   color: var(--studio-faint);
 }
 
-.task-stage-label > span {
+.task-stage-copy {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
 }
@@ -377,6 +383,56 @@ button:active {
   font-size: var(--studio-font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-stage[data-status="running"] .task-stage-label > svg {
+  color: var(--studio-blue);
+}
+
+.task-stage-progress {
+  width: min(360px, 100%);
+  margin-top: 5px;
+  gap: 8px;
+}
+
+.task-stage-progress [data-slot="progress"] {
+  min-width: 80px;
+  flex: 1;
+}
+
+.task-stage-progress [data-slot="progress-track"] {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e9edf2;
+}
+
+.task-stage-progress [data-slot="progress-indicator"] {
+  border-radius: inherit;
+  background: var(--studio-blue);
+  transition: width 220ms var(--studio-ease);
+}
+
+.task-stage-progress [data-slot="progress-value"] {
+  display: none;
+}
+
+.task-stage-progress > span {
+  width: 30px;
+  color: var(--studio-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--studio-font-sm);
+  text-align: right;
+}
+
+.task-stage-progress.is-waiting [data-slot="progress-indicator"] {
+  width: 30% !important;
+  animation: stage-progress-waiting 1.2s ease-in-out infinite;
+}
+
+@keyframes stage-progress-waiting {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(360%); }
 }
 
 .task-stage > [data-slot="badge"] {
@@ -1096,11 +1152,8 @@ button:active {
   .content-header { align-items: flex-start; flex-direction: column; }
   .header-actions { width: 100%; }
   .header-actions [data-slot="button"] { flex: 1; }
-  .stage-row-list { grid-template-columns: 1fr; }
-  .task-stage,
-  .task-stage + .task-stage { padding: 11px 0; border-right: 0; }
-  .task-stage + .task-stage { border-top: 1px solid var(--studio-line); }
-  .task-progress-line,
+  .task-stage { padding: 11px 0; }
+  .task-progress-block,
   .stage-row-list { margin-left: 0; }
   .empty-actions { align-items: stretch; flex-direction: column; width: min(280px, 100%); }
   .task-dialog { padding: 20px 16px 16px; }
