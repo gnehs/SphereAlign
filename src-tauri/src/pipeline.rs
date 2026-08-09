@@ -283,6 +283,19 @@ fn setting_bool(settings: &Value, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn mask_confidence(settings: &Value) -> f64 {
+    let configured = setting_f64(settings, "/mask/confidence", 0.25);
+    let version = setting_f64(settings, "/mask/confidenceVersion", 1.0);
+    // Version 1 shipped 72% as the default and could not be lowered below 40%,
+    // which misses heavily distorted or distant people. Migrate only that exact
+    // legacy default; every explicit non-default value remains untouched.
+    if version < 2.0 && (configured - 72.0).abs() < f64::EPSILON {
+        25.0
+    } else {
+        configured
+    }
+}
+
 fn run_child(
     app: &AppHandle,
     id: &str,
@@ -727,7 +740,7 @@ fn run_mask(
                 .collect()
         })
         .unwrap_or_else(Vec::new);
-    let confidence = setting_f64(&manifest.settings, "/mask/confidence", 0.25);
+    let confidence = mask_confidence(&manifest.settings);
     let mask_sky = setting_bool(&manifest.settings, "/mask/maskSky", false);
     let model_cache_dir = if classes.is_empty() && !mask_sky {
         None
@@ -752,7 +765,10 @@ fn run_mask(
         }
         .clamp(0.01, 0.99) as f32,
         valid_radius_ratio: 0.497,
-        skip_verified: true,
+        // Existing mask files do not carry model/settings/algorithm provenance.
+        // Recompute them so a corrected model threshold or postprocessor cannot
+        // silently reuse a dimensionally valid but stale mask.
+        skip_verified: false,
         model_dir: manifest
             .settings
             .pointer("/mask/modelDir")
@@ -1033,8 +1049,19 @@ fn run_align(
 
 #[cfg(test)]
 mod tests {
-    use super::write_rig_and_pairs;
+    use super::{mask_confidence, write_rig_and_pairs};
+    use serde_json::json;
     use std::fs;
+
+    #[test]
+    fn migrates_only_the_legacy_default_mask_confidence() {
+        assert_eq!(mask_confidence(&json!({"mask": {"confidence": 72}})), 25.0);
+        assert_eq!(mask_confidence(&json!({"mask": {"confidence": 60}})), 60.0);
+        assert_eq!(
+            mask_confidence(&json!({"mask": {"confidence": 72, "confidenceVersion": 2}})),
+            72.0
+        );
+    }
 
     #[test]
     fn pair_list_connects_multiple_source_recordings() {

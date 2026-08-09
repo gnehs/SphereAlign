@@ -354,6 +354,19 @@ pub fn process_mask_batch(
             message: format!("首次使用，正在下載 {} 模型（{}%）", event.label, percent),
         });
     })?;
+    on_progress(MaskProgress {
+        index: 0,
+        total: 0,
+        input: request.images_dir.clone(),
+        mask_path: request.masks_dir.clone(),
+        colmap_mask_path: request.colmap_masks_dir.clone(),
+        stage: MaskStage::LoadingModel,
+        fraction: 0.0,
+        message: format!(
+            "模型已載入 {}，CPU 推論回退已停用",
+            engine.yolo.execution_provider
+        ),
+    });
     process_with_engine(request, cancel, &engine, on_progress)
 }
 
@@ -1008,14 +1021,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "downloads and verifies about 216 MB of production model data"]
+    #[ignore = "downloads about 216 MB and requires a supported physical GPU"]
     fn downloads_and_loads_production_models() -> MaskResult<()> {
         let dir = TempDir::new()?;
         let mut request = request(&dir);
         request.classes = vec!["person".to_string()];
         request.mask_sky = true;
         request.model_cache_dir = Some(dir.path().join("models"));
-        request.execution_provider = Some("CPU".to_string());
 
         let engine = NativeMaskEngine::load(&request, &CancelToken::new(), &|_| {})?;
         assert!(engine.skyseg.is_some());

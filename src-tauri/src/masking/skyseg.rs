@@ -27,26 +27,21 @@ pub struct SkysegPipeline {
 }
 
 impl SkysegPipeline {
-    /// Load skyseg with the same provider selected for YOLO.  A failed GPU
-    /// session falls back to CPU so enabling sky masking remains deterministic.
+    /// Load skyseg with the same provider selected for YOLO. GPU failures are
+    /// surfaced instead of silently moving the model to CPU.
     pub fn load(paths: &ModelPaths, provider: &str) -> MaskResult<Self> {
         let model_path = paths.skyseg.as_ref().ok_or_else(|| {
             MaskError::model("skyseg model is required when sky masking is enabled")
         })?;
-        match Self::load_with_provider(model_path, provider) {
-            Ok(pipeline) => Ok(pipeline),
-            Err(error) if !provider.eq_ignore_ascii_case("CPU") => {
-                Self::load_with_provider(model_path, "CPU").map_err(|cpu_error| {
-                    MaskError::model(format!(
-                        "skyseg failed with {provider} ({error}) and CPU fallback ({cpu_error})"
-                    ))
-                })
-            }
-            Err(error) => Err(error),
-        }
+        Self::load_with_provider(model_path, provider)
     }
 
     pub fn load_with_provider(model_path: &Path, provider: &str) -> MaskResult<Self> {
+        if provider.eq_ignore_ascii_case("CPU") {
+            return Err(MaskError::inference(
+                "CPU mask inference is disabled; select a GPU execution provider",
+            ));
+        }
         let mut builder = session_builder_for_provider(provider)?;
         register_execution_provider(&mut builder, provider)?;
         let session = builder
@@ -147,5 +142,21 @@ impl SkysegPipeline {
             .map(|value| if value >= THRESHOLD { 255 } else { 0 })
             .collect();
         SegmentationMask::new(width, height, data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires GS360_TEST_SKYSEG_MODEL and a physical GPU"]
+    fn loads_production_model_without_cpu_fallback() {
+        let model = std::env::var_os("GS360_TEST_SKYSEG_MODEL")
+            .expect("GS360_TEST_SKYSEG_MODEL must point to the SkySeg ONNX model");
+        let provider =
+            std::env::var("GS360_TEST_GPU_PROVIDER").unwrap_or_else(|_| "CoreML".to_string());
+        SkysegPipeline::load_with_provider(Path::new(&model), &provider)
+            .expect("the full graph must load on the selected GPU provider");
     }
 }

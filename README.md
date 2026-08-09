@@ -43,9 +43,10 @@ colmap-{filename}/
 ### Mask
 
 - 使用 ONNX Runtime 執行 YOLO11 segmentation 與可選的 skyseg。
+- macOS 使用 Core ML（GPU／Neural Engine），Windows 使用 DirectML；模型無法完整交給硬體 provider 時會直接失敗，不會回退 CPU 推論。
 - 支援 person、bicycle、car、motorcycle、bus、truck，以及天空遮罩。
 - 物件與 fisheye 圓外為黑色，其餘區域為白色。
-- 每張 mask 先寫 partial file，再原子替換；尺寸與解碼驗證通過才會在續作時略過。
+- 每張 mask 先寫 partial file，再原子替換。目前輸出尚未攜帶模型／設定／演算法版本資訊，因此重跑 Mask 時會重新產生，避免沿用尺寸正確但內容過期的遮罩。
 - 未選任何物件且未遮天空時，不需要模型，只產生 fisheye 有效區 mask。
 
 模型會依序從任務指定資料夾、`GS360_MODEL_DIR`、Tauri 應用程式資料目錄的 `models/`、工作目錄的 `models/` 與 `.models/` 尋找。缺少必要模型時會在首次執行 Mask 時自動下載至應用程式資料目錄；YOLO 一定按需下載，SkySeg 只在啟用天空遮罩時下載。下載會先寫入暫存檔，且須通過固定大小與 SHA-256 驗證後才會啟用。
@@ -72,7 +73,7 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - Align 需要系統 `colmap`（必須在 `PATH`）
 - 首次執行物件／天空 Mask 時需要網路下載相應 ONNX 模型，或預先放入支援的模型目錄
 
-預設 build 在 Apple silicon 優先使用 CoreML、Windows 優先使用 DirectML，失敗時會退回 CPU。Cargo 另提供 `cuda`、`xnnpack` 等 opt-in features；發佈版本仍必須搭配相容的 ONNX Runtime provider 套件實機驗證。COLMAP GPU 是否可用取決於使用者安裝的 COLMAP build，後端在 doctor 未偵測到 CUDA 時會強制使用 CPU。
+預設 build 在 Apple silicon 使用 CoreML、Windows 使用 DirectML，並停用 ONNX Runtime 的 CPU execution-provider fallback。若模型含硬體 provider 不支援的節點，Mask 會回報錯誤而不是靜默改用 CPU。Cargo 另提供 `cuda`、`webgpu` 等 opt-in features；原生 WebGPU 在 macOS 與目前 YOLO／ONNX Runtime 組合的實機測試仍不穩定，因此不列為預設。COLMAP GPU 是否可用取決於使用者安裝的 COLMAP build，後端在 doctor 未偵測到 CUDA 時會強制使用 CPU。
 
 ## 開發
 

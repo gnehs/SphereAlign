@@ -147,11 +147,15 @@ pub struct YoloSegPipeline {
 }
 
 impl YoloSegPipeline {
-    /// Load YOLO11 from resolved model paths.  Provider loading is attempted in
-    /// the requested/platform order and always falls back to CPU with a useful
-    /// error if the CPU session cannot be created.
+    /// Load YOLO11 from resolved model paths. Provider loading is attempted in
+    /// the requested/platform order, but never falls back to CPU.
     pub fn load(paths: &ModelPaths, requested_provider: Option<&str>) -> MaskResult<Self> {
         let candidates = provider_candidates(requested_provider);
+        if candidates.is_empty() {
+            return Err(MaskError::model(
+                "GPU execution provider is required; CPU mask inference is disabled",
+            ));
+        }
         let mut errors = Vec::new();
         for provider in candidates {
             match Self::load_with_provider(&paths.yolo, &provider) {
@@ -170,6 +174,11 @@ impl YoloSegPipeline {
     /// names used by the gs360masker build.  Unsupported providers return an
     /// actionable error and are subsequently handled by [`Self::load`].
     pub fn load_with_provider(model_path: &Path, provider: &str) -> MaskResult<Self> {
+        if provider.eq_ignore_ascii_case("CPU") {
+            return Err(MaskError::inference(
+                "CPU mask inference is disabled; select a GPU execution provider",
+            ));
+        }
         let mut builder = session_builder_for_provider(provider)?;
         register_execution_provider(&mut builder, provider)?;
         let session = builder
@@ -431,71 +440,54 @@ fn decode_masks(
                 for channel in 0..MASK_DIM {
                     value += detection.mask_coeffs[channel] * proto[[channel, y, x]];
                 }
-                // sigmoid(value) > .5 is equivalent to value > 0 and avoids an
-                // unnecessary exp() for every prototype pixel.
-                low_res[y * mask_w + x] = if value > 0.0 { 1.0 } else { 0.0 };
+                low_res[y * mask_w + x] = value;
             }
         }
-        crop_mask_to_box(
-            &mut low_res,
-            mask_w,
-            mask_h,
+        // YOLO prototypes describe the 640x640 letterboxed input. Remove that
+        // padding before resizing to the source image, then crop in the same
+        // original-image coordinate space as the decoded bounding box. This is
+        // the ordering used by Ultralytics' process_mask_native/scale_masks.
+        let upsampled = scale_mask_to_original(&low_res, mask_w as u32, mask_h as u32, letterbox)?;
+        let mut binary = upsampled
+            .into_iter()
+            // sigmoid(logit) > 0.5 is equivalent to logit > 0.
+            .map(|value| if value > 0.0 { 255 } else { 0 })
+            .collect::<Vec<_>>();
+        crop_binary_mask_to_box(
+            &mut binary,
+            letterbox.original_width,
+            letterbox.original_height,
             detection.bbox_xyxy,
-            letterbox.original_width,
-            letterbox.original_height,
         );
-        let upsampled = resize_mask(
-            &low_res,
-            mask_w as u32,
-            mask_h as u32,
-            letterbox.original_width,
-            letterbox.original_height,
-        )?;
-        masks.push(
-            upsampled
-                .into_iter()
-                .map(|value| if value >= 0.5 { 255 } else { 0 })
-                .collect(),
-        );
+        masks.push(binary);
     }
     Ok(masks)
 }
 
-fn crop_mask_to_box(
-    mask: &mut [f32],
-    mask_width: usize,
-    mask_height: usize,
+fn crop_binary_mask_to_box(
+    mask: &mut [u8],
+    mask_width: u32,
+    mask_height: u32,
     bbox_xyxy: [f32; 4],
-    image_width: u32,
-    image_height: u32,
 ) {
-    let x0 = (bbox_xyxy[0] * mask_width as f32 / image_width as f32)
-        .floor()
-        .clamp(0.0, mask_width as f32) as usize;
-    let y0 = (bbox_xyxy[1] * mask_height as f32 / image_height as f32)
-        .floor()
-        .clamp(0.0, mask_height as f32) as usize;
-    let x1 = (bbox_xyxy[2] * mask_width as f32 / image_width as f32)
-        .ceil()
-        .clamp(0.0, mask_width as f32) as usize;
-    let y1 = (bbox_xyxy[3] * mask_height as f32 / image_height as f32)
-        .ceil()
-        .clamp(0.0, mask_height as f32) as usize;
-    for y in 0..mask_height {
-        for x in 0..mask_width {
+    let x0 = bbox_xyxy[0].floor().clamp(0.0, mask_width as f32) as usize;
+    let y0 = bbox_xyxy[1].floor().clamp(0.0, mask_height as f32) as usize;
+    let x1 = bbox_xyxy[2].ceil().clamp(0.0, mask_width as f32) as usize;
+    let y1 = bbox_xyxy[3].ceil().clamp(0.0, mask_height as f32) as usize;
+    for y in 0..mask_height as usize {
+        for x in 0..mask_width as usize {
             if x < x0 || x >= x1 || y < y0 || y >= y1 {
-                mask[y * mask_width + x] = 0.0;
+                mask[y * mask_width as usize + x] = 0;
             }
         }
     }
 }
 
-fn resize_mask(
+fn scale_mask_to_original(
     mask: &[f32],
     width: u32,
     height: u32,
-    target_width: u32,
-    target_height: u32,
+    letterbox: LetterboxInfo,
 ) -> MaskResult<Vec<f32>> {
     let expected = pixel_count(width, height)?;
     if mask.len() != expected {
@@ -503,10 +495,43 @@ fn resize_mask(
     }
     let buffer = ImageBuffer::<Luma<f32>, Vec<f32>>::from_vec(width, height, mask.to_vec())
         .ok_or_else(|| MaskError::inference("failed to build intermediate mask"))?;
-    Ok(
-        image::imageops::resize(&buffer, target_width, target_height, FilterType::Triangle)
-            .into_raw(),
+    let (left, top, right, bottom) = mask_content_bounds(
+        width,
+        height,
+        letterbox.original_width,
+        letterbox.original_height,
+    );
+    if right <= left || bottom <= top {
+        return Err(MaskError::inference("letterbox mask content is empty"));
+    }
+    let content =
+        image::imageops::crop_imm(&buffer, left, top, right - left, bottom - top).to_image();
+    Ok(image::imageops::resize(
+        &content,
+        letterbox.original_width,
+        letterbox.original_height,
+        FilterType::Triangle,
     )
+    .into_raw())
+}
+
+fn mask_content_bounds(
+    mask_width: u32,
+    mask_height: u32,
+    original_width: u32,
+    original_height: u32,
+) -> (u32, u32, u32, u32) {
+    let gain = (mask_height as f32 / original_height as f32)
+        .min(mask_width as f32 / original_width as f32);
+    let pad_width = (mask_width as f32 - (original_width as f32 * gain).round()) / 2.0;
+    let pad_height = (mask_height as f32 - (original_height as f32 * gain).round()) / 2.0;
+    let left = (pad_width - 0.1).round().clamp(0.0, mask_width as f32) as u32;
+    let top = (pad_height - 0.1).round().clamp(0.0, mask_height as f32) as u32;
+    let right =
+        (mask_width as f32 - (pad_width + 0.1).round()).clamp(0.0, mask_width as f32) as u32;
+    let bottom =
+        (mask_height as f32 - (pad_height + 0.1).round()).clamp(0.0, mask_height as f32) as u32;
+    (left, top, right, bottom)
 }
 
 fn scale_box_from_letterbox(bbox: [f32; 4], letterbox: LetterboxInfo) -> [f32; 4] {
@@ -592,11 +617,10 @@ fn provider_candidates(requested: Option<&str>) -> Vec<String> {
         .map(normalize_provider_name)
         .filter(|value| !value.is_empty())
     {
-        let mut candidates = vec![provider];
-        if !candidates.iter().any(|value| value == "CPU") {
-            candidates.push("CPU".to_string());
+        if provider == "CPU" {
+            return Vec::new();
         }
-        return candidates;
+        return vec![provider];
     }
 
     let mut candidates = Vec::new();
@@ -606,7 +630,6 @@ fn provider_candidates(requested: Option<&str>) -> Vec<String> {
     candidates.push("DirectML".to_string());
     #[cfg(target_os = "macos")]
     candidates.push("CoreML".to_string());
-    candidates.push("CPU".to_string());
     candidates
 }
 
@@ -626,7 +649,7 @@ fn normalize_provider_name(provider: &str) -> String {
 }
 
 pub(crate) fn session_builder_for_provider(provider: &str) -> MaskResult<SessionBuilder> {
-    let builder = Session::builder()
+    let mut builder = Session::builder()
         .map_err(|error| MaskError::inference(format!("create ONNX session: {error}")))?
         .with_optimization_level(GraphOptimizationLevel::All)
         .map_err(|error| MaskError::inference(error.to_string()))?
@@ -636,6 +659,11 @@ pub(crate) fn session_builder_for_provider(provider: &str) -> MaskResult<Session
         .map_err(|error| MaskError::inference(error.to_string()))?
         .with_parallel_execution(false)
         .map_err(|error| MaskError::inference(error.to_string()))?;
+    if !provider.eq_ignore_ascii_case("CPU") {
+        builder = builder
+            .with_disable_cpu_fallback()
+            .map_err(|error| MaskError::inference(format!("disable CPU fallback: {error}")))?;
+    }
     Ok(builder)
 }
 
@@ -694,5 +722,62 @@ pub(crate) fn register_execution_provider(
         _ => Err(MaskError::inference(format!(
             "execution provider {provider} is not enabled in this build"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removes_horizontal_letterbox_padding() {
+        assert_eq!(mask_content_bounds(160, 160, 1280, 640), (0, 40, 160, 120));
+    }
+
+    #[test]
+    fn removes_vertical_letterbox_padding() {
+        assert_eq!(mask_content_bounds(160, 160, 640, 1280), (40, 0, 120, 160));
+    }
+
+    #[test]
+    fn preserves_square_mask_content() {
+        assert_eq!(mask_content_bounds(160, 160, 640, 640), (0, 0, 160, 160));
+    }
+
+    #[test]
+    fn handles_odd_letterbox_padding_like_ultralytics() {
+        assert_eq!(mask_content_bounds(160, 160, 1000, 333), (0, 53, 160, 106));
+    }
+
+    #[test]
+    fn explicit_cpu_provider_returns_actionable_error() {
+        let paths = ModelPaths {
+            yolo: Path::new("unused.onnx").to_path_buf(),
+            skyseg: None,
+        };
+        let error = match YoloSegPipeline::load(&paths, Some("CPU")) {
+            Ok(_) => panic!("CPU provider must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("CPU mask inference is disabled"));
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_YOLO_MODEL and a physical GPU"]
+    fn loads_production_model_without_cpu_fallback() {
+        let model = std::env::var_os("GS360_TEST_YOLO_MODEL")
+            .expect("GS360_TEST_YOLO_MODEL must point to a YOLO11 segmentation model");
+        let provider =
+            std::env::var("GS360_TEST_GPU_PROVIDER").unwrap_or_else(|_| "CoreML".to_string());
+        let pipeline = YoloSegPipeline::load_with_provider(Path::new(&model), &provider)
+            .expect("the full graph must load on the selected GPU provider");
+        assert_eq!(pipeline.execution_provider, provider);
+        if let Some(image_path) = std::env::var_os("GS360_TEST_PERSON_IMAGE") {
+            let image = image::open(image_path).expect("test image must decode");
+            let mask = pipeline
+                .generate_exclusion_mask(&image, &["person".to_string()], 0.25, &CancelToken::new())
+                .expect("GPU person segmentation must run");
+            assert!(mask.data.iter().any(|pixel| *pixel != 0));
+        }
     }
 }
