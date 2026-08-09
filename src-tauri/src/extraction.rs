@@ -15,6 +15,8 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::fisheye::{ValidRegion, DJI_VALID_RADIUS_RATIO};
+
 /// Fallible result returned by extraction helpers.
 pub type ExtractionResult<T> = Result<T, ExtractionError>;
 
@@ -578,20 +580,21 @@ pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
     // Native fisheye frames commonly contain a black/invalid region outside
     // the optical circle.  Ignore that region and a narrow inner border so
     // its hard edge cannot dominate derivative-based scores.
-    let valid_radius = (width.min(height) as f64 * 0.497 * 0.98).max(1.0);
-    let center_x = (width.saturating_sub(1) as f64) * 0.5;
-    let center_y = (height.saturating_sub(1) as f64) * 0.5;
-    let radius_squared = valid_radius * valid_radius;
+    let valid_region = ValidRegion::new(
+        width as u32,
+        height as u32,
+        DJI_VALID_RADIUS_RATIO * 0.98,
+        None,
+    );
     let mut laplacian_sum = 0.0f64;
     let mut laplacian_sq_sum = 0.0f64;
     let mut tenengrad_sum = 0.0f64;
     let mut count = 0.0f64;
     for y in 2..(height - 2) {
+        let row_offset_squared = valid_region.row_offset_squared(y as u32);
         for x in 2..(width - 2) {
             let index = y * width + x;
-            let dx = x as f64 - center_x;
-            let dy = y as f64 - center_y;
-            if dx * dx + dy * dy > radius_squared {
+            if !valid_region.contains_x(x as u32, y as u32, row_offset_squared) {
                 continue;
             }
             let center = blurred[index] as f64;

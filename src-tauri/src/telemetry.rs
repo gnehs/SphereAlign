@@ -5,6 +5,7 @@
 //! these quaternions must not be treated as COLMAP camera qvec values without
 //! an explicit, verified sensor-to-camera coordinate transform.
 
+use prost::Message;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,8 @@ use std::sync::{
 use std::time::UNIX_EPOCH;
 use telemetry_parser::tags_impl::{GroupId, TagId, TagValue};
 use telemetry_parser::util::IMUData;
+
+use crate::fisheye::{LensOpticalOcclusions, OpticalOcclusion};
 
 const PARSER_REVISION: &str = "77a3b810a0e0f64688a90546c5aaf24c9dba00bd";
 
@@ -58,6 +61,111 @@ pub struct TelemetryExport {
     pub camera_model: Option<String>,
     pub normalized_imu_sample_count: usize,
     pub fused_attitude_sample_count: usize,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiProductMeta {
+    #[prost(message, optional, tag = "2")]
+    stream_meta: Option<DjiStreamMeta>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiStreamMeta {
+    #[prost(message, optional, tag = "6")]
+    pano_dewarp_params: Option<DjiPanoDewarpParams>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiPanoDewarpParams {
+    #[prost(message, optional, tag = "1")]
+    native_refine_slave: Option<DjiDewarpParams>,
+    #[prost(message, optional, tag = "2")]
+    native_refine_master: Option<DjiDewarpParams>,
+    #[prost(message, optional, tag = "11")]
+    native_slave: Option<DjiDewarpParams>,
+    #[prost(message, optional, tag = "12")]
+    native_master: Option<DjiDewarpParams>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiDewarpParams {
+    #[prost(float, tag = "3")]
+    cx: f32,
+    #[prost(float, tag = "4")]
+    cy: f32,
+    #[prost(float, tag = "10")]
+    width: f32,
+    #[prost(float, tag = "11")]
+    height: f32,
+    #[prost(float, repeated, tag = "22")]
+    occlusion_pt_x: Vec<f32>,
+    #[prost(float, repeated, tag = "23")]
+    occlusion_pt_y: Vec<f32>,
+}
+
+impl DjiDewarpParams {
+    fn optical_occlusion(self) -> Option<OpticalOcclusion> {
+        OpticalOcclusion::from_source_pixels(
+            self.width,
+            self.height,
+            self.cx,
+            self.cy,
+            &self.occlusion_pt_x,
+            &self.occlusion_pt_y,
+        )
+    }
+}
+
+fn optical_occlusions_from_pano(params: DjiPanoDewarpParams) -> Option<LensOpticalOcclusions> {
+    let lens0 = params
+        .native_refine_master
+        .or(params.native_master)?
+        .optical_occlusion()?;
+    let lens1 = params
+        .native_refine_slave
+        .or(params.native_slave)?
+        .optical_occlusion()?;
+    Some(LensOpticalOcclusions { lens0, lens1 })
+}
+
+/// Read DJI's per-lens native occlusion curves from an OSV container.
+///
+/// The first video stream is DJI's master lens and becomes `lens0`; the second
+/// is the slave lens and becomes `lens1`, matching the extraction stream order.
+pub fn read_dji_optical_occlusions(
+    input_path: &Path,
+) -> Result<Option<LensOpticalOcclusions>, String> {
+    let mut stream = fs::File::open(input_path).map_err(|error| error.to_string())?;
+    let size = stream.metadata().map_err(|error| error.to_string())?.len() as usize;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_after_found = cancel.clone();
+    let mut found = None;
+    telemetry_parser::util::get_metadata_track_samples(
+        &mut stream,
+        size,
+        true,
+        |_, data, _, _| {
+            if found.is_some() {
+                return;
+            }
+            let Ok(parsed) = DjiProductMeta::decode(data) else {
+                return;
+            };
+            let Some(params) = parsed
+                .stream_meta
+                .and_then(|stream| stream.pano_dewarp_params)
+            else {
+                return;
+            };
+            found = optical_occlusions_from_pano(params);
+            if found.is_some() {
+                cancel_after_found.store(true, Ordering::Release);
+            }
+        },
+        cancel,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(found)
 }
 
 pub fn parse_and_write(
@@ -238,6 +346,35 @@ fn rename_replace(temporary: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dewarp_with_curve() -> DjiDewarpParams {
+        DjiDewarpParams {
+            cx: 50.0,
+            cy: 49.0,
+            width: 100.0,
+            height: 100.0,
+            occlusion_pt_x: vec![20.0, 50.0, 80.0],
+            occlusion_pt_y: vec![70.0, 90.0, 70.0],
+        }
+    }
+
+    #[test]
+    fn converts_dji_master_and_slave_curves() {
+        let params = DjiPanoDewarpParams {
+            native_refine_slave: Some(dewarp_with_curve()),
+            native_refine_master: Some(dewarp_with_curve()),
+            native_slave: None,
+            native_master: None,
+        };
+        assert!(optical_occlusions_from_pano(params).is_some());
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_OSV"]
+    fn parses_real_osmo_optical_occlusions() {
+        let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
+        assert!(read_dji_optical_occlusions(&source).unwrap().is_some());
+    }
 
     #[test]
     #[ignore = "requires GS360_TEST_OSV to point to a real supported capture"]

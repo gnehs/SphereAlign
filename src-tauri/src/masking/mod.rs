@@ -6,7 +6,9 @@
 //! by SfM/training and black for excluded pixels.  `masks_colmap/` keeps the same
 //! relative hierarchy but appends `.png` to the complete image filename (for
 //! example `lens0/frame.jpg.png`), matching COLMAP's `ImageReader.mask_path`
-//! contract.  The portion outside the configured fisheye circle is always black.
+//! contract. Pixels outside the full fisheye circle and, when present, below
+//! DJI's calibrated fixed optical-occlusion curve are black. Scene content such
+//! as hands and selfie sticks is left to the separate semantic mask stage.
 //!
 //! Model loading is lazy and explicit: [`process_mask_batch`] discovers YOLO11
 //! and (when requested) skyseg models from `MaskRequest::model_dir`, explicit
@@ -24,12 +26,17 @@ pub use skyseg::SkysegPipeline;
 
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+
+use crate::fisheye::{
+    LensOpticalOcclusions, OpticalOcclusion, ValidRegion, DJI_VALID_RADIUS_RATIO,
+};
 
 /// A fallible result returned by this module.
 pub type MaskResult<T> = Result<T, MaskError>;
@@ -123,8 +130,10 @@ pub struct MaskRequest {
     pub classes: Vec<String>,
     pub mask_sky: bool,
     pub confidence: f32,
-    /// Radius as a ratio of the shorter source dimension (normally ~0.497).
+    /// Radius as a ratio of the shorter source dimension.
     pub valid_radius_ratio: f32,
+    /// DJI optical calibration keyed by extraction filename prefix.
+    pub optical_occlusions: BTreeMap<String, LensOpticalOcclusions>,
     /// Skip only when both output files decode and match the source dimensions.
     pub skip_verified: bool,
     /// Optional user-supplied model root. See [`ModelPaths::resolve`].
@@ -148,7 +157,8 @@ impl Default for MaskRequest {
             classes: Vec::new(),
             mask_sky: false,
             confidence: 0.25,
-            valid_radius_ratio: 0.497,
+            valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
+            optical_occlusions: BTreeMap::new(),
             skip_verified: true,
             model_dir: None,
             model_cache_dir: None,
@@ -587,7 +597,14 @@ where
             break;
         }
 
-        let keep = build_keep_mask(width, height, request.valid_radius_ratio, &exclusions.data);
+        let optical_occlusion = optical_occlusion_for_input(request, input);
+        let keep = build_keep_mask(
+            width,
+            height,
+            request.valid_radius_ratio,
+            optical_occlusion,
+            &exclusions.data,
+        );
         emit_progress(
             &on_progress,
             index,
@@ -748,18 +765,38 @@ fn output_paths(request: &MaskRequest, input: &Path) -> MaskResult<(PathBuf, Pat
     Ok((mask_path, colmap_path))
 }
 
-fn build_keep_mask(width: u32, height: u32, radius_ratio: f32, exclusions: &[u8]) -> Vec<u8> {
+fn optical_occlusion_for_input<'a>(
+    request: &'a MaskRequest,
+    input: &Path,
+) -> Option<&'a OpticalOcclusion> {
+    let relative = input.strip_prefix(&request.images_dir).ok()?;
+    let lens = relative.parent()?.file_name()?.to_str()?;
+    let file_name = relative.file_name()?.to_str()?;
+    let calibrations = request
+        .optical_occlusions
+        .iter()
+        .find_map(|(prefix, calibrations)| file_name.starts_with(prefix).then_some(calibrations))?;
+    match lens {
+        "lens0" => Some(&calibrations.lens0),
+        "lens1" => Some(&calibrations.lens1),
+        _ => None,
+    }
+}
+
+fn build_keep_mask(
+    width: u32,
+    height: u32,
+    radius_ratio: f32,
+    optical_occlusion: Option<&OpticalOcclusion>,
+    exclusions: &[u8],
+) -> Vec<u8> {
     let mut keep = vec![0u8; (width as usize).saturating_mul(height as usize)];
-    let radius = (width.min(height) as f32 * radius_ratio).floor();
-    let center_x = (width / 2) as f32;
-    let center_y = (height / 2) as f32;
-    let radius_squared = radius * radius;
+    let valid_region = ValidRegion::new(width, height, f64::from(radius_ratio), optical_occlusion);
     for y in 0..height {
+        let row_offset_squared = valid_region.row_offset_squared(y);
         for x in 0..width {
             let index = y as usize * width as usize + x as usize;
-            let dx = x as f32 - center_x;
-            let dy = y as f32 - center_y;
-            if dx * dx + dy * dy <= radius_squared && exclusions[index] == 0 {
+            if valid_region.contains_x(x, y, row_offset_squared) && exclusions[index] == 0 {
                 keep[index] = 255;
             }
         }
@@ -970,6 +1007,71 @@ mod tests {
         assert_eq!(mask.get_pixel(2, 2)[0], 255);
         assert!(!request.masks_dir.join("lens0/.frame.png.png.part").exists());
         Ok(())
+    }
+
+    #[test]
+    fn keeps_scene_pixels_above_the_dji_curve_and_excludes_only_pixels_below_it() {
+        let exclusions = vec![0; 100 * 100];
+        let optical_occlusion = OpticalOcclusion::from_source_pixels(
+            100.0,
+            100.0,
+            50.0,
+            50.0,
+            &[20.0, 50.0, 80.0],
+            &[70.0, 90.0, 70.0],
+        )
+        .unwrap();
+        let keep = build_keep_mask(
+            100,
+            100,
+            DJI_VALID_RADIUS_RATIO as f32,
+            Some(&optical_occlusion),
+            &exclusions,
+        );
+        let pixel = |x: usize, y: usize| keep[y * 100 + x];
+
+        assert_eq!(pixel(49, 1), 255);
+        assert_eq!(pixel(99, 49), 255);
+        assert_eq!(pixel(49, 88), 255);
+        assert_eq!(pixel(49, 90), 0);
+    }
+
+    #[test]
+    fn selects_dji_calibration_by_source_prefix_and_lens_folder() {
+        let dir = TempDir::new().unwrap();
+        let mut request = request(&dir);
+        let occlusion = OpticalOcclusion::from_source_pixels(
+            100.0,
+            100.0,
+            50.0,
+            50.0,
+            &[20.0, 50.0, 80.0],
+            &[70.0, 90.0, 70.0],
+        )
+        .unwrap();
+        request.optical_occlusions.insert(
+            "source000_".to_owned(),
+            LensOpticalOcclusions {
+                lens0: occlusion.clone(),
+                lens1: occlusion,
+            },
+        );
+
+        assert!(optical_occlusion_for_input(
+            &request,
+            &request.images_dir.join("lens0/source000_000001.jpg")
+        )
+        .is_some());
+        assert!(optical_occlusion_for_input(
+            &request,
+            &request.images_dir.join("lens1/source000_000001.jpg")
+        )
+        .is_some());
+        assert!(optical_occlusion_for_input(
+            &request,
+            &request.images_dir.join("lens0/source001_000001.jpg")
+        )
+        .is_none());
     }
 
     #[test]

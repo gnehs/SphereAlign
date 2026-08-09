@@ -1,5 +1,6 @@
 mod doctor;
 mod extraction;
+mod fisheye;
 mod masking;
 mod pipeline;
 mod project;

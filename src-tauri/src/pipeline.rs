@@ -4,6 +4,7 @@
 
 use crate::doctor::find_executable;
 use crate::extraction::{self, ExtractionRequest};
+use crate::fisheye::DJI_VALID_RADIUS_RATIO;
 use crate::masking::{self, CancelToken, MaskRequest};
 use crate::project::{self, ProjectManifest, StageName, StageStatus};
 use crate::telemetry;
@@ -742,6 +743,40 @@ fn run_mask(
         .unwrap_or_else(Vec::new);
     let confidence = mask_confidence(&manifest.settings);
     let mask_sky = setting_bool(&manifest.settings, "/mask/maskSky", false);
+    let mut optical_occlusions = BTreeMap::new();
+    for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
+        let input = PathBuf::from(raw_input);
+        let is_osv = input
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("osv"));
+        if !is_osv || !input.is_file() {
+            continue;
+        }
+        match telemetry::read_dji_optical_occlusions(&input) {
+            Ok(Some(calibrations)) => {
+                optical_occlusions.insert(format!("source{source_index:03}_"), calibrations);
+            }
+            Ok(None) => emit_log(
+                app,
+                id,
+                "warning",
+                format!(
+                    "{} 未提供可用的 DJI 光學遮擋曲線；改用完整 fisheye 圓",
+                    input.display()
+                ),
+            ),
+            Err(error) => emit_log(
+                app,
+                id,
+                "warning",
+                format!(
+                    "無法讀取 {} 的 DJI 光學遮擋曲線（{error}）；改用完整 fisheye 圓",
+                    input.display()
+                ),
+            ),
+        }
+    }
     let model_cache_dir = if classes.is_empty() && !mask_sky {
         None
     } else {
@@ -764,7 +799,8 @@ fn run_mask(
             confidence
         }
         .clamp(0.01, 0.99) as f32,
-        valid_radius_ratio: 0.497,
+        valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
+        optical_occlusions,
         // Existing mask files do not carry model/settings/algorithm provenance.
         // Recompute them so a corrected model threshold or postprocessor cannot
         // silently reuse a dimensionally valid but stale mask.
