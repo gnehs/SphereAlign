@@ -1,11 +1,13 @@
 import {
   AlertTriangle,
   CircleDashed,
+  Clock3,
   Cpu,
   FileStack,
   FolderOpen,
   HardDrive,
   Info,
+  MapPin,
   MonitorCog,
   MoreHorizontal,
   Play,
@@ -15,6 +17,7 @@ import {
   ScanLine,
   Settings2,
   Square,
+  Timer,
   Upload,
   Video,
   Workflow,
@@ -69,6 +72,15 @@ interface StageState {
   progress: number;
   message: string;
   jobId?: string;
+  phase?: string;
+  completed?: number;
+  total?: number;
+  currentItem?: string;
+  timestampMs?: number;
+  updatedAtMs?: number;
+  startedAtMs?: number;
+  finishedAtMs?: number;
+  durationMs?: number;
 }
 
 interface PipelineSettings {
@@ -93,6 +105,7 @@ interface ProjectManifest {
   outputPath: string;
   settings: Record<string, unknown>;
   stages: Record<StageKey, StageState>;
+  logs: TaskLog[];
   warnings: string[];
   updatedAt?: string;
 }
@@ -108,6 +121,26 @@ interface DiagnosticItem {
   status: DiagnosticStatus;
 }
 
+type TaskLogKind = "progress" | "message" | "summary";
+type TaskLogLevel = "info" | "warning" | "error";
+
+interface TaskLog {
+  id: string;
+  kind: TaskLogKind;
+  stage?: StageKey;
+  phase?: string;
+  jobId?: string;
+  level: TaskLogLevel;
+  message: string;
+  timestampMs: number;
+  startedAtMs?: number;
+  finishedAtMs?: number;
+  durationMs?: number;
+  completed?: number;
+  total?: number;
+  currentItem?: string;
+}
+
 interface DoctorReport {
   platform: string;
   summary: string;
@@ -118,11 +151,29 @@ interface DoctorReport {
 
 interface ProgressEventPayload {
   stage?: StageKey;
-  progress: number;
+  progress?: number;
   status?: StageStatus;
   message?: string;
   jobId?: string;
+  phase?: string;
+  completed?: number;
+  total?: number;
+  currentItem?: string;
+  timestampMs?: number;
+  elapsedMs?: number;
   done?: boolean;
+}
+
+interface LogEventPayload {
+  jobId?: string;
+  level: TaskLogLevel;
+  message: string;
+  stage?: StageKey;
+  phase?: string;
+  timestampMs: number;
+  completed?: number;
+  total?: number;
+  currentItem?: string;
 }
 
 interface AutoPipelineRun {
@@ -225,11 +276,160 @@ function platformLabel(value: string) {
   return labels[value.toLowerCase()] ?? value;
 }
 
+function timestampMs(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 0 && value < 100_000_000_000 ? Math.round(value * 1000) : Math.round(value);
+  }
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric > 0 && numeric < 100_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  if (typeof value === "boolean") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.round(number) : undefined;
+}
+
+function basename(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const clean = value.trim().replace(/[\\/]+$/, "");
+  return clean.split(/[\\/]/).filter(Boolean).pop() || clean;
+}
+
+function normaliseLogLevel(value: unknown): TaskLogLevel {
+  const raw = String(value ?? "info").toLowerCase();
+  if (raw.includes("error") || raw.includes("fail")) return "error";
+  if (raw.includes("warn")) return "warning";
+  return "info";
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  starting: "準備",
+  scanning: "掃描",
+  scoring: "評分候選",
+  "selecting-in-memory": "記憶體候選評分",
+  "decoding-full-resolution": "原始解析度解碼",
+  committing: "寫入輸出",
+  masking: "遮罩推論",
+  matching: "影像配對",
+  "feature-extraction": "特徵擷取",
+  bootstrap: "初始建模",
+  "final-mapping": "最終重建",
+  rig: "相機組估計",
+  completed: "完成",
+  cancelled: "已取消",
+  failed: "失敗",
+  summary: "階段摘要",
+};
+
+function phaseLabel(value?: string) {
+  if (!value) return "處理中";
+  return PHASE_LABELS[value] ?? value.replace(/[-_]+/g, " ");
+}
+
+function formatDuration(value?: number) {
+  if (!Number.isFinite(value) || value === undefined || value < 0) return "尚未計時";
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  if (totalSeconds < 1) return "不到 1 秒";
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+  if (hours > 0) return `${hours} 小時 ${String(minutes).padStart(2, "0")} 分`;
+  if (minutes > 0) return `${minutes} 分 ${String(seconds).padStart(2, "0")} 秒`;
+  return `${seconds} 秒`;
+}
+
+function formatTimestamp(value?: number, includeDate = false) {
+  if (!value) return "尚未記錄";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "尚未記錄";
+  return date.toLocaleString("zh-TW", includeDate
+    ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }
+    : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 function formatUpdatedAt(value?: string) {
   if (!value) return "尚無更新時間";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
+  const parsed = timestampMs(value);
+  if (!parsed) return value;
+  return new Date(parsed).toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function stageLogStatus(status: StageStatus) {
+  if (status === "completed") return "已完成";
+  if (status === "cancelled") return "已取消";
+  if (status === "failed") return "失敗";
+  if (status === "running") return "執行中";
+  return "待執行";
+}
+
+function stageSummaryLogs(stages: Record<StageKey, StageState>): TaskLog[] {
+  return STAGES.flatMap(({ key, label }) => {
+    const stage = stages[key];
+    const updated = stage.updatedAtMs;
+    const timestamp = stage.finishedAtMs ?? updated ?? stage.startedAtMs;
+    if (stage.status === "pending" || (!timestamp && stage.durationMs === undefined)) return [];
+    return [{
+      id: `summary:${key}:${timestamp ?? 0}`,
+      kind: "summary" as const,
+      stage: key,
+      phase: "summary",
+      level: stage.status === "failed" ? "error" as const : stage.status === "cancelled" ? "warning" as const : "info" as const,
+      message: `${label}：${stageLogStatus(stage.status)}`,
+      timestampMs: timestamp ?? Date.now(),
+      startedAtMs: stage.startedAtMs,
+      finishedAtMs: stage.finishedAtMs,
+      durationMs: stage.durationMs,
+    }];
+  });
+}
+
+function parseTaskLog(value: unknown, index: number): TaskLog | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const time = timestampMs(body.timestampMs ?? body.timestamp ?? body.updatedAt) ?? Date.now();
+  const message = typeof body.message === "string" && body.message ? localiseUserMessage(body.message) : "處理紀錄";
+  const stage = normaliseStage(body.stage);
+  const kind: TaskLogKind = body.kind === "summary" || body.kind === "message" ? body.kind : "progress";
+  const completed = nonNegativeInteger(body.completed);
+  const total = nonNegativeInteger(body.total);
+  return {
+    id: typeof body.id === "string" && body.id ? body.id : `log:${time}:${index}`,
+    kind,
+    stage,
+    phase: typeof body.phase === "string" && body.phase ? body.phase : undefined,
+    jobId: typeof body.jobId === "string" ? body.jobId : undefined,
+    level: normaliseLogLevel(body.level),
+    message,
+    timestampMs: time,
+    startedAtMs: timestampMs(body.startedAtMs ?? body.startedAt),
+    finishedAtMs: timestampMs(body.finishedAtMs ?? body.finishedAt),
+    durationMs: nonNegativeInteger(body.durationMs ?? body.elapsedMs),
+    completed,
+    total,
+    currentItem: basename(body.currentItem),
+  };
+}
+
+function parseTaskLogs(value: unknown, stages: Record<StageKey, StageState>): TaskLog[] {
+  const parsed = Array.isArray(value)
+    ? value.map((entry, index) => parseTaskLog(entry, index)).filter((entry): entry is TaskLog => Boolean(entry))
+    : [];
+  return parsed.length ? parsed.slice(-100) : stageSummaryLogs(stages).slice(-100);
+}
+
+function taskStageLabel(stage?: StageKey) {
+  return STAGES.find((item) => item.key === stage)?.label ?? "系統";
+}
+
+function logCountLabel(completed?: number, total?: number) {
+  if (completed !== undefined && total !== undefined) return `${completed.toLocaleString("zh-TW")} / ${total.toLocaleString("zh-TW")}`;
+  if (total !== undefined) return `總計 ${total.toLocaleString("zh-TW")}`;
+  if (completed !== undefined) return `已處理 ${completed.toLocaleString("zh-TW")}`;
+  return undefined;
 }
 
 function taskProgress(task: Task) {
@@ -272,11 +472,21 @@ function cloneStages(raw: unknown): Record<StageKey, StageState> {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return STAGES.reduce((result, stage) => {
     const item = source[stage.key] && typeof source[stage.key] === "object" ? (source[stage.key] as Record<string, unknown>) : {};
+    const updatedAtMs = timestampMs(item.updatedAtMs ?? item.updatedAt);
     result[stage.key] = {
       status: normaliseStageStatus(item.status),
       progress: toProgress(item.progress),
       message: typeof item.message === "string" && item.message ? localiseUserMessage(item.message) : "尚未執行",
       jobId: typeof item.jobId === "string" ? item.jobId : undefined,
+      phase: typeof item.phase === "string" && item.phase ? item.phase : undefined,
+      completed: nonNegativeInteger(item.completed),
+      total: nonNegativeInteger(item.total),
+      currentItem: basename(item.currentItem),
+      timestampMs: timestampMs(item.timestampMs ?? item.updatedAtMs ?? item.updatedAt),
+      updatedAtMs,
+      startedAtMs: timestampMs(item.startedAtMs ?? item.startedAt),
+      finishedAtMs: timestampMs(item.finishedAtMs ?? item.finishedAt),
+      durationMs: nonNegativeInteger(item.durationMs ?? item.elapsedMs),
     };
     return result;
   }, {} as Record<StageKey, StageState>);
@@ -288,6 +498,7 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
   const inputPaths = Array.isArray(body.inputPaths) ? body.inputPaths.filter((path): path is string => typeof path === "string") : [];
   const outputPath = typeof body.outputPath === "string" ? body.outputPath : typeof body.rootPath === "string" ? body.rootPath : "";
   if (!outputPath && !inputPaths.length) return null;
+  const stages = cloneStages(body.stages);
   return {
     projectId: typeof body.projectId === "string" ? body.projectId : `project-${Date.now()}`,
     name: typeof body.name === "string" && body.name ? body.name : outputPath.split(/[\\/]/).filter(Boolean).pop() || "未命名重建",
@@ -295,7 +506,8 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
     inputPaths,
     outputPath,
     settings: body.settings && typeof body.settings === "object" ? (body.settings as Record<string, unknown>) : {},
-    stages: cloneStages(body.stages),
+    stages,
+    logs: parseTaskLogs(body.logs ?? body.pipelineLogs, stages),
     warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [],
     updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : undefined,
   };
@@ -303,13 +515,41 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
 
 function readProgress(payload: unknown): ProgressEventPayload {
   const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const rawDone = body.done;
+  const rawCompleted = body.completed;
+  const done = typeof rawDone === "boolean"
+    ? rawDone
+    : typeof rawCompleted === "boolean"
+      ? rawCompleted
+      : false;
   return {
     stage: normaliseStage(body.stage ?? body.name),
-    progress: toProgress(body.progress ?? body.percent),
-    status: normaliseStageStatus(body.status ?? body.state),
+    progress: body.progress !== undefined || body.percent !== undefined ? toProgress(body.progress ?? body.percent) : undefined,
+    status: body.status !== undefined || body.state !== undefined ? normaliseStageStatus(body.status ?? body.state) : undefined,
     message: typeof body.message === "string" ? localiseUserMessage(body.message) : undefined,
     jobId: typeof body.jobId === "string" ? body.jobId : undefined,
-    done: Boolean(body.done ?? body.completed),
+    phase: typeof body.phase === "string" && body.phase ? body.phase : undefined,
+    completed: nonNegativeInteger(typeof rawCompleted === "boolean" ? undefined : rawCompleted),
+    total: nonNegativeInteger(body.total),
+    currentItem: basename(body.currentItem),
+    timestampMs: timestampMs(body.timestampMs ?? body.timestamp),
+    elapsedMs: nonNegativeInteger(body.elapsedMs ?? body.durationMs),
+    done,
+  };
+}
+
+function readLogEvent(payload: unknown): LogEventPayload {
+  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  return {
+    jobId: typeof body.jobId === "string" ? body.jobId : undefined,
+    level: normaliseLogLevel(body.level),
+    message: typeof body.message === "string" ? localiseUserMessage(body.message) : String(payload ?? "處理紀錄"),
+    stage: normaliseStage(body.stage),
+    phase: typeof body.phase === "string" && body.phase ? body.phase : undefined,
+    timestampMs: timestampMs(body.timestampMs ?? body.timestamp) ?? Date.now(),
+    completed: nonNegativeInteger(body.completed),
+    total: nonNegativeInteger(body.total),
+    currentItem: basename(body.currentItem),
   };
 }
 
@@ -399,6 +639,162 @@ function stageStatusLabel(status: StageStatus) {
   return "待執行";
 }
 
+function taskStageDuration(stage: StageState, nowMs: number) {
+  if (stage.status === "running" && stage.startedAtMs !== undefined) return Math.max(0, nowMs - stage.startedAtMs);
+  if (stage.durationMs !== undefined) return stage.durationMs;
+  if (stage.startedAtMs === undefined) return undefined;
+  if (stage.finishedAtMs !== undefined) return Math.max(0, stage.finishedAtMs - stage.startedAtMs);
+  return undefined;
+}
+
+function estimatedRemainingMs(stage: StageState, nowMs: number) {
+  if (stage.status !== "running") return undefined;
+  const elapsed = taskStageDuration(stage, nowMs);
+  if (elapsed === undefined || elapsed <= 0) return undefined;
+  if (stage.total !== undefined && stage.completed !== undefined && stage.completed > 0 && stage.total >= stage.completed) {
+    return Math.max(0, (elapsed / stage.completed) * (stage.total - stage.completed));
+  }
+  const progress = stage.progress / 100;
+  if (progress < 0.05) return undefined;
+  return Math.max(0, elapsed * (1 - progress) / progress);
+}
+
+function formatEta(value?: number) {
+  if (value === undefined) return "估算中";
+  if (value < 60_000) return `約 ${formatDuration(value)}`;
+  const minutes = Math.max(1, Math.round(value / 60_000));
+  return `約 ${minutes} 分鐘`;
+}
+
+interface TaskWorkSummary {
+  mode: "items" | "stages";
+  completed: number;
+  total: number;
+  remaining: number;
+  unit: string;
+  current: string;
+  currentStage?: StageKey;
+  elapsedMs?: number;
+  etaMs?: number;
+}
+
+function taskWorkSummary(task: Task, nowMs: number): TaskWorkSummary {
+  const running = STAGES.find(({ key }) => task.stages[key].status === "running");
+  const interrupted = STAGES.find(({ key }) => ["failed", "cancelled"].includes(task.stages[key].status));
+  const activeStage = running ?? interrupted;
+  const countedStage = activeStage
+    && task.stages[activeStage.key].total !== undefined
+    && task.stages[activeStage.key].total !== 0
+    ? activeStage
+    : undefined;
+  if (countedStage) {
+    const stage = task.stages[countedStage.key];
+    const total = stage.total ?? 0;
+    const completed = Math.min(total, stage.completed ?? Math.round((stage.progress / 100) * total));
+    return {
+      mode: "items",
+      completed,
+      total,
+      remaining: Math.max(0, total - completed),
+      unit: countedStage.key === "mask" ? "個檔案" : countedStage.key === "align" ? "個步驟" : "組影格",
+      current: stage.currentItem
+        ? `${stage.message || countedStage.label} · ${stage.currentItem}`
+        : stage.message || countedStage.label,
+      currentStage: countedStage.key,
+      elapsedMs: taskStageDuration(stage, nowMs),
+      etaMs: estimatedRemainingMs(stage, nowMs),
+    };
+  }
+  const completed = STAGES.filter(({ key }) => task.stages[key].status === "completed").length;
+  const active = running ?? STAGES.find(({ key }) => task.stages[key].status !== "completed");
+  return {
+    mode: "stages",
+    completed,
+    total: STAGES.length,
+    remaining: Math.max(0, STAGES.length - completed),
+    unit: "個階段",
+    current: active ? `${STAGES.find((stage) => stage.key === active.key)?.label ?? "處理階段"} · ${active ? (task.stages[active.key].message || stageStatusLabel(task.stages[active.key].status)) : ""}` : "所有階段已完成",
+    currentStage: active?.key,
+    elapsedMs: active ? taskStageDuration(task.stages[active.key], nowMs) : undefined,
+    etaMs: active ? estimatedRemainingMs(task.stages[active.key], nowMs) : undefined,
+  };
+}
+
+function logLevelForStatus(status?: StageStatus): TaskLogLevel {
+  if (status === "failed") return "error";
+  if (status === "cancelled") return "warning";
+  return "info";
+}
+
+function mergeProgressLog(
+  logs: TaskLog[],
+  taskId: string,
+  stageKey: StageKey,
+  previousStage: StageState,
+  payload: ProgressEventPayload,
+  status: StageStatus,
+  eventTime: number,
+) {
+  const jobId = payload.jobId || previousStage.jobId;
+  const phase = payload.phase || previousStage.phase || (status === "running" ? "processing" : status);
+  const jobKey = jobId || taskId;
+  const activeIndex = logs.reduce((found, log, index) => (
+    log.kind === "progress" && log.stage === stageKey && (!jobId || !log.jobId || log.jobId === jobId) && log.finishedAtMs === undefined ? index : found
+  ), -1);
+  const matchingIndex = logs.findIndex((log) => log.kind === "progress" && log.stage === stageKey && log.jobId === jobId && log.phase === phase);
+  let nextLogs = logs.slice();
+  if (activeIndex >= 0 && matchingIndex < 0 && nextLogs[activeIndex].phase !== phase) {
+    const active = nextLogs[activeIndex];
+    nextLogs[activeIndex] = {
+      ...active,
+      finishedAtMs: eventTime,
+      durationMs: active.startedAtMs === undefined ? active.durationMs : Math.max(0, eventTime - active.startedAtMs),
+    };
+  }
+  const index = matchingIndex >= 0 ? matchingIndex : activeIndex >= 0 && nextLogs[activeIndex].phase === phase ? activeIndex : -1;
+  const current = index >= 0 ? nextLogs[index] : undefined;
+  const startedAtMs = current?.startedAtMs ?? (status === "running" ? eventTime : previousStage.startedAtMs ?? eventTime);
+  const finished = payload.done || status !== "running";
+  const finishedAtMs = finished ? eventTime : undefined;
+  const durationMs = payload.elapsedMs ?? (finished && startedAtMs !== undefined ? Math.max(0, eventTime - startedAtMs) : current?.durationMs);
+  const next: TaskLog = {
+    id: current?.id ?? `progress:${jobKey}:${stageKey}:${phase}`,
+    kind: "progress",
+    stage: stageKey,
+    phase,
+    jobId,
+    level: logLevelForStatus(status),
+    message: payload.message || current?.message || previousStage.message,
+    timestampMs: eventTime,
+    startedAtMs,
+    finishedAtMs,
+    durationMs,
+    completed: payload.completed ?? current?.completed,
+    total: payload.total ?? current?.total,
+    currentItem: payload.currentItem ?? current?.currentItem,
+  };
+  if (index >= 0) nextLogs[index] = next;
+  else nextLogs.push(next);
+  return nextLogs.slice(-100);
+}
+
+function appendMessageLog(logs: TaskLog[], taskId: string, payload: LogEventPayload, stage?: StageKey, phase?: string) {
+  const sequence = `${payload.timestampMs}-${logs.length}`;
+  return [...logs, {
+    id: `message:${payload.jobId || taskId}:${sequence}`,
+    kind: "message" as const,
+    stage: payload.stage || stage,
+    phase: payload.phase || phase,
+    jobId: payload.jobId,
+    level: payload.level,
+    message: payload.message,
+    timestampMs: payload.timestampMs,
+    completed: payload.completed,
+    total: payload.total,
+    currentItem: payload.currentItem,
+  }].slice(-100);
+}
+
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -413,17 +809,58 @@ function App() {
   const [doctorLoading, setDoctorLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [, setLogs] = useState<string[]>([]);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeJobIds = useRef<Record<string, string>>({});
+  const jobTaskIds = useRef<Record<string, string>>({});
+  const pendingStageStarts = useRef<Record<string, StageKey>>({});
+  const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
+  const taskSnapshot = useRef<Task[]>([]);
+  const logSequence = useRef(0);
   const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
+  const selectedWorkSummary = useMemo(() => selectedTask ? taskWorkSummary(selectedTask, clockMs) : undefined, [clockMs, selectedTask]);
+  const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
+  const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
 
-  const addLog = useCallback((message: string) => {
-    setLogs((current) => [message, ...current].slice(0, 10));
+  useEffect(() => {
+    taskSnapshot.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!hasRunningStage) return undefined;
+    const interval = window.setInterval(() => setClockMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [hasRunningStage]);
+
+  const appendTaskLog = useCallback((taskId: string, payload: LogEventPayload, stage?: StageKey, phase?: string) => {
+    setTasks((current) => current.map((task) => task.projectId === taskId
+      ? { ...task, logs: appendMessageLog(task.logs, taskId, payload, stage, phase) }
+      : task));
   }, []);
+
+  const bindJobToTask = useCallback((taskId: string, jobId: string) => {
+    if (!jobId) return;
+    activeJobIds.current[taskId] = jobId;
+    jobTaskIds.current[jobId] = taskId;
+    const pending = pendingLogsByJobId.current[jobId];
+    if (!pending?.length) return;
+    delete pendingLogsByJobId.current[jobId];
+    setTasks((current) => current.map((task) => task.projectId === taskId
+      ? { ...task, logs: [...task.logs, ...pending].slice(-100) }
+      : task));
+  }, []);
+
+  const addTaskMessage = useCallback((taskId: string, message: string, level: TaskLogLevel = "info") => {
+    logSequence.current += 1;
+    appendTaskLog(taskId, {
+      level,
+      message: localiseUserMessage(message),
+      timestampMs: Date.now() + logSequence.current / 1000,
+    });
+  }, [appendTaskLog]);
 
   const inspectSourcePaths = useCallback(async (paths: string[]) => {
     if (!paths.length) return;
@@ -436,7 +873,7 @@ function App() {
         setTaskDialogOpen(false);
         setSourcePaths([]);
         setSourceInspection("");
-        addLog(`已載入可續作專案 ${manifest.name}`);
+        addTaskMessage(manifest.projectId, `已載入可續作專案 ${manifest.name}`);
         setToast(manifest.warnings.length ? `已載入未完成專案：${manifest.warnings.length} 項警告` : `已載入未完成專案：${manifest.name}`);
         return;
       }
@@ -452,7 +889,7 @@ function App() {
     } else {
       setSourceInspection("尚未取得來源檢查結果");
     }
-  }, [addLog]);
+  }, [addTaskMessage]);
 
   const applySourcePaths = useCallback((paths: string[], openDialogAfter = true) => {
     const actual = paths.filter(Boolean);
@@ -537,7 +974,7 @@ function App() {
       const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: result }));
       if (manifest) {
         setTasks((current) => [manifest, ...current]);
-        addLog(`已開啟 ${manifest.name}`);
+        addTaskMessage(manifest.projectId, `已開啟 ${manifest.name}`);
       } else {
         setToast("找不到可載入的專案資訊");
       }
@@ -545,7 +982,7 @@ function App() {
       console.info("[GS360] load project", error);
       setToast("開啟專案失敗");
     }
-  }, [addLog]);
+  }, [addTaskMessage]);
 
   const runDoctor = useCallback(async () => {
     setDoctorLoading(true);
@@ -579,10 +1016,75 @@ function App() {
     setTasks((current) => current.map((task) => task.projectId === taskId ? { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], ...patch } } } : task));
   }, []);
 
+  const resolveTaskForJob = useCallback((jobId?: string, stageKey?: StageKey) => {
+    if (jobId && jobTaskIds.current[jobId]) return jobTaskIds.current[jobId];
+    if (jobId) {
+      const active = Object.entries(activeJobIds.current).find(([, value]) => value === jobId)?.[0];
+      if (active) return active;
+      const staged = taskSnapshot.current.find((task) => STAGES.some(({ key }) => (!stageKey || key === stageKey) && task.stages[key].jobId === jobId));
+      if (staged) return staged.projectId;
+    }
+    const pending = Object.entries(pendingStageStarts.current).filter(([, key]) => !stageKey || key === stageKey).map(([taskId]) => taskId);
+    const auto = Object.entries(autoPipelineRuns.current).filter(([, run]) => run.stage && (!stageKey || run.stage === stageKey) && !run.jobId).map(([taskId]) => taskId);
+    const candidates = Array.from(new Set([...pending, ...auto]));
+    if (candidates.length === 1) return candidates[0];
+    if (!stageKey) {
+      const running = taskSnapshot.current.filter((task) => STAGES.some(({ key }) => task.stages[key].status === "running"));
+      if (running.length === 1) return running[0].projectId;
+    }
+    return undefined;
+  }, []);
+
+  const applyProgressEvent = useCallback((taskId: string, payload: ProgressEventPayload) => {
+    const stageKey = payload.stage;
+    if (!stageKey) return;
+    const eventTime = payload.timestampMs ?? Date.now();
+    setTasks((current) => current.map((task) => {
+      if (task.projectId !== taskId) return task;
+      const previous = task.stages[stageKey];
+      const status: StageStatus = payload.done
+        ? payload.status ?? "completed"
+        : payload.status ?? "running";
+      const terminal = status === "completed" || status === "cancelled" || status === "failed";
+      const startedAtMs = status === "running"
+        ? previous.status === "running" ? previous.startedAtMs : eventTime
+        : previous.startedAtMs;
+      const finishedAtMs = terminal ? eventTime : undefined;
+      const durationMs = payload.elapsedMs
+        ?? (terminal && startedAtMs !== undefined ? Math.max(0, eventTime - startedAtMs) : undefined);
+      const progress = status === "completed"
+        ? payload.progress ?? 100
+        : terminal
+          ? previous.progress
+          : payload.progress ?? previous.progress;
+      const nextStage: StageState = {
+        ...previous,
+        progress,
+        status,
+        message: payload.message || previous.message,
+        jobId: payload.jobId || previous.jobId,
+        phase: payload.phase || previous.phase,
+        completed: payload.completed ?? previous.completed,
+        total: payload.total ?? previous.total,
+        currentItem: payload.currentItem ?? previous.currentItem,
+        timestampMs: eventTime,
+        startedAtMs,
+        finishedAtMs,
+        durationMs,
+      };
+      return {
+        ...task,
+        stages: { ...task.stages, [stageKey]: nextStage },
+        logs: mergeProgressLog(task.logs, task.projectId, stageKey, previous, payload, status, eventTime),
+      };
+    }));
+  }, []);
+
   const startAutoStage = useCallback(async (taskId: string, stageKey: StageKey) => {
     const run = autoPipelineRuns.current[taskId];
     if (!run || run.stage || run.jobId || activeJobIds.current[taskId]) return;
     run.stage = stageKey;
+    pendingStageStarts.current[taskId] = stageKey;
     const result = await invokeSafely<{ jobId?: string }>("start_stage", {
       request: {
         projectPath: run.task.rootPath || run.task.outputPath,
@@ -594,6 +1096,7 @@ function App() {
     if (!result?.jobId) {
       if (currentRun === run) {
         delete autoPipelineRuns.current[taskId];
+        delete pendingStageStarts.current[taskId];
         setToast("無法自動啟動階段，請查看執行環境訊息");
       }
       return;
@@ -601,16 +1104,19 @@ function App() {
     if (currentRun !== run || run.stage !== stageKey) {
       // A user cancellation can race with the command response. Do not leave
       // a backend job running after its auto-pipeline session was stopped.
+      delete pendingStageStarts.current[taskId];
       await invokeSafely("cancel_job", { jobId: result.jobId });
       return;
     }
     const progressAlreadyReceived = run.jobId === result.jobId;
     run.jobId = result.jobId;
-    activeJobIds.current[taskId] = result.jobId;
+    delete pendingStageStarts.current[taskId];
+    bindJobToTask(taskId, result.jobId);
+    const startedAtMs = progressAlreadyReceived ? undefined : Date.now();
     updateTaskStage(taskId, stageKey, progressAlreadyReceived
       ? { status: "running", jobId: result.jobId }
-      : { status: "running", progress: 0, message: "正在準備工作", jobId: result.jobId });
-  }, [updateTaskStage]);
+      : { status: "running", progress: 0, message: "正在準備工作", jobId: result.jobId, phase: "starting", startedAtMs, finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
+  }, [bindJobToTask, updateTaskStage]);
 
   const startAutoPipeline = useCallback((task: Task) => {
     if (!IS_TAURI_RUNTIME || task.previewOnly) return;
@@ -631,13 +1137,13 @@ function App() {
     let createdTask: Task | null = null;
     if (manifest) {
       createdTask = manifest;
-      setTasks((current) => [manifest, ...current]);
-      addLog(`已建立 ${manifest.name}`);
+      const logPayload: LogEventPayload = { level: "info", message: `已建立 ${manifest.name}`, timestampMs: Date.now() };
+      setTasks((current) => [{ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) }, ...current]);
     } else if (!IS_TAURI_RUNTIME) {
-      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), warnings: ["瀏覽器預覽：尚未連接本機執行環境"], previewOnly: true };
+      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: ["瀏覽器預覽：尚未連接本機執行環境"], previewOnly: true };
       createdTask = preview;
-      setTasks((current) => [preview, ...current]);
-      addLog(`預覽任務已加入 ${preview.name}`);
+      const logPayload: LogEventPayload = { level: "info", message: `預覽任務已加入 ${preview.name}`, timestampMs: Date.now() };
+      setTasks((current) => [{ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) }, ...current]);
     } else {
       setToast("建立任務失敗，請查看執行環境訊息");
       return;
@@ -646,7 +1152,7 @@ function App() {
     setSourcePaths([]);
     setSourceInspection("");
     if (createdTask) startAutoPipeline(createdTask);
-  }, [addLog, nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
+  }, [nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
 
   const startStage = useCallback(async (task: Task, stageKey: StageKey, mode: "start" | "resume" | "retry") => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會執行後端工作"); return; }
@@ -654,23 +1160,34 @@ function App() {
       setToast("此任務已有處理階段執行中，請稍候");
       return;
     }
+    pendingStageStarts.current[task.projectId] = stageKey;
     const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: task.settings || settingsDraft } });
     if (result?.jobId) {
-      activeJobIds.current[task.projectId] = result.jobId;
-      updateTaskStage(task.projectId, stageKey, { status: "running", progress: task.stages[stageKey].progress, message: "正在準備工作", jobId: result.jobId });
-    } else setToast("無法啟動階段，請查看執行環境訊息");
-  }, [settingsDraft, updateTaskStage]);
+      delete pendingStageStarts.current[task.projectId];
+      bindJobToTask(task.projectId, result.jobId);
+      const receivedEarlyProgress = jobTaskIds.current[result.jobId] === task.projectId
+        || taskSnapshot.current.some((currentTask) => currentTask.projectId === task.projectId && currentTask.stages[stageKey].jobId === result.jobId);
+      updateTaskStage(task.projectId, stageKey, receivedEarlyProgress
+        ? { status: "running", jobId: result.jobId }
+        : { status: "running", progress: task.stages[stageKey].progress, message: "正在準備工作", phase: "starting", jobId: result.jobId, startedAtMs: Date.now(), finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
+    } else {
+      delete pendingStageStarts.current[task.projectId];
+      setToast("無法啟動階段，請查看執行環境訊息");
+    }
+  }, [bindJobToTask, settingsDraft, updateTaskStage]);
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會取消後端工作"); return; }
     const autoRun = autoPipelineRuns.current[task.projectId];
     if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
+    delete pendingStageStarts.current[task.projectId];
     const jobId = task.stages[stageKey].jobId || activeJobIds.current[task.projectId];
     if (!jobId) return;
     const cancelled = await invokeSafely<boolean>("cancel_job", { jobId });
     if (cancelled === true) {
       if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
-      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續" });
+      const finishedAtMs = Date.now();
+      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續", finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
     }
   }, [updateTaskStage]);
 
@@ -684,34 +1201,26 @@ function App() {
           const payload = readProgress(event.payload);
           const stageKey = payload.stage;
           if (!stageKey) return;
-          const directTargetProjectId = payload.jobId
-            ? Object.entries(activeJobIds.current).find(([, jobId]) => jobId === payload.jobId)?.[0]
-            : undefined;
-          const pendingAutoRuns = payload.jobId && !directTargetProjectId
-            ? Object.entries(autoPipelineRuns.current).filter(([, run]) => run.stage === stageKey && !run.jobId)
-            : [];
-          const targetProjectId = directTargetProjectId || (pendingAutoRuns.length === 1 ? pendingAutoRuns[0][0] : undefined);
-          if (targetProjectId && payload.jobId && !directTargetProjectId) {
+          const targetProjectId = resolveTaskForJob(payload.jobId, stageKey);
+          if (targetProjectId && payload.jobId) {
+            bindJobToTask(targetProjectId, payload.jobId);
             const pendingRun = autoPipelineRuns.current[targetProjectId];
-            if (pendingRun && pendingRun.stage === stageKey && !pendingRun.jobId) {
-              pendingRun.jobId = payload.jobId;
-              activeJobIds.current[targetProjectId] = payload.jobId;
-            }
+            if (pendingRun && pendingRun.stage === stageKey && !pendingRun.jobId) pendingRun.jobId = payload.jobId;
           }
-          setTasks((current) => current.map((task) => {
-            if (!targetProjectId || task.projectId !== targetProjectId) return task;
-            return { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], progress: payload.progress, status: payload.done ? (payload.status === "failed" ? "failed" : payload.status === "cancelled" ? "cancelled" : "completed") : payload.status || "running", message: payload.message || task.stages[stageKey].message, jobId: payload.jobId || task.stages[stageKey].jobId } } };
-          }));
-          if (targetProjectId && (payload.status === "failed" || payload.status === "cancelled")) {
+          if (!targetProjectId) return;
+          applyProgressEvent(targetProjectId, payload);
+          if (payload.status === "failed" || payload.status === "cancelled") {
             delete autoPipelineRuns.current[targetProjectId];
-            if (activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
+            delete pendingStageStarts.current[targetProjectId];
+            if (payload.jobId && activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
           }
-          if (!payload.done || !targetProjectId) return;
-          if (activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
+          if (!payload.done) return;
+          delete pendingStageStarts.current[targetProjectId];
+          if (payload.jobId && activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
           const run = autoPipelineRuns.current[targetProjectId];
           if (!run || run.stage !== stageKey || (run.jobId && run.jobId !== payload.jobId)) return;
           run.jobId = undefined;
-          if (payload.status !== "completed") {
+          if ((payload.status ?? "completed") !== "completed") {
             delete autoPipelineRuns.current[targetProjectId];
             return;
           }
@@ -719,22 +1228,34 @@ function App() {
           const nextStage = currentIndex >= 0 ? STAGES[currentIndex + 1] : undefined;
           if (!nextStage) {
             delete autoPipelineRuns.current[targetProjectId];
-            addLog("自動管線已完成影格擷取、遮罩與對齊");
+            addTaskMessage(targetProjectId, "自動管線已完成影格擷取、遮罩與對齊");
             return;
           }
           run.stage = undefined;
           void startAutoStage(targetProjectId, nextStage.key);
         }),
         listen<unknown>("pipeline-log", (event) => {
-          const body = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
-          addLog(typeof body.message === "string" ? body.message : String(event.payload));
+          const payload = readLogEvent(event.payload);
+          const targetProjectId = resolveTaskForJob(payload.jobId, payload.stage);
+          if (!targetProjectId) {
+            if (payload.jobId) {
+              const pending = pendingLogsByJobId.current[payload.jobId] ?? [];
+              pendingLogsByJobId.current[payload.jobId] = appendMessageLog(pending, payload.jobId, payload, payload.stage, payload.phase);
+            }
+            return;
+          }
+          if (payload.jobId) bindJobToTask(targetProjectId, payload.jobId);
+          const targetTask = taskSnapshot.current.find((task) => task.projectId === targetProjectId);
+          const inferredStage = payload.stage || STAGES.find(({ key }) => targetTask?.stages[key].jobId === payload.jobId)?.key || STAGES.find(({ key }) => targetTask?.stages[key].status === "running")?.key;
+          const inferredPhase = payload.phase || (inferredStage ? targetTask?.stages[inferredStage].phase : undefined);
+          appendTaskLog(targetProjectId, payload, inferredStage, inferredPhase);
         }),
       ]);
       if (disposed) { progressStop(); logStop(); } else { unlistenProgress = progressStop; unlistenLog = logStop; }
     };
     if (IS_TAURI_RUNTIME) void register();
     return () => { disposed = true; unlistenProgress?.(); unlistenLog?.(); };
-  }, [addLog, startAutoStage]);
+  }, [appendTaskLog, applyProgressEvent, bindJobToTask, resolveTaskForJob, startAutoStage, addTaskMessage]);
 
   const handleStageAction = useCallback((task: Task, stageKey: StageKey) => {
     const status = task.stages[stageKey].status;
@@ -892,7 +1413,7 @@ function App() {
           <SheetContent className="task-detail-sheet" side="right">
             <SheetHeader>
               <SheetTitle>{selectedTask.name}</SheetTitle>
-              <SheetDescription>查看任務進度、來源與各處理階段的最新狀態。</SheetDescription>
+              <SheetDescription>查看任務進度、目前處理位置、逐步耗時與處理紀錄。</SheetDescription>
             </SheetHeader>
             <div className="task-detail-scroll">
               <section className="task-detail-overview">
@@ -905,17 +1426,42 @@ function App() {
                 </dl>
               </section>
 
+              {selectedWorkSummary && (
+                <section className="task-detail-section task-detail-summary">
+                  <div className="task-detail-section-title"><h2>處理摘要</h2><span>{selectedWorkSummary.mode === "items" ? "目前階段" : "整體管線"}</span></div>
+                  <div className="task-detail-summary-grid">
+                    <div><span>已處理</span><strong>{selectedWorkSummary.completed.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
+                    <div><span>剩餘</span><strong>{selectedWorkSummary.remaining.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
+                    <div><span>總計</span><strong>{selectedWorkSummary.total.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
+                  </div>
+                  <div className="task-detail-current"><MapPin /><span><small>現在處理</small><strong>{selectedWorkSummary.current}</strong></span></div>
+                  <div className="task-detail-timing"><span><Clock3 />經過 {formatDuration(selectedWorkSummary.elapsedMs)}</span><span><Timer />剩餘 {formatEta(selectedWorkSummary.etaMs)}</span></div>
+                </section>
+              )}
+
               <section className="task-detail-section">
                 <div className="task-detail-section-title"><h2>處理階段</h2><span>{STAGES.length} 個階段</span></div>
                 <div className="task-detail-stages">
-                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; return (
+                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const elapsed = taskStageDuration(current, clockMs); const eta = estimatedRemainingMs(current, clockMs); return (
                     <div className="task-detail-stage" key={stage.key}>
-                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
+                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{current.phase ? `${phaseLabel(current.phase)} · ` : ""}{current.message || stage.description}{current.currentItem ? ` · ${current.currentItem}` : ""}</small></span><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
                       <div className="task-detail-stage-progress"><Progress value={current.progress}><ProgressValue /></Progress><span>{current.progress}%</span></div>
+                      <div className="task-detail-stage-time"><span><Clock3 />{current.status === "running" ? `經過 ${formatDuration(elapsed)}` : elapsed !== undefined ? `耗時 ${formatDuration(elapsed)}` : "尚未開始"}</span>{current.status === "running" ? <span>剩餘 {formatEta(eta)}</span> : current.finishedAtMs ? <small>結束 {formatTimestamp(current.finishedAtMs, true)}</small> : current.startedAtMs ? <small>開始 {formatTimestamp(current.startedAtMs, true)}</small> : null}</div>
                       <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
                     </div>
                   ); })}
                 </div>
+              </section>
+
+              <section className="task-detail-section">
+                <div className="task-detail-section-title"><h2>處理紀錄</h2><span>{selectedTaskLogs.length} 筆</span></div>
+                {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
+                  const count = logCountLabel(log.completed, log.total);
+                  return <li className={`task-detail-log task-detail-log--${log.level}`} key={log.id}>
+                    <span className="task-detail-log-marker" aria-hidden="true" />
+                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{log.message}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>耗時 {formatDuration(log.durationMs)}</span>}</div></div>
+                  </li>;
+                })}</ol> : <p className="task-detail-empty">尚無處理紀錄；開始執行後會在這裡顯示每個階段與目前位置。</p>}
               </section>
 
               <section className="task-detail-section">

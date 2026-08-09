@@ -197,6 +197,9 @@ impl Default for MaskRequest {
 pub struct MaskProgress {
     pub index: usize,
     pub total: usize,
+    /// Number of files whose terminal outcome has been recorded.  This is
+    /// independent from `index`, because inference runs concurrently.
+    pub completed: usize,
     pub input: PathBuf,
     pub mask_path: PathBuf,
     pub colmap_mask_path: PathBuf,
@@ -358,6 +361,7 @@ pub fn process_mask_batch(
     on_progress(MaskProgress {
         index: 0,
         total: 0,
+        completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         colmap_mask_path: request.colmap_masks_dir.clone(),
@@ -368,6 +372,7 @@ pub fn process_mask_batch(
     on_progress(MaskProgress {
         index: 0,
         total: 0,
+        completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         colmap_mask_path: request.colmap_masks_dir.clone(),
@@ -384,6 +389,7 @@ pub fn process_mask_batch(
         on_progress(MaskProgress {
             index: 0,
             total: 0,
+            completed: 0,
             input: request.images_dir.clone(),
             mask_path: request.masks_dir.clone(),
             colmap_mask_path: request.colmap_masks_dir.clone(),
@@ -395,6 +401,7 @@ pub fn process_mask_batch(
     on_progress(MaskProgress {
         index: 0,
         total: 0,
+        completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         colmap_mask_path: request.colmap_masks_dir.clone(),
@@ -471,6 +478,7 @@ fn skip_fully_verified_batch(
             on_progress,
             index,
             total,
+            index + 1,
             input,
             mask_path,
             colmap_path,
@@ -621,17 +629,44 @@ where
 {
     let (mask_path, colmap_path) = match output_paths(request, input) {
         Ok(paths) => paths,
-        Err(error) => return FileOutcome::Failed(error.to_string()),
+        Err(error) => {
+            let completed_hint = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            let _guard = progress_lock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let completed_count = completed
+                .load(Ordering::Acquire)
+                .max(completed_hint)
+                .min(total);
+            emit_progress(
+                on_progress,
+                index,
+                total,
+                completed_count,
+                input,
+                &request.masks_dir,
+                &request.colmap_masks_dir,
+                MaskStage::Failed,
+                completed_count as f32 / total as f32,
+                &error.to_string(),
+            );
+            return FileOutcome::Failed(error.to_string());
+        }
     };
-    let report = |stage: MaskStage, fraction: f32, message: &str| {
+    let report = |stage: MaskStage, fraction: f32, completed_hint: usize, message: &str| {
         let _guard = progress_lock
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let completed_fraction = completed.load(Ordering::Acquire) as f32 / total as f32;
+        let completed_count = completed
+            .load(Ordering::Acquire)
+            .max(completed_hint)
+            .min(total);
+        let completed_fraction = completed_count as f32 / total as f32;
         emit_progress(
             on_progress,
             index,
             total,
+            completed_count,
             input,
             &mask_path,
             &colmap_path,
@@ -640,12 +675,11 @@ where
             message,
         );
     };
-    let finish = || (completed.fetch_add(1, Ordering::AcqRel) + 1) as f32 / total as f32;
-
     if cancel.is_cancelled() {
         report(
             MaskStage::Cancelled,
             completed.load(Ordering::Acquire) as f32 / total as f32,
+            completed.load(Ordering::Acquire),
             "遮罩處理已取消",
         );
         return FileOutcome::Cancelled;
@@ -659,7 +693,13 @@ where
         Ok(image) => image,
         Err(error) => {
             let message = error.to_string();
-            report(MaskStage::Failed, finish(), &message);
+            let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            report(
+                MaskStage::Failed,
+                completed_count as f32 / total as f32,
+                completed_count,
+                &message,
+            );
             return FileOutcome::Failed(message);
         }
     };
@@ -669,7 +709,13 @@ where
         && is_valid_mask_file(&mask_path, width, height)
         && is_valid_mask_file(&colmap_path, width, height)
     {
-        report(MaskStage::Skipped, finish(), "已確認遮罩存在，已略過");
+        let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(
+            MaskStage::Skipped,
+            completed_count as f32 / total as f32,
+            completed_count,
+            "已確認遮罩存在，已略過",
+        );
         return FileOutcome::Skipped;
     }
 
@@ -679,6 +725,7 @@ where
     report(
         MaskStage::Inference,
         completed.load(Ordering::Acquire) as f32 / total as f32,
+        completed.load(Ordering::Acquire),
         "正在執行 YOLO11／SkySeg 推論",
     );
     let exclusions = match engine.generate_exclusion_mask(
@@ -693,13 +740,20 @@ where
             report(
                 MaskStage::Cancelled,
                 completed.load(Ordering::Acquire) as f32 / total as f32,
+                completed.load(Ordering::Acquire),
                 "遮罩處理已取消",
             );
             return FileOutcome::Cancelled;
         }
         Err(error) => {
             let message = error.to_string();
-            report(MaskStage::Failed, finish(), &message);
+            let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            report(
+                MaskStage::Failed,
+                completed_count as f32 / total as f32,
+                completed_count,
+                &message,
+            );
             return FileOutcome::Failed(message);
         }
     };
@@ -709,7 +763,13 @@ where
             "backend returned {}x{} for mask working size {}x{}",
             exclusions.width, exclusions.height, mask_width, mask_height
         );
-        report(MaskStage::Failed, finish(), &message);
+        let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(
+            MaskStage::Failed,
+            completed_count as f32 / total as f32,
+            completed_count,
+            &message,
+        );
         return FileOutcome::Failed(message);
     }
 
@@ -717,6 +777,7 @@ where
         report(
             MaskStage::Cancelled,
             completed.load(Ordering::Acquire) as f32 / total as f32,
+            completed.load(Ordering::Acquire),
             "已在寫入遮罩前取消",
         );
         return FileOutcome::Cancelled;
@@ -734,24 +795,43 @@ where
         Ok(mask) => mask,
         Err(error) => {
             let message = error.to_string();
-            report(MaskStage::Failed, finish(), &message);
+            let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            report(
+                MaskStage::Failed,
+                completed_count as f32 / total as f32,
+                completed_count,
+                &message,
+            );
             return FileOutcome::Failed(message);
         }
     };
     report(
         MaskStage::Writing,
         completed.load(Ordering::Acquire) as f32 / total as f32,
+        completed.load(Ordering::Acquire),
         "正在寫入遮罩檔案",
     );
     if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep, false)
         .and_then(|_| write_mask_atomic(&colmap_path, width, height, &keep, true))
     {
         let message = error.to_string();
-        report(MaskStage::Failed, finish(), &message);
+        let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(
+            MaskStage::Failed,
+            completed_count as f32 / total as f32,
+            completed_count,
+            &message,
+        );
         return FileOutcome::Failed(message);
     }
 
-    report(MaskStage::Completed, finish(), "遮罩處理完成");
+    let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+    report(
+        MaskStage::Completed,
+        completed_count as f32 / total as f32,
+        completed_count,
+        "遮罩處理完成",
+    );
     FileOutcome::Succeeded
 }
 
@@ -1065,6 +1145,7 @@ fn emit_progress(
     callback: &impl Fn(MaskProgress),
     index: usize,
     total: usize,
+    completed: usize,
     input: &Path,
     mask_path: &Path,
     colmap_path: &Path,
@@ -1075,6 +1156,7 @@ fn emit_progress(
     callback(MaskProgress {
         index: index + 1,
         total,
+        completed: completed.min(total),
         input: input.to_path_buf(),
         mask_path: mask_path.to_path_buf(),
         colmap_mask_path: colmap_path.to_path_buf(),
@@ -1365,9 +1447,14 @@ mod tests {
             max_in_flight: AtomicUsize::new(0),
         };
         let fractions = Mutex::new(Vec::new());
+        let completed_counts = Mutex::new(Vec::new());
         let summary =
             process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |progress| {
                 fractions.lock().unwrap().push(progress.fraction);
+                completed_counts
+                    .lock()
+                    .unwrap()
+                    .push((progress.completed, progress.total));
             })?;
 
         assert_eq!(summary.succeeded, 6);
@@ -1377,6 +1464,14 @@ mod tests {
         let fractions = fractions.into_inner().unwrap();
         assert!(fractions.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(fractions.last().copied(), Some(1.0));
+        let completed_counts = completed_counts.into_inner().unwrap();
+        assert!(completed_counts
+            .windows(2)
+            .all(|pair| pair[0].0 <= pair[1].0));
+        assert!(completed_counts
+            .iter()
+            .all(|(completed, total)| *completed <= *total && *total == 6));
+        assert_eq!(completed_counts.last().copied(), Some((6, 6)));
         Ok(())
     }
 

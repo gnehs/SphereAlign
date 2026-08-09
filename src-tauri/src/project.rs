@@ -9,7 +9,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const MANIFEST_FILE: &str = "project.json";
 pub const MANIFEST_VERSION: u32 = 1;
@@ -22,6 +22,13 @@ fn now_timestamp() -> String {
         .map(|d| d.as_secs())
         .unwrap_or_default();
     seconds.to_string()
+}
+
+fn now_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 fn new_project_id() -> String {
@@ -103,6 +110,18 @@ pub struct StageCheckpoint {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub updated_at: String,
+    /// Wall-clock timestamp (milliseconds since Unix epoch) for the current
+    /// run.  Optional so manifests written before timing support remain
+    /// readable without migration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at_ms: Option<u64>,
+    /// Wall-clock timestamp (milliseconds since Unix epoch) when the current
+    /// run reached a terminal state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at_ms: Option<u64>,
+    /// Monotonic elapsed duration of the run, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 impl Default for StageCheckpoint {
@@ -114,6 +133,9 @@ impl Default for StageCheckpoint {
             artifacts: Vec::new(),
             warnings: Vec::new(),
             updated_at: now_timestamp(),
+            started_at_ms: None,
+            finished_at_ms: None,
+            duration_ms: None,
         }
     }
 }
@@ -514,6 +536,9 @@ fn completed_checkpoint(message: &str, artifacts: Vec<String>) -> StageCheckpoin
         artifacts,
         warnings: Vec::new(),
         updated_at: now_timestamp(),
+        started_at_ms: None,
+        finished_at_ms: None,
+        duration_ms: None,
     }
 }
 
@@ -739,11 +764,16 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
         manifest.stages = default_stages();
     }
     let mut recovered_running_stage = false;
+    let recovery_finished_at_ms = now_timestamp_ms();
     for checkpoint in manifest.stages.values_mut() {
         if matches!(checkpoint.status, StageStatus::Running) {
             checkpoint.status = StageStatus::Cancelled;
             checkpoint.message = "上次處理中斷，此階段可繼續執行".to_owned();
             checkpoint.updated_at = now_timestamp();
+            checkpoint.finished_at_ms = Some(recovery_finished_at_ms);
+            checkpoint.duration_ms = checkpoint
+                .started_at_ms
+                .and_then(|started| recovery_finished_at_ms.checked_sub(started));
             recovered_running_stage = true;
         }
     }
@@ -845,6 +875,7 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
     Ok(manifest)
 }
 
+#[allow(dead_code)]
 pub fn update_stage(
     manifest: &mut ProjectManifest,
     stage: &StageName,
@@ -854,6 +885,38 @@ pub fn update_stage(
     artifacts: Vec<String>,
     warnings: Vec<String>,
 ) -> Result<(), String> {
+    update_stage_timed(
+        manifest, stage, status, progress, message, artifacts, warnings, None,
+    )
+}
+
+/// Update a stage checkpoint and, when supplied, persist the monotonic timer
+/// for the current invocation.  `Instant` is intentionally passed by the
+/// caller: it cannot be serialized, but it is the only clock suitable for an
+/// elapsed duration that is not affected by wall-clock adjustments.
+pub fn update_stage_timed(
+    manifest: &mut ProjectManifest,
+    stage: &StageName,
+    status: StageStatus,
+    progress: f32,
+    message: impl Into<String>,
+    artifacts: Vec<String>,
+    warnings: Vec<String>,
+    started_at: Option<Instant>,
+) -> Result<(), String> {
+    let now_ms = now_timestamp_ms();
+    let previous = manifest.stage(stage);
+    let (started_at_ms, finished_at_ms, duration_ms) = match &status {
+        StageStatus::Running => (Some(now_ms), None, None),
+        StageStatus::Completed | StageStatus::Cancelled | StageStatus::Failed => {
+            let started_at_ms = previous.started_at_ms;
+            let duration_ms = started_at
+                .map(|instant| instant.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
+                .or_else(|| started_at_ms.and_then(|value| now_ms.checked_sub(value)));
+            (started_at_ms, Some(now_ms), duration_ms)
+        }
+        StageStatus::Pending => (None, None, None),
+    };
     manifest.set_stage(
         stage,
         StageCheckpoint {
@@ -863,6 +926,9 @@ pub fn update_stage(
             artifacts,
             warnings,
             updated_at: now_timestamp(),
+            started_at_ms,
+            finished_at_ms,
+            duration_ms,
         },
     );
     save_manifest(manifest)
@@ -871,7 +937,7 @@ pub fn update_stage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     static TEST_TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -894,6 +960,90 @@ mod tests {
             "\"extract\""
         );
         assert_eq!("align".parse::<StageName>().unwrap(), StageName::Align);
+    }
+
+    #[test]
+    fn old_manifest_without_timing_fields_is_backward_compatible() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let manifest = json!({
+            "manifestVersion": MANIFEST_VERSION,
+            "projectId": "legacy",
+            "name": "Legacy",
+            "rootPath": root,
+            "outputPath": root,
+            "stages": {"extract": {"status": "pending"}}
+        });
+        fs::write(
+            root.join(MANIFEST_FILE),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = load(&root).unwrap();
+        let extract = loaded.stage(&StageName::Extract);
+        assert!(extract.started_at_ms.is_none());
+        assert!(extract.finished_at_ms.is_none());
+        assert!(extract.duration_ms.is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn timed_stage_checkpoint_persists_elapsed_duration() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let mut manifest = ProjectManifest {
+            manifest_version: MANIFEST_VERSION,
+            project_id: "timed".to_owned(),
+            name: "Timed".to_owned(),
+            root_path: root.to_string_lossy().into_owned(),
+            input_paths: Vec::new(),
+            output_path: root.to_string_lossy().into_owned(),
+            settings: json!({}),
+            stages: default_stages(),
+            capabilities: BTreeMap::new(),
+            warnings: Vec::new(),
+            created_at: now_timestamp(),
+            updated_at: now_timestamp(),
+        };
+        save_manifest(&manifest).unwrap();
+
+        let started_at = Instant::now();
+        update_stage_timed(
+            &mut manifest,
+            &StageName::Mask,
+            StageStatus::Running,
+            0.0,
+            "running",
+            Vec::new(),
+            Vec::new(),
+            Some(started_at),
+        )
+        .unwrap();
+        let running = manifest.stage(&StageName::Mask);
+        assert!(running.started_at_ms.is_some());
+        assert!(running.finished_at_ms.is_none());
+        assert!(running.duration_ms.is_none());
+
+        std::thread::sleep(Duration::from_millis(2));
+        update_stage_timed(
+            &mut manifest,
+            &StageName::Mask,
+            StageStatus::Completed,
+            1.0,
+            "completed",
+            Vec::new(),
+            Vec::new(),
+            Some(started_at),
+        )
+        .unwrap();
+        let completed = load(&root).unwrap().stage(&StageName::Mask);
+        assert!(completed
+            .finished_at_ms
+            .zip(completed.started_at_ms)
+            .is_some_and(|(finished, started)| finished >= started));
+        assert!(completed.duration_ms.is_some());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1025,6 +1175,7 @@ mod tests {
             StageStatus::Cancelled
         ));
         assert!(recovered.stages["mask"].message.contains("可繼續執行"));
+        assert!(recovered.stages["mask"].finished_at_ms.is_some());
         let persisted = load(&root).unwrap();
         assert!(matches!(
             persisted.stages["mask"].status,

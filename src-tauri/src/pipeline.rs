@@ -3,7 +3,9 @@
 //! shell string), so paths containing spaces cannot inject commands.
 
 use crate::doctor::find_executable;
-use crate::extraction::{self, ExtractionRequest, SelectionMetadata, SelectionRecord};
+use crate::extraction::{
+    self, ExtractionRequest, ExtractionStage, SelectionMetadata, SelectionRecord,
+};
 use crate::fisheye::DJI_VALID_RADIUS_RATIO;
 use crate::masking::{self, CancelToken, MaskRequest};
 use crate::project::{self, ProjectManifest, StageName, StageStatus};
@@ -19,7 +21,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 static JOB_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -72,6 +74,9 @@ struct ProgressEvent {
     message: String,
     completed: Option<u64>,
     total: Option<u64>,
+    current_item: Option<String>,
+    timestamp_ms: u64,
+    elapsed_ms: Option<u64>,
     done: bool,
     status: String,
 }
@@ -82,6 +87,7 @@ struct LogEvent {
     job_id: String,
     level: String,
     message: String,
+    timestamp_ms: u64,
 }
 
 #[derive(Clone)]
@@ -144,6 +150,30 @@ fn job_id() -> String {
     )
 }
 
+fn now_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
+}
+
+fn elapsed_ms(started_at: Instant) -> u64 {
+    started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn extraction_completed_count(
+    completed: &AtomicU64,
+    stage: ExtractionStage,
+    interval: usize,
+    total_intervals: usize,
+) -> u64 {
+    let total = total_intervals as u64;
+    if matches!(stage, ExtractionStage::Completed | ExtractionStage::Skipped) {
+        completed.fetch_max(interval.min(total_intervals) as u64, Ordering::AcqRel);
+    }
+    completed.load(Ordering::Acquire).min(total)
+}
+
 fn emit_progress(
     app: &AppHandle,
     id: &str,
@@ -154,6 +184,26 @@ fn emit_progress(
     status: &str,
     done: bool,
 ) {
+    emit_progress_detailed(
+        app, id, stage, phase, progress, message, status, done, None, None, None, None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_progress_detailed(
+    app: &AppHandle,
+    id: &str,
+    stage: &StageName,
+    phase: &str,
+    progress: f32,
+    message: impl Into<String>,
+    status: &str,
+    done: bool,
+    completed: Option<u64>,
+    total: Option<u64>,
+    current_item: Option<String>,
+    elapsed_ms: Option<u64>,
+) {
     let _ = app.emit(
         "pipeline-progress",
         ProgressEvent {
@@ -162,8 +212,11 @@ fn emit_progress(
             phase: phase.to_string(),
             progress: progress.clamp(0.0, 1.0),
             message: message.into(),
-            completed: None,
-            total: None,
+            completed,
+            total,
+            current_item,
+            timestamp_ms: now_timestamp_ms(),
+            elapsed_ms,
             done,
             status: status.to_string(),
         },
@@ -177,6 +230,7 @@ fn emit_log(app: &AppHandle, id: &str, level: &str, message: impl Into<String>) 
             job_id: id.to_string(),
             level: level.to_string(),
             message: message.into(),
+            timestamp_ms: now_timestamp_ms(),
         },
     );
 }
@@ -201,7 +255,8 @@ pub fn start_stage(
     let stage = request.stage.clone();
     let response = StartStageResponse { job_id: id.clone() };
     thread::spawn(move || {
-        let _ = project::update_stage(
+        let stage_started_at = Instant::now();
+        let _ = project::update_stage_timed(
             &mut manifest,
             &stage,
             StageStatus::Running,
@@ -209,6 +264,7 @@ pub fn start_stage(
             "處理階段已開始",
             Vec::new(),
             Vec::new(),
+            Some(stage_started_at),
         );
         emit_progress(
             &app,
@@ -227,7 +283,8 @@ pub fn start_stage(
         };
         let cancelled = control.cancelled.load(Ordering::Acquire);
         if cancelled {
-            let _ = project::update_stage(
+            let stage_elapsed_ms = elapsed_ms(stage_started_at);
+            let _ = project::update_stage_timed(
                 &mut manifest,
                 &stage,
                 StageStatus::Cancelled,
@@ -235,8 +292,9 @@ pub fn start_stage(
                 "處理階段已取消，已寫入的結果可繼續使用",
                 Vec::new(),
                 Vec::new(),
+                Some(stage_started_at),
             );
-            emit_progress(
+            emit_progress_detailed(
                 &app,
                 &id,
                 &stage,
@@ -245,11 +303,16 @@ pub fn start_stage(
                 "工作已取消，可稍後續作",
                 "cancelled",
                 true,
+                None,
+                None,
+                None,
+                Some(stage_elapsed_ms),
             );
         } else {
             match result {
                 Ok(artifacts) => {
-                    let _ = project::update_stage(
+                    let stage_elapsed_ms = elapsed_ms(stage_started_at);
+                    let _ = project::update_stage_timed(
                         &mut manifest,
                         &stage,
                         StageStatus::Completed,
@@ -257,8 +320,9 @@ pub fn start_stage(
                         "處理階段已完成",
                         artifacts,
                         Vec::new(),
+                        Some(stage_started_at),
                     );
-                    emit_progress(
+                    emit_progress_detailed(
                         &app,
                         &id,
                         &stage,
@@ -267,11 +331,16 @@ pub fn start_stage(
                         "處理完成",
                         "completed",
                         true,
+                        None,
+                        None,
+                        None,
+                        Some(stage_elapsed_ms),
                     );
                 }
                 Err(error) => {
                     emit_log(&app, &id, "error", &error);
-                    let _ = project::update_stage(
+                    let stage_elapsed_ms = elapsed_ms(stage_started_at);
+                    let _ = project::update_stage_timed(
                         &mut manifest,
                         &stage,
                         StageStatus::Failed,
@@ -279,8 +348,22 @@ pub fn start_stage(
                         error.clone(),
                         Vec::new(),
                         vec![error.clone()],
+                        Some(stage_started_at),
                     );
-                    emit_progress(&app, &id, &stage, "failed", 0.0, error, "failed", true);
+                    emit_progress_detailed(
+                        &app,
+                        &id,
+                        &stage,
+                        "failed",
+                        0.0,
+                        error,
+                        "failed",
+                        true,
+                        None,
+                        None,
+                        None,
+                        Some(stage_elapsed_ms),
+                    );
                 }
             }
         }
@@ -1267,10 +1350,12 @@ fn run_extract(
     let skip_blurry = setting_bool(&manifest.settings, "/extract/skipBlurry", true);
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
     let total_sources = manifest.input_paths.len().max(1) as f32;
+    let total_sources_count = manifest.input_paths.len() as u64;
     let mut telemetry_streams = Vec::new();
     let mut normalized_telemetry = Vec::new();
     for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
         let input = PathBuf::from(raw_input);
+        let current_source = input.to_string_lossy().into_owned();
         let probe = probe_streams(&ffprobe, &input)?;
         let streams = stream_indices(&probe, "video");
         if streams.len() < 2 {
@@ -1319,7 +1404,7 @@ fn run_extract(
             );
             selection
         } else {
-            emit_progress(
+            emit_progress_detailed(
                 app,
                 id,
                 &StageName::Extract,
@@ -1331,6 +1416,10 @@ fn run_extract(
                 ),
                 "running",
                 false,
+                Some(source_index as u64),
+                Some(total_sources_count),
+                Some(current_source.clone()),
+                None,
             );
             let software_args =
                 candidate_ffmpeg_args(&input, streams[0], streams[1], candidate_fps);
@@ -1417,7 +1506,7 @@ fn run_extract(
         fs::create_dir_all(&mapped_lens1).map_err(|error| error.to_string())?;
 
         if !selected_sequences.is_empty() {
-            emit_progress(
+            emit_progress_detailed(
                 app,
                 id,
                 &StageName::Extract,
@@ -1430,6 +1519,10 @@ fn run_extract(
                 ),
                 "running",
                 false,
+                Some(source_index as u64),
+                Some(total_sources_count),
+                Some(current_source.clone()),
+                None,
             );
             let software_args = selected_ffmpeg_args(
                 &input,
@@ -1487,13 +1580,22 @@ fn run_extract(
         let app_clone = app.clone();
         let id_owned = id.to_owned();
         let cancelled = control.cancelled.clone();
+        let completed_intervals = Arc::new(AtomicU64::new(0));
+        let completed_intervals_for_callback = completed_intervals.clone();
         let source_offset = source_index as f32 / total_sources;
         let source_scale = 1.0 / total_sources;
         let commit_summary = extraction::extract_selected_pairs(
             &commit_request,
             || cancelled.load(Ordering::Acquire),
             move |event| {
-                emit_progress(
+                let total_intervals = event.total_intervals as u64;
+                let completed = extraction_completed_count(
+                    &completed_intervals_for_callback,
+                    event.stage,
+                    event.interval,
+                    event.total_intervals,
+                );
+                emit_progress_detailed(
                     &app_clone,
                     &id_owned,
                     &StageName::Extract,
@@ -1502,6 +1604,10 @@ fn run_extract(
                     format!("來源 {}：{}", source_index + 1, event.message),
                     "running",
                     false,
+                    Some(completed),
+                    Some(total_intervals),
+                    Some(current_source.clone()),
+                    None,
                 )
             },
         )
@@ -1750,7 +1856,8 @@ fn run_mask(
     let app_clone = app.clone();
     let id_owned = id.to_string();
     let summary = masking::process_mask_batch(&request, &control.mask_cancel, move |event| {
-        emit_progress(
+        let total = (event.total > 0).then_some(event.total as u64);
+        emit_progress_detailed(
             &app_clone,
             &id_owned,
             &stage,
@@ -1759,6 +1866,10 @@ fn run_mask(
             event.message,
             "running",
             false,
+            total.map(|_| event.completed.min(event.total) as u64),
+            total,
+            Some(event.input.to_string_lossy().into_owned()),
+            None,
         );
     })
     .map_err(|error| error.to_string())?;
@@ -1865,6 +1976,20 @@ fn run_align(
     let sparse = root.join("sparse");
     if db.is_file() && sparse_model_exists(&sparse) {
         emit_log(app, id, "info", "已驗證現有 COLMAP 重建結果，略過重算");
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Align,
+            "completed",
+            1.0,
+            "已沿用現有 COLMAP 重建結果",
+            "running",
+            false,
+            Some(5),
+            Some(5),
+            Some("existing sparse model".to_owned()),
+            None,
+        );
         return Ok(vec![
             db.to_string_lossy().into_owned(),
             root.join("rig_config.json").to_string_lossy().into_owned(),
@@ -1900,16 +2025,34 @@ fn run_align(
         args.push("--ImageReader.mask_path".into());
         args.push(root.join("masks_colmap").to_string_lossy().into_owned());
     }
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        "feature-extraction",
+        0.0,
+        "正在擷取影像特徵",
+        "running",
+        false,
+        Some(0),
+        Some(5),
+        Some("feature_extractor".to_owned()),
+        None,
+    );
     run_child(app, id, &colmap, &args, control)?;
-    emit_progress(
+    emit_progress_detailed(
         app,
         id,
         &StageName::Align,
         "matching",
-        0.3,
-        "正在建立受限影像配對",
+        1.0 / 5.0,
+        "正在匯入受限影像配對",
         "running",
         false,
+        Some(1),
+        Some(5),
+        Some("matches_importer".to_owned()),
+        None,
     );
     run_child(
         app,
@@ -1930,6 +2073,20 @@ fn run_align(
         ],
         control,
     )?;
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        "bootstrap",
+        2.0 / 5.0,
+        "正在建立初始模型",
+        "running",
+        false,
+        Some(2),
+        Some(5),
+        Some("bootstrap_mapper".to_owned()),
+        None,
+    );
     let bootstrap = root.join("sparse_bootstrap");
     if !sparse_model_exists(&bootstrap) {
         if bootstrap.exists() {
@@ -1956,15 +2113,19 @@ fn run_align(
     if !boot0.is_dir() {
         return Err("COLMAP 初始建模未產生 sparse/0".into());
     }
-    emit_progress(
+    emit_progress_detailed(
         app,
         id,
         &StageName::Align,
         "rig",
-        0.75,
+        3.0 / 5.0,
         "正在估計雙鏡頭相機組",
         "running",
         false,
+        Some(3),
+        Some(5),
+        Some("rig_configurator".to_owned()),
+        None,
     );
     run_child(
         app,
@@ -1981,6 +2142,20 @@ fn run_align(
         ],
         control,
     )?;
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        "final-mapping",
+        4.0 / 5.0,
+        "正在重建最終模型",
+        "running",
+        false,
+        Some(4),
+        Some(5),
+        Some("final_mapper".to_owned()),
+        None,
+    );
     if sparse.exists() {
         fs::remove_dir_all(&sparse).map_err(|e| e.to_string())?;
     }
@@ -2002,6 +2177,20 @@ fn run_align(
         ],
         control,
     )?;
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        "completed",
+        1.0,
+        "對齊處理完成",
+        "running",
+        false,
+        Some(5),
+        Some(5),
+        Some("completed".to_owned()),
+        None,
+    );
     Ok(vec![
         db.to_string_lossy().into_owned(),
         root.join("rig_config.json").to_string_lossy().into_owned(),
@@ -2013,11 +2202,12 @@ fn run_align(
 mod tests {
     use super::{
         balanced_select_expression, candidate_ffmpeg_args, candidate_image_names,
-        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs,
+        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, extraction_completed_count,
         load_candidate_selection_checkpoint, map_full_res_candidates, mask_confidence,
         read_raw_frames, selected_ffmpeg_args, synchronized_candidate_count, with_hwaccel_auto,
-        write_candidate_selection_checkpoint, write_rig_and_pairs, JobControl, JobManager,
-        RawFrameMessage, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
+        write_candidate_selection_checkpoint, write_rig_and_pairs, ExtractionStage, JobControl,
+        JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName,
+        StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
         CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
     use crate::masking::CancelToken;
@@ -2025,7 +2215,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::Path;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -2036,6 +2226,62 @@ mod tests {
         assert_eq!(
             mask_confidence(&json!({"mask": {"confidence": 72, "confidenceVersion": 2}})),
             72.0
+        );
+    }
+
+    #[test]
+    fn progress_and_log_wire_payloads_include_timing_fields() {
+        let progress = serde_json::to_value(ProgressEvent {
+            job_id: "job-test".to_owned(),
+            stage: StageName::Mask,
+            phase: "masking".to_owned(),
+            progress: 0.5,
+            message: "處理中".to_owned(),
+            completed: Some(5),
+            total: Some(10),
+            current_item: Some("frame.png".to_owned()),
+            timestamp_ms: 123,
+            elapsed_ms: Some(456),
+            done: false,
+            status: "running".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(progress["currentItem"], "frame.png");
+        assert_eq!(progress["timestampMs"], 123);
+        assert_eq!(progress["elapsedMs"], 456);
+
+        let log = serde_json::to_value(LogEvent {
+            job_id: "job-test".to_owned(),
+            level: "info".to_owned(),
+            message: "step".to_owned(),
+            timestamp_ms: 789,
+        })
+        .unwrap();
+        assert_eq!(log["timestampMs"], 789);
+    }
+
+    #[test]
+    fn extraction_counts_advance_only_on_terminal_intervals() {
+        let completed = AtomicU64::new(0);
+        assert_eq!(
+            extraction_completed_count(&completed, ExtractionStage::Scanning, 3, 5),
+            0
+        );
+        assert_eq!(
+            extraction_completed_count(&completed, ExtractionStage::Completed, 2, 5),
+            2
+        );
+        assert_eq!(
+            extraction_completed_count(&completed, ExtractionStage::Scoring, 4, 5),
+            2
+        );
+        assert_eq!(
+            extraction_completed_count(&completed, ExtractionStage::Skipped, 8, 5),
+            5
+        );
+        assert_eq!(
+            extraction_completed_count(&completed, ExtractionStage::Cancelled, 9, 5),
+            5
         );
     }
 
