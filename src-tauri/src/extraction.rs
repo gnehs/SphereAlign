@@ -6,7 +6,7 @@
 //! the two lens sharpness scores.  This keeps the two physical cameras on the
 //! same timestamp while still repairing a blurry candidate.
 
-use image::{GenericImageView, ImageReader};
+use image::{imageops::FilterType, GenericImageView, ImageReader};
 use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -126,6 +126,7 @@ pub struct SelectionMetadata {
     pub candidate_fps: f64,
     pub requested_dense_fps: f64,
     pub sharpness_scoring: bool,
+    pub sharpness_analysis_max_dimension: Option<u32>,
     pub intervals: usize,
     pub cancelled: bool,
     pub selections: Vec<SelectionRecord>,
@@ -155,6 +156,16 @@ pub struct SharpnessScore {
     pub tenengrad_mean: f64,
     pub combined: f64,
 }
+
+/// Longest side used by the sharpness proxy image.
+///
+/// Sharpness ranking only needs enough samples to distinguish edges; running
+/// the derivative loops over an 8K source frame wastes CPU and keeps multiple
+/// full-resolution buffers alive.  A 512-pixel bound still gives a dense
+/// sample of the fisheye circle while keeping the scoring working set small.
+/// With two square lenses this is about 2 * pi * (0.49 * 512)^2 valid samples,
+/// roughly the same pixel budget as a 768x512 gs360crop/reference atlas.
+pub const SHARPNESS_MAX_DIMENSION: u32 = 512;
 
 /// Select and atomically copy one shared lens pair for each base-FPS interval.
 pub fn extract_selected_pairs(
@@ -399,11 +410,14 @@ pub fn extract_selected_pairs(
         );
     }
     let metadata = SelectionMetadata {
-        schema_version: 1,
+        schema_version: 2,
         base_fps: request.base_fps,
         candidate_fps: request.candidate_fps,
         requested_dense_fps: request.dense_fps,
         sharpness_scoring: request.score_candidates,
+        sharpness_analysis_max_dimension: request
+            .score_candidates
+            .then_some(SHARPNESS_MAX_DIMENSION),
         intervals: total_intervals,
         cancelled,
         selections: records.clone(),
@@ -574,10 +588,8 @@ fn trailing_sequence(stem: &str) -> Option<u64> {
 /// variance, and Tenengrad Sobel energy.  The combined score is monotonic for
 /// the pairwise comparison used by selection, not an absolute focus measure.
 pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
-    let image = ImageReader::open(path)?
-        .with_guessed_format()?
-        .decode()?
-        .to_luma8();
+    let image = ImageReader::open(path)?.with_guessed_format()?.decode()?;
+    let image = sharpness_proxy_image(image).to_luma8();
     let width = image.width() as usize;
     let height = image.height() as usize;
     let pixels = image.into_raw();
@@ -643,6 +655,38 @@ pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
         tenengrad_mean,
         combined: laplacian_variance.sqrt() + tenengrad_mean.sqrt(),
     })
+}
+
+/// Downscale only high-resolution candidates before the expensive scoring
+/// passes.  Typical high-resolution candidates use the image crate's fast
+/// integer area-average thumbnail path.  Frames close to the analysis bound
+/// use a Triangle filter to avoid thumbnail's documented close-size aliasing
+/// caveat, and degenerate aspect ratios retain a five-pixel derivative axis.
+/// Small images are returned unchanged so scoring never upscales them.
+fn sharpness_proxy_image(image: image::DynamicImage) -> image::DynamicImage {
+    let (width, height) = image.dimensions();
+    let longest_side = width.max(height);
+    if longest_side <= SHARPNESS_MAX_DIMENSION {
+        return image;
+    }
+    let proxy = if longest_side < SHARPNESS_MAX_DIMENSION * 2 {
+        image.resize(
+            SHARPNESS_MAX_DIMENSION,
+            SHARPNESS_MAX_DIMENSION,
+            FilterType::Triangle,
+        )
+    } else {
+        image.thumbnail(SHARPNESS_MAX_DIMENSION, SHARPNESS_MAX_DIMENSION)
+    };
+    if proxy.width() >= 5 && proxy.height() >= 5 {
+        return proxy;
+    }
+    let (target_width, target_height) = if width >= height {
+        (SHARPNESS_MAX_DIMENSION, 5)
+    } else {
+        (5, SHARPNESS_MAX_DIMENSION)
+    };
+    image.resize_exact(target_width, target_height, FilterType::Triangle)
 }
 
 fn gaussian_blur_3x3(pixels: &[u8], width: usize, height: usize) -> Vec<f32> {
@@ -866,7 +910,7 @@ fn emit_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GrayImage, Luma};
+    use image::{DynamicImage, GrayImage, Luma};
     use std::sync::atomic::AtomicUsize;
     use tempfile::TempDir;
 
@@ -887,10 +931,14 @@ mod tests {
     }
 
     fn checker(size: u32) -> GrayImage {
+        checker_with_block(size, 2)
+    }
+
+    fn checker_with_block(size: u32, block: u32) -> GrayImage {
         let mut image = GrayImage::from_pixel(size, size, Luma([0]));
         for y in 0..size {
             for x in 0..size {
-                if (x / 2 + y / 2) % 2 == 0 {
+                if (x / block + y / block).is_multiple_of(2) {
                     image.put_pixel(x, y, Luma([255]));
                 }
             }
@@ -914,6 +962,42 @@ mod tests {
         };
         first.save(request.lens0_candidates.join(format!("{sequence:08}.png")))?;
         second.save(request.lens1_candidates.join(format!("{sequence:08}.png")))?;
+        Ok(())
+    }
+
+    #[test]
+    fn sharpness_proxy_caps_longest_side_without_upscaling() {
+        let large = GrayImage::new(4_096, 2_048);
+        let proxy = sharpness_proxy_image(DynamicImage::ImageLuma8(large));
+        assert_eq!(proxy.dimensions(), (SHARPNESS_MAX_DIMENSION, 256));
+
+        let small = GrayImage::new(320, 180);
+        let proxy = sharpness_proxy_image(DynamicImage::ImageLuma8(small));
+        assert_eq!(proxy.dimensions(), (320, 180));
+
+        let extreme = GrayImage::new(4_096, 16);
+        let proxy = sharpness_proxy_image(DynamicImage::ImageLuma8(extreme));
+        assert_eq!(proxy.dimensions(), (SHARPNESS_MAX_DIMENSION, 5));
+    }
+
+    #[test]
+    fn high_resolution_proxy_keeps_sharp_image_above_blurred_image() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let sharp = checker_with_block(2_048, 16);
+        let blurred = image::imageops::blur(&sharp, 6.0);
+        let sharp_path = dir.path().join("sharp.png");
+        let blurred_path = dir.path().join("blurred.png");
+        sharp.save(&sharp_path)?;
+        blurred.save(&blurred_path)?;
+
+        let sharp_score = calculate_sharpness(&sharp_path)?;
+        let blurred_score = calculate_sharpness(&blurred_path)?;
+        assert!(
+            sharp_score.combined > blurred_score.combined,
+            "sharp score {} should exceed blurred score {}",
+            sharp_score.combined,
+            blurred_score.combined
+        );
         Ok(())
     }
 
@@ -1027,6 +1111,8 @@ mod tests {
         assert!(request.lens1_output.join("00000000.png").is_file());
         let metadata = fs::read_to_string(&request.metadata_path.clone().unwrap())?;
         assert!(metadata.contains("requested_dense_fps"));
+        assert!(metadata.contains("\"schema_version\": 2"));
+        assert!(metadata.contains("\"sharpness_analysis_max_dimension\": 512"));
         // Ensure the output remains a valid PNG after a resume copy.
         let _ = ImageReader::open(request.lens0_output.join("00000000.png"))?
             .with_guessed_format()?

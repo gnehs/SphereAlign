@@ -34,8 +34,8 @@ colmap-{filename}/
 ### Extract
 
 - 透過系統 `ffmpeg` / `ffprobe` 找出前兩路 video stream，保留 native fisheye，不先轉 equirectangular。
-- 依 `baseFps` 產生輸出；啟用「跳過模糊影格」時，以 `denseFps` 解碼高品質 JPEG 候選影格，避免 10-bit 來源被 FFmpeg 展開成極大的 48-bit PNG。
-- Gaussian pre-blur、Laplacian variance 與 Tenengrad 只評估 fisheye 有效圓。
+- 依 `baseFps` 產生輸出；啟用「跳過模糊影格」時，以 `denseFps` 解碼高品質 JPEG 候選影格。FFmpeg 會先嘗試自動硬體解碼，失敗時清理部分輸出並安全回退 CPU 軟體解碼。
+- 清晰度分析會先為每顆鏡頭建立最長邊 512 px 的分析代理圖，再以 Gaussian pre-blur、Laplacian variance 與 Tenengrad 評估 fisheye 有效圓；最終選中的影格仍保留原始解析度。
 - 每個時間區間以 `min(lens0, lens1)` 選同一組影格，避免左右鏡頭不同步或單側模糊。
 - 候選 checkpoint、partial file 與 selection metadata 讓中斷後可以驗證並續作。
 - OSV data stream 以 FFmpeg stream copy 原樣保存；支援的 DJI metadata 另輸出標準化摘要與融合姿態。尚未驗證 sensor-to-camera 座標轉換的 quaternion 不會直接套用到 COLMAP。

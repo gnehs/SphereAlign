@@ -86,13 +86,18 @@ impl JobManager {
 
     fn insert(&self, id: String, control: JobControl) -> Result<(), String> {
         let mut jobs = self.jobs.lock().map_err(|_| "job manager is unavailable")?;
-        if jobs
-            .values()
-            .any(|job| !job.cancelled.load(Ordering::Acquire))
-        {
-            return Err("Another pipeline stage is already running".to_string());
+        if !jobs.is_empty() {
+            return Err(
+                if jobs
+                    .values()
+                    .any(|job| job.cancelled.load(Ordering::Acquire))
+                {
+                    "The previous pipeline stage is still stopping".to_string()
+                } else {
+                    "Another pipeline stage is already running".to_string()
+                },
+            );
         }
-        jobs.retain(|_, job| !job.cancelled.load(Ordering::Acquire));
         jobs.insert(id, control);
         Ok(())
     }
@@ -304,6 +309,9 @@ fn run_child(
     args: &[String],
     control: &JobControl,
 ) -> Result<(), String> {
+    if control.cancelled.load(Ordering::Acquire) {
+        return Err("cancelled".to_string());
+    }
     emit_log(
         app,
         id,
@@ -380,6 +388,127 @@ fn run_child(
     Ok(())
 }
 
+/// Build the software-decoder FFmpeg command used to capture both candidate
+/// fisheye streams.  Hardware acceleration is added separately so this vector
+/// remains the exact command used for a safe CPU fallback.
+fn candidate_ffmpeg_args(
+    input: &Path,
+    stream0: usize,
+    stream1: usize,
+    candidate_fps: f64,
+    lens0: &Path,
+    lens1: &Path,
+) -> Vec<String> {
+    vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-i".into(),
+        input.to_string_lossy().into_owned(),
+        "-map".into(),
+        format!("0:{stream0}"),
+        "-vf".into(),
+        format!("fps={candidate_fps}"),
+        "-fps_mode".into(),
+        "passthrough".into(),
+        "-q:v".into(),
+        "2".into(),
+        lens0.join("%08d.jpg").to_string_lossy().into_owned(),
+        "-map".into(),
+        format!("0:{stream1}"),
+        "-vf".into(),
+        format!("fps={candidate_fps}"),
+        "-fps_mode".into(),
+        "passthrough".into(),
+        "-q:v".into(),
+        "2".into(),
+        lens1.join("%08d.jpg").to_string_lossy().into_owned(),
+    ]
+}
+
+/// Add FFmpeg's input-scoped automatic hardware decoder selection immediately
+/// before the corresponding `-i`.  Keeping this as a pure transformation makes
+/// the argument ordering easy to verify without requiring a hardware device.
+fn with_hwaccel_auto(args: &[String]) -> Vec<String> {
+    let mut accelerated = args.to_vec();
+    let Some(input_index) = accelerated.iter().position(|arg| arg == "-i") else {
+        return accelerated;
+    };
+    accelerated.splice(
+        input_index..input_index,
+        ["-hwaccel".to_owned(), "auto".to_owned()],
+    );
+    accelerated
+}
+
+fn reset_candidate_dirs(candidate_root: &Path, lens0: &Path, lens1: &Path) -> Result<(), String> {
+    if candidate_root.exists() {
+        fs::remove_dir_all(candidate_root).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(lens0).map_err(|error| error.to_string())?;
+    fs::create_dir_all(lens1).map_err(|error| error.to_string())
+}
+
+/// Try hardware decoding once, then retry the exact software-decoder command
+/// when FFmpeg rejects hardware acceleration.  Cancellation is terminal: a
+/// cancelled hardware attempt must never launch a second FFmpeg process.
+#[allow(clippy::too_many_arguments)]
+fn run_candidate_ffmpeg_with_fallback(
+    app: &AppHandle,
+    id: &str,
+    ffmpeg: &Path,
+    accelerated_args: &[String],
+    software_args: &[String],
+    candidate_root: &Path,
+    lens0: &Path,
+    lens1: &Path,
+    control: &JobControl,
+) -> Result<(), String> {
+    let hardware_result = run_child(app, id, ffmpeg, accelerated_args, control)
+        .and_then(|()| synchronized_candidate_count(lens0, lens1).map(|_| ()));
+    match hardware_result {
+        Ok(()) => Ok(()),
+        Err(hardware_error)
+            if hardware_error == "cancelled" || control.cancelled.load(Ordering::Acquire) =>
+        {
+            Err("cancelled".to_owned())
+        }
+        Err(hardware_error) => {
+            emit_log(
+                app,
+                id,
+                "warning",
+                format!("FFmpeg 硬體解碼候選影格失敗，將改用 CPU 軟體解碼重試：{hardware_error}"),
+            );
+            if control.cancelled.load(Ordering::Acquire) {
+                return Err("cancelled".to_owned());
+            }
+            reset_candidate_dirs(candidate_root, lens0, lens1)
+                .map_err(|error| format!("FFmpeg 硬體解碼失敗後，無法準備軟體解碼回退：{error}"))?;
+            match run_child(app, id, ffmpeg, software_args, control) {
+                Ok(()) => {
+                    emit_log(
+                        app,
+                        id,
+                        "info",
+                        "FFmpeg 候選影格已安全回退至 CPU 軟體解碼",
+                    );
+                    Ok(())
+                }
+                Err(software_error)
+                    if software_error == "cancelled"
+                        || control.cancelled.load(Ordering::Acquire) =>
+                {
+                    Err("cancelled".to_owned())
+                }
+                Err(software_error) => Err(format!(
+                    "FFmpeg 候選影格硬體與軟體解碼皆失敗：硬體錯誤：{hardware_error}；軟體錯誤：{software_error}"
+                )),
+            }
+        }
+    }
+}
+
 fn probe_streams(ffprobe: &Path, input: &Path) -> Result<Value, String> {
     let output = Command::new(ffprobe).args(["-v", "error",
         "-show_entries", "stream=index,codec_type,codec_name,time_base,start_time,duration:format=duration,format_name,tags",
@@ -407,24 +536,44 @@ fn stream_indices(probe: &Value, codec_type: &str) -> Vec<usize> {
         .collect()
 }
 
-fn has_candidate_image(path: &Path) -> bool {
-    fs::read_dir(path)
-        .ok()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|entry| {
-            entry.path().is_file()
+fn candidate_image_names(path: &Path) -> Result<BTreeSet<String>, String> {
+    let entries = fs::read_dir(path)
+        .map_err(|error| format!("無法讀取候選影格目錄 {}：{error}", path.display()))?;
+    entries
+        .map(|entry| {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let entry_path = entry.path();
+            let is_image = entry_path.is_file()
                 && matches!(
-                    entry
-                        .path()
+                    entry_path
                         .extension()
                         .and_then(|value| value.to_str())
                         .map(|value| value.to_ascii_lowercase())
                         .as_deref(),
                     Some("jpg") | Some("jpeg") | Some("png")
-                )
+                );
+            Ok(is_image.then(|| entry.file_name().to_string_lossy().into_owned()))
         })
+        .filter_map(|entry: Result<Option<String>, String>| entry.transpose())
+        .collect()
+}
+
+fn synchronized_candidate_count(lens0: &Path, lens1: &Path) -> Result<usize, String> {
+    let lens0_names = candidate_image_names(lens0)?;
+    let lens1_names = candidate_image_names(lens1)?;
+    if lens0_names.is_empty() || lens1_names.is_empty() {
+        return Err("FFmpeg 未產生完整雙魚眼候選影格".to_owned());
+    }
+    if lens0_names != lens1_names {
+        let lens0_only = lens0_names.difference(&lens1_names).count();
+        let lens1_only = lens1_names.difference(&lens0_names).count();
+        return Err(format!(
+            "雙魚眼候選序列不同步：lens0 {} 張、lens1 {} 張（僅 lens0 {lens0_only} 張、僅 lens1 {lens1_only} 張）",
+            lens0_names.len(),
+            lens1_names.len()
+        ));
+    }
+    Ok(lens0_names.len())
 }
 
 fn candidate_checkpoint_valid(
@@ -456,8 +605,7 @@ fn candidate_checkpoint_valid(
             .get("candidateFps")
             .and_then(Value::as_f64)
             .is_some_and(|value| (value - candidate_fps).abs() < 1e-6)
-        && has_candidate_image(lens0)
-        && has_candidate_image(lens1)
+        && synchronized_candidate_count(lens0, lens1).is_ok()
 }
 
 fn run_extract(
@@ -509,11 +657,7 @@ fn run_extract(
             &lens0_candidates,
             &lens1_candidates,
         ) {
-            if candidate_root.exists() {
-                fs::remove_dir_all(&candidate_root).map_err(|error| error.to_string())?;
-            }
-            fs::create_dir_all(&lens0_candidates).map_err(|error| error.to_string())?;
-            fs::create_dir_all(&lens1_candidates).map_err(|error| error.to_string())?;
+            reset_candidate_dirs(&candidate_root, &lens0_candidates, &lens1_candidates)?;
             emit_progress(
                 app,
                 id,
@@ -524,44 +668,34 @@ fn run_extract(
                 "running",
                 false,
             );
-            let args = vec![
-                "-hide_banner".into(),
-                "-nostdin".into(),
-                "-y".into(),
-                "-i".into(),
-                input.to_string_lossy().into_owned(),
-                "-map".into(),
-                format!("0:{}", streams[0]),
-                "-vf".into(),
-                format!("fps={candidate_fps}"),
-                "-fps_mode".into(),
-                "passthrough".into(),
-                "-q:v".into(),
-                "2".into(),
-                lens0_candidates
-                    .join("%08d.jpg")
-                    .to_string_lossy()
-                    .into_owned(),
-                "-map".into(),
-                format!("0:{}", streams[1]),
-                "-vf".into(),
-                format!("fps={candidate_fps}"),
-                "-fps_mode".into(),
-                "passthrough".into(),
-                "-q:v".into(),
-                "2".into(),
-                lens1_candidates
-                    .join("%08d.jpg")
-                    .to_string_lossy()
-                    .into_owned(),
-            ];
-            run_child(app, id, &ffmpeg, &args, control)?;
-            if !has_candidate_image(&lens0_candidates) || !has_candidate_image(&lens1_candidates) {
-                return Err(format!(
-                    "來源 {} 沒有產生完整雙魚眼候選影格",
-                    input.display()
-                ));
-            }
+            let software_args = candidate_ffmpeg_args(
+                &input,
+                streams[0],
+                streams[1],
+                candidate_fps,
+                &lens0_candidates,
+                &lens1_candidates,
+            );
+            let accelerated_args = with_hwaccel_auto(&software_args);
+            run_candidate_ffmpeg_with_fallback(
+                app,
+                id,
+                &ffmpeg,
+                &accelerated_args,
+                &software_args,
+                &candidate_root,
+                &lens0_candidates,
+                &lens1_candidates,
+                control,
+            )?;
+            synchronized_candidate_count(&lens0_candidates, &lens1_candidates).map_err(
+                |error| {
+                    format!(
+                        "來源 {} 沒有產生同步的雙魚眼候選影格：{error}",
+                        input.display()
+                    )
+                },
+            )?;
             let source_size = fs::metadata(&input)
                 .map_err(|error| error.to_string())?
                 .len();
@@ -705,10 +839,11 @@ fn run_extract(
         "raw-data-streams-preserved"
     };
     fs::write(metadata.join("capture.json"), serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 1, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "schemaVersion": 2, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
         "lensCount": 2, "baseFps": base_fps, "candidateFps": candidate_fps,
         "requestedDenseFps": dense_fps, "skipBlurry": skip_blurry,
         "sharpness": if skip_blurry { "gaussian+laplacian+tenengrad; conservative pair minimum" } else { "disabled" },
+        "sharpnessAnalysisMaxDimension": if skip_blurry { Some(extraction::SHARPNESS_MAX_DIMENSION) } else { None },
         "motionAdaptiveCadence": false,
         "frameIdentity": "same filename across lens folders",
         "telemetryStreams": telemetry_streams,
@@ -1085,9 +1220,17 @@ fn run_align(
 
 #[cfg(test)]
 mod tests {
-    use super::{mask_confidence, write_rig_and_pairs};
+    use super::{
+        candidate_ffmpeg_args, mask_confidence, synchronized_candidate_count, with_hwaccel_auto,
+        write_rig_and_pairs, JobControl, JobManager,
+    };
+    use crate::masking::CancelToken;
     use serde_json::json;
     use std::fs;
+    use std::path::Path;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use tempfile::TempDir;
 
     #[test]
     fn migrates_only_the_legacy_default_mask_confidence() {
@@ -1120,5 +1263,84 @@ mod tests {
         assert!(pairs.contains("lens0/source000_00000001.png lens0/source001_00000001.png"));
         assert!(pairs.contains("lens1/source000_00000001.png lens1/source001_00000001.png"));
         assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000001.png"));
+    }
+
+    #[test]
+    fn hardware_acceleration_is_inserted_before_input_only() {
+        let software = candidate_ffmpeg_args(
+            Path::new("input.osv"),
+            0,
+            1,
+            8.0,
+            Path::new("capture/lens0"),
+            Path::new("capture/lens1"),
+        );
+        assert!(!software.iter().any(|arg| arg == "-hwaccel"));
+
+        let accelerated = with_hwaccel_auto(&software);
+        let hwaccel_index = accelerated.iter().position(|arg| arg == "-hwaccel");
+        let auto_index = accelerated.iter().position(|arg| arg == "auto");
+        let input_index = accelerated.iter().position(|arg| arg == "-i");
+        assert_eq!(
+            accelerated.get(hwaccel_index.unwrap() + 1),
+            Some(&"auto".to_owned())
+        );
+        assert_eq!(auto_index.unwrap() + 1, input_index.unwrap());
+        assert_eq!(hwaccel_index.unwrap() + 2, input_index.unwrap());
+        assert_eq!(software.iter().position(|arg| arg == "-i"), Some(3));
+    }
+
+    #[test]
+    fn hardware_acceleration_helper_does_not_mutate_fallback_command() {
+        let software = candidate_ffmpeg_args(
+            Path::new("input.osv"),
+            3,
+            4,
+            2.0,
+            Path::new("capture/lens0"),
+            Path::new("capture/lens1"),
+        );
+        let accelerated = with_hwaccel_auto(&software);
+
+        assert_eq!(software[3], "-i");
+        assert_eq!(software, {
+            let mut expected = accelerated.clone();
+            expected.drain(3..5);
+            expected
+        });
+    }
+
+    #[test]
+    fn candidate_sequences_must_match_across_both_lenses() {
+        let temp = TempDir::new().unwrap();
+        let lens0 = temp.path().join("lens0");
+        let lens1 = temp.path().join("lens1");
+        fs::create_dir_all(&lens0).unwrap();
+        fs::create_dir_all(&lens1).unwrap();
+        fs::write(lens0.join("00000001.jpg"), []).unwrap();
+        fs::write(lens1.join("00000001.jpg"), []).unwrap();
+        assert_eq!(synchronized_candidate_count(&lens0, &lens1), Ok(1));
+
+        fs::write(lens0.join("00000002.jpg"), []).unwrap();
+        let error = synchronized_candidate_count(&lens0, &lens1).unwrap_err();
+        assert!(error.contains("候選序列不同步"));
+        assert!(error.contains("lens0 2 張、lens1 1 張"));
+    }
+
+    #[test]
+    fn cancelled_job_must_exit_before_another_stage_starts() {
+        let manager = JobManager::default();
+        let control = || JobControl {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            mask_cancel: CancelToken::new(),
+        };
+        manager.insert("first".to_owned(), control()).unwrap();
+        assert!(manager.cancel("first"));
+
+        let error = manager.insert("second".to_owned(), control()).unwrap_err();
+        assert_eq!(error, "The previous pipeline stage is still stopping");
+
+        manager.remove("first");
+        manager.insert("second".to_owned(), control()).unwrap();
     }
 }
