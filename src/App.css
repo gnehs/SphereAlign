@@ -18,6 +18,8 @@
   --studio-red-soft: #fff0f1;
   --studio-radius: 10px;
   --studio-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --studio-font-sm: 0.875rem;
+  --studio-font-base: 1rem;
 }
 
 * {
@@ -89,7 +91,7 @@ button:active {
 
 .window-title {
   color: #59616b;
-  font-size: 12px;
+  font-size: var(--studio-font-sm);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -103,7 +105,7 @@ button:active {
 
 .runtime-badge {
   color: var(--studio-muted);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
 }
 
 .studio-main {
@@ -154,7 +156,7 @@ button:active {
   margin: 0 0 10px;
   color: var(--studio-faint);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   font-weight: 600;
   letter-spacing: 0.13em;
 }
@@ -171,7 +173,7 @@ button:active {
 .empty-description {
   margin: 12px 0 0;
   color: var(--studio-muted);
-  font-size: 13px;
+  font-size: var(--studio-font-base);
   line-height: 1.65;
 }
 
@@ -185,7 +187,7 @@ button:active {
 .drop-hint {
   margin: 17px 0 0;
   color: var(--studio-faint);
-  font-size: 11px;
+  font-size: var(--studio-font-sm);
 }
 
 .studio-footer {
@@ -196,7 +198,7 @@ button:active {
   border-top: 1px solid var(--studio-line);
   color: var(--studio-muted);
   background: rgba(255, 255, 255, 0.8);
-  font-size: 11px;
+  font-size: var(--studio-font-sm);
   gap: 18px;
 }
 
@@ -219,7 +221,7 @@ button:active {
 .studio-footer button {
   padding-right: 0;
   padding-left: 0;
-  font-size: 11px;
+  font-size: var(--studio-font-sm);
 }
 
 .studio-footer button svg {
@@ -243,7 +245,7 @@ button:active {
 .content-header p:not(.eyebrow) {
   margin: 9px 0 0;
   color: var(--studio-muted);
-  font-size: 13px;
+  font-size: var(--studio-font-base);
 }
 
 .header-actions {
@@ -319,7 +321,7 @@ button:active {
 .task-name-line h2 {
   margin: 0;
   color: var(--studio-text);
-  font-size: 14px;
+  font-size: var(--studio-font-base);
   font-weight: 650;
 }
 
@@ -329,7 +331,7 @@ button:active {
   overflow: hidden;
   color: var(--studio-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -365,7 +367,7 @@ button:active {
   flex: 0 0 34px;
   color: var(--studio-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   text-align: right;
 }
 
@@ -413,14 +415,14 @@ button:active {
 
 .task-stage-label strong {
   color: var(--studio-text);
-  font-size: 11px;
+  font-size: var(--studio-font-sm);
   font-weight: 620;
 }
 
 .task-stage-label small {
   overflow: hidden;
   color: var(--studio-muted);
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -428,7 +430,7 @@ button:active {
 .task-stage > [data-slot="badge"] {
   flex: 0 0 auto;
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .task-stage > [data-slot="button"] {
@@ -500,13 +502,13 @@ button:active {
 .task-dialog [data-slot="field-label"],
 .settings-form [data-slot="field-label"] {
   color: var(--studio-text);
-  font-size: 11px;
+  font-size: var(--studio-font-sm);
   font-weight: 620;
 }
 
 .task-dialog [data-slot="field-description"] {
   color: var(--studio-muted);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
 }
 
 .source-drop {
@@ -537,7 +539,7 @@ button:active {
 
 .source-drop > span {
   flex: 1;
-  font-size: 11px;
+  font-size: var(--studio-font-base);
 }
 
 .source-list {
@@ -568,14 +570,14 @@ button:active {
 
 .source-item strong {
   color: var(--studio-text);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
 }
 
 .source-item small {
   overflow: hidden;
   color: var(--studio-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -583,7 +585,7 @@ button:active {
 .inspection-note {
   margin: 7px 0 0;
   color: var(--studio-muted);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
 }
 
 .input-with-button {
@@ -625,21 +627,25 @@ button:active {
 .control-line {
   min-height: 27px;
   color: var(--studio-text);
-  font-size: 10px;
+  font-size: var(--studio-font-base);
   gap: 8px;
+}
+
+.control-line > span {
+  min-width: 0;
 }
 
 .control-line small {
   margin-left: auto;
   color: var(--studio-faint);
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .range-label {
   margin-left: auto;
   color: var(--studio-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .mask-chip-list {
@@ -650,7 +656,7 @@ button:active {
 
 .mask-chip-list [data-slot="button"] {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .range-input {
@@ -695,13 +701,13 @@ button:active {
 
 .rig-note strong {
   color: var(--studio-text);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   font-weight: 620;
 }
 
 .rig-note small {
   color: var(--studio-muted);
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .toast {
@@ -718,7 +724,7 @@ button:active {
   color: var(--studio-text);
   background: #fff;
   box-shadow: 0 12px 30px rgba(31, 39, 50, 0.14);
-  font-size: 11px;
+  font-size: var(--studio-font-base);
   gap: 8px;
   animation: toast-in 180ms var(--studio-ease) both;
 }
@@ -755,7 +761,7 @@ button:active {
 .settings-sheet [data-slot="sheet-description"] {
   margin-top: 7px;
   color: var(--studio-muted);
-  font-size: 11px;
+  font-size: var(--studio-font-base);
   line-height: 1.55;
 }
 
@@ -778,14 +784,14 @@ button:active {
 .settings-section-heading h2 {
   margin: 0;
   color: var(--studio-text);
-  font-size: 12px;
+  font-size: var(--studio-font-base);
   font-weight: 680;
 }
 
 .settings-section-heading > span {
   color: var(--studio-faint);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .settings-section-heading [data-slot="button"] {
@@ -825,7 +831,7 @@ button:active {
 .doctor-summary strong,
 .doctor-row strong {
   color: var(--studio-text);
-  font-size: 11px;
+  font-size: var(--studio-font-base);
   font-weight: 620;
 }
 
@@ -833,7 +839,7 @@ button:active {
 .doctor-summary small,
 .doctor-row small {
   color: var(--studio-muted);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   line-height: 1.35;
 }
 
@@ -872,7 +878,7 @@ button:active {
 
 .doctor-row [data-slot="badge"] {
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: var(--studio-font-sm);
 }
 
 .warning-list {
@@ -883,7 +889,7 @@ button:active {
   border-radius: 7px;
   color: var(--studio-amber);
   background: var(--studio-amber-soft);
-  font-size: 10px;
+  font-size: var(--studio-font-sm);
   line-height: 1.45;
   gap: 7px;
 }
