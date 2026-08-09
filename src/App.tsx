@@ -1,8 +1,6 @@
 import {
   AlertTriangle,
-  ArrowUpRight,
   CircleDashed,
-  CircleHelp,
   Cpu,
   FileStack,
   FolderOpen,
@@ -17,7 +15,6 @@ import {
   ScanLine,
   Settings2,
   Square,
-  Terminal,
   Upload,
   Video,
   Workflow,
@@ -663,7 +660,7 @@ function App() {
       <header className="window-bar">
         {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
         <span className="window-title">GS360 Studio</span>
-        <div className="window-actions"><Badge variant="outline" className="runtime-badge">{IS_TAURI_RUNTIME ? "本機執行環境" : "瀏覽器預覽"}</Badge><Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
+        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge">瀏覽器預覽</Badge>}<Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
       </header>
 
       <main className="studio-main">
@@ -671,7 +668,6 @@ function App() {
         {tasks.length === 0 ? (
           <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
             <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
-            <p className="eyebrow">本機工作區</p>
             <h1>尚無任務</h1>
             <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以先建立新的重建任務。</p>
             <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload />選擇檔案</Button><Button size="lg" variant="outline" onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div>
@@ -679,13 +675,11 @@ function App() {
           </section>
         ) : (
           <section className="tasks-view">
-            <header className="content-header"><div><p className="eyebrow">本機工作區</p><h1>重建任務</h1><p>每個階段都能獨立執行、取消或繼續。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
+            <header className="content-header"><div><h1>重建任務</h1><p>每個階段都能獨立執行、取消或繼續。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
             <div className="task-list">{tasks.map((task) => { const overall = taskProgress(task); return <article className="task-row" key={task.projectId}><div className="task-row-top"><div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div><Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button></div><div className="task-progress-line"><Progress value={overall}><ProgressValue /></Progress><span>{overall}%</span></div><div className="stage-row-list">{STAGES.map((stage) => { const current = task.stages[stage.key]; const Icon = stage.icon; return <div className="task-stage" key={stage.key}><div className="task-stage-label"><Icon /><span><strong>{stage.label}</strong><small>{current.message || stage.description}</small></span></div><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge><Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button></div>; })}</div></article>; })}</div>
           </section>
         )}
       </main>
-
-      <footer className="studio-footer"><span><CircleHelp />拖放素材或選擇資料夾即可開始</span><span><Terminal />本機資料不會離開這台電腦</span><Button variant="link" size="sm" onClick={() => setSettingsOpen(true)}>設定與環境 <ArrowUpRight /></Button></footer>
 
       {toast && <div className="toast" role="status"><Info /><span>{toast}</span><Button variant="ghost" size="icon-xs" onClick={() => setToast(null)} aria-label="關閉通知"><X /></Button></div>}
 
@@ -759,7 +753,6 @@ function App() {
           <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>以本機執行環境回報為準；不預設 GPU、FFmpeg 或模型已就緒。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
             <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor()} aria-label="重新檢查環境"><RefreshCw /></Button></div><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
-            <section className="settings-section"><div className="settings-section-heading"><h2>模型</h2><span>遮罩</span></div><div className="settings-item"><span><strong>來源模型</strong><small title={settingsDraft.mask.modelDir || undefined}>{settingsDraft.mask.modelDir || "依 models/、.models/ 或 GS360_MODEL_DIR 自動探索"}</small></span><Badge variant="outline">{settingsDraft.mask.modelDir ? "已指定" : "自動探索"}</Badge></div><div className="settings-item"><span><strong>系統 FFmpeg</strong><small>不下載、不內嵌額外執行檔</small></span><Badge variant="outline">依環境診斷</Badge></div></section>
           </div>
           <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>完成</Button></SheetFooter>
         </SheetContent>
