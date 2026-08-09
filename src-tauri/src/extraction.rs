@@ -8,8 +8,9 @@
 
 use image::{imageops::FilterType, GenericImageView, ImageReader};
 use rayon::prelude::*;
-use serde::Serialize;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};
@@ -73,13 +74,17 @@ pub struct ExtractionRequest {
     /// When false, keep the earliest synchronized pair in each interval
     /// without decoding candidates for sharpness scoring.
     pub score_candidates: bool,
+    /// When false, select and score candidates without committing copied
+    /// outputs.  Selection records and metadata are still written.
+    pub copy_selected_outputs: bool,
     pub skip_completed: bool,
     /// Optional output path for the JSON selection metadata.  If omitted, a
     /// `selection.json` sibling of `lens0_output` is used.
     pub metadata_path: Option<PathBuf>,
 }
 
-/// Progress emitted once per interval and once per output commit.
+/// Progress emitted once per interval and once per output commit or
+/// selection-only completion.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExtractionProgress {
     pub interval: usize,
@@ -102,7 +107,7 @@ pub enum ExtractionStage {
 }
 
 /// Individual paired-candidate decision persisted in metadata.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionRecord {
     pub interval: usize,
     pub sequence: u64,
@@ -119,14 +124,19 @@ pub struct SelectionRecord {
 }
 
 /// JSON payload written atomically after each run (including cancellation).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionMetadata {
     pub schema_version: u32,
+    pub candidate_storage: String,
     pub base_fps: f64,
     pub candidate_fps: f64,
     pub requested_dense_fps: f64,
     pub sharpness_scoring: bool,
     pub sharpness_analysis_max_dimension: Option<u32>,
+    pub copy_selected_outputs: bool,
+    /// Whether every interval produced a complete, committed output pair.
+    /// Selection-only runs always leave this false.
+    pub outputs_committed: bool,
     pub intervals: usize,
     pub cancelled: bool,
     pub selections: Vec<SelectionRecord>,
@@ -305,6 +315,30 @@ pub fn extract_selected_pairs(
         }
 
         let (pair, _, _, _) = &scored[best_index];
+        if !request.copy_selected_outputs {
+            if should_cancel() {
+                cancelled = true;
+                emit_progress(
+                    &on_progress,
+                    interval_index,
+                    total_intervals,
+                    ExtractionStage::Cancelled,
+                    Some(pair.0.sequence),
+                    "已在選定結果前取消",
+                );
+                break;
+            }
+            selected_intervals += 1;
+            emit_progress(
+                &on_progress,
+                interval_index,
+                total_intervals,
+                ExtractionStage::Completed,
+                Some(pair.0.sequence),
+                "已選定配對影格（未複製輸出）",
+            );
+            continue;
+        }
         let extension = pair
             .0
             .path
@@ -378,8 +412,7 @@ pub fn extract_selected_pairs(
             Some(pair.0.sequence),
             "正在複製選定的配對影格",
         );
-        copy_atomic(&pair.0.path, &output_lens0)?;
-        copy_atomic(&pair.1.path, &output_lens1)?;
+        copy_pair_with_rollback(&pair.0.path, &pair.1.path, &output_lens0, &output_lens1)?;
         selected_intervals += 1;
         if let Some(record) = records
             .iter_mut()
@@ -410,7 +443,8 @@ pub fn extract_selected_pairs(
         );
     }
     let metadata = SelectionMetadata {
-        schema_version: 2,
+        schema_version: 4,
+        candidate_storage: "filesystem_images".to_owned(),
         base_fps: request.base_fps,
         candidate_fps: request.candidate_fps,
         requested_dense_fps: request.dense_fps,
@@ -418,12 +452,17 @@ pub fn extract_selected_pairs(
         sharpness_analysis_max_dimension: request
             .score_candidates
             .then_some(SHARPNESS_MAX_DIMENSION),
+        copy_selected_outputs: request.copy_selected_outputs,
+        outputs_committed: request.copy_selected_outputs
+            && !cancelled
+            && total_intervals > 0
+            && selected_intervals == total_intervals,
         intervals: total_intervals,
         cancelled,
         selections: records.clone(),
     };
-    write_metadata_atomic(&metadata_path, &metadata)?;
-    if !cancelled && !request.output_prefix.is_empty() {
+    write_selection_metadata_atomic(&metadata_path, &metadata)?;
+    if request.copy_selected_outputs && !cancelled && !request.output_prefix.is_empty() {
         cleanup_stale_outputs(request, &records)?;
     }
     Ok(ExtractionSummary {
@@ -590,17 +629,81 @@ fn trailing_sequence(stem: &str) -> Option<u64> {
 pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
     let image = ImageReader::open(path)?.with_guessed_format()?.decode()?;
     let image = sharpness_proxy_image(image).to_luma8();
-    let width = image.width() as usize;
-    let height = image.height() as usize;
+    let width = image.width();
+    let height = image.height();
     let pixels = image.into_raw();
-    if width < 5 || height < 5 || pixels.len() != width.saturating_mul(height) {
-        return Ok(SharpnessScore {
-            laplacian_variance: 0.0,
-            tenengrad_mean: 0.0,
-            combined: 0.0,
-        });
+    if width == 0 || height == 0 {
+        return Ok(zero_sharpness_score());
     }
-    let blurred = gaussian_blur_3x3(&pixels, width, height);
+    calculate_sharpness_from_grayscale(width, height, &pixels)
+}
+
+/// Score a packed grayscale frame held in memory.
+///
+/// `pixels` must contain exactly `width * height` 8-bit grayscale samples in
+/// row-major order.  The packed form is convenient when the decoder already
+/// produced one 512x512 frame per buffer; callers with a wider composite
+/// frame can use [`calculate_sharpness_from_gray8`] and pass its row stride.
+pub fn calculate_sharpness_from_grayscale(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> ExtractionResult<SharpnessScore> {
+    let width_usize = width as usize;
+    let height_usize = height as usize;
+    let expected_len = width_usize
+        .checked_mul(height_usize)
+        .ok_or_else(|| ExtractionError::InvalidInput("grayscale dimensions overflow".to_owned()))?;
+    if pixels.len() != expected_len {
+        return Err(ExtractionError::InvalidInput(format!(
+            "packed grayscale buffer has {} bytes; expected {expected_len}",
+            pixels.len()
+        )));
+    }
+    calculate_sharpness_from_gray8(width, height, width_usize, pixels)
+}
+
+/// Score an in-memory 8-bit grayscale frame with an optional row stride.
+///
+/// `pixels` points at the first sample of the first row.  Each subsequent row
+/// begins `row_stride` bytes later, so a left or right 512x512 lens can be
+/// scored directly from a packed 1024x512 composite without writing a proxy
+/// JPEG to disk.  The buffer must contain at least
+/// `(height - 1) * row_stride + width` bytes; trailing bytes are allowed.
+pub fn calculate_sharpness_from_gray8(
+    width: u32,
+    height: u32,
+    row_stride: usize,
+    pixels: &[u8],
+) -> ExtractionResult<SharpnessScore> {
+    let width = width as usize;
+    let height = height as usize;
+    if width == 0 || height == 0 {
+        return Err(ExtractionError::InvalidInput(
+            "grayscale dimensions must be greater than zero".to_owned(),
+        ));
+    }
+    if row_stride < width {
+        return Err(ExtractionError::InvalidInput(format!(
+            "grayscale row stride {row_stride} is smaller than width {width}"
+        )));
+    }
+    let required_len = height
+        .saturating_sub(1)
+        .checked_mul(row_stride)
+        .and_then(|last_row_offset| last_row_offset.checked_add(width))
+        .ok_or_else(|| ExtractionError::InvalidInput("grayscale dimensions overflow".to_owned()))?;
+    if required_len > pixels.len() {
+        return Err(ExtractionError::InvalidInput(format!(
+            "grayscale buffer has {} bytes; requires at least {required_len}",
+            pixels.len()
+        )));
+    }
+    if width < 5 || height < 5 {
+        return Ok(zero_sharpness_score());
+    }
+
+    let blurred = gaussian_blur_3x3_with_stride(pixels, width, height, row_stride);
     // Native fisheye frames commonly contain a black/invalid region outside
     // the optical circle.  Ignore that region and a narrow inner border so
     // its hard edge cannot dominate derivative-based scores.
@@ -641,11 +744,7 @@ pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
         }
     }
     if count == 0.0 {
-        return Ok(SharpnessScore {
-            laplacian_variance: 0.0,
-            tenengrad_mean: 0.0,
-            combined: 0.0,
-        });
+        return Ok(zero_sharpness_score());
     }
     let laplacian_mean = laplacian_sum / count;
     let laplacian_variance = (laplacian_sq_sum / count - laplacian_mean * laplacian_mean).max(0.0);
@@ -655,6 +754,14 @@ pub fn calculate_sharpness(path: &Path) -> ExtractionResult<SharpnessScore> {
         tenengrad_mean,
         combined: laplacian_variance.sqrt() + tenengrad_mean.sqrt(),
     })
+}
+
+fn zero_sharpness_score() -> SharpnessScore {
+    SharpnessScore {
+        laplacian_variance: 0.0,
+        tenengrad_mean: 0.0,
+        combined: 0.0,
+    }
 }
 
 /// Downscale only high-resolution candidates before the expensive scoring
@@ -689,22 +796,33 @@ fn sharpness_proxy_image(image: image::DynamicImage) -> image::DynamicImage {
     image.resize_exact(target_width, target_height, FilterType::Triangle)
 }
 
-fn gaussian_blur_3x3(pixels: &[u8], width: usize, height: usize) -> Vec<f32> {
-    let mut output = vec![0.0f32; pixels.len()];
-    if width < 3 || height < 3 || pixels.len() != width.saturating_mul(height) {
+fn gaussian_blur_3x3_with_stride(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    row_stride: usize,
+) -> Vec<f32> {
+    let Some(output_len) = width.checked_mul(height) else {
+        return Vec::new();
+    };
+    let mut output = vec![0.0f32; output_len];
+    if width < 3 || height < 3 || row_stride < width {
         return output;
     }
     for y in 1..(height - 1) {
+        let row_above = (y - 1) * row_stride;
+        let row = y * row_stride;
+        let row_below = (y + 1) * row_stride;
         for x in 1..(width - 1) {
-            let sum = pixels[(y - 1) * width + x - 1] as u32
-                + 2 * pixels[(y - 1) * width + x] as u32
-                + pixels[(y - 1) * width + x + 1] as u32
-                + 2 * pixels[y * width + x - 1] as u32
-                + 4 * pixels[y * width + x] as u32
-                + 2 * pixels[y * width + x + 1] as u32
-                + pixels[(y + 1) * width + x - 1] as u32
-                + 2 * pixels[(y + 1) * width + x] as u32
-                + pixels[(y + 1) * width + x + 1] as u32;
+            let sum = pixels[row_above + x - 1] as u32
+                + 2 * pixels[row_above + x] as u32
+                + pixels[row_above + x + 1] as u32
+                + 2 * pixels[row + x - 1] as u32
+                + 4 * pixels[row + x] as u32
+                + 2 * pixels[row + x + 1] as u32
+                + pixels[row_below + x - 1] as u32
+                + 2 * pixels[row_below + x] as u32
+                + pixels[row_below + x + 1] as u32;
             output[y * width + x] = sum as f32 / 16.0;
         }
     }
@@ -713,7 +831,7 @@ fn gaussian_blur_3x3(pixels: &[u8], width: usize, height: usize) -> Vec<f32> {
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn copy_atomic(source: &Path, destination: &Path) -> ExtractionResult<()> {
+fn stage_copy(source: &Path, destination: &Path) -> ExtractionResult<PathBuf> {
     let parent = destination
         .parent()
         .ok_or_else(|| ExtractionError::InvalidInput("output has no parent".to_string()))?;
@@ -723,20 +841,110 @@ fn copy_atomic(source: &Path, destination: &Path) -> ExtractionResult<()> {
         .and_then(|name| name.to_str())
         .ok_or_else(|| ExtractionError::InvalidInput("output has no UTF-8 filename".to_string()))?;
     let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temporary = parent.join(format!(
+    let staged = parent.join(format!(
         ".{file_name}.{}.{}.part",
         std::process::id(),
         counter
     ));
     let result = (|| -> ExtractionResult<()> {
-        fs::copy(source, &temporary)?;
-        fs::File::open(&temporary)?.sync_all()?;
-        rename_replace(&temporary, destination)
+        fs::copy(source, &staged)?;
+        fs::File::open(&staged)?.sync_all()?;
+        Ok(())
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+        let _ = fs::remove_file(&staged);
     }
-    result
+    result.map(|()| staged)
+}
+
+fn backup_existing(destination: &Path) -> ExtractionResult<Option<PathBuf>> {
+    if !destination.exists() {
+        return Ok(None);
+    }
+    if !destination.is_file() {
+        return Err(ExtractionError::InvalidInput(format!(
+            "output destination is not a file: {}",
+            destination.display()
+        )));
+    }
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| ExtractionError::InvalidInput("output has no filename".to_string()))?;
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let backup = destination.with_file_name(format!(
+        ".{file_name}.{}.{}.old",
+        std::process::id(),
+        counter
+    ));
+    let _ = fs::remove_file(&backup);
+    fs::rename(destination, &backup)?;
+    Ok(Some(backup))
+}
+
+fn restore_output(destination: &Path, backup: Option<&Path>) {
+    let _ = fs::remove_file(destination);
+    if let Some(backup) = backup {
+        let _ = fs::rename(backup, destination);
+    }
+}
+
+/// Stage both physical-lens images before exposing either one. If any normal
+/// filesystem error occurs during the final two renames, restore the previous
+/// pair so callers never continue with a newly committed single-sided frame.
+fn copy_pair_with_rollback(
+    lens0_source: &Path,
+    lens1_source: &Path,
+    lens0_destination: &Path,
+    lens1_destination: &Path,
+) -> ExtractionResult<()> {
+    let lens0_staged = stage_copy(lens0_source, lens0_destination)?;
+    let lens1_staged = match stage_copy(lens1_source, lens1_destination) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = fs::remove_file(lens0_staged);
+            return Err(error);
+        }
+    };
+    let lens0_backup = match backup_existing(lens0_destination) {
+        Ok(backup) => backup,
+        Err(error) => {
+            let _ = fs::remove_file(lens0_staged);
+            let _ = fs::remove_file(lens1_staged);
+            return Err(error);
+        }
+    };
+    let lens1_backup = match backup_existing(lens1_destination) {
+        Ok(backup) => backup,
+        Err(error) => {
+            restore_output(lens0_destination, lens0_backup.as_deref());
+            let _ = fs::remove_file(lens0_staged);
+            let _ = fs::remove_file(lens1_staged);
+            return Err(error);
+        }
+    };
+
+    if let Err(error) = fs::rename(&lens0_staged, lens0_destination) {
+        restore_output(lens0_destination, lens0_backup.as_deref());
+        restore_output(lens1_destination, lens1_backup.as_deref());
+        let _ = fs::remove_file(lens0_staged);
+        let _ = fs::remove_file(lens1_staged);
+        return Err(error.into());
+    }
+    if let Err(error) = fs::rename(&lens1_staged, lens1_destination) {
+        restore_output(lens0_destination, lens0_backup.as_deref());
+        restore_output(lens1_destination, lens1_backup.as_deref());
+        let _ = fs::remove_file(lens1_staged);
+        return Err(error.into());
+    }
+
+    if let Some(backup) = lens0_backup {
+        let _ = fs::remove_file(backup);
+    }
+    if let Some(backup) = lens1_backup {
+        let _ = fs::remove_file(backup);
+    }
+    Ok(())
 }
 
 fn rename_replace(temporary: &Path, destination: &Path) -> ExtractionResult<()> {
@@ -857,13 +1065,130 @@ fn default_metadata_path(lens0_output: &Path) -> PathBuf {
         .join("selection.json")
 }
 
-fn write_metadata_atomic(path: &Path, metadata: &SelectionMetadata) -> ExtractionResult<()> {
+pub fn write_selection_metadata_atomic(
+    path: &Path,
+    metadata: &SelectionMetadata,
+) -> ExtractionResult<()> {
+    let bytes = serde_json::to_vec_pretty(metadata)
+        .map_err(|error| ExtractionError::Io(error.to_string()))?;
+    write_bytes_atomic(path, &bytes)
+}
+
+/// Mark a durable selection record after a later native-resolution commit.
+/// The selected sequences must exactly match the first-pass metadata so a
+/// caller cannot accidentally mark a different output set as complete.
+pub fn mark_selection_outputs_committed(
+    path: &Path,
+    selected_sequences: &[u64],
+    lens0_output: &Path,
+    lens1_output: &Path,
+    output_prefix: &str,
+) -> ExtractionResult<()> {
+    let mut metadata: Value = serde_json::from_slice(&fs::read(path)?)
+        .map_err(|error| ExtractionError::Io(error.to_string()))?;
+    let recorded = metadata
+        .get("selections")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ExtractionError::InvalidInput("selection metadata is missing records".to_owned())
+        })?
+        .iter()
+        .filter(|record| record.get("selected").and_then(Value::as_bool) == Some(true))
+        .filter_map(|record| record.get("sequence").and_then(Value::as_u64))
+        .collect::<BTreeSet<_>>();
+    let expected = selected_sequences.iter().copied().collect::<BTreeSet<_>>();
+    if recorded != expected || recorded.len() != selected_sequences.len() {
+        return Err(ExtractionError::InvalidInput(
+            "committed sequences do not match selection metadata".to_owned(),
+        ));
+    }
+    for sequence in selected_sequences {
+        let output_name = format!("{output_prefix}{sequence:08}.jpg");
+        for output in [
+            lens0_output.join(&output_name),
+            lens1_output.join(&output_name),
+        ] {
+            let metadata = fs::metadata(&output)?;
+            if !metadata.is_file() || metadata.len() == 0 {
+                return Err(ExtractionError::InvalidInput(format!(
+                    "committed output is missing or empty: {}",
+                    output.display()
+                )));
+            }
+        }
+    }
+    let object = metadata.as_object_mut().ok_or_else(|| {
+        ExtractionError::InvalidInput("selection metadata must be a JSON object".to_owned())
+    })?;
+    object.insert("outputs_committed".to_owned(), Value::Bool(true));
+    object.insert("copy_selected_outputs".to_owned(), Value::Bool(true));
+    object.insert(
+        "committed_sequences".to_owned(),
+        Value::Array(
+            selected_sequences
+                .iter()
+                .copied()
+                .map(Value::from)
+                .collect(),
+        ),
+    );
+    let selections = object
+        .get_mut("selections")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| {
+            ExtractionError::InvalidInput("selection metadata is missing records".to_owned())
+        })?;
+    for record in selections {
+        if record.get("selected").and_then(Value::as_bool) != Some(true) {
+            continue;
+        }
+        let sequence = record
+            .get("sequence")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                ExtractionError::InvalidInput("selected record is missing sequence".to_owned())
+            })?;
+        let output_name = format!("{output_prefix}{sequence:08}.jpg");
+        let record = record.as_object_mut().ok_or_else(|| {
+            ExtractionError::InvalidInput("selection record must be a JSON object".to_owned())
+        })?;
+        record.insert(
+            "output_lens0".to_owned(),
+            Value::String(
+                lens0_output
+                    .join(&output_name)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        );
+        record.insert(
+            "output_lens1".to_owned(),
+            Value::String(
+                lens1_output
+                    .join(output_name)
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        );
+    }
+    let bytes = serde_json::to_vec_pretty(&metadata)
+        .map_err(|error| ExtractionError::Io(error.to_string()))?;
+    write_bytes_atomic(path, &bytes)
+}
+
+/// Atomically publish a fully committed pending selection record. Keeping the
+/// pending file separate means a cancelled rerun cannot downgrade metadata
+/// from the last successful extraction.
+pub fn promote_selection_metadata(pending: &Path, destination: &Path) -> ExtractionResult<()> {
+    let bytes = fs::read(pending)?;
+    write_bytes_atomic(destination, &bytes)
+}
+
+pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> ExtractionResult<()> {
     let parent = path
         .parent()
         .ok_or_else(|| ExtractionError::InvalidInput("metadata has no parent".to_string()))?;
     fs::create_dir_all(parent)?;
-    let bytes = serde_json::to_vec_pretty(metadata)
-        .map_err(|error| ExtractionError::Io(error.to_string()))?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -925,6 +1250,7 @@ mod tests {
             candidate_fps: 4.0,
             dense_fps: 8.0,
             score_candidates: true,
+            copy_selected_outputs: true,
             skip_completed: true,
             metadata_path: Some(dir.path().join("metadata/selection.json")),
         }
@@ -981,6 +1307,42 @@ mod tests {
     }
 
     #[test]
+    fn pair_commit_keeps_existing_outputs_when_second_stage_fails() {
+        let dir = TempDir::new().unwrap();
+        let lens0_source = dir.path().join("sources/lens0.jpg");
+        let missing_lens1_source = dir.path().join("sources/missing-lens1.jpg");
+        let lens0_output = dir.path().join("images/lens0/frame.jpg");
+        let lens1_output = dir.path().join("images/lens1/frame.jpg");
+        fs::create_dir_all(lens0_source.parent().unwrap()).unwrap();
+        fs::create_dir_all(lens0_output.parent().unwrap()).unwrap();
+        fs::create_dir_all(lens1_output.parent().unwrap()).unwrap();
+        fs::write(&lens0_source, b"new-lens0").unwrap();
+        fs::write(&lens0_output, b"old-lens0").unwrap();
+        fs::write(&lens1_output, b"old-lens1").unwrap();
+
+        assert!(copy_pair_with_rollback(
+            &lens0_source,
+            &missing_lens1_source,
+            &lens0_output,
+            &lens1_output,
+        )
+        .is_err());
+
+        assert_eq!(fs::read(&lens0_output).unwrap(), b"old-lens0");
+        assert_eq!(fs::read(&lens1_output).unwrap(), b"old-lens1");
+        for directory in [
+            lens0_output.parent().unwrap(),
+            lens1_output.parent().unwrap(),
+        ] {
+            assert!(fs::read_dir(directory).unwrap().all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with('.')));
+        }
+    }
+
+    #[test]
     fn high_resolution_proxy_keeps_sharp_image_above_blurred_image() -> ExtractionResult<()> {
         let dir = TempDir::new()?;
         let sharp = checker_with_block(2_048, 16);
@@ -999,6 +1361,71 @@ mod tests {
             blurred_score.combined
         );
         Ok(())
+    }
+
+    #[test]
+    fn in_memory_grayscale_score_matches_path_score() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let image = checker_with_block(SHARPNESS_MAX_DIMENSION, 4);
+        let path = dir.path().join("frame.png");
+        image.save(&path)?;
+
+        let path_score = calculate_sharpness(&path)?;
+        let packed_score =
+            calculate_sharpness_from_grayscale(image.width(), image.height(), image.as_raw())?;
+        assert_eq!(
+            packed_score.laplacian_variance,
+            path_score.laplacian_variance
+        );
+        assert_eq!(packed_score.tenengrad_mean, path_score.tenengrad_mean);
+        assert_eq!(packed_score.combined, path_score.combined);
+        Ok(())
+    }
+
+    #[test]
+    fn strided_grayscale_score_matches_packed_and_path_scores() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let image = checker_with_block(SHARPNESS_MAX_DIMENSION, 4);
+        let path = dir.path().join("frame.png");
+        image.save(&path)?;
+        let path_score = calculate_sharpness(&path)?;
+        let packed_score =
+            calculate_sharpness_from_grayscale(image.width(), image.height(), image.as_raw())?;
+
+        let stride = (image.width() * 2) as usize;
+        let mut composite = vec![0u8; stride * image.height() as usize];
+        for (row, source) in image
+            .as_raw()
+            .chunks_exact(image.width() as usize)
+            .enumerate()
+        {
+            let offset = row * stride;
+            composite[offset..offset + source.len()].copy_from_slice(source);
+            composite[offset + image.width() as usize..offset + stride].copy_from_slice(source);
+        }
+        let left_score =
+            calculate_sharpness_from_gray8(image.width(), image.height(), stride, &composite)?;
+        let right_score = calculate_sharpness_from_gray8(
+            image.width(),
+            image.height(),
+            stride,
+            &composite[image.width() as usize..],
+        )?;
+
+        for score in [left_score, right_score] {
+            assert_eq!(score.laplacian_variance, packed_score.laplacian_variance);
+            assert_eq!(score.tenengrad_mean, packed_score.tenengrad_mean);
+            assert_eq!(score.combined, packed_score.combined);
+            assert_eq!(score.combined, path_score.combined);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn grayscale_buffer_validation_rejects_invalid_stride_and_length() {
+        assert!(calculate_sharpness_from_grayscale(4, 4, &[0; 15]).is_err());
+        assert!(calculate_sharpness_from_gray8(4, 4, 3, &[0; 16]).is_err());
+        assert!(calculate_sharpness_from_gray8(4, 4, 4, &[0; 15]).is_err());
     }
 
     #[test]
@@ -1033,6 +1460,87 @@ mod tests {
             .unwrap()
             .ends_with("00000000.png"));
         assert!(progress_count.load(Ordering::Relaxed) > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn selection_only_mode_scores_without_committing_outputs() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = make_request(&dir);
+        request.copy_selected_outputs = false;
+        request.output_prefix = "source007_".to_owned();
+        fs::create_dir_all(&request.lens0_candidates)?;
+        fs::create_dir_all(&request.lens1_candidates)?;
+        checker(64).save(request.lens0_candidates.join("00000000.png"))?;
+        // Deliberately use a different extension for the paired lens.  A
+        // selection-only run should not validate output extensions.
+        checker(64).save(request.lens1_candidates.join("00000000.jpg"))?;
+
+        fs::create_dir_all(&request.lens0_output)?;
+        fs::create_dir_all(&request.lens1_output)?;
+        let stale0 = request.lens0_output.join("source007_99999999.png");
+        let stale1 = request.lens1_output.join("source007_99999999.png");
+        fs::copy(request.lens0_candidates.join("00000000.png"), &stale0)?;
+        fs::copy(request.lens1_candidates.join("00000000.jpg"), &stale1)?;
+
+        let summary = extract_selected_pairs(&request, || false, |_| {})?;
+        assert_eq!(summary.total_intervals, 1);
+        assert_eq!(summary.selected_intervals, 1);
+        assert_eq!(summary.skipped_intervals, 0);
+        let selected = summary
+            .selections
+            .iter()
+            .find(|record| record.selected)
+            .unwrap();
+        assert_eq!(selected.sequence, 0);
+        assert!(selected.lens0_score > 0.0);
+        assert!(selected.lens1_score > 0.0);
+        assert!(selected.output_lens0.is_none());
+        assert!(selected.output_lens1.is_none());
+        assert!(!request.lens0_output.join("source007_00000000.png").exists());
+        assert!(!request.lens1_output.join("source007_00000000.jpg").exists());
+        assert!(stale0.is_file());
+        assert!(stale1.is_file());
+
+        let metadata: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(request.metadata_path.clone().unwrap())?)
+                .map_err(|error| ExtractionError::Io(error.to_string()))?;
+        assert_eq!(metadata["schema_version"], 4);
+        assert_eq!(metadata["candidate_storage"], "filesystem_images");
+        assert_eq!(metadata["copy_selected_outputs"], false);
+        assert_eq!(metadata["outputs_committed"], false);
+        assert_eq!(metadata["intervals"], 1);
+        assert_eq!(metadata["selections"][0]["selected"], true);
+        assert!(metadata["selections"][0]["pair_score"]
+            .as_f64()
+            .is_some_and(|score| score > 0.0));
+        let metadata_path = request.metadata_path.clone().unwrap();
+        assert!(mark_selection_outputs_committed(
+            &metadata_path,
+            &[1],
+            &request.lens0_output,
+            &request.lens1_output,
+            &request.output_prefix,
+        )
+        .is_err());
+        checker(64).save(request.lens0_output.join("source007_00000000.jpg"))?;
+        checker(64).save(request.lens1_output.join("source007_00000000.jpg"))?;
+        mark_selection_outputs_committed(
+            &metadata_path,
+            &[0],
+            &request.lens0_output,
+            &request.lens1_output,
+            &request.output_prefix,
+        )?;
+        let committed: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(metadata_path)?)
+                .map_err(|error| ExtractionError::Io(error.to_string()))?;
+        assert_eq!(committed["outputs_committed"], true);
+        assert_eq!(committed["copy_selected_outputs"], true);
+        assert_eq!(committed["committed_sequences"], serde_json::json!([0]));
+        assert!(committed["selections"][0]["output_lens0"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("source007_00000000.jpg")));
         Ok(())
     }
 
@@ -1111,8 +1619,11 @@ mod tests {
         assert!(request.lens1_output.join("00000000.png").is_file());
         let metadata = fs::read_to_string(&request.metadata_path.clone().unwrap())?;
         assert!(metadata.contains("requested_dense_fps"));
-        assert!(metadata.contains("\"schema_version\": 2"));
+        assert!(metadata.contains("\"schema_version\": 4"));
+        assert!(metadata.contains("\"candidate_storage\": \"filesystem_images\""));
         assert!(metadata.contains("\"sharpness_analysis_max_dimension\": 512"));
+        assert!(metadata.contains("\"copy_selected_outputs\": true"));
+        assert!(metadata.contains("\"outputs_committed\": true"));
         // Ensure the output remains a valid PNG after a resume copy.
         let _ = ImageReader::open(request.lens0_output.join("00000000.png"))?
             .with_guessed_format()?

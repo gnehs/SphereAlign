@@ -19,7 +19,7 @@ colmap-{filename}/
 ├── rig_config.json
 ├── database.db                  # Align 完成後
 ├── sparse/                      # COLMAP sparse reconstruction
-├── capture/                     # 可續作的雙魚眼候選影格
+├── capture/                     # 輕量評分 checkpoint（不含候選圖片）
 └── metadata/
     ├── capture.json
     ├── pairs.txt
@@ -34,10 +34,10 @@ colmap-{filename}/
 ### Extract
 
 - 透過系統 `ffmpeg` / `ffprobe` 找出前兩路 video stream，保留 native fisheye，不先轉 equirectangular。
-- 依 `baseFps` 產生輸出；啟用「跳過模糊影格」時，以 `denseFps` 解碼高品質 JPEG 候選影格。FFmpeg 會先嘗試自動硬體解碼，失敗時清理部分輸出並安全回退 CPU 軟體解碼。
-- 清晰度分析會先為每顆鏡頭建立最長邊 512 px 的分析代理圖，再以 Gaussian pre-blur、Laplacian variance 與 Tenengrad 評估 fisheye 有效圓；最終選中的影格仍保留原始解析度。
+- 第一遍由 FFmpeg 將雙鏡候選縮成 512 px 灰階 rawvideo，直接透過 stdout 串流到 Rust 記憶體；不編碼、不保存候選圖片。一般擷取使用 `baseFps`，啟用「跳過模糊影格」時使用 `denseFps`，並以 Gaussian pre-blur、Laplacian variance 與 Tenengrad 評估 fisheye 有效圓。
+- 選定時間點後，第二遍只重新解碼入選影格並以原始解析度寫入 `images/`。兩遍 FFmpeg 都會先嘗試自動硬體解碼，失敗時清理部分輸出並安全回退 CPU 軟體解碼。
 - 每個時間區間以 `min(lens0, lens1)` 選同一組影格，避免左右鏡頭不同步或單側模糊。
-- 候選 checkpoint、partial file 與 selection metadata 讓中斷後可以驗證並續作。
+- 候選階段只保存分數與序號的輕量 JSON checkpoint，不保存圖片；最終影格另使用 partial file、雙鏡配對回滾與原子 selection metadata，避免取消或失敗時留下單側或未提交結果。
 - OSV data stream 以 FFmpeg stream copy 原樣保存；支援的 DJI metadata 另輸出標準化摘要與融合姿態。尚未驗證 sensor-to-camera 座標轉換的 quaternion 不會直接套用到 COLMAP。
 
 ### Mask
