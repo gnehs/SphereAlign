@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+use crate::process::silent_command;
 
 pub const MANIFEST_FILE: &str = "project.json";
 pub const MANIFEST_VERSION: u32 = 1;
@@ -319,7 +320,7 @@ fn probe_source(path: &Path) -> io::Result<Value> {
     let Some(ffprobe) = doctor::find_executable("ffprobe") else {
         return Err(io::Error::new(io::ErrorKind::NotFound, "ffprobe not found"));
     };
-    let output = Command::new(ffprobe)
+    let output = silent_command(ffprobe)
         .args([
             "-v",
             "error",

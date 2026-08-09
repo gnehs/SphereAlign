@@ -3,6 +3,7 @@ mod extraction;
 mod fisheye;
 mod masking;
 mod pipeline;
+mod process;
 mod project;
 mod telemetry;
 

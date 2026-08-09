@@ -8,7 +8,8 @@
 use serde::Serialize;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use crate::process::silent_command;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,7 +99,7 @@ pub fn resolve_colmap(custom_path: Option<&str>) -> Result<PathBuf, String> {
 }
 
 pub fn command_version(path: &Path) -> Option<String> {
-    let output = Command::new(path).arg("--version").output().ok()?;
+    let output = silent_command(path).arg("--version").output().ok()?;
     let text = if output.stdout.is_empty() {
         String::from_utf8_lossy(&output.stderr).into_owned()
     } else {
@@ -148,7 +149,7 @@ fn ffmpeg_hwaccels(ffmpeg: &ToolInfo) -> String {
     let Some(path) = ffmpeg.path.as_deref() else {
         return String::new();
     };
-    let Ok(output) = Command::new(path)
+    let Ok(output) = silent_command(path)
         .args(["-hide_banner", "-hwaccels"])
         .output()
     else {
@@ -163,7 +164,7 @@ fn ffmpeg_hwaccels(ffmpeg: &ToolInfo) -> String {
 
 fn cuda_accelerator(ffmpeg: &ToolInfo) -> AcceleratorInfo {
     let nvidia = find_executable("nvidia-smi").and_then(|path| {
-        Command::new(path)
+        silent_command(path)
             .args(["--query-gpu=name", "--format=csv,noheader"])
             .output()
             .ok()

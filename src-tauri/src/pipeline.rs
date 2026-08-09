@@ -16,13 +16,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+
+use crate::process::silent_command;
 
 static JOB_COUNTER: AtomicU64 = AtomicU64::new(1);
 static FULL_RES_TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -33,6 +35,9 @@ const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
 const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
+const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
+const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -176,6 +181,38 @@ fn extraction_completed_count(
     completed.load(Ordering::Acquire).min(total)
 }
 
+fn numeric_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|value| value.parse::<f64>().ok()))
+        .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn probe_duration_seconds(probe: &Value) -> Option<f64> {
+    probe
+        .pointer("/format/duration")
+        .and_then(numeric_value)
+        .or_else(|| {
+            probe
+                .get("streams")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|stream| stream.get("duration").and_then(numeric_value))
+                .reduce(f64::min)
+        })
+}
+
+fn expected_candidate_frames(probe: &Value, candidate_fps: f64) -> Option<u64> {
+    let frames = (probe_duration_seconds(probe)? * candidate_fps).ceil();
+    (frames.is_finite() && frames > 0.0 && frames <= u64::MAX as f64).then_some(frames as u64)
+}
+
+fn source_stage_progress(source_index: usize, total_sources: usize, source_fraction: f32) -> f32 {
+    let total_sources = total_sources.max(1) as f32;
+    (source_index as f32 + source_fraction.clamp(0.0, 1.0)) / total_sources
+}
+
 fn emit_progress(
     app: &AppHandle,
     id: &str,
@@ -235,6 +272,63 @@ fn emit_log(app: &AppHandle, id: &str, level: &str, message: impl Into<String>) 
             timestamp_ms: now_timestamp_ms(),
         },
     );
+}
+
+struct CandidateProgressReporter<'a> {
+    app: &'a AppHandle,
+    id: &'a str,
+    source_index: usize,
+    total_sources: usize,
+    expected_frames: Option<u64>,
+    current_item: String,
+    highest_processed: u64,
+    last_emitted_at: Option<Instant>,
+}
+
+impl CandidateProgressReporter<'_> {
+    fn report(&mut self, processed: u64) {
+        self.highest_processed = self.highest_processed.max(processed);
+        if self
+            .last_emitted_at
+            .is_some_and(|last| last.elapsed() < CANDIDATE_PROGRESS_INTERVAL)
+        {
+            return;
+        }
+        self.last_emitted_at = Some(Instant::now());
+        let selection_fraction = self
+            .expected_frames
+            .filter(|total| *total > 0)
+            .map(|total| (self.highest_processed as f32 / total as f32).clamp(0.0, 0.99))
+            .unwrap_or(0.0);
+        let progress = source_stage_progress(
+            self.source_index,
+            self.total_sources,
+            selection_fraction * CANDIDATE_SELECTION_PROGRESS_SHARE,
+        );
+        emit_progress_detailed(
+            self.app,
+            self.id,
+            &StageName::Extract,
+            "selecting-in-memory",
+            progress,
+            format!(
+                "正在同步解碼並評分來源 {}（已處理 {} 組候選影格）",
+                self.source_index + 1,
+                self.highest_processed
+            ),
+            "running",
+            false,
+            Some(
+                self.expected_frames
+                    .map_or(self.highest_processed, |total| {
+                        self.highest_processed.min(total)
+                    }),
+            ),
+            self.expected_frames,
+            Some(self.current_item.clone()),
+            None,
+        );
+    }
 }
 
 pub fn start_stage(
@@ -431,7 +525,7 @@ fn run_child(
             program.file_name().unwrap_or_default().to_string_lossy()
         ),
     );
-    let mut child = Command::new(program)
+    let mut child = silent_command(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -801,12 +895,13 @@ fn run_candidate_stream_attempt(
     candidate_fps: f64,
     score_candidates: bool,
     control: &JobControl,
+    progress: &mut CandidateProgressReporter<'_>,
 ) -> Result<Vec<SelectionRecord>, String> {
     if control.cancelled.load(Ordering::Acquire) {
         return Err("cancelled".to_owned());
     }
     emit_log(app, id, "info", "執行 FFmpeg 記憶體候選串流");
-    let mut child = Command::new(ffmpeg)
+    let mut child = silent_command(ffmpeg)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -843,6 +938,7 @@ fn run_candidate_stream_attempt(
                     stream_error = Some(error);
                     break;
                 }
+                progress.report(selector.records.len() as u64);
             }
             Ok(RawFrameMessage::Eof) => break,
             Ok(RawFrameMessage::Error(error)) => {
@@ -915,6 +1011,7 @@ fn run_candidate_stream_with_fallback(
     candidate_fps: f64,
     score_candidates: bool,
     control: &JobControl,
+    progress: &mut CandidateProgressReporter<'_>,
 ) -> Result<Vec<SelectionRecord>, String> {
     match run_candidate_stream_attempt(
         app,
@@ -925,6 +1022,7 @@ fn run_candidate_stream_with_fallback(
         candidate_fps,
         score_candidates,
         control,
+        progress,
     ) {
         Ok(records) => Ok(records),
         Err(error) if error == "cancelled" || control.cancelled.load(Ordering::Acquire) => {
@@ -946,6 +1044,7 @@ fn run_candidate_stream_with_fallback(
                 candidate_fps,
                 score_candidates,
                 control,
+                progress,
             )
             .map_err(|software_error| {
                 if software_error == "cancelled" || control.cancelled.load(Ordering::Acquire) {
@@ -1039,7 +1138,7 @@ fn run_ffmpeg_with_fallback(
 }
 
 fn probe_streams(ffprobe: &Path, input: &Path) -> Result<Value, String> {
-    let output = Command::new(ffprobe).args(["-v", "error",
+    let output = silent_command(ffprobe).args(["-v", "error",
         "-show_entries", "stream=index,codec_type,codec_name,time_base,start_time,duration:format=duration,format_name,tags",
         "-of", "json"]).arg(input).output()
         .map_err(|error| format!("ffprobe failed: {error}"))?;
@@ -1352,8 +1451,7 @@ fn run_extract(
     let dense_fps = setting_f64(&manifest.settings, "/extract/denseFps", 8.0).clamp(base_fps, 60.0);
     let skip_blurry = setting_bool(&manifest.settings, "/extract/skipBlurry", true);
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
-    let total_sources = manifest.input_paths.len().max(1) as f32;
-    let total_sources_count = manifest.input_paths.len() as u64;
+    let total_sources = manifest.input_paths.len().max(1);
     let mut telemetry_streams = Vec::new();
     let mut normalized_telemetry = Vec::new();
     for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
@@ -1361,6 +1459,7 @@ fn run_extract(
         let current_source = input.to_string_lossy().into_owned();
         let probe = probe_streams(&ffprobe, &input)?;
         let streams = stream_indices(&probe, "video");
+        let candidate_total = expected_candidate_frames(&probe, candidate_fps);
         if streams.len() < 2 {
             return Err(format!(
                 "{} 未包含兩路可辨識的雙魚眼 video stream",
@@ -1412,21 +1511,31 @@ fn run_extract(
                 id,
                 &StageName::Extract,
                 "selecting-in-memory",
-                source_index as f32 / total_sources,
+                source_stage_progress(source_index, total_sources, 0.0),
                 format!(
                     "正在記憶體中同步解碼並評分來源 {} 的雙魚眼候選影格",
                     source_index + 1
                 ),
                 "running",
                 false,
-                Some(source_index as u64),
-                Some(total_sources_count),
+                Some(0),
+                candidate_total,
                 Some(current_source.clone()),
                 None,
             );
             let software_args =
                 candidate_ffmpeg_args(&input, streams[0], streams[1], candidate_fps);
             let accelerated_args = with_hwaccel_auto(&software_args);
+            let mut candidate_progress = CandidateProgressReporter {
+                app,
+                id,
+                source_index,
+                total_sources,
+                expected_frames: candidate_total,
+                current_item: current_source.clone(),
+                highest_processed: 0,
+                last_emitted_at: None,
+            };
             let selection_records = run_candidate_stream_with_fallback(
                 app,
                 id,
@@ -1437,6 +1546,7 @@ fn run_extract(
                 candidate_fps,
                 skip_blurry,
                 control,
+                &mut candidate_progress,
             )?;
             let selected_intervals = selection_records
                 .iter()
@@ -1468,6 +1578,28 @@ fn run_extract(
             )?;
             selection
         };
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Extract,
+            "selecting-in-memory",
+            source_stage_progress(
+                source_index,
+                total_sources,
+                CANDIDATE_SELECTION_PROGRESS_SHARE,
+            ),
+            format!(
+                "來源 {} 已完成 {} 組候選影格評分",
+                source_index + 1,
+                selection_metadata.selections.len()
+            ),
+            "running",
+            false,
+            Some(selection_metadata.selections.len() as u64),
+            Some(selection_metadata.selections.len() as u64),
+            Some(current_source.clone()),
+            None,
+        );
         extraction::write_selection_metadata_atomic(
             &pending_selection_metadata,
             &selection_metadata,
@@ -1514,7 +1646,11 @@ fn run_extract(
                 id,
                 &StageName::Extract,
                 "decoding-full-resolution",
-                source_index as f32 / total_sources,
+                source_stage_progress(
+                    source_index,
+                    total_sources,
+                    CANDIDATE_SELECTION_PROGRESS_SHARE,
+                ),
                 format!(
                     "正在以原始解析度重新解碼來源 {} 的 {} 組選定影格",
                     source_index + 1,
@@ -1522,8 +1658,8 @@ fn run_extract(
                 ),
                 "running",
                 false,
-                Some(source_index as u64),
-                Some(total_sources_count),
+                Some(0),
+                Some(selected_sequences.len() as u64),
                 Some(current_source.clone()),
                 None,
             );
@@ -1556,6 +1692,28 @@ fn run_extract(
                 &mapped_lens1,
                 &selected_sequences,
             )?;
+            emit_progress_detailed(
+                app,
+                id,
+                &StageName::Extract,
+                "decoding-full-resolution",
+                source_stage_progress(
+                    source_index,
+                    total_sources,
+                    CANDIDATE_SELECTION_PROGRESS_SHARE + FULL_RESOLUTION_PROGRESS_SHARE,
+                ),
+                format!(
+                    "來源 {} 已完成 {} 組原始解析度影格解碼",
+                    source_index + 1,
+                    selected_sequences.len()
+                ),
+                "running",
+                false,
+                Some(selected_sequences.len() as u64),
+                Some(selected_sequences.len() as u64),
+                Some(current_source.clone()),
+                None,
+            );
         }
 
         if control.cancelled.load(Ordering::Acquire) {
@@ -1585,8 +1743,14 @@ fn run_extract(
         let cancelled = control.cancelled.clone();
         let completed_intervals = Arc::new(AtomicU64::new(0));
         let completed_intervals_for_callback = completed_intervals.clone();
-        let source_offset = source_index as f32 / total_sources;
-        let source_scale = 1.0 / total_sources;
+        let source_offset = source_stage_progress(
+            source_index,
+            total_sources,
+            CANDIDATE_SELECTION_PROGRESS_SHARE + FULL_RESOLUTION_PROGRESS_SHARE,
+        );
+        let source_scale =
+            (1.0 - CANDIDATE_SELECTION_PROGRESS_SHARE - FULL_RESOLUTION_PROGRESS_SHARE)
+                / total_sources as f32;
         let commit_summary = extraction::extract_selected_pairs(
             &commit_request,
             || cancelled.load(Ordering::Acquire),
@@ -2206,9 +2370,10 @@ fn run_align(
 mod tests {
     use super::{
         balanced_select_expression, candidate_ffmpeg_args, candidate_image_names,
-        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, extraction_completed_count,
-        load_candidate_selection_checkpoint, map_full_res_candidates, mask_confidence,
-        read_raw_frames, selected_ffmpeg_args, synchronized_candidate_count, with_hwaccel_auto,
+        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, expected_candidate_frames,
+        extraction_completed_count, load_candidate_selection_checkpoint, map_full_res_candidates,
+        mask_confidence, probe_duration_seconds, read_raw_frames, selected_ffmpeg_args,
+        source_stage_progress, synchronized_candidate_count, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, ExtractionStage, JobControl,
         JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName, StartStageRequest,
         StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
@@ -2262,6 +2427,30 @@ mod tests {
         })
         .unwrap();
         assert_eq!(log["timestampMs"], 789);
+    }
+
+    #[test]
+    fn candidate_progress_uses_probe_duration_and_candidate_rate() {
+        let probe = json!({
+            "format": { "duration": "12.25" },
+            "streams": [{ "duration": "10.0" }]
+        });
+        assert_eq!(probe_duration_seconds(&probe), Some(12.25));
+        assert_eq!(expected_candidate_frames(&probe, 8.0), Some(98));
+
+        let stream_only = json!({
+            "streams": [{ "duration": "9.5" }, { "duration": "9.25" }]
+        });
+        assert_eq!(probe_duration_seconds(&stream_only), Some(9.25));
+        assert_eq!(expected_candidate_frames(&stream_only, 2.0), Some(19));
+    }
+
+    #[test]
+    fn source_progress_stays_monotonic_across_multiple_sources() {
+        assert_eq!(source_stage_progress(0, 2, 0.0), 0.0);
+        assert_eq!(source_stage_progress(0, 2, 1.0), 0.5);
+        assert_eq!(source_stage_progress(1, 2, 0.0), 0.5);
+        assert_eq!(source_stage_progress(1, 2, 1.0), 1.0);
     }
 
     #[test]
