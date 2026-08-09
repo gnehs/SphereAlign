@@ -71,7 +71,7 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - Node.js 與 `pnpm`
 - Rust stable toolchain
 - 系統 `ffmpeg`、`ffprobe`（必須在 `PATH`）
-- Align 需要系統 `colmap`（必須在 `PATH`）
+- Align 需要 COLMAP；可從系統 `PATH` 自動偵測，或在設定中指定啟動程式。Windows 官方免安裝版應選根目錄的 `COLMAP.bat`，讓它一併設定必要的 DLL 與 Qt plugin 路徑
 - 首次執行物件／天空 Mask 時需要網路下載相應 ONNX 模型，或預先放入支援的模型目錄
 
 預設 build 在 Apple silicon 使用 CoreML、Windows 使用 DirectML，並停用 ONNX Runtime 的 CPU execution-provider fallback。若模型含硬體 provider 不支援的節點，Mask 會回報錯誤而不是靜默改用 CPU。Cargo 另提供 `cuda`、`webgpu` 等 opt-in features；原生 WebGPU 在 macOS 與目前 YOLO／ONNX Runtime 組合的實機測試仍不穩定，因此不列為預設。COLMAP GPU 是否可用取決於使用者安裝的 COLMAP build，後端在 doctor 未偵測到 CUDA 時會強制使用 CPU。

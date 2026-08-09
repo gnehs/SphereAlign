@@ -1303,6 +1303,7 @@ button:active {
   color: var(--studio-muted);
   font-size: var(--studio-font-sm);
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .doctor-summary {

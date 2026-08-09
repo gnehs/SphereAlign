@@ -10,8 +10,8 @@ use pipeline::{JobManager, StartStageRequest, StartStageResponse};
 use project::{CreateProjectRequest, InspectPathsResponse, ProjectManifest};
 
 #[tauri::command]
-fn doctor() -> doctor::DoctorReport {
-    doctor::report()
+fn doctor(colmap_path: Option<String>) -> doctor::DoctorReport {
+    doctor::report(colmap_path.as_deref())
 }
 
 #[tauri::command]

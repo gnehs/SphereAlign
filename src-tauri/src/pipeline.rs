@@ -56,6 +56,8 @@ pub struct StartStageRequest {
     pub stage: StageName,
     #[serde(default)]
     pub settings: Option<Value>,
+    #[serde(default)]
+    pub colmap_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -253,6 +255,7 @@ pub fn start_stage(
     manager.insert(id.clone(), control.clone())?;
     let manager = manager.clone();
     let stage = request.stage.clone();
+    let colmap_path = request.colmap_path.clone();
     let response = StartStageResponse { job_id: id.clone() };
     thread::spawn(move || {
         let stage_started_at = Instant::now();
@@ -279,7 +282,7 @@ pub fn start_stage(
         let result = match stage {
             StageName::Extract => run_extract(&app, &id, &manifest, &control),
             StageName::Mask => run_mask(&app, &id, &manifest, &control),
-            StageName::Align => run_align(&app, &id, &manifest, &control),
+            StageName::Align => run_align(&app, &id, &manifest, colmap_path.as_deref(), &control),
         };
         let cancelled = control.cancelled.load(Ordering::Acquire);
         if cancelled {
@@ -1967,9 +1970,10 @@ fn run_align(
     app: &AppHandle,
     id: &str,
     manifest: &ProjectManifest,
+    custom_colmap_path: Option<&str>,
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
-    let colmap = find_executable("colmap").ok_or("在系統 PATH 中找不到 COLMAP")?;
+    let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
     write_rig_and_pairs(&root)?;
     let db = root.join("database.db");
@@ -1996,7 +2000,7 @@ fn run_align(
             sparse.to_string_lossy().into_owned(),
         ]);
     }
-    let cuda_available = crate::doctor::report()
+    let cuda_available = crate::doctor::report(custom_colmap_path)
         .accelerators
         .into_iter()
         .any(|accelerator| accelerator.kind == "cuda" && accelerator.available);
@@ -2206,7 +2210,7 @@ mod tests {
         load_candidate_selection_checkpoint, map_full_res_candidates, mask_confidence,
         read_raw_frames, selected_ffmpeg_args, synchronized_candidate_count, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, ExtractionStage, JobControl,
-        JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName,
+        JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName, StartStageRequest,
         StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
         CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
@@ -2258,6 +2262,21 @@ mod tests {
         })
         .unwrap();
         assert_eq!(log["timestampMs"], 789);
+    }
+
+    #[test]
+    fn start_stage_request_accepts_a_local_colmap_path() {
+        let request: StartStageRequest = serde_json::from_value(json!({
+            "projectPath": "C:\\project",
+            "stage": "align",
+            "colmapPath": "C:\\COLMAP portable\\COLMAP.bat"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            request.colmap_path.as_deref(),
+            Some("C:\\COLMAP portable\\COLMAP.bat")
+        );
     }
 
     #[test]

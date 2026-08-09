@@ -178,6 +178,7 @@ interface LogEventPayload {
 
 interface AutoPipelineRun {
   task: Pick<Task, "rootPath" | "outputPath" | "settings">;
+  colmapPath: string;
   stage?: StageKey;
   jobId?: string;
 }
@@ -202,6 +203,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
   mask: { classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
   align: { useGpu: false },
 };
+const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
 
 const EMPTY_DOCTOR: DoctorReport = {
   platform: "尚未檢查平台",
@@ -577,6 +579,8 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     return typeof entry === "string" ? !/(missing|failed|error|unavailable)/i.test(entry) : true;
   };
   const entryName = (entry: unknown) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).name ?? "") : String(entry ?? "");
+  const entryPath = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).path === "string" ? String((entry as Record<string, unknown>).path) : "";
+  const entryNote = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).note === "string" ? localiseUserMessage(String((entry as Record<string, unknown>).note)) : "";
   const ffmpeg = tools.find((entry) => entryName(entry).toLowerCase() === "ffmpeg");
   const colmap = tools.find((entry) => entryName(entry).toLowerCase() === "colmap");
   const acceleratorCandidates = accelerators.filter((entry) => /(cuda|metal|videotoolbox|gpu|nvidia|apple)/i.test(`${entryName(entry)} ${itemText(entry)}`));
@@ -587,7 +591,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const items: DiagnosticItem[] = [
     { label: "GPU／加速器", value: accelerator && available(accelerator) ? itemText(accelerator) : "未偵測到可用加速", detail: capabilityValue || "CUDA／VideoToolbox 狀態由環境診斷回報", status: accelerator && available(accelerator) ? "ready" : "warning" },
     { label: "FFmpeg", value: ffmpeg && available(ffmpeg) ? itemText(ffmpeg) : "未偵測到", detail: ffmpeg && available(ffmpeg) ? "系統 PATH 可用" : "請安裝或加入 PATH", status: ffmpeg && available(ffmpeg) ? "ready" : "warning" },
-    { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? "可執行原生雙魚眼相機組對齊" : "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
+    { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? entryPath(colmap) || "可執行原生雙魚眼相機組對齊" : entryNote(colmap) || "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
     { label: "執行環境", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri 執行環境", status: "ready" },
   ];
   return { platform, summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings };
@@ -804,6 +808,13 @@ function App() {
   const [sourcePaths, setSourcePaths] = useState<string[]>([]);
   const [outputDraft, setOutputDraft] = useState("");
   const [settingsDraft, setSettingsDraft] = useState<PipelineSettings>(DEFAULT_SETTINGS);
+  const [colmapPath, setColmapPath] = useState(() => {
+    try {
+      return window.localStorage.getItem(COLMAP_PATH_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [sourceInspection, setSourceInspection] = useState<string>("");
   const [doctor, setDoctor] = useState<DoctorReport>(EMPTY_DOCTOR);
   const [doctorLoading, setDoctorLoading] = useState(false);
@@ -817,6 +828,7 @@ function App() {
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
   const taskSnapshot = useRef<Task[]>([]);
   const logSequence = useRef(0);
+  const doctorRunId = useRef(0);
   const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
@@ -828,6 +840,16 @@ function App() {
   useEffect(() => {
     taskSnapshot.current = tasks;
   }, [tasks]);
+
+  useEffect(() => {
+    try {
+      const path = colmapPath.trim();
+      if (path) window.localStorage.setItem(COLMAP_PATH_STORAGE_KEY, path);
+      else window.localStorage.removeItem(COLMAP_PATH_STORAGE_KEY);
+    } catch (error) {
+      console.info("[GS360] COLMAP path preference", error);
+    }
+  }, [colmapPath]);
 
   useEffect(() => {
     if (!hasRunningStage) return undefined;
@@ -984,15 +1006,38 @@ function App() {
     }
   }, [addTaskMessage]);
 
-  const runDoctor = useCallback(async () => {
+  const runDoctor = useCallback(async (customColmapPath: string) => {
+    const runId = ++doctorRunId.current;
     setDoctorLoading(true);
-    const result = await invokeSafely("doctor");
+    const result = await invokeSafely("doctor", { colmapPath: customColmapPath.trim() || null });
+    if (runId !== doctorRunId.current) return;
     if (result) setDoctor(parseDoctor(result, EMPTY_DOCTOR));
     else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機執行環境" });
     setDoctorLoading(false);
   }, []);
 
-  useEffect(() => { void runDoctor(); }, [runDoctor]);
+  const initialColmapPath = useRef(colmapPath);
+  useEffect(() => { void runDoctor(initialColmapPath.current); }, [runDoctor]);
+
+  const openColmapPicker = useCallback(async () => {
+    if (!IS_TAURI_RUNTIME) {
+      setToast("COLMAP 路徑會由 Windows 本機執行環境使用");
+      return;
+    }
+    try {
+      const result = await openDialog({
+        directory: false,
+        multiple: false,
+        filters: [{ name: "COLMAP 啟動程式", extensions: ["bat", "exe", "cmd"] }],
+      });
+      if (typeof result === "string") {
+        setColmapPath(result);
+        void runDoctor(result);
+      }
+    } catch (error) {
+      console.info("[GS360] COLMAP picker", error);
+    }
+  }, [runDoctor]);
 
   useEffect(() => {
     if (!IS_TAURI_RUNTIME) return;
@@ -1090,6 +1135,7 @@ function App() {
         projectPath: run.task.rootPath || run.task.outputPath,
         stage: stageKey,
         settings: run.task.settings,
+        colmapPath: run.colmapPath || null,
       },
     });
     const currentRun = autoPipelineRuns.current[taskId];
@@ -1125,9 +1171,10 @@ function App() {
     if (!firstStage) return;
     autoPipelineRuns.current[task.projectId] = {
       task: { rootPath: task.rootPath, outputPath: task.outputPath, settings: task.settings },
+      colmapPath: colmapPath.trim(),
     };
     void startAutoStage(task.projectId, firstStage.key);
-  }, [startAutoStage]);
+  }, [colmapPath, startAutoStage]);
 
   const createTask = useCallback(async () => {
     if (!sourcePaths.length) { setToast("請先選擇至少一個 OSV 或雙魚眼來源"); return; }
@@ -1161,7 +1208,7 @@ function App() {
       return;
     }
     pendingStageStarts.current[task.projectId] = stageKey;
-    const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: task.settings || settingsDraft } });
+    const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: task.settings || settingsDraft, colmapPath: colmapPath.trim() || null } });
     if (result?.jobId) {
       delete pendingStageStarts.current[task.projectId];
       bindJobToTask(task.projectId, result.jobId);
@@ -1174,7 +1221,7 @@ function App() {
       delete pendingStageStarts.current[task.projectId];
       setToast("無法啟動階段，請查看執行環境訊息");
     }
-  }, [bindJobToTask, settingsDraft, updateTaskStage]);
+  }, [bindJobToTask, colmapPath, settingsDraft, updateTaskStage]);
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會取消後端工作"); return; }
@@ -1485,7 +1532,7 @@ function App() {
         <SheetContent className="settings-sheet" side="right">
           <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>以本機執行環境回報為準；不預設 GPU、FFmpeg 或模型已就緒。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
-            <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor()} aria-label="重新檢查環境"><RefreshCw /></Button></div><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
+            <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor(colmapPath)} aria-label="重新檢查環境"><RefreshCw /></Button></div><Field><FieldLabel htmlFor="colmap-path">COLMAP 執行檔</FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder="留白時從 PATH 自動偵測" onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>選擇</Button></div><FieldDescription>Windows 官方免安裝版請選根目錄的 COLMAP.bat；也可指定自行編譯的 colmap.exe。</FieldDescription></FieldContent></Field><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
           </div>
           <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>完成</Button></SheetFooter>
         </SheetContent>
