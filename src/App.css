@@ -656,14 +656,28 @@ button:active {
   font-size: var(--studio-font-sm);
 }
 
-.mask-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+.mask-object-options {
+  gap: 8px;
 }
 
-.mask-chip-list [data-slot="button"] {
-  font-size: var(--studio-font-sm);
+.mask-checkbox-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.settings-form .mask-checkbox-option,
+.settings-form .mask-sky-option {
+  min-height: 28px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+}
+
+.mask-checkbox-option [data-slot="field-label"],
+.mask-sky-option [data-slot="field-label"] {
+  cursor: pointer;
+  font-weight: 400;
 }
 
 .range-input {
