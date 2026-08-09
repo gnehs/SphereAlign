@@ -7,6 +7,7 @@
 //! same timestamp while still repairing a blurry candidate.
 
 use image::{GenericImageView, ImageReader};
+use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -158,7 +159,7 @@ pub struct SharpnessScore {
 /// Select and atomically copy one shared lens pair for each base-FPS interval.
 pub fn extract_selected_pairs(
     request: &ExtractionRequest,
-    should_cancel: impl Fn() -> bool,
+    should_cancel: impl Fn() -> bool + Sync,
     on_progress: impl Fn(ExtractionProgress),
 ) -> ExtractionResult<ExtractionSummary> {
     validate_request(request)?;
@@ -207,39 +208,50 @@ pub fn extract_selected_pairs(
             &format!("正在評分 {} 組配對候選影格", pairs.len()),
         );
 
-        let mut scored = Vec::with_capacity(pairs.len());
-        for pair in pairs {
-            if should_cancel() {
-                cancelled = true;
-                break;
-            }
-            let lens0_score = if request.score_candidates {
-                calculate_sharpness(&pair.0.path)?
-            } else {
-                SharpnessScore {
-                    laplacian_variance: 0.0,
-                    tenengrad_mean: 0.0,
-                    combined: 0.0,
-                }
+        let scored = if request.score_candidates {
+            // Each candidate is independent and sharpness scoring is CPU-heavy.
+            // Rayon reuses its shared work-stealing pool, while the nested join
+            // lets both physical lenses use otherwise-idle cores as well.
+            pairs
+                .par_iter()
+                .map(|pair| {
+                    if should_cancel() {
+                        return Ok(None);
+                    }
+                    let (lens0_score, lens1_score) = rayon::join(
+                        || calculate_sharpness(&pair.0.path),
+                        || calculate_sharpness(&pair.1.path),
+                    );
+                    if should_cancel() {
+                        return Ok(None);
+                    }
+                    let lens0_score = lens0_score?;
+                    let lens1_score = lens1_score?;
+                    // A pair is only as useful as its blurriest physical lens.
+                    // Using `min` prevents one highly textured lens from hiding
+                    // a soft mate.
+                    let pair_score = lens0_score.combined.min(lens1_score.combined);
+                    Ok(Some((pair, lens0_score, lens1_score, pair_score)))
+                })
+                .collect::<Vec<ExtractionResult<_>>>()
+                .into_iter()
+                .collect::<ExtractionResult<Vec<_>>>()?
+        } else {
+            let empty_score = SharpnessScore {
+                laplacian_variance: 0.0,
+                tenengrad_mean: 0.0,
+                combined: 0.0,
             };
-            if should_cancel() {
-                cancelled = true;
-                break;
-            }
-            let lens1_score = if request.score_candidates {
-                calculate_sharpness(&pair.1.path)?
-            } else {
-                SharpnessScore {
-                    laplacian_variance: 0.0,
-                    tenengrad_mean: 0.0,
-                    combined: 0.0,
-                }
-            };
-            // A pair is only as useful as its blurriest physical lens.  Using
-            // `min` prevents one highly textured lens from hiding a soft mate.
-            let pair_score = lens0_score.combined.min(lens1_score.combined);
-            scored.push((pair, lens0_score, lens1_score, pair_score));
-        }
+            pairs
+                .iter()
+                .map_while(|pair| {
+                    (!should_cancel()).then_some((pair, empty_score, empty_score, 0.0))
+                })
+                .map(Some)
+                .collect()
+        };
+        let scored = scored.into_iter().flatten().collect::<Vec<_>>();
+        cancelled = scored.len() != pairs.len();
         if cancelled {
             emit_progress(
                 &on_progress,
@@ -963,6 +975,22 @@ mod tests {
     }
 
     #[test]
+    fn parallel_scoring_preserves_the_earliest_tie_break() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let request = make_request(&dir);
+        write_pair(&request, 0, 0.0)?;
+        write_pair(&request, 1, 0.0)?;
+        let summary = extract_selected_pairs(&request, || false, |_| {})?;
+        let selected = summary
+            .selections
+            .iter()
+            .find(|record| record.selected)
+            .unwrap();
+        assert_eq!(selected.sequence, 0);
+        Ok(())
+    }
+
+    #[test]
     fn pairs_numeric_sequence_even_when_lens_prefixes_differ() -> ExtractionResult<()> {
         let dir = TempDir::new()?;
         let request = make_request(&dir);
@@ -1020,6 +1048,25 @@ mod tests {
         assert!(summary.cancelled);
         assert!(summary.metadata_path.is_file());
         assert!(!request.lens0_output.join("00000000.png").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cancellation_still_works_when_scoring_is_disabled() -> ExtractionResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = make_request(&dir);
+        request.score_candidates = false;
+        write_pair(&request, 0, 0.0)?;
+        let cancellation_checks = AtomicUsize::new(0);
+        let summary = extract_selected_pairs(
+            &request,
+            || cancellation_checks.fetch_add(1, Ordering::Relaxed) > 0,
+            |_| {},
+        )?;
+        assert!(summary.cancelled);
+        assert!(summary.selections.is_empty());
+        assert!(!request.lens0_output.join("00000000.png").exists());
+        assert!(!request.lens1_output.join("00000000.png").exists());
         Ok(())
     }
 
