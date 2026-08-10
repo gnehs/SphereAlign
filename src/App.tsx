@@ -84,7 +84,7 @@ interface StageState {
 interface PipelineSettings {
   extract: { baseFps: number; denseFps: number; skipBlurry: boolean };
   mask: { classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
-  align: { useGpu: boolean };
+  align: { useGpu: boolean; gpuIndex: string };
 }
 
 interface OsvSource {
@@ -145,6 +145,7 @@ interface DoctorReport {
   checkedAt: string;
   items: DiagnosticItem[];
   warnings: string[];
+  colmapCapabilities?: Record<string, unknown>;
 }
 
 interface ProgressEventPayload {
@@ -199,16 +200,31 @@ const MASK_CLASS_LABELS: Record<string, string> = {
 const DEFAULT_SETTINGS: PipelineSettings = {
   extract: { baseFps: 2, denseFps: 8, skipBlurry: true },
   mask: { classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
-  align: { useGpu: false },
+  align: { useGpu: false, gpuIndex: "-1" },
 };
 const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
+
+function normalisePipelineSettings(value: unknown): Record<string, unknown> {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
+  const rawGpuIndex = align.gpuIndex;
+  const gpuIndex = typeof rawGpuIndex === "string"
+    ? rawGpuIndex
+    : typeof rawGpuIndex === "number" && Number.isFinite(rawGpuIndex)
+      ? String(rawGpuIndex)
+      : DEFAULT_SETTINGS.align.gpuIndex;
+  return {
+    ...source,
+    align: { ...align, gpuIndex },
+  };
+}
 
 const EMPTY_DOCTOR: DoctorReport = {
   platform: "尚未檢查平台",
   summary: "執行環境診斷以確認可用能力",
   checkedAt: "尚未檢查",
   items: [
-    { label: "GPU／加速器", value: "尚未檢查", detail: "不預設任何硬體加速能力", status: "unknown" },
+    { label: "COLMAP CUDA", value: "尚未檢查", detail: "不預設 COLMAP build 或 FFmpeg／VideoToolbox 加速能力", status: "unknown" },
     { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
     { label: "執行環境", value: "尚未檢查", detail: "確認作業系統與執行環境", status: "unknown" },
     { label: "儲存空間", value: "尚未檢查", detail: "確認輸出磁碟可用空間", status: "unknown" },
@@ -505,7 +521,7 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
     rootPath: typeof body.rootPath === "string" ? body.rootPath : outputPath,
     inputPaths,
     outputPath,
-    settings: body.settings && typeof body.settings === "object" ? (body.settings as Record<string, unknown>) : {},
+    settings: normalisePipelineSettings(body.settings),
     stages,
     logs: parseTaskLogs(body.logs ?? body.pipelineLogs, stages),
     warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [],
@@ -577,22 +593,79 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     return typeof entry === "string" ? !/(missing|failed|error|unavailable)/i.test(entry) : true;
   };
   const entryName = (entry: unknown) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).name ?? "") : String(entry ?? "");
+  const entryKind = (entry: unknown) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).kind ?? "") : "";
   const entryPath = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).path === "string" ? String((entry as Record<string, unknown>).path) : "";
   const entryNote = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).note === "string" ? localiseUserMessage(String((entry as Record<string, unknown>).note)) : "";
   const ffmpeg = tools.find((entry) => entryName(entry).toLowerCase() === "ffmpeg");
   const colmap = tools.find((entry) => entryName(entry).toLowerCase() === "colmap");
-  const acceleratorCandidates = accelerators.filter((entry) => /(cuda|metal|videotoolbox|gpu|nvidia|apple)/i.test(`${entryName(entry)} ${itemText(entry)}`));
-  const accelerator = acceleratorCandidates.find(available) ?? acceleratorCandidates[0];
+  const ffmpegAccelerators = accelerators.filter((entry) => {
+    if (!ffmpeg) return false;
+    const text = `${entryKind(entry)} ${entryName(entry)} ${itemText(entry)}`;
+    return /(videotoolbox|video\s*toolbox|ffmpeg)/i.test(text)
+      || (/(cuda|cuvid)/i.test(text) && !/colmap/i.test(text));
+  });
+  const colmapCapabilities = body.colmapCapabilities && typeof body.colmapCapabilities === "object"
+    ? body.colmapCapabilities as Record<string, unknown>
+    : undefined;
+  type CapabilityState = { known: boolean; available: boolean; text: string };
+  const capabilityState = (value: unknown): CapabilityState => {
+    if (typeof value === "boolean") return { known: true, available: value, text: value ? "已支援" : "未支援" };
+    if (typeof value === "number" && Number.isFinite(value)) return { known: true, available: value !== 0, text: value !== 0 ? "已支援" : "未支援" };
+    if (typeof value === "string") {
+      const text = value.trim();
+      const lower = text.toLowerCase();
+      if (!text) return { known: false, available: false, text: "未回報" };
+      if (/^(false|no|none|unsupported|unavailable|missing|failed|disabled|off|0)$/.test(lower) || /(not\s+supported|without|unavailable|missing|failed|disabled)/i.test(lower)) {
+        return { known: true, available: false, text: "未支援" };
+      }
+      if (/^(true|yes|supported|available|ready|enabled|on|1)$/.test(lower) || /(cuda|gpu|supported|available|ready|enabled)/i.test(lower)) {
+        return { known: true, available: true, text: "已支援" };
+      }
+      return { known: true, available: true, text };
+    }
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const stateKey = ["available", "supported", "enabled", "ready", "detected"].find((key) => key in record);
+      if (stateKey) {
+        const state = capabilityState(record[stateKey]);
+        const detail = typeof record.detail === "string" ? record.detail : typeof record.note === "string" ? record.note : state.text;
+        return { ...state, text: detail || state.text };
+      }
+      if (typeof record.status === "string") return capabilityState(record.status);
+      if (typeof record.version === "string") return { known: true, available: true, text: record.version };
+    }
+    return { known: false, available: false, text: "未回報" };
+  };
+  const colmapCuda = capabilityState(colmapCapabilities?.cudaBuild);
+  const ceresGpu = capabilityState(colmapCapabilities?.ceresGpu);
+  const globalMapper = capabilityState(colmapCapabilities?.globalMapper);
+  const hasColmapCapabilities = Boolean(colmapCapabilities && Object.keys(colmapCapabilities).length > 0);
+  const colmapCudaDetail = hasColmapCapabilities
+    ? [
+      `COLMAP SIFT：${colmapCuda.text}`,
+      `Ceres BA：${ceresGpu.known ? ceresGpu.available ? "可嘗試（執行期確認 CUDA／cuDSS）" : "僅 CPU" : "未回報"}`,
+      globalMapper.known ? `Global Mapper：${globalMapper.text}` : "",
+    ].filter(Boolean).join(" · ")
+    : "舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA";
+  const colmapCudaStatus: DiagnosticStatus = hasColmapCapabilities && colmapCuda.known
+    ? colmapCuda.available ? "ready" : "warning"
+    : "unknown";
+  const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
+    ? colmapCuda.available ? "已確認支援" : "未支援"
+    : "未確認";
   const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
   const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
   const platform = platformLabel(typeof body.platform === "string" ? body.platform : typeof body.os === "string" ? body.os : fallback.platform);
+  const ffmpegAccelerationValue = ffmpegAccelerators
+    .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "可用" : "未支援"}`)
+    .join(" · ");
   const items: DiagnosticItem[] = [
-    { label: "GPU／加速器", value: accelerator && available(accelerator) ? itemText(accelerator) : "未偵測到可用加速", detail: capabilityValue || "CUDA／VideoToolbox 狀態由環境診斷回報", status: accelerator && available(accelerator) ? "ready" : "warning" },
-    { label: "FFmpeg", value: ffmpeg && available(ffmpeg) ? itemText(ffmpeg) : "未偵測到", detail: ffmpeg && available(ffmpeg) ? "系統 PATH 可用" : "請安裝或加入 PATH", status: ffmpeg && available(ffmpeg) ? "ready" : "warning" },
+    { label: "COLMAP CUDA", value: colmapCudaValue, detail: colmapCudaDetail, status: colmapCudaStatus },
+    { label: "FFmpeg", value: ffmpeg && available(ffmpeg) ? itemText(ffmpeg) : "未偵測到", detail: ffmpeg && available(ffmpeg) ? ["系統 PATH 可用", ffmpegAccelerationValue ? `FFmpeg／VideoToolbox：${ffmpegAccelerationValue}` : ""].filter(Boolean).join(" · ") : "請安裝或加入 PATH", status: ffmpeg && available(ffmpeg) ? "ready" : "warning" },
     { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? entryPath(colmap) || "可執行原生雙魚眼相機組對齊" : entryNote(colmap) || "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
     { label: "執行環境", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri 執行環境", status: "ready" },
   ];
-  return { platform, summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings };
+  return { platform, summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings, colmapCapabilities };
 }
 
 async function invokeSafely<T>(command: string, args?: Record<string, unknown>) {
@@ -619,7 +692,7 @@ function sourceFromPath(path: string, index: number): OsvSource {
 }
 
 function iconForDiagnostic(label: string) {
-  if (label.includes("GPU")) return Cpu;
+  if (label.includes("GPU") || label.includes("CUDA")) return Cpu;
   if (label.includes("FFmpeg")) return Video;
   if (label.includes("儲存空間")) return HardDrive;
   return MonitorCog;
@@ -1113,7 +1186,7 @@ function App() {
     const firstStage = STAGES.find(({ key }) => task.stages[key].status !== "completed");
     if (!firstStage) return;
     autoPipelineRuns.current[task.projectId] = {
-      task: { rootPath: task.rootPath, outputPath: task.outputPath, settings: task.settings },
+      task: { rootPath: task.rootPath, outputPath: task.outputPath, settings: normalisePipelineSettings(task.settings) },
       colmapPath: colmapPath.trim(),
     };
     void startAutoStage(task.projectId, firstStage.key);
@@ -1151,7 +1224,7 @@ function App() {
       return;
     }
     pendingStageStarts.current[task.projectId] = stageKey;
-    const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: task.settings || settingsDraft, colmapPath: colmapPath.trim() || null } });
+    const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: normalisePipelineSettings(task.settings || settingsDraft), colmapPath: colmapPath.trim() || null } });
     if (result?.jobId) {
       delete pendingStageStarts.current[task.projectId];
       bindJobToTask(task.projectId, result.jobId);
@@ -1306,7 +1379,24 @@ function App() {
             <div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: value } })); }} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div>
           </FieldContent>
         </Field>
-        <Field><FieldLabel>對齊</FieldLabel><FieldContent><div className="settings-stack"><label className="control-line"><Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} /><span>使用 COLMAP GPU（CUDA）</span><small>無法使用時會自動改用 CPU</small></label><div className="rig-note"><Workflow /><span><strong>雙階段相機組固定流程</strong><small>先建立初始模型，再固定相機組進行重建</small></span></div></div></FieldContent></Field>
+        <Field>
+          <FieldLabel>對齊</FieldLabel>
+          <FieldContent>
+            <div className="settings-stack">
+              <label className="control-line">
+                <Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} />
+                <span>使用 COLMAP GPU（CUDA：SIFT＋Ceres BA）</span>
+              </label>
+              <Field>
+                <FieldLabel htmlFor="gpu-index">GPU index</FieldLabel>
+                <Input id="gpu-index" className="w-20" type="text" inputMode="numeric" value={settingsDraft.align.gpuIndex ?? DEFAULT_SETTINGS.align.gpuIndex} onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: value } })); }} />
+                <FieldDescription>-1 代表自動選擇；0,1 可讓 SIFT 使用多張 GPU，Ceres BA 會使用清單中的第一張。僅在 COLMAP build 確認支援 CUDA 時套用。</FieldDescription>
+              </Field>
+              <small>只有指定的 COLMAP build 確認支援 CUDA 才啟用；執行失敗會以 CPU 重試。</small>
+              <div className="rig-note"><Workflow /><span><strong>雙階段相機組固定流程</strong><small>先建立初始模型，再固定相機組進行重建</small></span></div>
+            </div>
+          </FieldContent>
+        </Field>
       </FieldGroup>
     </div>
   );

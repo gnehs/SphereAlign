@@ -22,6 +22,7 @@ colmap-{filename}/
 ├── capture/                     # 輕量評分 checkpoint（不含候選圖片）
 └── metadata/
     ├── capture.json
+    ├── align.checkpoint.json    # Align 輸入 fingerprint checkpoint
     ├── pairs.txt
     ├── source*_selection.json
     ├── source*_streams.json
@@ -64,7 +65,12 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - 同時間的 lens0 / lens1 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
 - 未知 rig extrinsics 採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
 - Mask stage 已完成時才傳入 COLMAP mask path；沒有 mask 也能獨立 Align。
-- 已驗證存在的 sparse model 會直接續用，不重算完成結果。
+- 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 也會原樣收到指定字串，但實際支援與排程仍由 COLMAP build 決定，不宣稱 Ceres 一定能以多 GPU 執行。
+- GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；mapper 重試前會清理不完整的 sparse 輸出。
+- 目前固定使用 Ceres backend，不啟用 Caspar；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容。
+- 已存在的 `rig_config.json` 會保留，不會被覆寫；只有缺少時才建立預設雙鏡頭 rig。
+- `metadata/align.checkpoint.json` 的 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images，以及本次使用的 masks；其中任一輸入變更，checkpoint 就會失效並清理舊 COLMAP 輸出後重建。
+- 已驗證存在且 fingerprint 相符的 sparse model 會直接續用；checkpoint 不符時會清理後重算。
 
 ## 執行需求
 
@@ -74,7 +80,7 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - Align 需要 COLMAP；可從系統 `PATH` 自動偵測，或在設定中指定啟動程式。Windows 官方免安裝版應選根目錄的 `COLMAP.bat`，讓它一併設定必要的 DLL 與 Qt plugin 路徑
 - 首次執行物件／天空 Mask 時需要網路下載相應 ONNX 模型，或預先放入支援的模型目錄
 
-預設 build 在 Apple silicon 使用 CoreML、Windows 使用 DirectML，並停用 ONNX Runtime 的 CPU execution-provider fallback。若模型含硬體 provider 不支援的節點，Mask 會回報錯誤而不是靜默改用 CPU。Cargo 另提供 `cuda`、`webgpu` 等 opt-in features；原生 WebGPU 在 macOS 與目前 YOLO／ONNX Runtime 組合的實機測試仍不穩定，因此不列為預設。COLMAP GPU 是否可用取決於使用者安裝的 COLMAP build，後端在 doctor 未偵測到 CUDA 時會強制使用 CPU。
+預設 build 在 Apple silicon 使用 CoreML、Windows 使用 DirectML，並停用 ONNX Runtime 的 CPU execution-provider fallback。若模型含硬體 provider 不支援的節點，Mask 會回報錯誤而不是靜默改用 CPU。Cargo 另提供 `cuda`、`webgpu` 等 opt-in features；原生 WebGPU 在 macOS 與目前 YOLO／ONNX Runtime 組合的實機測試仍不穩定，因此不列為預設。COLMAP GPU 能力只由設定中選定的 COLMAP version/help banner 判斷，不使用 FFmpeg 或 `nvidia-smi` 代判；未確認 CUDA/Ceres 能力時，對應 Align stage 會使用 CPU。即使已確認 GPU，feature、matching 或 mapper 的 GPU 執行失敗仍會自動以 CPU 重試，mapper retry 會先清理不完整輸出。
 
 ## 開發
 
@@ -97,4 +103,7 @@ cargo test --lib
 
 - `denseFps` 目前是模糊過濾的候選密度，不宣稱已實作基於 motion / IMU 的 adaptive cadence。
 - Telemetry 先無損保存；在沒有相機座標系、時間同步與尺度驗證前，不會把 raw IMU 當成 COLMAP pose prior。
+- Caspar bundle-adjustment backend 目前不啟用，因為它與本流程使用的 `OPENCV_FISHEYE` 不相容；Align 以 Ceres BA 為界線。
+- Align checkpoint 只驗證目前輸入與設定的 fingerprint；settings、COLMAP version、rig、pairs、images 或使用中的 masks 改變時會失效並重建，不保證沿用舊 sparse 結果。
+- COLMAP GPU 僅在指定 build 的 banner/help 確認能力後嘗試；GPU stage 失敗會回退 CPU，mapper 回退前會清理不完整 sparse output。
 - 專案不會自動下載大型模型或第三方執行檔，避免隱性網路存取；模型資料夾可在新增任務時指定。

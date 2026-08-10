@@ -12,6 +12,7 @@ use crate::project::{self, ProjectManifest, StageName, StageStatus};
 use crate::telemetry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -35,10 +36,38 @@ const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
 const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AlignCheckpoint {
+    schema_version: u32,
+    fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AlignFileIdentity {
+    path: String,
+    size: u64,
+    modified_nanos: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AlignFingerprintPayload {
+    schema_version: u32,
+    settings: String,
+    colmap_version: String,
+    include_masks: bool,
+    rig_config_sha256: String,
+    pairs_sha256: String,
+    files: Vec<AlignFileIdentity>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -498,6 +527,36 @@ fn setting_bool(settings: &Value, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+const INVALID_GPU_INDEX_MESSAGE: &str = "align.gpuIndex 必須是 -1 或逗號分隔的非負整數（例如 0,1）";
+
+fn parse_gpu_index(settings: &Value) -> Result<String, String> {
+    let Some(value) = settings.pointer("/align/gpuIndex") else {
+        return Ok("-1".to_owned());
+    };
+    let Some(value) = value.as_str() else {
+        return Err(INVALID_GPU_INDEX_MESSAGE.to_owned());
+    };
+    let value = value.trim();
+    if value == "-1" {
+        return Ok("-1".to_owned());
+    }
+    if value.is_empty() {
+        return Err(INVALID_GPU_INDEX_MESSAGE.to_owned());
+    }
+    let mut indexes = Vec::new();
+    for index in value.split(',') {
+        let index = index.trim();
+        if index.is_empty() || !index.chars().all(|character| character.is_ascii_digit()) {
+            return Err(INVALID_GPU_INDEX_MESSAGE.to_owned());
+        }
+        index
+            .parse::<u64>()
+            .map_err(|_| INVALID_GPU_INDEX_MESSAGE.to_owned())?;
+        indexes.push(index.to_owned());
+    }
+    Ok(indexes.join(","))
+}
+
 fn mask_confidence(settings: &Value) -> f64 {
     let configured = setting_f64(settings, "/mask/confidence", 0.25);
     let version = setting_f64(settings, "/mask/confidenceVersion", 1.0);
@@ -727,6 +786,115 @@ where
         emit_log(app, id, "info", last.trim());
     }
     Ok(())
+}
+
+fn cancelled_error(error: &str, control: &JobControl) -> bool {
+    error == "cancelled" || control.cancelled.load(Ordering::Acquire)
+}
+
+fn run_colmap_with_gpu_fallback<F>(
+    app: &AppHandle,
+    id: &str,
+    program: &Path,
+    gpu_args: &[String],
+    cpu_args: &[String],
+    use_gpu: bool,
+    component: &str,
+    control: &JobControl,
+    mut on_line: F,
+) -> Result<(), String>
+where
+    F: FnMut(&str),
+{
+    if !use_gpu {
+        return run_child_with_output(app, id, program, cpu_args, control, &mut on_line);
+    }
+    match run_child_with_output(app, id, program, gpu_args, control, &mut on_line) {
+        Ok(()) => Ok(()),
+        Err(error) if cancelled_error(&error, control) => Err(error),
+        Err(error) => {
+            emit_log(
+                app,
+                id,
+                "warning",
+                format!("COLMAP {component} GPU 執行失敗，改用 CPU 重試：{error}"),
+            );
+            run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
+        }
+    }
+}
+
+fn run_mapper_with_gpu_fallback<F>(
+    app: &AppHandle,
+    id: &str,
+    program: &Path,
+    output_path: &Path,
+    gpu_args: &[String],
+    cpu_args: &[String],
+    use_gpu: bool,
+    component: &str,
+    control: &JobControl,
+    mut on_line: F,
+) -> Result<(), String>
+where
+    F: FnMut(&str),
+{
+    if !use_gpu {
+        return run_child_with_output(app, id, program, cpu_args, control, &mut on_line);
+    }
+    match run_child_with_output(app, id, program, gpu_args, control, &mut on_line) {
+        Ok(()) => Ok(()),
+        Err(error) if cancelled_error(&error, control) => Err(error),
+        Err(error) => {
+            emit_log(
+                app,
+                id,
+                "warning",
+                format!("COLMAP {component} GPU 執行失敗，移除不完整輸出並改用 CPU 重試：{error}"),
+            );
+            if output_path.exists() {
+                fs::remove_dir_all(output_path).map_err(|cleanup_error| {
+                    format!("無法清理 COLMAP {component} GPU 不完整輸出：{cleanup_error}")
+                })?;
+            }
+            fs::create_dir_all(output_path).map_err(|create_error| {
+                format!("無法建立 COLMAP {component} CPU 輸出資料夾：{create_error}")
+            })?;
+            run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
+        }
+    }
+}
+
+fn is_mapper_gpu_cpu_fallback_line(line: &str) -> bool {
+    let normalized = line.to_ascii_lowercase();
+    normalized.contains("compiled without cuda support")
+        || normalized.contains("compiled without cudss support")
+        || normalized.contains("falling back to cpu-based")
+}
+
+fn maybe_log_mapper_gpu_cpu_fallback(
+    app: &AppHandle,
+    id: &str,
+    component: &str,
+    use_gpu: bool,
+    warning_emitted: &mut bool,
+    line: &str,
+) {
+    if !use_gpu || *warning_emitted {
+        return;
+    }
+    if is_mapper_gpu_cpu_fallback_line(line) {
+        *warning_emitted = true;
+        emit_log(
+            app,
+            id,
+            "warning",
+            format!(
+                "COLMAP {component} 的 Ceres GPU 不可用，已由 Ceres 改用 CPU：{}",
+                line.trim()
+            ),
+        );
+    }
 }
 
 /// Build the software-decoder FFmpeg command used to stream both candidate
@@ -2187,13 +2355,16 @@ fn run_mask(
 }
 
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
-    fs::write(
-        root.join("rig_config.json"),
-        serde_json::to_vec_pretty(&json!([{"cameras":[
-        {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]))
-        .unwrap(),
-    )
-    .map_err(|e| e.to_string())?;
+    let rig_config = root.join("rig_config.json");
+    if !rig_config.is_file() {
+        fs::write(
+            rig_config,
+            serde_json::to_vec_pretty(&json!([{"cameras":[
+            {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]))
+            .unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let lens1 = root.join("images/lens1");
     let mut names: Vec<String> = fs::read_dir(root.join("images/lens0"))
         .map_err(|e| e.to_string())?
@@ -2250,6 +2421,171 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(names.len() as u64)
+}
+
+fn canonical_json(value: &Value) -> Result<String, String> {
+    fn write_value(value: &Value, output: &mut String) -> Result<(), String> {
+        match value {
+            Value::Null => output.push_str("null"),
+            Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+            Value::Number(value) => output.push_str(&value.to_string()),
+            Value::String(value) => {
+                output.push_str(&serde_json::to_string(value).map_err(|error| error.to_string())?)
+            }
+            Value::Array(values) => {
+                output.push('[');
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    write_value(value, output)?;
+                }
+                output.push(']');
+            }
+            Value::Object(values) => {
+                let mut keys = values.keys().collect::<Vec<_>>();
+                keys.sort_unstable();
+                output.push('{');
+                for (index, key) in keys.into_iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
+                    }
+                    output
+                        .push_str(&serde_json::to_string(key).map_err(|error| error.to_string())?);
+                    output.push(':');
+                    write_value(&values[key], output)?;
+                }
+                output.push('}');
+            }
+        }
+        Ok(())
+    }
+
+    let mut output = String::new();
+    write_value(value, &mut output)?;
+    Ok(output)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn file_sha256(path: &Path) -> Result<String, String> {
+    fs::read(path)
+        .map(|bytes| sha256_hex(&bytes))
+        .map_err(|error| format!("無法讀取 {}：{error}", path.display()))
+}
+
+fn collect_align_file_identities(
+    directory: &Path,
+    project_root: &Path,
+    identities: &mut Vec<AlignFileIdentity>,
+) -> Result<(), String> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("無法讀取 {}：{error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("無法列舉 {}：{error}", directory.display()))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("無法讀取 {} 的檔案類型：{error}", path.display()))?;
+        if file_type.is_dir() {
+            collect_align_file_identities(&path, project_root, identities)?;
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let metadata = entry
+            .metadata()
+            .map_err(|error| format!("無法讀取 {} 的 metadata：{error}", path.display()))?;
+        let relative = path
+            .strip_prefix(project_root)
+            .map_err(|error| format!("無法建立 {} 的相對路徑：{error}", path.display()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        identities.push(AlignFileIdentity {
+            path: relative,
+            size: metadata.len(),
+            modified_nanos: source_modified_nanos(&metadata),
+        });
+    }
+    Ok(())
+}
+
+fn build_align_fingerprint(
+    root: &Path,
+    settings: &Value,
+    colmap_version: &str,
+    include_masks: bool,
+) -> Result<String, String> {
+    let mut files = Vec::new();
+    collect_align_file_identities(&root.join("images"), root, &mut files)?;
+    if include_masks {
+        collect_align_file_identities(&root.join("masks_colmap"), root, &mut files)?;
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    let payload = AlignFingerprintPayload {
+        schema_version: ALIGN_CHECKPOINT_SCHEMA_VERSION,
+        settings: canonical_json(settings)?,
+        colmap_version: colmap_version.to_owned(),
+        include_masks,
+        rig_config_sha256: file_sha256(&root.join("rig_config.json"))?,
+        pairs_sha256: file_sha256(&root.join("metadata/pairs.txt"))?,
+        files,
+    };
+    let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn load_align_checkpoint(path: &Path) -> Option<AlignCheckpoint> {
+    let checkpoint = serde_json::from_slice::<AlignCheckpoint>(&fs::read(path).ok()?).ok()?;
+    (checkpoint.schema_version == ALIGN_CHECKPOINT_SCHEMA_VERSION).then_some(checkpoint)
+}
+
+fn write_align_checkpoint(path: &Path, fingerprint: &str) -> Result<(), String> {
+    let checkpoint = AlignCheckpoint {
+        schema_version: ALIGN_CHECKPOINT_SCHEMA_VERSION,
+        fingerprint: fingerprint.to_owned(),
+    };
+    let bytes = serde_json::to_vec_pretty(&checkpoint).map_err(|error| error.to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "對齊 checkpoint 缺少父資料夾".to_owned())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("無法建立對齊 checkpoint 資料夾：{error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("無法寫入對齊 checkpoint：{error}"))
+}
+
+fn remove_align_artifact(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
+    .map_err(|error| format!("無法移除 COLMAP 對齊輸出 {}：{error}", path.display()))
+}
+
+fn cleanup_align_artifacts(root: &Path) -> Result<(), String> {
+    for path in [
+        root.join("database.db"),
+        root.join("database.db-wal"),
+        root.join("database.db-shm"),
+        root.join("sparse"),
+        root.join("sparse_bootstrap"),
+    ] {
+        remove_align_artifact(&path)?;
+    }
+    Ok(())
+}
+
+fn can_reuse_align_result(final_complete: bool, checkpoint_matches: bool) -> bool {
+    final_complete && checkpoint_matches
 }
 
 fn sparse_model_exists(root: &Path) -> bool {
@@ -2413,6 +2749,127 @@ fn emit_colmap_step_completed(
     );
 }
 
+fn feature_extractor_args(
+    root: &Path,
+    db: &Path,
+    use_gpu: bool,
+    gpu_index: &str,
+    use_masks: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "feature_extractor".into(),
+        "--database_path".into(),
+        db.to_string_lossy().into_owned(),
+        "--image_path".into(),
+        root.join("images").to_string_lossy().into_owned(),
+        "--ImageReader.single_camera_per_folder".into(),
+        "1".into(),
+        "--ImageReader.camera_model".into(),
+        "OPENCV_FISHEYE".into(),
+        "--FeatureExtraction.use_gpu".into(),
+        if use_gpu { "1".into() } else { "0".into() },
+        "--FeatureExtraction.gpu_index".into(),
+        gpu_index.to_owned(),
+    ];
+    if use_masks {
+        args.push("--ImageReader.mask_path".into());
+        args.push(root.join("masks_colmap").to_string_lossy().into_owned());
+    }
+    args
+}
+
+fn matches_importer_args(root: &Path, db: &Path, use_gpu: bool, gpu_index: &str) -> Vec<String> {
+    vec![
+        "matches_importer".into(),
+        "--database_path".into(),
+        db.to_string_lossy().into_owned(),
+        "--match_list_path".into(),
+        root.join("metadata/pairs.txt")
+            .to_string_lossy()
+            .into_owned(),
+        "--match_type".into(),
+        "pairs".into(),
+        "--FeatureMatching.use_gpu".into(),
+        if use_gpu { "1".into() } else { "0".into() },
+        "--FeatureMatching.gpu_index".into(),
+        gpu_index.to_owned(),
+    ]
+}
+
+fn colmap_mapper_backend_supported(version: &str) -> bool {
+    let lower = version.to_ascii_lowercase();
+    let Some(colmap_offset) = lower.find("colmap") else {
+        return false;
+    };
+    let version = &version[colmap_offset + "colmap".len()..];
+    let Some(start) = version.find(|character: char| character.is_ascii_digit()) else {
+        return false;
+    };
+    let version = &version[start..];
+    let major = version
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u32>()
+        .ok();
+    let Some(major) = major else {
+        return false;
+    };
+    let Some(dot) = version.find('.') else {
+        return major > 4;
+    };
+    let minor = version[dot + 1..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u32>()
+        .unwrap_or_default();
+    major > 4 || (major == 4 && minor >= 1)
+}
+
+fn mapper_args(
+    db: &Path,
+    images: &Path,
+    output: &Path,
+    use_gpu: bool,
+    gpu_index: &str,
+    disable_sensor_refinement: bool,
+    include_ceres_backend: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "mapper".into(),
+        "--database_path".into(),
+        db.to_string_lossy().into_owned(),
+        "--image_path".into(),
+        images.to_string_lossy().into_owned(),
+        "--output_path".into(),
+        output.to_string_lossy().into_owned(),
+        "--Mapper.multiple_models".into(),
+        "0".into(),
+        "--Mapper.ba_use_gpu".into(),
+        if use_gpu { "1".into() } else { "0".into() },
+        "--Mapper.ba_gpu_index".into(),
+        gpu_index.to_owned(),
+    ];
+    if include_ceres_backend {
+        let insertion = args.len() - 4;
+        args.splice(
+            insertion..insertion,
+            [
+                "--Mapper.ba_local_backend".into(),
+                "CERES".into(),
+                "--Mapper.ba_global_backend".into(),
+                "CERES".into(),
+            ],
+        );
+    }
+    if disable_sensor_refinement {
+        args.push("--Mapper.ba_refine_sensor_from_rig".into());
+        args.push("0".into());
+    }
+    args
+}
+
 fn run_align(
     app: &AppHandle,
     id: &str,
@@ -2422,11 +2879,33 @@ fn run_align(
 ) -> Result<Vec<String>, String> {
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
+    let gpu_index = parse_gpu_index(&manifest.settings)?;
+    let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", false);
     let frame_count = write_rig_and_pairs(&root)?;
     let db = root.join("database.db");
     let sparse = root.join("sparse");
-    if db.is_file() && sparse_model_exists(&sparse) {
-        emit_log(app, id, "info", "已驗證現有 COLMAP 重建結果，略過重算");
+    let use_masks = matches!(
+        manifest.stage(&StageName::Mask).status,
+        StageStatus::Completed
+    );
+    let checkpoint_path = root.join("metadata/align.checkpoint.json");
+    let colmap_version = crate::doctor::command_version(&colmap)
+        .unwrap_or_else(|| "<unknown-colmap-version>".to_owned());
+    let fingerprint =
+        build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
+    let checkpoint_present = checkpoint_path.exists();
+    let checkpoint = load_align_checkpoint(&checkpoint_path);
+    let checkpoint_matches = checkpoint
+        .as_ref()
+        .is_some_and(|value| value.fingerprint == fingerprint);
+    let final_complete = db.is_file() && sparse_model_exists(&sparse);
+    if can_reuse_align_result(final_complete, checkpoint_matches) {
+        emit_log(
+            app,
+            id,
+            "info",
+            "已驗證對齊 checkpoint 與現有 COLMAP 重建結果",
+        );
         emit_progress_detailed(
             app,
             id,
@@ -2447,35 +2926,53 @@ fn run_align(
             sparse.to_string_lossy().into_owned(),
         ]);
     }
-    let cuda_available = crate::doctor::report(custom_colmap_path)
-        .accelerators
-        .into_iter()
-        .any(|accelerator| accelerator.kind == "cuda" && accelerator.available);
-    let gpu = setting_bool(
-        &manifest.settings,
-        "/align/useGpu",
-        cfg!(target_os = "windows"),
-    ) && cuda_available;
-    let mut args = vec![
-        "feature_extractor".into(),
-        "--database_path".into(),
-        db.to_string_lossy().into_owned(),
-        "--image_path".into(),
-        root.join("images").to_string_lossy().into_owned(),
-        "--ImageReader.single_camera_per_folder".into(),
-        "1".into(),
-        "--ImageReader.camera_model".into(),
-        "OPENCV_FISHEYE".into(),
-        "--FeatureExtraction.use_gpu".into(),
-        if gpu { "1".into() } else { "0".into() },
-    ];
-    if matches!(
-        manifest.stage(&StageName::Mask).status,
-        StageStatus::Completed
-    ) {
-        args.push("--ImageReader.mask_path".into());
-        args.push(root.join("masks_colmap").to_string_lossy().into_owned());
+    if !checkpoint_matches {
+        if checkpoint_present {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "對齊輸入 checkpoint 已變更；清理舊 COLMAP 輸出後重建",
+            );
+        } else {
+            emit_log(
+                app,
+                id,
+                "info",
+                "找不到有效對齊 checkpoint；不完整 COLMAP 輸出將清理後重建",
+            );
+        }
+        cleanup_align_artifacts(&root)?;
+        write_align_checkpoint(&checkpoint_path, &fingerprint)?;
     }
+    let (feature_gpu, mapper_gpu) = if requested_gpu {
+        let capabilities = crate::doctor::probe_colmap_capabilities(&colmap);
+        if !capabilities.cuda_build {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "COLMAP 未以 CUDA 建置；SIFT 擷取與影像配對改用 CPU",
+            );
+        }
+        if capabilities.cuda_build && !capabilities.ceres_gpu {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "COLMAP 的 Ceres 未支援 GPU；增量 mapper 的 BA 改用 CPU",
+            );
+        }
+        (
+            capabilities.cuda_build,
+            capabilities.cuda_build && capabilities.ceres_gpu,
+        )
+    } else {
+        (false, false)
+    };
+    let mapper_backend_supported = colmap_mapper_backend_supported(&colmap_version);
+    let feature_gpu_args = feature_extractor_args(&root, &db, true, &gpu_index, use_masks);
+    let feature_cpu_args = feature_extractor_args(&root, &db, false, &gpu_index, use_masks);
     emit_progress_detailed(
         app,
         id,
@@ -2493,36 +2990,46 @@ fn run_align(
     let mut feature_item = Some("feature_extractor".to_owned());
     let mut highest_feature_fraction = 0.0_f32;
     let mut last_feature_emit = None;
-    run_child_with_output(app, id, &colmap, &args, control, |line| {
-        if let Some(progress) = parse_feature_progress(line) {
-            let fraction = progress.current as f32 / progress.total as f32;
-            if fraction < highest_feature_fraction {
+    run_colmap_with_gpu_fallback(
+        app,
+        id,
+        &colmap,
+        &feature_gpu_args,
+        &feature_cpu_args,
+        feature_gpu,
+        "feature_extractor",
+        control,
+        |line| {
+            if let Some(progress) = parse_feature_progress(line) {
+                let fraction = progress.current as f32 / progress.total as f32;
+                if fraction < highest_feature_fraction {
+                    return;
+                }
+                highest_feature_fraction = fraction;
+                let terminal = progress.current == progress.total;
+                if !terminal
+                    && last_feature_emit
+                        .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+                {
+                    return;
+                }
+                last_feature_emit = Some(Instant::now());
+                emit_colmap_progress(
+                    app,
+                    id,
+                    "feature-extraction",
+                    0,
+                    highest_feature_fraction,
+                    format!("已處理 {} / {} 張影像", progress.current, progress.total),
+                    feature_item.clone(),
+                );
                 return;
             }
-            highest_feature_fraction = fraction;
-            let terminal = progress.current == progress.total;
-            if !terminal
-                && last_feature_emit
-                    .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
-            {
-                return;
+            if let Some(current_item) = parse_feature_name(line) {
+                feature_item = Some(current_item);
             }
-            last_feature_emit = Some(Instant::now());
-            emit_colmap_progress(
-                app,
-                id,
-                "feature-extraction",
-                0,
-                highest_feature_fraction,
-                format!("已處理 {} / {} 張影像", progress.current, progress.total),
-                feature_item.clone(),
-            );
-            return;
-        }
-        if let Some(current_item) = parse_feature_name(line) {
-            feature_item = Some(current_item);
-        }
-    })?;
+        },
+    )?;
     emit_colmap_step_completed(
         app,
         id,
@@ -2547,23 +3054,16 @@ fn run_align(
     );
     let mut matching_progress: Option<ColmapFraction> = None;
     let mut highest_matching_fraction = 0.0_f32;
-    run_child_with_output(
+    let matching_gpu_args = matches_importer_args(&root, &db, true, &gpu_index);
+    let matching_cpu_args = matches_importer_args(&root, &db, false, &gpu_index);
+    run_colmap_with_gpu_fallback(
         app,
         id,
         &colmap,
-        &[
-            "matches_importer".into(),
-            "--database_path".into(),
-            db.to_string_lossy().into_owned(),
-            "--match_list_path".into(),
-            root.join("metadata/pairs.txt")
-                .to_string_lossy()
-                .into_owned(),
-            "--match_type".into(),
-            "pairs".into(),
-            "--FeatureMatching.use_gpu".into(),
-            if gpu { "1".into() } else { "0".into() },
-        ],
+        &matching_gpu_args,
+        &matching_cpu_args,
+        feature_gpu,
+        "matches_importer",
         control,
         |line| {
             let parsed = parse_matching_progress(line);
@@ -2639,22 +3139,45 @@ fn run_align(
         fs::create_dir_all(&bootstrap).map_err(|e| e.to_string())?;
         let mut highest_registered = 0;
         let mut last_bootstrap_emit = None;
+        let mut bootstrap_gpu_warning_emitted = false;
         let bootstrap_total = frame_count.saturating_mul(2).max(1);
-        run_child_with_output(
+        let bootstrap_gpu_args = mapper_args(
+            &db,
+            &root.join("images"),
+            &bootstrap,
+            mapper_gpu,
+            &gpu_index,
+            false,
+            mapper_backend_supported,
+        );
+        let bootstrap_cpu_args = mapper_args(
+            &db,
+            &root.join("images"),
+            &bootstrap,
+            false,
+            &gpu_index,
+            false,
+            mapper_backend_supported,
+        );
+        run_mapper_with_gpu_fallback(
             app,
             id,
             &colmap,
-            &[
-                "mapper".into(),
-                "--database_path".into(),
-                db.to_string_lossy().into_owned(),
-                "--image_path".into(),
-                root.join("images").to_string_lossy().into_owned(),
-                "--output_path".into(),
-                bootstrap.to_string_lossy().into_owned(),
-            ],
+            &bootstrap,
+            &bootstrap_gpu_args,
+            &bootstrap_cpu_args,
+            mapper_gpu,
+            "bootstrap_mapper",
             control,
             |line| {
+                maybe_log_mapper_gpu_cpu_fallback(
+                    app,
+                    id,
+                    "bootstrap_mapper",
+                    mapper_gpu,
+                    &mut bootstrap_gpu_warning_emitted,
+                    line,
+                );
                 let Some((image_id, registered)) = parse_mapper_registration(line) else {
                     return;
                 };
@@ -2751,24 +3274,45 @@ fn run_align(
     fs::create_dir_all(&sparse).map_err(|e| e.to_string())?;
     let mut highest_registered = 0;
     let mut last_final_mapper_emit = None;
+    let mut final_gpu_warning_emitted = false;
     let final_total = frame_count.max(1);
-    run_child_with_output(
+    let final_gpu_args = mapper_args(
+        &db,
+        &root.join("images"),
+        &sparse,
+        mapper_gpu,
+        &gpu_index,
+        true,
+        mapper_backend_supported,
+    );
+    let final_cpu_args = mapper_args(
+        &db,
+        &root.join("images"),
+        &sparse,
+        false,
+        &gpu_index,
+        true,
+        mapper_backend_supported,
+    );
+    run_mapper_with_gpu_fallback(
         app,
         id,
         &colmap,
-        &[
-            "mapper".into(),
-            "--database_path".into(),
-            db.to_string_lossy().into_owned(),
-            "--image_path".into(),
-            root.join("images").to_string_lossy().into_owned(),
-            "--output_path".into(),
-            sparse.to_string_lossy().into_owned(),
-            "--Mapper.ba_refine_sensor_from_rig".into(),
-            "0".into(),
-        ],
+        &sparse,
+        &final_gpu_args,
+        &final_cpu_args,
+        mapper_gpu,
+        "final_mapper",
         control,
         |line| {
+            maybe_log_mapper_gpu_cpu_fallback(
+                app,
+                id,
+                "final_mapper",
+                mapper_gpu,
+                &mut final_gpu_warning_emitted,
+                line,
+            );
             let Some((image_id, registered)) = parse_mapper_registration(line) else {
                 return;
             };
@@ -2795,6 +3339,10 @@ fn run_align(
             );
         },
     )?;
+    if !sparse_model_exists(&sparse) {
+        return Err("COLMAP 最終建模結束但未產生有效 sparse model".into());
+    }
+    write_align_checkpoint(&checkpoint_path, &fingerprint)?;
     emit_colmap_step_completed(
         app,
         id,
@@ -2827,17 +3375,19 @@ fn run_align(
 #[cfg(test)]
 mod tests {
     use super::{
-        balanced_select_expression, candidate_ffmpeg_args, candidate_image_names,
-        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, colmap_step_progress,
-        expected_candidate_frames, extraction_completed_count, load_candidate_selection_checkpoint,
-        map_full_res_candidates, mask_confidence, parse_feature_name, parse_feature_progress,
-        parse_mapper_registration, parse_matching_progress, probe_duration_seconds,
-        read_raw_frames, selected_ffmpeg_args, source_stage_progress, synchronized_candidate_count,
-        with_hwaccel_auto, write_candidate_selection_checkpoint, write_rig_and_pairs,
-        ColmapFraction, ExtractionStage, JobControl, JobManager, LogEvent, ProgressEvent,
-        RawFrameMessage, StageName, StartStageRequest, StreamingCandidateSelector,
-        CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
-        CANDIDATE_STREAM_WIDTH,
+        balanced_select_expression, build_align_fingerprint, can_reuse_align_result,
+        candidate_ffmpeg_args, candidate_image_names, cleanup_obsolete_candidate_cache,
+        cleanup_stale_full_res_dirs, colmap_mapper_backend_supported, colmap_step_progress,
+        expected_candidate_frames, extraction_completed_count, feature_extractor_args,
+        is_mapper_gpu_cpu_fallback_line, load_candidate_selection_checkpoint,
+        map_full_res_candidates, mapper_args, mask_confidence, matches_importer_args,
+        parse_feature_name, parse_feature_progress, parse_gpu_index, parse_mapper_registration,
+        parse_matching_progress, probe_duration_seconds, read_raw_frames, selected_ffmpeg_args,
+        source_stage_progress, synchronized_candidate_count, with_hwaccel_auto,
+        write_candidate_selection_checkpoint, write_rig_and_pairs, ColmapFraction, ExtractionStage,
+        JobControl, JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName,
+        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
+        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
     use crate::masking::CancelToken;
     use serde_json::json;
@@ -2856,6 +3406,170 @@ mod tests {
             mask_confidence(&json!({"mask": {"confidence": 72, "confidenceVersion": 2}})),
             72.0
         );
+    }
+
+    #[test]
+    fn parses_gpu_index_with_safe_defaults_and_normalized_lists() {
+        assert_eq!(parse_gpu_index(&json!({})), Ok("-1".to_owned()));
+        assert_eq!(
+            parse_gpu_index(&json!({"align": {"gpuIndex": " -1 "}})),
+            Ok("-1".to_owned())
+        );
+        assert_eq!(
+            parse_gpu_index(&json!({"align": {"gpuIndex": "0, 2,1"}})),
+            Ok("0,2,1".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_gpu_index_values() {
+        for value in ["", " ", "-2", "1,-1", "1,,2", "gpu"] {
+            assert!(
+                parse_gpu_index(&json!({"align": {"gpuIndex": value}})).is_err(),
+                "expected invalid gpu index to be rejected: {value:?}"
+            );
+        }
+        assert!(parse_gpu_index(&json!({"align": {"gpuIndex": 0}})).is_err());
+    }
+
+    #[test]
+    fn colmap_gpu_arguments_cover_extraction_matching_and_ceres_mapper() {
+        let root = Path::new("project");
+        let db = root.join("database.db");
+        let images = root.join("images");
+        let sparse = root.join("sparse");
+        let feature = feature_extractor_args(root, &db, true, "0,1", true);
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--FeatureExtraction.use_gpu", "1"] }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--FeatureExtraction.gpu_index", "0,1"] }));
+        assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
+
+        let matching = matches_importer_args(root, &db, true, "0,1");
+        assert!(matching
+            .windows(2)
+            .any(|args| { args == ["--FeatureMatching.use_gpu", "1"] }));
+        assert!(matching
+            .windows(2)
+            .any(|args| { args == ["--FeatureMatching.gpu_index", "0,1"] }));
+
+        let mapper = mapper_args(&db, &images, &sparse, true, "0,1", true, true);
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.multiple_models", "0"] }));
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.ba_local_backend", "CERES"] }));
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.ba_global_backend", "CERES"] }));
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.ba_use_gpu", "1"] }));
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.ba_gpu_index", "0,1"] }));
+        assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
+    }
+
+    #[test]
+    fn mapper_backend_flag_is_gated_for_colmap_3x() {
+        assert!(!colmap_mapper_backend_supported("COLMAP 3.12.6"));
+        assert!(!colmap_mapper_backend_supported("COLMAP 4.0.0"));
+        assert!(colmap_mapper_backend_supported("COLMAP 4.1.0"));
+        assert!(colmap_mapper_backend_supported("COLMAP 5.0.0"));
+        assert!(!colmap_mapper_backend_supported("unknown"));
+
+        let args = mapper_args(
+            Path::new("database.db"),
+            Path::new("images"),
+            Path::new("sparse"),
+            false,
+            "-1",
+            false,
+            false,
+        );
+        assert!(!args.iter().any(|arg| arg == "--Mapper.ba_local_backend"));
+        assert!(!args.iter().any(|arg| arg == "--Mapper.ba_global_backend"));
+    }
+
+    #[test]
+    fn detects_ceres_gpu_cpu_fallback_messages() {
+        assert!(is_mapper_gpu_cpu_fallback_line(
+            "Ceres was compiled without CUDA support"
+        ));
+        assert!(is_mapper_gpu_cpu_fallback_line(
+            "Ceres was compiled without cuDSS support"
+        ));
+        assert!(is_mapper_gpu_cpu_fallback_line(
+            "Falling back to CPU-based sparse solvers"
+        ));
+        assert!(!is_mapper_gpu_cpu_fallback_line(
+            "Bundle adjustment converged"
+        ));
+    }
+
+    #[test]
+    fn align_fingerprint_changes_for_settings_and_input_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let images = temp.path().join("images");
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(images.join(lens)).unwrap();
+            fs::write(images.join(lens).join("frame0001.png"), b"frame").unwrap();
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(temp.path().join("rig_config.json"), b"rig-v1").unwrap();
+        fs::write(
+            temp.path().join("metadata/pairs.txt"),
+            b"lens0/frame0001.png lens1/frame0001.png\n",
+        )
+        .unwrap();
+        let settings = json!({"align": {"useGpu": false, "gpuIndex": "-1"}});
+
+        let baseline =
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 3.12.6", false).unwrap()
+        );
+        let changed_settings = json!({"align": {"useGpu": true, "gpuIndex": "-1"}});
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &changed_settings, "COLMAP 4.1.0", false).unwrap()
+        );
+
+        fs::write(
+            temp.path().join("metadata/pairs.txt"),
+            b"lens0/frame0001.png lens1/frame0001.png\nlens0/frame0001.png lens0/frame0001.png\n",
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap()
+        );
+
+        fs::write(images.join("lens0/frame0001.png"), b"frame-with-new-size").unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap()
+        );
+
+        fs::create_dir_all(temp.path().join("masks_colmap")).unwrap();
+        fs::write(temp.path().join("masks_colmap/frame0001.png"), b"mask").unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", true).unwrap()
+        );
+    }
+
+    #[test]
+    fn align_result_reuse_requires_both_complete_output_and_matching_checkpoint() {
+        assert!(can_reuse_align_result(true, true));
+        assert!(!can_reuse_align_result(true, false));
+        assert!(!can_reuse_align_result(false, true));
+        assert!(!can_reuse_align_result(false, false));
     }
 
     #[test]
@@ -3067,6 +3781,24 @@ mod tests {
         assert!(pairs.contains("lens0/source000_00000001.png lens0/source001_00000001.png"));
         assert!(pairs.contains("lens1/source000_00000001.png lens1/source001_00000001.png"));
         assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000001.png"));
+    }
+
+    #[test]
+    fn rig_config_is_not_overwritten_when_already_present() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+        let rig_path = temp.path().join("rig_config.json");
+        let custom_rig = br#"[{"cameras":[{"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/","ref_sensor":false}]}]"#;
+        fs::write(&rig_path, custom_rig).unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+
+        assert_eq!(fs::read(&rig_path).unwrap(), custom_rig);
     }
 
     #[test]
