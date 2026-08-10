@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::fisheye::{ValidRegion, DJI_VALID_RADIUS_RATIO};
+use crate::telemetry::{quaternion_angle_deg, QuaternionSample};
 
 /// Fallible result returned by extraction helpers.
 pub type ExtractionResult<T> = Result<T, ExtractionError>;
@@ -119,11 +120,41 @@ pub struct SelectionRecord {
     pub pair_score: f64,
     pub selected: bool,
     pub skipped_existing: bool,
+    /// Presentation timestamp supplied by the caller.  Filesystem-only
+    /// extraction has no authoritative PTS and leaves this at `0.0`; the
+    /// streaming selector should inject the FFmpeg timestamp instead of
+    /// inferring one from sequence/fps.
+    #[serde(default)]
+    pub timestamp_ms: f64,
+    /// Relative fused-attitude rotation from the previous retained frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imu_rotation_from_last_kept_deg: Option<f64>,
+    /// Normalized fused-attitude quaternion in scalar-first `(w, x, y, z)`
+    /// order when telemetry covered this frame.  This is an attitude sample,
+    /// not a COLMAP camera pose prior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attitude_wxyz: Option<[f64; 4]>,
+    /// Average angular speed over the interval from the previous retained
+    /// frame, in degrees per second, when both an attitude and timestamp are
+    /// available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angular_speed_dps: Option<f64>,
+    /// Normalized low-resolution visual novelty (0..=1) against the previous
+    /// retained frame, using the larger novelty of the two lenses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_novelty: Option<f64>,
+    /// Stable reason for the selection/pruning decision.  Kept records use
+    /// values such as `first`, `maxGap`, `rotation`, or `visualNovelty`;
+    /// rejected records use `belowThreshold`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_reason: Option<String>,
     pub output_lens0: Option<PathBuf>,
     pub output_lens1: Option<PathBuf>,
 }
 
 /// JSON payload written atomically after each run (including cancellation).
+pub const SELECTION_METADATA_SCHEMA_VERSION: u32 = 5;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionMetadata {
     pub schema_version: u32,
@@ -165,6 +196,454 @@ pub struct SharpnessScore {
     pub laplacian_variance: f64,
     pub tenengrad_mean: f64,
     pub combined: f64,
+}
+
+/// Number of samples per lens in the inexpensive visual-novelty descriptor.
+/// The candidate stream is already bounded to 512 pixels per lens, so a
+/// 32x32 block-gradient descriptor is small enough to keep only for the last
+/// retained frame while still reacting to translation through the scene.
+pub const VISUAL_NOVELTY_PROXY_SIZE: usize = 32;
+const VISUAL_NOVELTY_PROXY_SAMPLES: usize = VISUAL_NOVELTY_PROXY_SIZE * VISUAL_NOVELTY_PROXY_SIZE;
+
+/// Initial values recommended for the first benchmark.  These are defaults,
+/// not a claim that one threshold is optimal for every capture or lens.
+pub const DEFAULT_KEYFRAME_MIN_ROTATION_DEG: f64 = 5.0;
+pub const DEFAULT_KEYFRAME_MIN_GAP_MS: f64 = 200.0;
+pub const DEFAULT_KEYFRAME_MAX_GAP_MS: f64 = 600.0;
+pub const DEFAULT_KEYFRAME_MIN_VISUAL_NOVELTY: f64 = 0.08;
+
+/// Motion-aware keyframe thresholds.  A rotation/novelty trigger is ignored
+/// before `min_gap_ms`, while `max_gap_ms` always forces a keep so a forward
+/// translation with a nearly static attitude cannot starve SfM of baseline.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeyframePruningConfig {
+    pub min_rotation_deg: f64,
+    pub min_gap_ms: f64,
+    pub max_gap_ms: f64,
+    pub min_visual_novelty: f64,
+}
+
+impl Default for KeyframePruningConfig {
+    fn default() -> Self {
+        Self {
+            min_rotation_deg: DEFAULT_KEYFRAME_MIN_ROTATION_DEG,
+            min_gap_ms: DEFAULT_KEYFRAME_MIN_GAP_MS,
+            max_gap_ms: DEFAULT_KEYFRAME_MAX_GAP_MS,
+            min_visual_novelty: DEFAULT_KEYFRAME_MIN_VISUAL_NOVELTY,
+        }
+    }
+}
+
+impl KeyframePruningConfig {
+    fn validate(self) -> ExtractionResult<Self> {
+        for (name, value) in [
+            ("min_rotation_deg", self.min_rotation_deg),
+            ("min_gap_ms", self.min_gap_ms),
+            ("max_gap_ms", self.max_gap_ms),
+            ("min_visual_novelty", self.min_visual_novelty),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(ExtractionError::InvalidInput(format!(
+                    "keyframe {name} must be finite and >= 0"
+                )));
+            }
+        }
+        if self.max_gap_ms < self.min_gap_ms {
+            return Err(ExtractionError::InvalidInput(
+                "keyframe max_gap_ms must be >= min_gap_ms".to_owned(),
+            ));
+        }
+        if self.min_visual_novelty > 1.0 {
+            return Err(ExtractionError::InvalidInput(
+                "keyframe min_visual_novelty must be <= 1".to_owned(),
+            ));
+        }
+        Ok(self)
+    }
+}
+
+/// Compact gradient descriptor retained by [`KeyframePruner`] for its last
+/// kept frame.  The descriptor contains one 32x32 array per physical lens;
+/// no prior candidate image is retained after evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualNoveltyProxy {
+    pub lens0: [u8; VISUAL_NOVELTY_PROXY_SAMPLES],
+    pub lens1: [u8; VISUAL_NOVELTY_PROXY_SAMPLES],
+}
+
+/// Return the normalized maximum per-lens novelty between two descriptors.
+/// The result is always in `[0, 1]`; a value of 0 means identical gradients.
+pub fn compare_visual_novelty(current: &VisualNoveltyProxy, previous: &VisualNoveltyProxy) -> f64 {
+    fn distance(
+        current: &[u8; VISUAL_NOVELTY_PROXY_SAMPLES],
+        previous: &[u8; VISUAL_NOVELTY_PROXY_SAMPLES],
+    ) -> f64 {
+        let total = current
+            .iter()
+            .zip(previous.iter())
+            .map(|(left, right)| (*left as f64 - *right as f64).abs())
+            .sum::<f64>();
+        (total / (VISUAL_NOVELTY_PROXY_SAMPLES as f64 * 255.0)).clamp(0.0, 1.0)
+    }
+
+    distance(&current.lens0, &previous.lens0).max(distance(&current.lens1, &previous.lens1))
+}
+
+/// Per-candidate motion decision persisted by the caller alongside selection
+/// records.  `kept` is explicit so callers may write either all observations
+/// or only retained frames without changing the schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyframeDecision {
+    pub sequence: u64,
+    pub timestamp_ms: f64,
+    pub kept: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub imu_rotation_from_last_kept_deg: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attitude_wxyz: Option<[f64; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub angular_speed_dps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_novelty: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection_reason: Option<String>,
+}
+
+/// Stable frame-motion record used by `sourceNNN_frame_motion.json`.
+/// `selected` is an alias-friendly name for the pruning decision used by the
+/// existing pair generator; `kept` is accepted on read for compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameMotionRecord {
+    pub sequence: u64,
+    #[serde(default)]
+    pub timestamp_ms: f64,
+    #[serde(default)]
+    pub imu_rotation_from_last_kept_deg: Option<f64>,
+    #[serde(default)]
+    pub attitude_wxyz: Option<[f64; 4]>,
+    #[serde(default)]
+    pub angular_speed_dps: Option<f64>,
+    #[serde(default)]
+    pub visual_novelty: Option<f64>,
+    #[serde(default)]
+    pub selection_reason: Option<String>,
+    #[serde(default, alias = "kept")]
+    pub selected: bool,
+}
+
+impl From<&KeyframeDecision> for FrameMotionRecord {
+    fn from(decision: &KeyframeDecision) -> Self {
+        Self {
+            sequence: decision.sequence,
+            timestamp_ms: decision.timestamp_ms,
+            imu_rotation_from_last_kept_deg: decision.imu_rotation_from_last_kept_deg,
+            attitude_wxyz: decision.attitude_wxyz,
+            angular_speed_dps: decision.angular_speed_dps,
+            visual_novelty: decision.visual_novelty,
+            selection_reason: decision.selection_reason.clone(),
+            selected: decision.kept,
+        }
+    }
+}
+
+/// Optional telemetry coverage summary stored with frame-motion metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameMotionTelemetryCoverage {
+    pub sample_count: usize,
+    pub valid_sample_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_timestamp_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_timestamp_ms: Option<f64>,
+    pub covered_frame_count: usize,
+    pub uncovered_frame_count: usize,
+}
+
+/// Top-level schema for `metadata/sourceNNN_frame_motion.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameMotionMetadata {
+    #[serde(default = "FrameMotionMetadata::default_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub thresholds: KeyframePruningConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_fps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_fps: Option<f64>,
+    pub telemetry_coverage: Option<FrameMotionTelemetryCoverage>,
+    #[serde(default)]
+    pub frames: Vec<FrameMotionRecord>,
+}
+
+impl FrameMotionMetadata {
+    pub const SCHEMA_VERSION: u32 = 1;
+
+    fn default_schema_version() -> u32 {
+        Self::SCHEMA_VERSION
+    }
+
+    pub fn new(thresholds: KeyframePruningConfig, frames: Vec<FrameMotionRecord>) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            thresholds,
+            source_index: None,
+            base_fps: None,
+            candidate_fps: None,
+            telemetry_coverage: None,
+            frames,
+        }
+    }
+}
+
+/// Incremental state for motion-aware keyframe pruning.  Only the previous
+/// retained quaternion/timestamp and 32x32 descriptors remain in memory.
+#[derive(Debug, Clone)]
+pub struct KeyframePruner {
+    config: KeyframePruningConfig,
+    last_kept_sequence: Option<u64>,
+    last_kept_timestamp_ms: Option<f64>,
+    last_kept_quaternion: Option<[f64; 4]>,
+    last_kept_proxy: Option<VisualNoveltyProxy>,
+}
+
+impl KeyframePruner {
+    pub fn new(config: KeyframePruningConfig) -> ExtractionResult<Self> {
+        Ok(Self {
+            config: config.validate()?,
+            last_kept_sequence: None,
+            last_kept_timestamp_ms: None,
+            last_kept_quaternion: None,
+            last_kept_proxy: None,
+        })
+    }
+
+    /// Evaluate one candidate from a side-by-side grayscale frame.
+    ///
+    /// `timestamp_ms` must come from the caller's PTS mapping.  The optional
+    /// lookup is called exactly once with that timestamp and may return an
+    /// interpolated `QuaternionSample`; no sensor-to-camera transform is
+    /// assumed.  Set `is_last=true` for the final stream frame so the final
+    /// candidate is never removed by pruning.
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_hstack_gray8(
+        &mut self,
+        sequence: u64,
+        timestamp_ms: f64,
+        width: u32,
+        height: u32,
+        row_stride: usize,
+        pixels: &[u8],
+        telemetry_lookup: Option<&dyn Fn(f64) -> Option<QuaternionSample>>,
+        is_last: bool,
+    ) -> ExtractionResult<KeyframeDecision> {
+        if !timestamp_ms.is_finite() {
+            return Err(ExtractionError::InvalidInput(
+                "keyframe timestamp_ms must be finite".to_owned(),
+            ));
+        }
+        let proxy = visual_novelty_proxy_from_hstack_gray8(width, height, row_stride, pixels)?;
+        let lookup_result = telemetry_lookup.and_then(|lookup| lookup(timestamp_ms));
+        let current_quaternion = lookup_result
+            .as_ref()
+            .and_then(QuaternionSample::normalized)
+            .map(|sample| sample.quaternion());
+        let invalid_telemetry = lookup_result.is_some() && current_quaternion.is_none();
+        let previous_timestamp_ms = self.last_kept_timestamp_ms;
+        let elapsed_ms = previous_timestamp_ms.and_then(|previous| {
+            let elapsed = timestamp_ms - previous;
+            (elapsed.is_finite() && elapsed >= 0.0).then_some(elapsed)
+        });
+        let timestamp_discontinuity = previous_timestamp_ms.is_some() && elapsed_ms.is_none();
+        let imu_rotation = self
+            .last_kept_quaternion
+            .zip(current_quaternion)
+            .map(|(previous, current)| quaternion_angle_deg(previous, current))
+            .filter(|angle| angle.is_finite());
+        let angular_speed_dps = imu_rotation
+            .zip(elapsed_ms)
+            .filter(|(_, elapsed)| *elapsed > f64::EPSILON)
+            .map(|(angle, elapsed)| angle / (elapsed / 1_000.0))
+            .filter(|speed| speed.is_finite());
+        let visual_novelty = self
+            .last_kept_proxy
+            .as_ref()
+            .map(|previous| compare_visual_novelty(&proxy, previous));
+
+        let is_first = self.last_kept_sequence.is_none();
+        let gap_allows_trigger =
+            elapsed_ms.is_some_and(|elapsed| elapsed >= self.config.min_gap_ms);
+        let max_gap_reached = elapsed_ms.is_some_and(|elapsed| elapsed >= self.config.max_gap_ms);
+        let rotation_reached = imu_rotation
+            .is_some_and(|angle| angle >= self.config.min_rotation_deg && gap_allows_trigger);
+        let novelty_reached = visual_novelty
+            .is_some_and(|novelty| novelty >= self.config.min_visual_novelty && gap_allows_trigger);
+        let mut reasons = Vec::new();
+        if is_first {
+            reasons.push("first");
+        }
+        if is_last {
+            reasons.push("last");
+        }
+        if max_gap_reached {
+            reasons.push("maxGap");
+        }
+        if rotation_reached {
+            reasons.push("rotation");
+        }
+        if novelty_reached {
+            reasons.push("visualNovelty");
+        }
+        if invalid_telemetry {
+            // A malformed sample should never silently turn into a dropped
+            // frame.  It is still useful to keep this candidate while the
+            // caller records the diagnostic in metadata.
+            reasons.push("invalidImu");
+        }
+        if timestamp_discontinuity {
+            // A backwards/non-finite PTS jump invalidates the cadence test.
+            // Preserve the frame so malformed timing cannot silently remove
+            // a potentially useful visual link; the next frame compares
+            // against this new timestamp.
+            reasons.push("timestampDiscontinuity");
+        }
+        let kept = !reasons.is_empty();
+        let selection_reason = Some(if kept {
+            reasons.join("+")
+        } else {
+            "belowThreshold".to_owned()
+        });
+        let decision = KeyframeDecision {
+            sequence,
+            timestamp_ms,
+            kept,
+            imu_rotation_from_last_kept_deg: imu_rotation,
+            attitude_wxyz: current_quaternion,
+            angular_speed_dps,
+            visual_novelty,
+            selection_reason,
+        };
+        if kept {
+            self.last_kept_sequence = Some(sequence);
+            self.last_kept_timestamp_ms = Some(timestamp_ms);
+            self.last_kept_quaternion = current_quaternion;
+            self.last_kept_proxy = Some(proxy);
+        }
+        Ok(decision)
+    }
+}
+
+/// Downsample a side-by-side gray8 frame and convert each lens to a 32x32
+/// block-gradient proxy.  The metric is intentionally insensitive to a
+/// global exposure offset: gradients are computed after block averaging, so
+/// only scene structure changes contribute to novelty.
+pub fn visual_novelty_proxy_from_hstack_gray8(
+    width: u32,
+    height: u32,
+    row_stride: usize,
+    pixels: &[u8],
+) -> ExtractionResult<VisualNoveltyProxy> {
+    let width = width as usize;
+    let height = height as usize;
+    if width == 0 || height == 0 || !width.is_multiple_of(2) {
+        return Err(ExtractionError::InvalidInput(
+            "visual novelty frame must have positive even dimensions".to_owned(),
+        ));
+    }
+    if row_stride < width {
+        return Err(ExtractionError::InvalidInput(format!(
+            "visual novelty row stride {row_stride} is smaller than width {width}"
+        )));
+    }
+    let required_len = height
+        .saturating_sub(1)
+        .checked_mul(row_stride)
+        .and_then(|offset| offset.checked_add(width))
+        .ok_or_else(|| {
+            ExtractionError::InvalidInput("visual novelty dimensions overflow".to_owned())
+        })?;
+    if required_len > pixels.len() {
+        return Err(ExtractionError::InvalidInput(format!(
+            "visual novelty buffer has {} bytes; requires at least {required_len}",
+            pixels.len()
+        )));
+    }
+    let lens_width = width / 2;
+    let left = downsample_lens_gradient(pixels, lens_width, height, row_stride, 0);
+    let right = downsample_lens_gradient(pixels, lens_width, height, row_stride, lens_width);
+    Ok(VisualNoveltyProxy {
+        lens0: left,
+        lens1: right,
+    })
+}
+
+fn downsample_lens_gradient(
+    pixels: &[u8],
+    lens_width: usize,
+    height: usize,
+    row_stride: usize,
+    x_offset: usize,
+) -> [u8; VISUAL_NOVELTY_PROXY_SAMPLES] {
+    let mut grayscale = [0u8; VISUAL_NOVELTY_PROXY_SAMPLES];
+    for target_y in 0..VISUAL_NOVELTY_PROXY_SIZE {
+        let y_start = target_y * height / VISUAL_NOVELTY_PROXY_SIZE;
+        let y_end = ((target_y + 1) * height / VISUAL_NOVELTY_PROXY_SIZE)
+            .max(y_start + 1)
+            .min(height);
+        for target_x in 0..VISUAL_NOVELTY_PROXY_SIZE {
+            let x_start = target_x * lens_width / VISUAL_NOVELTY_PROXY_SIZE;
+            let x_end = ((target_x + 1) * lens_width / VISUAL_NOVELTY_PROXY_SIZE)
+                .max(x_start + 1)
+                .min(lens_width);
+            let mut sum = 0u64;
+            let mut count = 0u64;
+            for source_y in y_start..y_end {
+                let row = source_y * row_stride;
+                for source_x in x_start..x_end {
+                    sum += pixels[row + x_offset + source_x] as u64;
+                    count += 1;
+                }
+            }
+            grayscale[target_y * VISUAL_NOVELTY_PROXY_SIZE + target_x] =
+                sum.checked_div(count).unwrap_or_default() as u8;
+        }
+    }
+
+    let mut gradient = [0u8; VISUAL_NOVELTY_PROXY_SAMPLES];
+    for y in 0..VISUAL_NOVELTY_PROXY_SIZE {
+        for x in 0..VISUAL_NOVELTY_PROXY_SIZE {
+            let index = y * VISUAL_NOVELTY_PROXY_SIZE + x;
+            let left = grayscale[y * VISUAL_NOVELTY_PROXY_SIZE + x.saturating_sub(1)] as i16;
+            let right = grayscale
+                [y * VISUAL_NOVELTY_PROXY_SIZE + (x + 1).min(VISUAL_NOVELTY_PROXY_SIZE - 1)]
+                as i16;
+            let up = grayscale[y.saturating_sub(1) * VISUAL_NOVELTY_PROXY_SIZE + x] as i16;
+            let down = grayscale
+                [(y + 1).min(VISUAL_NOVELTY_PROXY_SIZE - 1) * VISUAL_NOVELTY_PROXY_SIZE + x]
+                as i16;
+            let magnitude = (right - left).abs() + (down - up).abs();
+            gradient[index] = magnitude.min(255) as u8;
+        }
+    }
+    gradient
+}
+
+/// Atomically publish a frame-motion metadata file.  The writer is kept in
+/// extraction so pipeline callers can share the same durable-write semantics
+/// as selection metadata without duplicating JSON/temporary-file handling.
+pub fn write_frame_motion_metadata_atomic(
+    path: &Path,
+    metadata: &FrameMotionMetadata,
+) -> ExtractionResult<()> {
+    let bytes = serde_json::to_vec_pretty(metadata)
+        .map_err(|error| ExtractionError::Io(error.to_string()))?;
+    write_bytes_atomic(path, &bytes)
 }
 
 /// Longest side used by the sharpness proxy image.
@@ -309,6 +788,16 @@ pub fn extract_selected_pairs(
                 pair_score: *pair_score,
                 selected,
                 skipped_existing: false,
+                timestamp_ms: 0.0,
+                imu_rotation_from_last_kept_deg: None,
+                attitude_wxyz: None,
+                angular_speed_dps: None,
+                visual_novelty: None,
+                selection_reason: Some(if selected {
+                    "sharpness".to_owned()
+                } else {
+                    "belowThreshold".to_owned()
+                }),
                 output_lens0: None,
                 output_lens1: None,
             });
@@ -443,7 +932,7 @@ pub fn extract_selected_pairs(
         );
     }
     let metadata = SelectionMetadata {
-        schema_version: 4,
+        schema_version: SELECTION_METADATA_SCHEMA_VERSION,
         candidate_storage: "filesystem_images".to_owned(),
         base_fps: request.base_fps,
         candidate_fps: request.candidate_fps,
@@ -1566,7 +2055,7 @@ mod tests {
         let metadata: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(request.metadata_path.clone().unwrap())?)
                 .map_err(|error| ExtractionError::Io(error.to_string()))?;
-        assert_eq!(metadata["schema_version"], 4);
+        assert_eq!(metadata["schema_version"], 5);
         assert_eq!(metadata["candidate_storage"], "filesystem_images");
         assert_eq!(metadata["copy_selected_outputs"], false);
         assert_eq!(metadata["outputs_committed"], false);
@@ -1680,7 +2169,7 @@ mod tests {
         assert!(request.lens1_output.join("00000000.png").is_file());
         let metadata = fs::read_to_string(&request.metadata_path.clone().unwrap())?;
         assert!(metadata.contains("requested_dense_fps"));
-        assert!(metadata.contains("\"schema_version\": 4"));
+        assert!(metadata.contains("\"schema_version\": 5"));
         assert!(metadata.contains("\"candidate_storage\": \"filesystem_images\""));
         assert!(metadata.contains("\"sharpness_analysis_max_dimension\": 512"));
         assert!(metadata.contains("\"copy_selected_outputs\": true"));
@@ -1788,5 +2277,216 @@ mod tests {
         let second = extract_selected_pairs(&request, || false, |_| {})?;
         assert_eq!(second.skipped_intervals, 1);
         Ok(())
+    }
+
+    fn hstack_gray(left: &GrayImage, right: &GrayImage) -> Vec<u8> {
+        assert_eq!(left.dimensions(), right.dimensions());
+        let (lens_width, height) = left.dimensions();
+        let width = lens_width as usize * 2;
+        let mut output = vec![0u8; width * height as usize];
+        for y in 0..height as usize {
+            let row = y * width;
+            let left_row = y * lens_width as usize;
+            output[row..row + lens_width as usize]
+                .copy_from_slice(&left.as_raw()[left_row..left_row + lens_width as usize]);
+            output[row + lens_width as usize..row + width]
+                .copy_from_slice(&right.as_raw()[left_row..left_row + lens_width as usize]);
+        }
+        output
+    }
+
+    fn textured_lens(size: u32) -> GrayImage {
+        let mut image = GrayImage::new(size, size);
+        for y in 0..size {
+            for x in 0..size {
+                let value = 40 + ((x * 7 + y * 11 + (x * y) % 31) % 120) as u8;
+                image.put_pixel(x, y, Luma([value]));
+            }
+        }
+        image
+    }
+
+    fn attitude_sample(timestamp_ms: f64, angle_deg: f64) -> QuaternionSample {
+        let half_angle = angle_deg.to_radians() * 0.5;
+        QuaternionSample {
+            timestamp_ms,
+            w: half_angle.cos(),
+            x: 0.0,
+            y: 0.0,
+            z: half_angle.sin(),
+        }
+    }
+
+    #[test]
+    fn visual_novelty_uses_gradient_proxy_and_max_lens_difference() -> ExtractionResult<()> {
+        let left = textured_lens(64);
+        let right = textured_lens(64);
+        let base = hstack_gray(&left, &right);
+        let mut exposed_left = left.clone();
+        let mut exposed_right = right.clone();
+        for pixel in exposed_left.pixels_mut().chain(exposed_right.pixels_mut()) {
+            pixel.0[0] = pixel.0[0].saturating_add(20);
+        }
+        let exposed = hstack_gray(&exposed_left, &exposed_right);
+        let base_proxy = visual_novelty_proxy_from_hstack_gray8(128, 64, 128, &base)?;
+        let exposed_proxy = visual_novelty_proxy_from_hstack_gray8(128, 64, 128, &exposed)?;
+        assert!(compare_visual_novelty(&base_proxy, &exposed_proxy) < 0.01);
+
+        let mut changed_right = right.clone();
+        for y in 16..48 {
+            for x in 16..48 {
+                changed_right.put_pixel(x, y, Luma([220]));
+            }
+        }
+        let changed = hstack_gray(&left, &changed_right);
+        let changed_proxy = visual_novelty_proxy_from_hstack_gray8(128, 64, 128, &changed)?;
+        let novelty = compare_visual_novelty(&base_proxy, &changed_proxy);
+        assert!(novelty > 0.05, "scene change novelty was {novelty}");
+        assert!((0.0..=1.0).contains(&novelty));
+        Ok(())
+    }
+
+    #[test]
+    fn keyframe_pruner_compares_against_last_retained_frame() -> ExtractionResult<()> {
+        let config = KeyframePruningConfig {
+            min_rotation_deg: 5.0,
+            min_gap_ms: 100.0,
+            max_gap_ms: 1_000.0,
+            min_visual_novelty: 0.2,
+        };
+        let mut pruner = KeyframePruner::new(config)?;
+        let left = textured_lens(64);
+        let right = textured_lens(64);
+        let frame = hstack_gray(&left, &right);
+        let lookup = |timestamp_ms: f64| {
+            Some(attitude_sample(
+                timestamp_ms,
+                if timestamp_ms >= 200.0 { 10.0 } else { 0.0 },
+            ))
+        };
+
+        let first =
+            pruner.evaluate_hstack_gray8(1, 0.0, 128, 64, 128, &frame, Some(&lookup), false)?;
+        assert!(first.kept);
+        assert_eq!(first.selection_reason.as_deref(), Some("first"));
+        assert!(first.attitude_wxyz.is_some());
+
+        // A small incremental rotation/time step must not be compared only
+        // with the immediately preceding candidate; this frame is pruned.
+        let middle =
+            pruner.evaluate_hstack_gray8(2, 50.0, 128, 64, 128, &frame, Some(&lookup), false)?;
+        assert!(!middle.kept);
+        assert_eq!(middle.selection_reason.as_deref(), Some("belowThreshold"));
+
+        let rotated =
+            pruner.evaluate_hstack_gray8(3, 200.0, 128, 64, 128, &frame, Some(&lookup), false)?;
+        assert!(rotated.kept);
+        assert!(rotated
+            .selection_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("rotation")));
+        assert!(rotated
+            .imu_rotation_from_last_kept_deg
+            .is_some_and(|angle| (angle - 10.0).abs() < 1e-6));
+        assert!(rotated
+            .angular_speed_dps
+            .is_some_and(|speed| (speed - 50.0).abs() < 1e-6));
+        Ok(())
+    }
+
+    #[test]
+    fn keyframe_pruner_keeps_visual_novelty_and_final_candidate() -> ExtractionResult<()> {
+        let config = KeyframePruningConfig {
+            min_rotation_deg: 20.0,
+            min_gap_ms: 100.0,
+            max_gap_ms: 1_000.0,
+            min_visual_novelty: 0.05,
+        };
+        let mut pruner = KeyframePruner::new(config)?;
+        let left = textured_lens(64);
+        let right = textured_lens(64);
+        let frame = hstack_gray(&left, &right);
+        let mut changed_right = right.clone();
+        for y in 16..48 {
+            for x in 16..48 {
+                changed_right.put_pixel(x, y, Luma([220]));
+            }
+        }
+        let changed = hstack_gray(&left, &changed_right);
+        let lookup = |timestamp_ms: f64| Some(attitude_sample(timestamp_ms, 0.0));
+
+        assert!(
+            pruner
+                .evaluate_hstack_gray8(1, 0.0, 128, 64, 128, &frame, Some(&lookup), false,)?
+                .kept
+        );
+        let visual =
+            pruner.evaluate_hstack_gray8(2, 200.0, 128, 64, 128, &changed, Some(&lookup), false)?;
+        assert!(visual.kept);
+        assert!(visual
+            .selection_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("visualNovelty")));
+        assert!(visual.visual_novelty.is_some_and(|novelty| novelty > 0.05));
+
+        let final_candidate =
+            pruner.evaluate_hstack_gray8(3, 210.0, 128, 64, 128, &changed, Some(&lookup), true)?;
+        assert!(final_candidate.kept);
+        assert_eq!(final_candidate.selection_reason.as_deref(), Some("last"));
+        Ok(())
+    }
+
+    #[test]
+    fn keyframe_pruner_rejects_non_finite_timestamps() {
+        let mut pruner = KeyframePruner::new(KeyframePruningConfig::default()).unwrap();
+        let frame = vec![0u8; 128 * 64];
+        assert!(pruner
+            .evaluate_hstack_gray8(1, f64::NAN, 128, 64, 128, &frame, None, false,)
+            .is_err());
+    }
+
+    #[test]
+    fn keyframe_pruner_keeps_a_backwards_timestamp_jump() {
+        let mut pruner = KeyframePruner::new(KeyframePruningConfig::default()).unwrap();
+        let frame = vec![0u8; 128 * 64];
+        assert!(
+            pruner
+                .evaluate_hstack_gray8(1, 100.0, 128, 64, 128, &frame, None, false)
+                .unwrap()
+                .kept
+        );
+        let decision = pruner
+            .evaluate_hstack_gray8(2, 50.0, 128, 64, 128, &frame, None, false)
+            .unwrap();
+        assert!(decision.kept);
+        assert!(decision
+            .selection_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("timestampDiscontinuity")));
+    }
+
+    #[test]
+    fn frame_motion_metadata_uses_stable_camel_case_schema() {
+        let decision = KeyframeDecision {
+            sequence: 7,
+            timestamp_ms: 123.5,
+            kept: true,
+            imu_rotation_from_last_kept_deg: Some(6.0),
+            attitude_wxyz: Some([1.0, 0.0, 0.0, 0.0]),
+            angular_speed_dps: Some(30.0),
+            visual_novelty: Some(0.2),
+            selection_reason: Some("rotation".to_owned()),
+        };
+        let record = FrameMotionRecord::from(&decision);
+        let metadata = FrameMotionMetadata::new(KeyframePruningConfig::default(), vec![record]);
+        let json = serde_json::to_value(&metadata).unwrap();
+        assert_eq!(json["schemaVersion"], 1);
+        assert_eq!(json["thresholds"]["minRotationDeg"], 5.0);
+        assert_eq!(json["frames"][0]["timestampMs"], 123.5);
+        assert_eq!(
+            json["frames"][0]["attitudeWxyz"],
+            serde_json::json!([1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(json["frames"][0]["selected"], true);
     }
 }

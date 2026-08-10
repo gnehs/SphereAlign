@@ -39,12 +39,12 @@ const CANDIDATE_STREAM_WIDTH: usize = CANDIDATE_PROXY_SIZE * 2;
 const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
-const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 2;
+const ALIGN_PIPELINE_REVISION: u32 = 3;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -82,6 +82,8 @@ struct AlignFingerprintPayload {
     include_masks: bool,
     rig_config_sha256: String,
     pairs_sha256: String,
+    frame_motion_sha256: String,
+    global_mapper_priors_sha256: String,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -108,6 +110,10 @@ struct CandidateSelectionCheckpoint {
     candidate_fps: f64,
     dense_fps: f64,
     skip_blurry: bool,
+    keyframe_pruning: bool,
+    keyframe_thresholds: extraction::KeyframePruningConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    telemetry_sha256: Option<String>,
     image_format: String,
     selection: SelectionMetadata,
 }
@@ -576,12 +582,65 @@ fn setting_bool(settings: &Value, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MapperMode {
+    Auto,
+    Incremental,
+    Global,
+}
+
+fn mapper_mode(settings: &Value) -> Result<MapperMode, String> {
+    match settings
+        .pointer("/align/mapperMode")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("auto")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => Ok(MapperMode::Auto),
+        "incremental" => Ok(MapperMode::Incremental),
+        "global" => Ok(MapperMode::Global),
+        value => Err(format!(
+            "align.mapperMode 必須是 auto、incremental 或 global（收到 {value}）"
+        )),
+    }
+}
+
 fn extract_frame_settings(settings: &Value) -> (f64, f64, bool) {
     let base_fps = setting_f64(settings, "/extract/baseFps", 3.0).clamp(0.1, 30.0);
     let dense_fps =
         setting_f64(settings, "/extract/denseFps", 12.0).clamp(base_fps * 2.0, base_fps * 10.0);
     let skip_blurry = setting_bool(settings, "/extract/skipBlurry", true);
     (base_fps, dense_fps, skip_blurry)
+}
+
+fn keyframe_pruning_settings(settings: &Value) -> (bool, extraction::KeyframePruningConfig) {
+    let defaults = extraction::KeyframePruningConfig::default();
+    let min_gap_ms =
+        setting_f64(settings, "/extract/minGapMs", defaults.min_gap_ms).clamp(0.0, 2_000.0);
+    let max_gap_ms =
+        setting_f64(settings, "/extract/maxGapMs", defaults.max_gap_ms).clamp(min_gap_ms, 5_000.0);
+    (
+        setting_bool(settings, "/extract/keyframePruning", true),
+        extraction::KeyframePruningConfig {
+            min_rotation_deg: setting_f64(
+                settings,
+                "/extract/minRotationDeg",
+                defaults.min_rotation_deg,
+            )
+            .clamp(0.1, 90.0),
+            min_gap_ms,
+            max_gap_ms,
+            min_visual_novelty: setting_f64(
+                settings,
+                "/extract/minVisualNovelty",
+                defaults.min_visual_novelty,
+            )
+            .clamp(0.0, 1.0),
+        },
+    )
 }
 
 const INVALID_GPU_INDEX_MESSAGE: &str = "align.gpuIndex 必須是 -1 或逗號分隔的非負整數（例如 0,1）";
@@ -992,7 +1051,9 @@ fn maybe_log_mapper_gpu_cpu_fallback(
 /// Build the software-decoder FFmpeg command used to stream both candidate
 /// fisheye lenses as one fixed-size grayscale frame. No candidate image is
 /// encoded or written to disk: stdout contains consecutive 1024x512 gray8
-/// frames, with lens0 on the left and lens1 on the right.
+/// frames, with lens0 on the left and lens1 on the right. `showinfo` emits the
+/// post-`fps` presentation timestamp for every candidate on stderr so the
+/// selector can align it with telemetry without a second decode.
 fn candidate_ffmpeg_args(
     input: &Path,
     stream0: usize,
@@ -1001,11 +1062,11 @@ fn candidate_ffmpeg_args(
 ) -> Vec<String> {
     let lens_filter = |stream: usize, label: &str| {
         format!(
-            "[0:{stream}]fps={candidate_fps},setpts=N/({candidate_fps}*TB),scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
+            "[0:{stream}]fps={candidate_fps},scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
         )
     };
     let filter = format!(
-        "{};{};[lens0][lens1]hstack=inputs=2:shortest=1[out]",
+        "{};{};[lens0][lens1]hstack=inputs=2:shortest=1,showinfo=checksum=0[out]",
         lens_filter(stream0, "lens0"),
         lens_filter(stream1, "lens1")
     );
@@ -1138,6 +1199,15 @@ struct StreamingCandidateSelector {
     score_candidates: bool,
     records: Vec<SelectionRecord>,
     best_by_interval: BTreeMap<usize, (usize, f64)>,
+    keyframe_pruner: Option<extraction::KeyframePruner>,
+    attitude_timeline: Option<telemetry::AttitudeTimeline>,
+    pending_interval_best: Option<(usize, Vec<u8>)>,
+}
+
+#[derive(Clone)]
+struct CandidateMotionContext {
+    config: extraction::KeyframePruningConfig,
+    attitude_timeline: Option<telemetry::AttitudeTimeline>,
 }
 
 impl StreamingCandidateSelector {
@@ -1148,10 +1218,72 @@ impl StreamingCandidateSelector {
             score_candidates,
             records: Vec::new(),
             best_by_interval: BTreeMap::new(),
+            keyframe_pruner: None,
+            attitude_timeline: None,
+            pending_interval_best: None,
         }
     }
 
+    fn enable_keyframe_pruning(
+        &mut self,
+        config: extraction::KeyframePruningConfig,
+        attitude_timeline: Option<telemetry::AttitudeTimeline>,
+    ) -> Result<(), String> {
+        self.keyframe_pruner =
+            Some(extraction::KeyframePruner::new(config).map_err(|error| error.to_string())?);
+        self.attitude_timeline = attitude_timeline;
+        Ok(())
+    }
+
+    fn finalize_pending_keyframe(&mut self, is_last: bool) -> Result<(), String> {
+        let Some((record_index, frame)) = self.pending_interval_best.take() else {
+            return Ok(());
+        };
+        let record = self
+            .records
+            .get(record_index)
+            .ok_or_else(|| "候選 keyframe index 超出 selection records".to_owned())?;
+        let sequence = record.sequence;
+        let timestamp_ms = record.timestamp_ms;
+        let timeline = self.attitude_timeline.as_ref();
+        let lookup =
+            |timestamp_ms: f64| timeline.and_then(|timeline| timeline.interpolate(timestamp_ms));
+        let decision = self
+            .keyframe_pruner
+            .as_mut()
+            .ok_or_else(|| "keyframe pruner 尚未初始化".to_owned())?
+            .evaluate_hstack_gray8(
+                sequence,
+                timestamp_ms,
+                CANDIDATE_STREAM_WIDTH as u32,
+                CANDIDATE_STREAM_HEIGHT as u32,
+                CANDIDATE_STREAM_WIDTH,
+                &frame,
+                Some(&lookup),
+                is_last,
+            )
+            .map_err(|error| error.to_string())?;
+        let record = self
+            .records
+            .get_mut(record_index)
+            .ok_or_else(|| "候選 keyframe index 超出 selection records".to_owned())?;
+        record.selected = decision.kept;
+        record.imu_rotation_from_last_kept_deg = decision.imu_rotation_from_last_kept_deg;
+        record.attitude_wxyz = decision.attitude_wxyz;
+        record.angular_speed_dps = decision.angular_speed_dps;
+        record.visual_novelty = decision.visual_novelty;
+        record.selection_reason = decision.selection_reason;
+        Ok(())
+    }
+
+    #[cfg(test)]
     fn push(&mut self, frame: &[u8]) -> Result<(), String> {
+        let sequence = self.records.len() as u64 + 1;
+        let timestamp_ms = (sequence.saturating_sub(1) as f64 / self.candidate_fps) * 1000.0;
+        self.push_with_timestamp(frame, timestamp_ms)
+    }
+
+    fn push_with_timestamp(&mut self, frame: &[u8], timestamp_ms: f64) -> Result<(), String> {
         if frame.len() != CANDIDATE_FRAME_BYTES {
             return Err(format!(
                 "候選 raw frame 大小不符：收到 {} bytes，預期 {CANDIDATE_FRAME_BYTES} bytes",
@@ -1162,6 +1294,18 @@ impl StreamingCandidateSelector {
         let interval = (((sequence - 1) as f64 / self.candidate_fps) * self.base_fps)
             .floor()
             .max(0.0) as usize;
+        if self.keyframe_pruner.is_some()
+            && self
+                .pending_interval_best
+                .as_ref()
+                .is_some_and(|(record_index, _)| {
+                    self.records
+                        .get(*record_index)
+                        .is_some_and(|record| record.interval != interval)
+                })
+        {
+            self.finalize_pending_keyframe(false)?;
+        }
         let (lens0_score, lens1_score) = if self.score_candidates {
             let (lens0, lens1) = rayon::join(
                 || {
@@ -1219,15 +1363,27 @@ impl StreamingCandidateSelector {
             pair_score,
             selected,
             skipped_existing: false,
+            timestamp_ms,
+            imu_rotation_from_last_kept_deg: None,
+            attitude_wxyz: None,
+            angular_speed_dps: None,
+            visual_novelty: None,
+            selection_reason: None,
             output_lens0: None,
             output_lens1: None,
         });
+        if self.keyframe_pruner.is_some() && selected {
+            self.pending_interval_best = Some((record_index, frame.to_vec()));
+        }
         Ok(())
     }
 
-    fn finish(self) -> Result<Vec<SelectionRecord>, String> {
+    fn finish(mut self) -> Result<Vec<SelectionRecord>, String> {
         if self.records.is_empty() {
             return Err("FFmpeg 未產生任何記憶體候選影格".to_owned());
+        }
+        if self.keyframe_pruner.is_some() {
+            self.finalize_pending_keyframe(true)?;
         }
         Ok(self.records)
     }
@@ -1270,16 +1426,56 @@ fn read_raw_frames<R: Read>(mut stdout: R, sender: std::sync::mpsc::SyncSender<R
     }
 }
 
-fn stderr_detail(stderr: &[u8]) -> String {
-    String::from_utf8_lossy(stderr)
-        .lines()
-        .rev()
-        .take(12)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("\n")
+fn showinfo_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let mut tokens = line.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if token == key {
+            return tokens.next();
+        }
+        if let Some(value) = token.strip_prefix(key).filter(|value| !value.is_empty()) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Parse FFmpeg `showinfo` output without depending on its logger prefix.
+/// Returned timestamps are milliseconds in the candidate stream's PTS domain.
+fn parse_showinfo_timestamp_ms(line: &str) -> Option<(u64, f64)> {
+    if !line.contains("showinfo") {
+        return None;
+    }
+    let frame_index = showinfo_value(line, "n:")?.parse::<u64>().ok()?;
+    let seconds = showinfo_value(line, "pts_time:")?.parse::<f64>().ok()?;
+    seconds
+        .is_finite()
+        .then_some((frame_index, seconds * 1000.0))
+}
+
+fn read_candidate_stderr<R: Read>(
+    stderr: R,
+    timestamp_sender: std::sync::mpsc::SyncSender<(u64, f64)>,
+) -> String {
+    let mut detail = VecDeque::with_capacity(12);
+    for line in BufReader::new(stderr).lines() {
+        let Ok(line) = line else {
+            continue;
+        };
+        if let Some(timestamp) = parse_showinfo_timestamp_ms(&line) {
+            let _ = timestamp_sender.send(timestamp);
+            continue;
+        }
+        // Per-frame showinfo continuation lines are not useful error context
+        // and can otherwise grow stderr memory linearly with video duration.
+        if line.contains("Parsed_showinfo_") {
+            continue;
+        }
+        if detail.len() == 12 {
+            detail.pop_front();
+        }
+        detail.push_back(line);
+    }
+    detail.into_iter().collect::<Vec<_>>().join("\n")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1291,6 +1487,7 @@ fn run_candidate_stream_attempt(
     base_fps: f64,
     candidate_fps: f64,
     score_candidates: bool,
+    motion_context: Option<&CandidateMotionContext>,
     control: &JobControl,
     progress: &mut CandidateProgressReporter<'_>,
 ) -> Result<Vec<SelectionRecord>, String> {
@@ -1310,20 +1507,23 @@ fn run_candidate_stream_attempt(
         let _ = child.wait();
         return Err("無法讀取 FFmpeg rawvideo".to_owned());
     };
-    let Some(mut stderr) = child.stderr.take() else {
+    let Some(stderr) = child.stderr.take() else {
         let _ = child.kill();
         let _ = child.wait();
         return Err("無法讀取 FFmpeg 錯誤輸出".to_owned());
     };
     let (sender, receiver) = sync_channel(2);
+    let (timestamp_sender, timestamp_receiver) = sync_channel(16);
     let stdout_reader = thread::spawn(move || read_raw_frames(stdout, sender));
-    let stderr_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = stderr.read_to_end(&mut bytes);
-        bytes
-    });
+    let stderr_reader = thread::spawn(move || read_candidate_stderr(stderr, timestamp_sender));
     let mut selector = StreamingCandidateSelector::new(base_fps, candidate_fps, score_candidates);
+    if let Some(context) = motion_context {
+        selector.enable_keyframe_pruning(context.config, context.attitude_timeline.clone())?;
+    }
     let mut stream_error = None;
+    let mut buffered_timestamps = BTreeMap::new();
+    let mut timestamp_stream_unavailable = false;
+    let mut estimated_timestamp_count = 0_u64;
     loop {
         if control.cancelled.load(Ordering::Acquire) {
             stream_error = Some("cancelled".to_owned());
@@ -1331,7 +1531,30 @@ fn run_candidate_stream_attempt(
         }
         match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(RawFrameMessage::Frame(frame)) => {
-                if let Err(error) = selector.push(&frame) {
+                let expected_index = selector.records.len() as u64;
+                let mut timestamp_ms = buffered_timestamps.remove(&expected_index);
+                while timestamp_ms.is_none() && !timestamp_stream_unavailable {
+                    match timestamp_receiver.recv_timeout(Duration::from_secs(1)) {
+                        Ok((index, value)) if index == expected_index => {
+                            timestamp_ms = Some(value);
+                        }
+                        Ok((index, value)) if index > expected_index => {
+                            buffered_timestamps.insert(index, value);
+                            // showinfo records are ordered, so an event for a
+                            // later frame means this one could not be parsed.
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                            timestamp_stream_unavailable = true;
+                        }
+                    }
+                }
+                let timestamp_ms = timestamp_ms.unwrap_or_else(|| {
+                    estimated_timestamp_count += 1;
+                    (expected_index as f64 / candidate_fps) * 1000.0
+                });
+                if let Err(error) = selector.push_with_timestamp(&frame, timestamp_ms) {
                     stream_error = Some(error);
                     break;
                 }
@@ -1374,6 +1597,7 @@ fn run_candidate_stream_attempt(
         }
     };
     drop(receiver);
+    drop(timestamp_receiver);
     let _ = stdout_reader.join();
     let stderr = stderr_reader.join().unwrap_or_default();
     if let Some(error) = stream_error {
@@ -1384,12 +1608,21 @@ fn run_candidate_stream_attempt(
     }
     let status = status.ok_or("FFmpeg 候選串流沒有結束狀態")?;
     if !status.success() {
-        let detail = stderr_detail(&stderr);
-        return Err(if detail.trim().is_empty() {
+        return Err(if stderr.trim().is_empty() {
             format!("FFmpeg 候選串流結束，狀態碼 {:?}", status.code())
         } else {
-            detail
+            stderr
         });
+    }
+    if estimated_timestamp_count > 0 {
+        emit_log(
+            app,
+            id,
+            "warning",
+            format!(
+                "FFmpeg 有 {estimated_timestamp_count} 張候選影格未回報 PTS，已使用 candidate FPS 時間估算"
+            ),
+        );
     }
     selector.finish()
 }
@@ -1407,6 +1640,7 @@ fn run_candidate_stream_with_fallback(
     base_fps: f64,
     candidate_fps: f64,
     score_candidates: bool,
+    motion_context: Option<&CandidateMotionContext>,
     control: &JobControl,
     progress: &mut CandidateProgressReporter<'_>,
 ) -> Result<Vec<SelectionRecord>, String> {
@@ -1418,6 +1652,7 @@ fn run_candidate_stream_with_fallback(
         base_fps,
         candidate_fps,
         score_candidates,
+        motion_context,
         control,
         progress,
     ) {
@@ -1440,6 +1675,7 @@ fn run_candidate_stream_with_fallback(
                 base_fps,
                 candidate_fps,
                 score_candidates,
+                motion_context,
                 control,
                 progress,
             )
@@ -1709,6 +1945,7 @@ fn source_modified_nanos(metadata: &fs::Metadata) -> Option<String> {
         .map(|duration| duration.as_nanos().to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_candidate_selection_checkpoint(
     path: &Path,
     input: &Path,
@@ -1716,6 +1953,9 @@ fn load_candidate_selection_checkpoint(
     candidate_fps: f64,
     dense_fps: f64,
     skip_blurry: bool,
+    keyframe_pruning: bool,
+    keyframe_thresholds: extraction::KeyframePruningConfig,
+    telemetry_sha256: Option<&str>,
 ) -> Option<SelectionMetadata> {
     let checkpoint =
         serde_json::from_slice::<CandidateSelectionCheckpoint>(&fs::read(path).ok()?).ok()?;
@@ -1748,8 +1988,11 @@ fn load_candidate_selection_checkpoint(
         && (checkpoint.candidate_fps - candidate_fps).abs() < 1e-6
         && (checkpoint.dense_fps - dense_fps).abs() < 1e-6
         && checkpoint.skip_blurry == skip_blurry
+        && checkpoint.keyframe_pruning == keyframe_pruning
+        && checkpoint.keyframe_thresholds == keyframe_thresholds
+        && checkpoint.telemetry_sha256.as_deref() == telemetry_sha256
         && checkpoint.image_format == CANDIDATE_IMAGE_FORMAT
-        && checkpoint.selection.schema_version == 4
+        && checkpoint.selection.schema_version == extraction::SELECTION_METADATA_SCHEMA_VERSION
         && checkpoint.selection.candidate_storage == "memory_rawvideo"
         && (checkpoint.selection.base_fps - base_fps).abs() < 1e-6
         && (checkpoint.selection.candidate_fps - candidate_fps).abs() < 1e-6
@@ -1772,6 +2015,9 @@ fn write_candidate_selection_checkpoint(
     candidate_fps: f64,
     dense_fps: f64,
     skip_blurry: bool,
+    keyframe_pruning: bool,
+    keyframe_thresholds: extraction::KeyframePruningConfig,
+    telemetry_sha256: Option<String>,
     selection: &SelectionMetadata,
 ) -> Result<(), String> {
     let source_metadata = fs::metadata(input).map_err(|error| error.to_string())?;
@@ -1784,6 +2030,9 @@ fn write_candidate_selection_checkpoint(
         candidate_fps,
         dense_fps,
         skip_blurry,
+        keyframe_pruning,
+        keyframe_thresholds,
+        telemetry_sha256,
         image_format: CANDIDATE_IMAGE_FORMAT.to_owned(),
         selection: selection.clone(),
     };
@@ -1832,6 +2081,87 @@ fn verify_selected_outputs(
     Ok(())
 }
 
+fn build_frame_motion_metadata(
+    source_index: usize,
+    base_fps: f64,
+    candidate_fps: f64,
+    thresholds: extraction::KeyframePruningConfig,
+    selections: &[SelectionRecord],
+    timeline: Option<&telemetry::AttitudeTimeline>,
+) -> extraction::FrameMotionMetadata {
+    let mut previous_kept: Option<(f64, [f64; 4])> = None;
+    let mut covered_frame_count = 0usize;
+    let mut uncovered_frame_count = 0usize;
+    let mut frames = Vec::new();
+    for selection in selections
+        .iter()
+        .filter(|selection| selection.selected || selection.selection_reason.is_some())
+    {
+        let attitude_wxyz = selection.attitude_wxyz.or_else(|| {
+            timeline
+                .and_then(|timeline| timeline.interpolate(selection.timestamp_ms))
+                .map(|sample| sample.quaternion())
+        });
+        if attitude_wxyz.is_some() {
+            covered_frame_count += 1;
+        } else {
+            uncovered_frame_count += 1;
+        }
+        let (derived_rotation, derived_speed) = previous_kept
+            .zip(attitude_wxyz)
+            .and_then(|((previous_timestamp_ms, previous), current)| {
+                let elapsed_ms = selection.timestamp_ms - previous_timestamp_ms;
+                let rotation_deg = telemetry::quaternion_angle_deg(previous, current);
+                (elapsed_ms > f64::EPSILON && rotation_deg.is_finite())
+                    .then(|| (rotation_deg, rotation_deg / (elapsed_ms / 1_000.0)))
+            })
+            .map_or((None, None), |(rotation, speed)| {
+                (Some(rotation), Some(speed))
+            });
+        let rotation = selection
+            .imu_rotation_from_last_kept_deg
+            .or(derived_rotation);
+        let angular_speed = selection.angular_speed_dps.or(derived_speed);
+        frames.push(extraction::FrameMotionRecord {
+            sequence: selection.sequence,
+            timestamp_ms: selection.timestamp_ms,
+            imu_rotation_from_last_kept_deg: rotation,
+            attitude_wxyz,
+            angular_speed_dps: angular_speed,
+            visual_novelty: selection.visual_novelty,
+            selection_reason: selection
+                .selection_reason
+                .clone()
+                .or_else(|| selection.selected.then(|| "intervalBest".to_owned())),
+            selected: selection.selected,
+        });
+        if selection.selected {
+            if let Some(attitude) = attitude_wxyz {
+                previous_kept = Some((selection.timestamp_ms, attitude));
+            } else {
+                previous_kept = None;
+            }
+        }
+    }
+    let telemetry_coverage = timeline.map(|timeline| {
+        let diagnostics = timeline.diagnostics();
+        extraction::FrameMotionTelemetryCoverage {
+            sample_count: diagnostics.sample_count,
+            valid_sample_count: diagnostics.valid_sample_count,
+            first_timestamp_ms: diagnostics.first_timestamp_ms,
+            last_timestamp_ms: diagnostics.last_timestamp_ms,
+            covered_frame_count,
+            uncovered_frame_count,
+        }
+    });
+    let mut metadata = extraction::FrameMotionMetadata::new(thresholds, frames);
+    metadata.source_index = Some(source_index);
+    metadata.base_fps = Some(base_fps);
+    metadata.candidate_fps = Some(candidate_fps);
+    metadata.telemetry_coverage = telemetry_coverage;
+    metadata
+}
+
 fn run_extract(
     app: &AppHandle,
     id: &str,
@@ -1845,6 +2175,7 @@ fn run_extract(
     let ffprobe = find_executable("ffprobe").ok_or("在系統 PATH 中找不到 ffprobe")?;
     let output = PathBuf::from(&manifest.output_path);
     let (base_fps, dense_fps, skip_blurry) = extract_frame_settings(&manifest.settings);
+    let (keyframe_pruning, keyframe_thresholds) = keyframe_pruning_settings(&manifest.settings);
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
     let total_sources = manifest.input_paths.len().max(1);
     let mut telemetry_streams = Vec::new();
@@ -1868,6 +2199,63 @@ fn run_extract(
             serde_json::to_vec_pretty(&probe).map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
+        // Parse/cache normalized telemetry before the candidate pass so fused
+        // attitude can be SLERP-interpolated at each post-fps frame PTS. A
+        // missing stream only disables the IMU term; visual novelty and the
+        // max-gap fallback remain available.
+        let normalized_path = metadata.join(format!("source{source_index:03}_telemetry.json"));
+        let mut attitude_timeline = None;
+        let telemetry_sha256 = match telemetry::parse_and_write(
+            &input,
+            &normalized_path,
+            control.cancelled.clone(),
+        ) {
+            Ok(export) => {
+                normalized_telemetry.push(json!({
+                    "sourceIndex": source_index,
+                    "path": export.path.to_string_lossy(),
+                    "cameraModel": export.camera_model,
+                    "normalizedImuSampleCount": export.normalized_imu_sample_count,
+                    "fusedAttitudeSampleCount": export.fused_attitude_sample_count,
+                    "appliedToColmap": false
+                }));
+                match telemetry::read_normalized_telemetry(&normalized_path) {
+                    Ok(normalized) => {
+                        attitude_timeline = Some(normalized.attitude_timeline());
+                        file_sha256(&normalized_path).ok()
+                    }
+                    Err(error) => {
+                        emit_log(
+                            app,
+                            id,
+                            "warning",
+                            format!(
+                                "無法讀回來源 {} 的標準化 telemetry，IMU keyframe term 已停用：{error}",
+                                source_index + 1
+                            ),
+                        );
+                        None
+                    }
+                }
+            }
+            Err(error) if !control.cancelled.load(Ordering::Acquire) => {
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!(
+                        "無法解析來源 {} 的標準化 telemetry；改用 visual novelty＋max gap：{error}",
+                        source_index + 1
+                    ),
+                );
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        let motion_context = keyframe_pruning.then(|| CandidateMotionContext {
+            config: keyframe_thresholds,
+            attitude_timeline: attitude_timeline.clone(),
+        });
         let candidate_root = output
             .join("capture")
             .join(format!("source{source_index:03}"));
@@ -1884,6 +2272,8 @@ fn run_extract(
         let transaction_cleanup = RemoveDirOnDrop::new(transaction_root.clone());
         fs::create_dir_all(&transaction_root).map_err(|error| error.to_string())?;
         let pending_selection_metadata = transaction_root.join("selection.pending.json");
+        let pending_frame_motion = transaction_root.join("frame-motion.pending.json");
+        let frame_motion_path = metadata.join(format!("source{source_index:03}_frame_motion.json"));
         let selection_checkpoint = candidate_root.join("selection.checkpoint.json");
         let selection_metadata = if let Some(selection) = load_candidate_selection_checkpoint(
             &selection_checkpoint,
@@ -1892,6 +2282,9 @@ fn run_extract(
             candidate_fps,
             dense_fps,
             skip_blurry,
+            keyframe_pruning,
+            keyframe_thresholds,
+            telemetry_sha256.as_deref(),
         ) {
             emit_log(
                 app,
@@ -1940,6 +2333,7 @@ fn run_extract(
                 base_fps,
                 candidate_fps,
                 skip_blurry,
+                motion_context.as_ref(),
                 control,
                 &mut candidate_progress,
             )?;
@@ -1948,7 +2342,7 @@ fn run_extract(
                 .filter(|record| record.selected)
                 .count();
             let selection = SelectionMetadata {
-                schema_version: 4,
+                schema_version: extraction::SELECTION_METADATA_SCHEMA_VERSION,
                 candidate_storage: "memory_rawvideo".to_owned(),
                 base_fps,
                 candidate_fps,
@@ -1969,6 +2363,9 @@ fn run_extract(
                 candidate_fps,
                 dense_fps,
                 skip_blurry,
+                keyframe_pruning,
+                keyframe_thresholds,
+                telemetry_sha256.clone(),
                 &selection,
             )?;
             selection
@@ -2000,6 +2397,34 @@ fn run_extract(
             &selection_metadata,
         )
         .map_err(|error| error.to_string())?;
+        let frame_motion = build_frame_motion_metadata(
+            source_index,
+            base_fps,
+            candidate_fps,
+            keyframe_thresholds,
+            &selection_metadata.selections,
+            attitude_timeline.as_ref(),
+        );
+        extraction::write_frame_motion_metadata_atomic(&pending_frame_motion, &frame_motion)
+            .map_err(|error| error.to_string())?;
+        let pruned_intervals = frame_motion
+            .frames
+            .iter()
+            .filter(|frame| !frame.selected)
+            .count();
+        if keyframe_pruning {
+            emit_log(
+                app,
+                id,
+                "info",
+                format!(
+                    "來源 {} 的動態 keyframe 剪枝保留 {} / {} 組 base-FPS 候選（移除 {pruned_intervals} 組）",
+                    source_index + 1,
+                    frame_motion.frames.len().saturating_sub(pruned_intervals),
+                    frame_motion.frames.len(),
+                ),
+            );
+        }
 
         let mut selected_sequences = selection_metadata
             .selections
@@ -2203,9 +2628,10 @@ fn run_extract(
             &selection_metadata_path,
         )
         .map_err(|error| error.to_string())?;
-        // Release the native-resolution intermediates before telemetry work so
-        // long captures do not retain avoidable disk usage for the rest of the
-        // source iteration. Errors above still clean through the same guard.
+        extraction::promote_selection_metadata(&pending_frame_motion, &frame_motion_path)
+            .map_err(|error| error.to_string())?;
+        // Release native-resolution intermediates before preserving raw data
+        // streams so long captures do not retain avoidable temporary storage.
         drop(transaction_cleanup);
 
         for stream in stream_indices(&probe, "data") {
@@ -2261,27 +2687,6 @@ fn run_extract(
                 Err(error) => return Err(error),
             }
         }
-        let normalized_path = metadata.join(format!("source{source_index:03}_telemetry.json"));
-        match telemetry::parse_and_write(&input, &normalized_path, control.cancelled.clone()) {
-            Ok(export) => normalized_telemetry.push(json!({
-                "sourceIndex": source_index,
-                "path": export.path.to_string_lossy(),
-                "cameraModel": export.camera_model,
-                "normalizedImuSampleCount": export.normalized_imu_sample_count,
-                "fusedAttitudeSampleCount": export.fused_attitude_sample_count,
-                "appliedToColmap": false
-            })),
-            Err(error) if !control.cancelled.load(Ordering::Acquire) => emit_log(
-                app,
-                id,
-                "warning",
-                format!(
-                    "無法解析來源 {} 的標準化 telemetry：{error}",
-                    source_index + 1
-                ),
-            ),
-            Err(error) => return Err(error),
-        }
     }
     let metadata = output.join("metadata");
     fs::create_dir_all(&metadata).map_err(|e| e.to_string())?;
@@ -2293,7 +2698,7 @@ fn run_extract(
         "raw-data-streams-preserved"
     };
     fs::write(metadata.join("capture.json"), serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 4, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "schemaVersion": 5, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
         "lensCount": 2, "baseFps": base_fps, "candidateFps": candidate_fps,
         "requestedDenseFps": dense_fps, "skipBlurry": skip_blurry,
         "candidateImageFormat": CANDIDATE_IMAGE_FORMAT,
@@ -2304,7 +2709,9 @@ fn run_extract(
         "fullResolutionOutputsCommitted": true,
         "sharpness": if skip_blurry { "gaussian+laplacian+tenengrad; conservative pair minimum" } else { "disabled" },
         "sharpnessAnalysisMaxDimension": if skip_blurry { Some(extraction::SHARPNESS_MAX_DIMENSION) } else { None },
-        "motionAdaptiveCadence": false,
+        "motionAdaptiveCadence": keyframe_pruning,
+        "keyframeThresholds": keyframe_thresholds,
+        "candidateTimestampSource": "ffmpeg post-fps PTS (showinfo), candidate-FPS estimate only as per-frame fallback",
         "frameIdentity": "same filename across lens folders",
         "telemetryStreams": telemetry_streams,
         "normalizedTelemetry": normalized_telemetry,
@@ -2480,6 +2887,217 @@ fn dual_fisheye_registration_totals(root: &Path) -> Result<(u64, u64), String> {
     Ok((independent_images, rig_frames))
 }
 
+const TEMPORAL_PAIR_MAX_GAP_MS: f64 = 700.0;
+const TEMPORAL_PAIR_MIN_ROTATION_DEG: f64 = 4.0;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameMotionRecord {
+    #[serde(default)]
+    sequence: Option<u64>,
+    #[serde(default, alias = "timestamp_ms")]
+    timestamp_ms: Option<f64>,
+    #[serde(default, alias = "imu_rotation_from_last_kept_deg")]
+    imu_rotation_from_last_kept_deg: Option<f64>,
+    #[serde(default, alias = "attitude_wxyz")]
+    attitude_wxyz: Option<[f64; 4]>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameMotionFile {
+    #[serde(default)]
+    schema_version: Option<u32>,
+    #[serde(default)]
+    frames: Vec<FrameMotionRecord>,
+    #[serde(default, alias = "max_gap_ms")]
+    max_gap_ms: Option<f64>,
+    #[serde(default, alias = "min_rotation_deg")]
+    min_rotation_deg: Option<f64>,
+    #[serde(default)]
+    pruning: Option<FrameMotionPruning>,
+    #[serde(default)]
+    thresholds: Option<FrameMotionPruning>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FrameMotionPruning {
+    #[serde(default, alias = "max_gap_ms")]
+    max_gap_ms: Option<f64>,
+    #[serde(default, alias = "min_rotation_deg")]
+    min_rotation_deg: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct SourceFrameMotion {
+    frames: BTreeMap<u64, FrameMotionRecord>,
+    max_gap_ms: f64,
+    min_rotation_deg: f64,
+}
+
+fn source_name_from_image(name: &str) -> &str {
+    name.split_once('_').map_or("source", |(source, _)| source)
+}
+
+fn sequence_from_image_name(name: &str) -> Option<u64> {
+    Path::new(name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .and_then(|stem| stem.rsplit_once('_').map(|(_, sequence)| sequence))
+        .and_then(|sequence| sequence.parse::<u64>().ok())
+}
+
+fn load_frame_motion_metadata(root: &Path) -> BTreeMap<String, SourceFrameMotion> {
+    let metadata = root.join("metadata");
+    let Ok(entries) = fs::read_dir(metadata) else {
+        return BTreeMap::new();
+    };
+    let mut files = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let source = name.strip_suffix("_frame_motion.json")?;
+            source
+                .starts_with("source")
+                .then_some((source.to_owned(), path))
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    files
+        .into_iter()
+        .filter_map(|(source, path)| {
+            let bytes = fs::read(path).ok()?;
+            let payload = serde_json::from_slice::<FrameMotionFile>(&bytes).ok()?;
+            if payload.schema_version != Some(1) {
+                return None;
+            }
+            let frames = payload
+                .frames
+                .into_iter()
+                .filter_map(|record| record.sequence.map(|sequence| (sequence, record)))
+                .collect::<BTreeMap<_, _>>();
+            let max_gap_ms = payload
+                .thresholds
+                .as_ref()
+                .and_then(|thresholds| thresholds.max_gap_ms)
+                .or_else(|| {
+                    payload
+                        .pruning
+                        .as_ref()
+                        .and_then(|pruning| pruning.max_gap_ms)
+                })
+                .or(payload.max_gap_ms)
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .unwrap_or(TEMPORAL_PAIR_MAX_GAP_MS);
+            let min_rotation_deg = payload
+                .thresholds
+                .as_ref()
+                .and_then(|thresholds| thresholds.min_rotation_deg)
+                .or_else(|| {
+                    payload
+                        .pruning
+                        .as_ref()
+                        .and_then(|pruning| pruning.min_rotation_deg)
+                })
+                .or(payload.min_rotation_deg)
+                .filter(|value| value.is_finite() && *value >= 0.0)
+                .unwrap_or(TEMPORAL_PAIR_MIN_ROTATION_DEG);
+            (!frames.is_empty()).then_some((
+                source,
+                SourceFrameMotion {
+                    frames,
+                    max_gap_ms,
+                    min_rotation_deg,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn motion_pair_is_compatible(
+    motion: Option<&SourceFrameMotion>,
+    left_sequence: u64,
+    right_sequence: u64,
+) -> Option<bool> {
+    let motion = motion?;
+    let left = motion.frames.get(&left_sequence)?;
+    let right = motion.frames.get(&right_sequence)?;
+    let elapsed_ms = match (left.timestamp_ms, right.timestamp_ms) {
+        (Some(left), Some(right)) if left.is_finite() && right.is_finite() => {
+            Some((right - left).abs())
+        }
+        _ => None,
+    };
+    let lower_sequence = left_sequence.min(right_sequence);
+    let upper_sequence = left_sequence.max(right_sequence);
+    let direct_rotation_deg = match (left.attitude_wxyz, right.attitude_wxyz) {
+        (Some(left), Some(right)) => {
+            let angle = telemetry::quaternion_angle_deg(left, right);
+            if !angle.is_finite() {
+                // A malformed attitude must never silently prune a link.
+                return Some(true);
+            }
+            Some(angle)
+        }
+        _ => None,
+    };
+    let mut saw_rotation = direct_rotation_deg.is_some();
+    let accumulated_rotation_deg = motion
+        .frames
+        .iter()
+        .filter(|(sequence, _)| **sequence > lower_sequence && **sequence <= upper_sequence)
+        .filter_map(|(_, frame)| frame.imu_rotation_from_last_kept_deg)
+        .filter(|value| value.is_finite())
+        .map(|value| {
+            saw_rotation = true;
+            value.abs()
+        })
+        .sum::<f64>();
+    let rotation_deg = direct_rotation_deg.unwrap_or(accumulated_rotation_deg);
+    if elapsed_ms.is_none() && !saw_rotation {
+        return None;
+    }
+    Some(
+        elapsed_ms.is_some_and(|elapsed| elapsed <= motion.max_gap_ms)
+            || (saw_rotation && rotation_deg >= motion.min_rotation_deg),
+    )
+}
+
+fn conditional_temporal_pair(
+    pairs: &mut BTreeSet<String>,
+    left_lens: usize,
+    right_lens: usize,
+    left: &str,
+    right: &str,
+    offset: usize,
+    source_motion: Option<&SourceFrameMotion>,
+) {
+    let should_keep = if offset <= 1 {
+        true
+    } else {
+        match (
+            sequence_from_image_name(left),
+            sequence_from_image_name(right),
+        ) {
+            (Some(left_sequence), Some(right_sequence)) => {
+                // Missing or incomplete motion metadata intentionally falls
+                // back to the pre-IMU pair graph instead of risking a
+                // disconnected model.
+                motion_pair_is_compatible(source_motion, left_sequence, right_sequence)
+                    .unwrap_or(true)
+            }
+            // Unknown filename identity must preserve the legacy graph.
+            _ => true,
+        }
+    };
+    if should_keep {
+        pairs.insert(format!("lens{left_lens}/{left} lens{right_lens}/{right}"));
+    }
+}
+
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     let rig_config = root.join("rig_config.json");
     let legacy_default = json!([{"cameras":[
@@ -2521,19 +3139,33 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     if names.len() < 2 {
         return Err("至少需要兩組同名的 lens0/lens1 影格才能對齊".to_owned());
     }
+    let frame_motion = load_frame_motion_metadata(root);
     let mut pairs = BTreeSet::new();
     for (index, name) in names.iter().enumerate() {
         pairs.insert(format!("lens0/{name} lens1/{name}"));
-        for neighbor in names.iter().skip(index + 1).take(5) {
-            pairs.insert(format!("lens0/{name} lens0/{neighbor}"));
-            pairs.insert(format!("lens1/{name} lens1/{neighbor}"));
-            // Back-to-back fisheye lenses may have too little overlap at the
-            // exact same timestamp to connect both camera tracks.  A bounded
-            // temporal cross-lens window lets a static scene observed by one
-            // lens enter the other lens shortly before or after, while keeping
-            // the imported pair list linear in the number of frames.
-            pairs.insert(format!("lens0/{name} lens1/{neighbor}"));
-            pairs.insert(format!("lens1/{name} lens0/{neighbor}"));
+        let source_motion = frame_motion.get(source_name_from_image(name));
+        for (offset, neighbor) in names.iter().skip(index + 1).take(5).enumerate() {
+            let offset = offset + 1;
+            if source_name_from_image(name) != source_name_from_image(neighbor) {
+                // Cross-source loop closure is intentionally left to the
+                // anchor grid below; source-local motion cannot justify a
+                // temporal pair across a discontinuous recording.
+                continue;
+            }
+            // Same-sensor +1/+2 are the minimum temporal chain.  Cross-lens
+            // +1 is also mandatory because the fisheye seam may be the only
+            // visual bridge between the two tracks.  Longer links are kept
+            // only when motion metadata says the temporal gap remains useful;
+            // incomplete metadata falls back to the legacy +1..+5 graph.
+            if offset <= 2 {
+                pairs.insert(format!("lens0/{name} lens0/{neighbor}"));
+                pairs.insert(format!("lens1/{name} lens1/{neighbor}"));
+            } else {
+                conditional_temporal_pair(&mut pairs, 0, 0, name, neighbor, offset, source_motion);
+                conditional_temporal_pair(&mut pairs, 1, 1, name, neighbor, offset, source_motion);
+            }
+            conditional_temporal_pair(&mut pairs, 0, 1, name, neighbor, offset, source_motion);
+            conditional_temporal_pair(&mut pairs, 1, 0, name, neighbor, offset, source_motion);
         }
     }
     // Temporal neighbors alone only connect adjacent capture filenames.  For
@@ -2957,6 +3589,47 @@ fn file_sha256(path: &Path) -> Result<String, String> {
         .map_err(|error| format!("無法讀取 {}：{error}", path.display()))
 }
 
+fn optional_file_sha256(path: &Path) -> Result<String, String> {
+    if path.is_file() {
+        file_sha256(path)
+    } else {
+        Ok(sha256_hex(&[]))
+    }
+}
+
+fn frame_motion_metadata_sha256(root: &Path) -> Result<String, String> {
+    let metadata = root.join("metadata");
+    let Ok(entries) = fs::read_dir(&metadata) else {
+        return Ok(sha256_hex(&[]));
+    };
+    let mut paths = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with("_frame_motion.json"))
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut bytes = Vec::new();
+    for path in paths {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| format!("影格運動 metadata 檔名無效：{}", path.display()))?;
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(
+            &fs::read(&path).map_err(|error| format!("無法讀取 {}：{error}", path.display()))?,
+        );
+        bytes.push(0);
+    }
+    Ok(sha256_hex(&bytes))
+}
+
 fn collect_align_file_identities(
     directory: &Path,
     project_root: &Path,
@@ -3016,6 +3689,10 @@ fn build_align_fingerprint(
         include_masks,
         rig_config_sha256: file_sha256(&root.join("rig_config.json"))?,
         pairs_sha256: file_sha256(&root.join("metadata/pairs.txt"))?,
+        frame_motion_sha256: frame_motion_metadata_sha256(root)?,
+        global_mapper_priors_sha256: optional_file_sha256(
+            &root.join("metadata/global_mapper_priors.json"),
+        )?,
         files,
     };
     let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -3680,6 +4357,127 @@ fn mapper_args(
     args
 }
 
+fn global_mapper_args(
+    db: &Path,
+    images: &Path,
+    output: &Path,
+    use_gpu: bool,
+    gpu_index: &str,
+    use_gravity_prior: bool,
+) -> Vec<String> {
+    vec![
+        "global_mapper".into(),
+        "--database_path".into(),
+        db.to_string_lossy().into_owned(),
+        "--image_path".into(),
+        images.to_string_lossy().into_owned(),
+        "--output_path".into(),
+        output.to_string_lossy().into_owned(),
+        // Known rig extrinsics are a prerequisite for gravity-aligned rig
+        // solving. Keep them fixed unless a future calibrated workflow opts
+        // into refinement explicitly.
+        "--GlobalMapper.refine_sensor_from_rig".into(),
+        "0".into(),
+        "--GlobalMapper.ra_use_gravity".into(),
+        if use_gravity_prior {
+            "1".into()
+        } else {
+            "0".into()
+        },
+        "--GlobalMapper.ra_use_stratified".into(),
+        "1".into(),
+        "--GlobalMapper.gp_use_gpu".into(),
+        if use_gpu { "1".into() } else { "0".into() },
+        "--GlobalMapper.gp_gpu_index".into(),
+        mapper_gpu_index(gpu_index).to_owned(),
+        "--GlobalMapper.ba_ceres_use_gpu".into(),
+        if use_gpu { "1".into() } else { "0".into() },
+        "--GlobalMapper.ba_ceres_gpu_index".into(),
+        mapper_gpu_index(gpu_index).to_owned(),
+    ]
+}
+
+const MIN_GLOBAL_GRAVITY_COVERAGE_RATIO: f64 = 0.8;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalMapperPriorMetadata {
+    schema_version: u32,
+    focal_prior_valid: bool,
+    #[serde(default)]
+    gravity_prior_valid: bool,
+    #[serde(default)]
+    gravity_coverage_ratio: Option<f64>,
+    #[serde(default)]
+    sensor_to_camera_calibration_version: Option<String>,
+    #[serde(default)]
+    time_offset_ms: Option<f64>,
+    #[serde(default)]
+    database_pose_priors_injected: bool,
+}
+
+fn has_valid_global_mapper_priors(root: &Path, require_gravity: bool) -> bool {
+    // The current extractor deliberately does not inject COLMAP focal/gravity
+    // priors. Treat an explicit, validated marker as the opt-in contract for
+    // a future calibration stage instead of guessing from default focal 0.3.
+    let path = root.join("metadata/global_mapper_priors.json");
+    let Ok(metadata) =
+        serde_json::from_slice::<GlobalMapperPriorMetadata>(&fs::read(path).unwrap_or_default())
+    else {
+        return false;
+    };
+    metadata.schema_version >= 1
+        && metadata.focal_prior_valid
+        && (!require_gravity
+            || (metadata.gravity_prior_valid
+                && metadata.database_pose_priors_injected
+                && metadata.gravity_coverage_ratio.is_some_and(|coverage| {
+                    coverage.is_finite()
+                        && (MIN_GLOBAL_GRAVITY_COVERAGE_RATIO..=1.0).contains(&coverage)
+                })
+                && metadata
+                    .sensor_to_camera_calibration_version
+                    .as_deref()
+                    .is_some_and(|version| !version.trim().is_empty())
+                && metadata.time_offset_ms.is_some_and(f64::is_finite)))
+}
+
+fn global_mapper_prerequisite_error(
+    root: &Path,
+    rig_preconfigured: bool,
+    capabilities: &crate::doctor::ColmapCapabilities,
+    use_gravity_prior: bool,
+) -> Option<String> {
+    if !capabilities.global_mapper {
+        return Some("指定的 COLMAP 不提供 global_mapper command".to_owned());
+    }
+    if !rig_preconfigured {
+        return Some("global_mapper 需要已知且完整的 rig sensor_from_rig 外參".to_owned());
+    }
+    if use_gravity_prior && !capabilities.global_mapper_gravity {
+        return Some("指定的 global_mapper 不接受 gravity rotation averaging 相關選項".to_owned());
+    }
+    if !capabilities.global_mapper_gravity {
+        return Some(
+            "指定的 global_mapper 不提供 ra_use_gravity/ra_use_stratified 選項，無法安全建立固定 CLI"
+                .to_owned(),
+        );
+    }
+    if !capabilities.global_mapper_gp_gpu || !capabilities.global_mapper_ba_gpu {
+        return Some(
+            "指定的 global_mapper 缺少 gp_use_gpu/gp_gpu_index 或 ba_ceres_use_gpu/ba_ceres_gpu_index 選項"
+                .to_owned(),
+        );
+    }
+    if !has_valid_global_mapper_priors(root, use_gravity_prior) {
+        return Some(
+            "尚未提供已驗證的 focal prior（gravity 模式另需 database pose prior、至少 80% coverage、時間偏移與 sensor-to-camera 校正版本；metadata/global_mapper_priors.json）；global mapper 拒絕執行以避免錯誤重建"
+                .to_owned(),
+        );
+    }
+    None
+}
+
 fn run_align(
     app: &AppHandle,
     id: &str,
@@ -3692,7 +4490,21 @@ fn run_align(
     let root = PathBuf::from(&manifest.output_path);
     let gpu_index = parse_gpu_index(&manifest.settings)?;
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", false);
-    write_rig_and_pairs(&root)?;
+    let requested_mapper_mode = mapper_mode(&manifest.settings)?;
+    let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
+    let rig_frame_count = write_rig_and_pairs(&root)?;
+    let pairs_path = root.join("metadata/pairs.txt");
+    let pair_count = fs::read_to_string(&pairs_path)
+        .map_err(|error| format!("無法讀取 {}：{error}", pairs_path.display()))?
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    emit_log(
+        app,
+        id,
+        "info",
+        format!("已為 {rig_frame_count} 組 rig frames 建立 {pair_count} 組 COLMAP matching pairs"),
+    );
     let (independent_image_total, rig_frame_total) = dual_fisheye_registration_totals(&root)?;
     let rig_config_path = root.join("rig_config.json");
     let rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
@@ -3730,6 +4542,46 @@ fn run_align(
                 .to_owned(),
         );
     }
+    let mapper_mode = match requested_mapper_mode {
+        MapperMode::Incremental => MapperMode::Incremental,
+        MapperMode::Global => {
+            if let Some(error) = global_mapper_prerequisite_error(
+                &root,
+                rig_preconfigured,
+                &colmap_capabilities,
+                use_gravity_prior,
+            ) {
+                return Err(format!(
+                    "align.mapperMode=global 的前提不成立：{error}；請改用 incremental 或 auto"
+                ));
+            }
+            MapperMode::Global
+        }
+        MapperMode::Auto => {
+            if let Some(error) = global_mapper_prerequisite_error(
+                &root,
+                rig_preconfigured,
+                &colmap_capabilities,
+                use_gravity_prior,
+            ) {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!("mapperMode=auto：{error}，退回 incremental mapper"),
+                );
+                MapperMode::Incremental
+            } else {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    "mapperMode=auto：global mapper 前提已驗證，使用 global_mapper",
+                );
+                MapperMode::Global
+            }
+        }
+    };
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
     let feature_fingerprint = build_feature_fingerprint(&root, &colmap_version, use_masks)?;
@@ -4512,24 +5364,67 @@ fn run_align(
     let last_final_mapper_emit = Cell::new(None);
     let mut final_gpu_warning_emitted = false;
     let final_total = rig_frame_total.max(1);
-    let final_gpu_args = mapper_args(
-        &db,
-        &root.join("images"),
-        &sparse,
-        mapper_gpu,
-        &mapper_gpu_index,
-        true,
-        true,
-    );
-    let final_cpu_args = mapper_args(
-        &db,
-        &root.join("images"),
-        &sparse,
-        false,
-        &mapper_gpu_index,
-        true,
-        true,
-    );
+    let final_mapper_gpu = if mapper_mode == MapperMode::Global {
+        requested_gpu
+            && colmap_capabilities.cuda_build
+            && colmap_capabilities.global_mapper_gp_gpu
+            && colmap_capabilities.global_mapper_ba_gpu
+    } else {
+        mapper_gpu
+    };
+    if mapper_mode == MapperMode::Global && requested_gpu && !final_mapper_gpu {
+        emit_log(
+            app,
+            id,
+            "warning",
+            "global_mapper 的 GPU positioning/Ceres option 不完整；改用 CPU global mapper",
+        );
+    }
+    let final_gpu_args = if mapper_mode == MapperMode::Global {
+        global_mapper_args(
+            &db,
+            &root.join("images"),
+            &sparse,
+            true,
+            &gpu_index,
+            use_gravity_prior,
+        )
+    } else {
+        mapper_args(
+            &db,
+            &root.join("images"),
+            &sparse,
+            final_mapper_gpu,
+            &mapper_gpu_index,
+            true,
+            true,
+        )
+    };
+    let final_cpu_args = if mapper_mode == MapperMode::Global {
+        global_mapper_args(
+            &db,
+            &root.join("images"),
+            &sparse,
+            false,
+            &gpu_index,
+            use_gravity_prior,
+        )
+    } else {
+        mapper_args(
+            &db,
+            &root.join("images"),
+            &sparse,
+            false,
+            &mapper_gpu_index,
+            true,
+            true,
+        )
+    };
+    let final_mapper_component = if mapper_mode == MapperMode::Global {
+        "global_mapper"
+    } else {
+        "final_mapper"
+    };
     run_mapper_with_gpu_fallback(
         app,
         id,
@@ -4537,8 +5432,8 @@ fn run_align(
         &sparse,
         &final_gpu_args,
         &final_cpu_args,
-        mapper_gpu,
-        "final_mapper",
+        final_mapper_gpu,
+        final_mapper_component,
         control,
         || {
             highest_registered.set(0);
@@ -4548,8 +5443,8 @@ fn run_align(
             maybe_log_mapper_gpu_cpu_fallback(
                 app,
                 id,
-                "final_mapper",
-                mapper_gpu,
+                final_mapper_component,
+                final_mapper_gpu,
                 &mut final_gpu_warning_emitted,
                 line,
             );
@@ -4600,7 +5495,7 @@ fn run_align(
         "final-mapping",
         4,
         "最終模型重建完成",
-        "final_mapper",
+        final_mapper_component,
     );
     emit_progress_detailed(
         app,
@@ -4631,21 +5526,24 @@ mod tests {
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_step_progress, create_colmap_database_backup,
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
-        extraction_completed_count, feature_extractor_args, is_mapper_gpu_cpu_fallback_line,
-        is_rig_pose_derivation_failure_line, load_candidate_selection_checkpoint,
-        map_full_res_candidates, mapper_args, mapper_gpu_index, mask_classes, mask_confidence,
-        mask_enabled, matches_importer_args, parse_feature_name, parse_feature_progress,
-        parse_gpu_index, parse_mapper_registration, parse_matching_progress,
+        extraction_completed_count, feature_extractor_args, global_mapper_args,
+        global_mapper_prerequisite_error, has_valid_global_mapper_priors,
+        is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
+        keyframe_pruning_settings, load_candidate_selection_checkpoint, map_full_res_candidates,
+        mapper_args, mapper_gpu_index, mapper_mode, mask_classes, mask_confidence, mask_enabled,
+        matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
+        parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
         restore_colmap_database_backup, rig_config_has_complete_sensor_poses, rig_mapping_plan,
         selected_ffmpeg_args, source_stage_progress, synchronized_candidate_count,
         validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
-        ExtractionStage, JobControl, JobManager, LogEvent, ProgressEvent, RawFrameMessage,
-        RigBootstrapCamera, RigBootstrapConfig, RigMappingPlan, StageName, StartStageRequest,
-        StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
-        CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        ExtractionStage, JobControl, JobManager, LogEvent, MapperMode, ProgressEvent,
+        RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, RigMappingPlan, StageName,
+        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
+        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
+    use crate::doctor::ColmapCapabilities;
     use crate::masking::CancelToken;
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -4676,6 +5574,31 @@ mod tests {
             })),
             (30.0, 60.0, true)
         );
+    }
+
+    #[test]
+    fn keyframe_pruning_settings_default_and_clamp_thresholds() {
+        let (enabled, defaults) = keyframe_pruning_settings(&json!({}));
+        assert!(enabled);
+        assert_eq!(
+            defaults,
+            crate::extraction::KeyframePruningConfig::default()
+        );
+
+        let (enabled, thresholds) = keyframe_pruning_settings(&json!({
+            "extract": {
+                "keyframePruning": false,
+                "minRotationDeg": 0.0,
+                "minGapMs": 3000.0,
+                "maxGapMs": 100.0,
+                "minVisualNovelty": 2.0
+            }
+        }));
+        assert!(!enabled);
+        assert_eq!(thresholds.min_rotation_deg, 0.1);
+        assert_eq!(thresholds.min_gap_ms, 2000.0);
+        assert_eq!(thresholds.max_gap_ms, 2000.0);
+        assert_eq!(thresholds.min_visual_novelty, 1.0);
     }
 
     #[test]
@@ -4978,6 +5901,25 @@ mod tests {
         assert_ne!(
             baseline,
             build_align_fingerprint(temp.path(), &changed_settings, "COLMAP 4.1.1", false).unwrap()
+        );
+
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            br#"{"schemaVersion":1,"frames":[{"sequence":1,"timestampMs":0}]}"#,
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
+        );
+        fs::write(
+            temp.path().join("metadata/global_mapper_priors.json"),
+            br#"{"schemaVersion":1,"focalPriorValid":true,"gravityPriorValid":true}"#,
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
         );
 
         fs::write(
@@ -5352,6 +6294,309 @@ mod tests {
     }
 
     #[test]
+    fn motion_metadata_prunes_only_optional_temporal_pairs() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=6 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let frames = (1..=6)
+            .map(|sequence| {
+                json!({
+                    "sequence": sequence,
+                    "timestampMs": (sequence - 1) as f64 * 333.0,
+                    "imuRotationFromLastKeptDeg": 0.0,
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            serde_json::to_vec(&json!({"schemaVersion": 1, "frames": frames})).unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        // Same-time stereo, same-lens +1/+2, and cross-lens +1 remain.
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000001.png"));
+        assert!(pairs.contains("lens0/source000_00000001.png lens0/source000_00000002.png"));
+        assert!(pairs.contains("lens0/source000_00000001.png lens0/source000_00000003.png"));
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000002.png"));
+        // +3 and beyond exceed the 700 ms temporal budget and have no
+        // rotation novelty, so optional links are pruned.
+        assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000004.png"));
+        assert!(!pairs.contains("lens0/source000_00000001.png lens1/source000_00000004.png"));
+        assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000006.png"));
+    }
+
+    #[test]
+    fn malformed_motion_metadata_preserves_legacy_temporal_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=6 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            br#"{"schemaVersion":1,"frames":[{"sequence":1}]}"#,
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        assert!(pairs.contains("lens0/source000_00000001.png lens0/source000_00000006.png"));
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000006.png"));
+    }
+
+    #[test]
+    fn motion_metadata_pruning_thresholds_override_defaults() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=3 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let frames = (1..=3)
+            .map(|sequence| {
+                json!({
+                    "sequence": sequence,
+                    "timestampMs": (sequence - 1) as f64 * 500.0,
+                    "imuRotationFromLastKeptDeg": 0.0,
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1,
+                "thresholds": {
+                    "minRotationDeg": 20.0,
+                    "minGapMs": 200.0,
+                    "maxGapMs": 1200.0,
+                    "minVisualNovelty": 0.08,
+                },
+                "frames": frames,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        // Cross-lens +2 is optional and would fail the default 700 ms budget;
+        // the top-level pruning object extends it to 1200 ms.
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000003.png"));
+    }
+
+    #[test]
+    fn motion_metadata_accumulates_intermediate_rotation_for_long_links() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=4 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let frames = (1..=4)
+            .map(|sequence| {
+                json!({
+                    "sequence": sequence,
+                    "timestampMs": (sequence - 1) as f64 * 500.0,
+                    "imuRotationFromLastKeptDeg": if sequence == 1 { 0.0 } else { 2.0 },
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            serde_json::to_vec(&json!({"schemaVersion": 1, "frames": frames})).unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        // Sequence 1 -> 4 is 1500 ms, but the intermediate 2° + 2° + 2°
+        // rotations exceed the 4° threshold and preserve the optional link.
+        assert!(pairs.contains("lens0/source000_00000001.png lens0/source000_00000004.png"));
+    }
+
+    #[test]
+    fn motion_metadata_prefers_direct_attitude_rotation_when_available() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=3 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let ten_deg = (5.0_f64.to_radians()).cos();
+        let ten_deg_sine = (5.0_f64.to_radians()).sin();
+        let frames = vec![
+            json!({
+                "sequence": 1,
+                "timestampMs": 0.0,
+                "imuRotationFromLastKeptDeg": 0.0,
+                "attitudeWxyz": [1.0, 0.0, 0.0, 0.0],
+            }),
+            json!({
+                "sequence": 2,
+                "timestampMs": 500.0,
+                "imuRotationFromLastKeptDeg": 0.0,
+                "attitudeWxyz": [ten_deg, 0.0, 0.0, ten_deg_sine],
+            }),
+            json!({
+                "sequence": 3,
+                "timestampMs": 1000.0,
+                "imuRotationFromLastKeptDeg": 0.0,
+                "attitudeWxyz": [ten_deg, 0.0, 0.0, ten_deg_sine],
+            }),
+        ];
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            serde_json::to_vec(&json!({"schemaVersion": 1, "frames": frames})).unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        // Endpoint attitude is 10° despite zero per-frame rotation fields;
+        // direct relative rotation therefore retains optional cross-lens +2.
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000003.png"));
+    }
+
+    #[test]
+    fn mapper_mode_defaults_to_auto_and_rejects_unknown_values() {
+        assert_eq!(mapper_mode(&json!({})).unwrap(), MapperMode::Auto);
+        assert_eq!(
+            mapper_mode(&json!({"align": {"mapperMode": "GLOBAL"}})).unwrap(),
+            MapperMode::Global
+        );
+        assert!(mapper_mode(&json!({"align": {"mapperMode": "bogus"}})).is_err());
+    }
+
+    #[test]
+    fn global_mapper_args_use_colmap_4_1_1_option_names() {
+        let args = global_mapper_args(
+            Path::new("database.db"),
+            Path::new("images"),
+            Path::new("sparse"),
+            true,
+            "2,3",
+            true,
+        );
+        let pairs = args
+            .windows(2)
+            .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+            .collect::<BTreeSet<_>>();
+        assert!(pairs.contains(&("--GlobalMapper.ra_use_gravity", "1")));
+        assert!(pairs.contains(&("--GlobalMapper.ra_use_stratified", "1")));
+        assert!(pairs.contains(&("--GlobalMapper.gp_use_gpu", "1")));
+        assert!(pairs.contains(&("--GlobalMapper.gp_gpu_index", "2")));
+        assert!(pairs.contains(&("--GlobalMapper.ba_ceres_use_gpu", "1")));
+        assert!(pairs.contains(&("--GlobalMapper.ba_ceres_gpu_index", "2")));
+        assert!(pairs.contains(&("--GlobalMapper.refine_sensor_from_rig", "0")));
+    }
+
+    #[test]
+    fn global_mapper_requires_validated_priors_before_explicit_use() {
+        let temp = tempfile::tempdir().unwrap();
+        let capabilities = ColmapCapabilities {
+            global_mapper: true,
+            global_mapper_gravity: true,
+            global_mapper_gp_gpu: true,
+            global_mapper_ba_gpu: true,
+            ..Default::default()
+        };
+        let error = global_mapper_prerequisite_error(temp.path(), true, &capabilities, true)
+            .expect("missing global mapper priors must block explicit mode");
+        assert!(error.contains("focal prior"));
+        assert!(error.contains("global_mapper_priors.json"));
+    }
+
+    #[test]
+    fn gravity_global_mapper_marker_requires_calibration_offset_and_coverage() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let marker = temp.path().join("metadata/global_mapper_priors.json");
+        fs::write(
+            &marker,
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1,
+                "focalPriorValid": true,
+                "gravityPriorValid": true,
+                "gravityCoverageRatio": 0.79,
+                "sensorToCameraCalibrationVersion": "hand-eye-v1",
+                "timeOffsetMs": 12.5,
+                "databasePosePriorsInjected": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!has_valid_global_mapper_priors(temp.path(), true));
+        assert!(has_valid_global_mapper_priors(temp.path(), false));
+
+        fs::write(
+            &marker,
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1,
+                "focalPriorValid": true,
+                "gravityPriorValid": true,
+                "gravityCoverageRatio": 0.8,
+                "sensorToCameraCalibrationVersion": "hand-eye-v1",
+                "timeOffsetMs": 12.5,
+                "databasePosePriorsInjected": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(has_valid_global_mapper_priors(temp.path(), true));
+    }
+
+    #[test]
     fn mapper_progress_totals_include_unpaired_lens_images() {
         let temp = tempfile::tempdir().unwrap();
         for lens in ["lens0", "lens1"] {
@@ -5468,10 +6713,10 @@ mod tests {
             .unwrap();
         let filter = &args[filter_index + 1];
         assert_eq!(filter.matches("fps=8").count(), 2);
-        assert_eq!(filter.matches("setpts=N/(8*TB)").count(), 2);
+        assert!(!filter.contains("setpts="));
         assert_eq!(filter.matches("scale=").count(), 2);
         assert_eq!(filter.matches("pad=512:512").count(), 2);
-        assert!(filter.contains("hstack=inputs=2:shortest=1[out]"));
+        assert!(filter.contains("hstack=inputs=2:shortest=1,showinfo=checksum=0[out]"));
         assert!(filter.find("fps=8") < filter.find("scale="));
         assert!(filter.contains("format=gray"));
         assert!(args.windows(2).any(|pair| pair == ["-f", "rawvideo"]));
@@ -5481,6 +6726,25 @@ mod tests {
         assert_eq!(
             CANDIDATE_IMAGE_FORMAT,
             "rawvideo-gray8-hstack-1024x512-memory"
+        );
+    }
+
+    #[test]
+    fn showinfo_parser_preserves_candidate_pts_in_milliseconds() {
+        assert_eq!(
+            parse_showinfo_timestamp_ms(
+                "[Parsed_showinfo_7 @ 0x123] n:   42 pts: 9000 pts_time:1.5 duration:1"
+            ),
+            Some((42, 1500.0))
+        );
+        assert_eq!(
+            parse_showinfo_timestamp_ms("[showinfo] n:0 pts:0 pts_time:-0.125"),
+            Some((0, -125.0))
+        );
+        assert_eq!(parse_showinfo_timestamp_ms("n:0 pts_time:1.0"), None);
+        assert_eq!(
+            parse_showinfo_timestamp_ms("[showinfo] n:0 pts_time:N/A"),
+            None
         );
     }
 
@@ -5537,6 +6801,38 @@ mod tests {
             .map(|record| (record.interval, record.sequence))
             .collect::<Vec<_>>();
         assert_eq!(selected, vec![(0, 1), (1, 5)]);
+    }
+
+    #[test]
+    fn memory_selector_prunes_interval_bests_but_keeps_first_and_last() {
+        let mut selector = StreamingCandidateSelector::new(2.0, 8.0, false);
+        selector
+            .enable_keyframe_pruning(
+                crate::extraction::KeyframePruningConfig {
+                    min_rotation_deg: 90.0,
+                    min_gap_ms: 0.0,
+                    max_gap_ms: 10_000.0,
+                    min_visual_novelty: 1.0,
+                },
+                None,
+            )
+            .unwrap();
+        let frame = vec![0u8; CANDIDATE_FRAME_BYTES];
+        for _ in 0..12 {
+            selector.push(&frame).unwrap();
+        }
+        let records = selector.finish().unwrap();
+        let selected = records
+            .iter()
+            .filter(|record| record.selected)
+            .map(|record| record.sequence)
+            .collect::<Vec<_>>();
+        assert_eq!(selected, vec![1, 9]);
+        assert_eq!(
+            records[4].selection_reason.as_deref(),
+            Some("belowThreshold")
+        );
+        assert_eq!(records[8].selection_reason.as_deref(), Some("last"));
     }
 
     #[test]
@@ -5689,7 +6985,7 @@ mod tests {
         selector.push(&vec![0u8; CANDIDATE_FRAME_BYTES]).unwrap();
         let records = selector.finish().unwrap();
         let selection = crate::extraction::SelectionMetadata {
-            schema_version: 4,
+            schema_version: crate::extraction::SELECTION_METADATA_SCHEMA_VERSION,
             candidate_storage: "memory_rawvideo".to_owned(),
             base_fps: 2.0,
             candidate_fps: 8.0,
@@ -5702,22 +6998,82 @@ mod tests {
             cancelled: false,
             selections: records,
         };
-        write_candidate_selection_checkpoint(&checkpoint, &input, 2.0, 8.0, 8.0, false, &selection)
-            .unwrap();
+        let thresholds = crate::extraction::KeyframePruningConfig::default();
+        write_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1".to_owned()),
+            &selection,
+        )
+        .unwrap();
 
-        assert!(
-            load_candidate_selection_checkpoint(&checkpoint, &input, 2.0, 8.0, 8.0, false)
-                .is_some()
-        );
-        assert!(
-            load_candidate_selection_checkpoint(&checkpoint, &input, 1.0, 8.0, 8.0, false)
-                .is_none()
-        );
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1"),
+        )
+        .is_some());
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            1.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1"),
+        )
+        .is_none());
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            false,
+            thresholds,
+            Some("telemetry-v1"),
+        )
+        .is_none());
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v2"),
+        )
+        .is_none());
         fs::write(&input, b"video-v2-longer").unwrap();
-        assert!(
-            load_candidate_selection_checkpoint(&checkpoint, &input, 2.0, 8.0, 8.0, false)
-                .is_none()
-        );
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &input,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1"),
+        )
+        .is_none());
     }
 
     #[test]

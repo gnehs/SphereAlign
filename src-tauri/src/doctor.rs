@@ -70,6 +70,14 @@ pub struct ColmapCapabilities {
     /// options that a particular command does not understand.
     pub mapper_ba_gpu: bool,
     pub global_mapper: bool,
+    /// `global_mapper` accepts gravity-aware rotation averaging options.
+    pub global_mapper_gravity: bool,
+    /// `global_mapper` accepts GPU global positioning options.
+    pub global_mapper_gp_gpu: bool,
+    /// `global_mapper` accepts GPU Ceres bundle-adjustment options.
+    pub global_mapper_ba_gpu: bool,
+    /// `global_mapper` accepts the fixed-rotation BA stage controls.
+    pub global_mapper_fixed_rotation_ba: bool,
     pub caspar: bool,
     pub rig_configurator: bool,
     pub matches_importer: bool,
@@ -265,7 +273,7 @@ fn has_cuda_build_marker(text: &str) -> bool {
 }
 
 fn help_option_token(line: &str) -> Option<&str> {
-    let token = line.trim_start().split_whitespace().next()?;
+    let token = line.split_whitespace().next()?;
     let token = token.strip_prefix("--")?;
     let token = token.split_once('=').map_or(token, |(name, _)| name);
     (!token.is_empty()
@@ -383,6 +391,7 @@ fn parse_colmap_capabilities(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_colmap_capabilities_with_feature_help(
     version: &str,
     main_help: &str,
@@ -411,6 +420,25 @@ fn parse_colmap_capabilities_with_feature_help(
         );
     let mapper_ba_gpu =
         cuda_build && has_help_option_pair(mapper_help, "Mapper.ba_use_gpu", "Mapper.ba_gpu_index");
+    let global_mapper_gravity = has_help_option(global_mapper_help, "GlobalMapper.ra_use_gravity")
+        && has_help_option(global_mapper_help, "GlobalMapper.ra_use_stratified");
+    let global_mapper_gp_gpu = has_help_option_pair(
+        global_mapper_help,
+        "GlobalMapper.gp_use_gpu",
+        "GlobalMapper.gp_gpu_index",
+    );
+    let global_mapper_ba_gpu = has_help_option_pair(
+        global_mapper_help,
+        "GlobalMapper.ba_ceres_use_gpu",
+        "GlobalMapper.ba_ceres_gpu_index",
+    );
+    let global_mapper_fixed_rotation_ba = has_help_option(
+        global_mapper_help,
+        "GlobalMapper.ba_skip_fixed_rotation_stage",
+    ) && has_help_option(
+        global_mapper_help,
+        "GlobalMapper.ba_skip_joint_optimization_stage",
+    );
     ColmapCapabilities {
         cuda_build,
         feature_extractor: has_help_command(main_help, "feature_extractor")
@@ -428,6 +456,10 @@ fn parse_colmap_capabilities_with_feature_help(
         mapper_ba_gpu,
         global_mapper: has_help_command(main_help, "global_mapper")
             || has_help_usage(global_mapper_help, "global_mapper"),
+        global_mapper_gravity,
+        global_mapper_gp_gpu,
+        global_mapper_ba_gpu,
+        global_mapper_fixed_rotation_ba,
         caspar: cuda_build && has_caspar_marker(bundle_adjuster_help),
         rig_configurator: has_help_command(main_help, "rig_configurator")
             || has_help_usage(rig_configurator_help, "rig_configurator"),
@@ -635,6 +667,31 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
         }
         if !colmap_capabilities.global_mapper {
             warnings.push("指定的 COLMAP 不提供 global_mapper；只能使用增量對齊".to_owned());
+        } else {
+            if !colmap_capabilities.global_mapper_gravity {
+                warnings.push(
+                    "指定的 global_mapper 未提供 gravity rotation averaging 選項；global gravity 模式不可用"
+                        .to_owned(),
+                );
+            }
+            if !colmap_capabilities.global_mapper_gp_gpu {
+                warnings.push(
+                    "指定的 global_mapper 未提供 GPU global positioning 選項；global positioning 會使用 CPU"
+                        .to_owned(),
+                );
+            }
+            if !colmap_capabilities.global_mapper_ba_gpu {
+                warnings.push(
+                    "指定的 global_mapper 未提供 GPU Ceres BA 選項；global Bundle Adjustment 會使用 CPU"
+                        .to_owned(),
+                );
+            }
+            if !colmap_capabilities.global_mapper_fixed_rotation_ba {
+                warnings.push(
+                    "指定的 global_mapper 未提供 fixed-rotation/joint BA stage 選項；無法使用固定旋轉實驗模式"
+                        .to_owned(),
+                );
+            }
         }
         if !colmap_capabilities.feature_extractor
             || !colmap_capabilities.mapper
@@ -704,7 +761,7 @@ mod tests {
         let capabilities = parse_colmap_capabilities(
             "COLMAP 4.1.1 -- Structure-from-Motion (Commit abc with CUDA)",
             "Available commands:\n  global_mapper\n  rig_configurator\n  matches_importer",
-            "Usage: colmap global_mapper [options]\n  --GlobalMapper.ba_ceres_use_gpu\n  --GlobalMapper.ba_ceres_gpu_index",
+            "Usage: colmap global_mapper [options]\n  --GlobalMapper.ra_use_gravity\n  --GlobalMapper.ra_use_stratified\n  --GlobalMapper.gp_use_gpu\n  --GlobalMapper.gp_gpu_index\n  --GlobalMapper.ba_ceres_use_gpu\n  --GlobalMapper.ba_ceres_gpu_index\n  --GlobalMapper.ba_skip_fixed_rotation_stage\n  --GlobalMapper.ba_skip_joint_optimization_stage",
             "Usage: colmap mapper [options]\n  --Mapper.ba_use_gpu\n  --Mapper.ba_gpu_index",
             "Usage: colmap bundle_adjuster [options]\n  --BundleAdjustmentCeres.use_gpu\n  --BundleAdjustmentCeres.gpu_index\n  --BundleAdjustmentCaspar.gpu_index",
             "Usage: colmap rig_configurator [options]",
@@ -714,6 +771,10 @@ mod tests {
         assert!(capabilities.cuda_build);
         assert!(capabilities.ceres_gpu);
         assert!(capabilities.global_mapper);
+        assert!(capabilities.global_mapper_gravity);
+        assert!(capabilities.global_mapper_gp_gpu);
+        assert!(capabilities.global_mapper_ba_gpu);
+        assert!(capabilities.global_mapper_fixed_rotation_ba);
         assert!(capabilities.caspar);
         assert!(capabilities.rig_configurator);
         assert!(capabilities.matches_importer);
@@ -735,6 +796,9 @@ mod tests {
         assert!(!capabilities.ceres_gpu);
         assert!(!capabilities.caspar);
         assert!(capabilities.global_mapper);
+        assert!(!capabilities.global_mapper_gravity);
+        assert!(!capabilities.global_mapper_gp_gpu);
+        assert!(capabilities.global_mapper_ba_gpu);
         assert!(capabilities.rig_configurator);
         assert!(capabilities.matches_importer);
     }
