@@ -1,12 +1,17 @@
 mod colmap_feature_cache;
+mod colmap_priors;
 mod doctor;
 mod extraction;
 mod fisheye;
+mod imu_calibration;
 mod masking;
+mod orientation_constraints;
 mod pipeline;
 mod process;
 mod project;
+mod reconstruction_benchmark;
 mod telemetry;
+mod visual_retrieval;
 
 use pipeline::{JobManager, StartStageRequest, StartStageResponse};
 use project::{CreateProjectRequest, InspectPathsResponse, ProjectManifest};
@@ -45,6 +50,23 @@ fn cancel_job(jobs: tauri::State<'_, JobManager>, job_id: String) -> bool {
     jobs.cancel(&job_id)
 }
 
+#[tauri::command]
+fn generate_benchmark_report(
+    project_path: String,
+    variant: reconstruction_benchmark::BenchmarkVariant,
+) -> Result<reconstruction_benchmark::ReconstructionBenchmarkReport, String> {
+    let root = std::path::PathBuf::from(project_path);
+    let mut request = reconstruction_benchmark::BenchmarkRequest::new(variant);
+    let text_model = root.join("metadata/final-model-text");
+    if text_model.is_dir() {
+        request.model_dir = Some(text_model);
+    }
+    let output = root
+        .join("metadata")
+        .join(format!("benchmark_{}.json", variant.as_str()));
+    reconstruction_benchmark::write_benchmark_report(&root, &request, &output)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -57,7 +79,8 @@ pub fn run() {
             create_project,
             load_project,
             start_stage,
-            cancel_job
+            cancel_job,
+            generate_benchmark_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

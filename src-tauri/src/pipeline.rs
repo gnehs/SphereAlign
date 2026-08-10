@@ -44,7 +44,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 3;
+const ALIGN_PIPELINE_REVISION: u32 = 4;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -61,6 +61,8 @@ struct AlignCheckpoint {
     fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     feature_fingerprint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effective_mapper: Option<String>,
     completed: bool,
 }
 
@@ -83,6 +85,8 @@ struct AlignFingerprintPayload {
     rig_config_sha256: String,
     pairs_sha256: String,
     frame_motion_sha256: String,
+    imu_calibration_sha256: String,
+    orientation_priors_sha256: String,
     global_mapper_priors_sha256: String,
     files: Vec<AlignFileIdentity>,
 }
@@ -3066,6 +3070,7 @@ fn motion_pair_is_compatible(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Pair policy inputs are intentionally explicit and independently tested.
 fn conditional_temporal_pair(
     pairs: &mut BTreeSet<String>,
     left_lens: usize,
@@ -3074,6 +3079,7 @@ fn conditional_temporal_pair(
     right: &str,
     offset: usize,
     source_motion: Option<&SourceFrameMotion>,
+    calibrated_fov_overlap: Option<bool>,
 ) {
     let should_keep = if offset <= 1 {
         true
@@ -3088,6 +3094,7 @@ fn conditional_temporal_pair(
                 // disconnected model.
                 motion_pair_is_compatible(source_motion, left_sequence, right_sequence)
                     .unwrap_or(true)
+                    && calibrated_fov_overlap.unwrap_or(true)
             }
             // Unknown filename identity must preserve the legacy graph.
             _ => true,
@@ -3098,7 +3105,110 @@ fn conditional_temporal_pair(
     }
 }
 
+fn load_calibrated_camera_orientations(root: &Path) -> Result<BTreeMap<String, [f64; 4]>, String> {
+    let bundle = serde_json::from_slice::<ImuCalibrationBundle>(
+        &fs::read(root.join("metadata/imu_calibration.json"))
+            .map_err(|error| format!("找不到目前的 IMU calibration bundle：{error}"))?,
+    )
+    .map_err(|error| format!("IMU calibration bundle 格式無效：{error}"))?;
+    let rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+        &fs::read(root.join("rig_config.json")).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let camera_rotations = rig_camera_rotations(&rig_configs)?;
+    let metadata = root.join("metadata");
+    let mut manifest_paths = fs::read_dir(&metadata)
+        .map_err(|error| error.to_string())?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.starts_with("orientation_priors_source") && name.ends_with(".json")
+                })
+        })
+        .collect::<Vec<_>>();
+    manifest_paths.sort();
+    let mut output = BTreeMap::new();
+    for path in manifest_paths {
+        let manifest = crate::orientation_constraints::OrientationPriorManifest::read_json(&path)?;
+        let source_id = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("orientation_priors_"))
+            .and_then(|name| name.strip_suffix(".json"))
+            .ok_or_else(|| format!("orientation prior 檔名無法辨識：{}", path.display()))?;
+        let source = bundle
+            .sources
+            .iter()
+            .find(|source| source.source_id == source_id && source.model.valid)
+            .ok_or_else(|| format!("{source_id} 沒有目前有效的 IMU calibration"))?;
+        let current_telemetry_hash =
+            optional_file_sha256(&metadata.join(format!("{source_id}_telemetry.json")))?;
+        if manifest.calibration_version != bundle.calibration_version
+            || manifest.source.telemetry_sha256.as_deref() != Some(source.telemetry_sha256.as_str())
+            || current_telemetry_hash != source.telemetry_sha256
+        {
+            return Err(format!("{source_id} 的 orientation prior 已過期"));
+        }
+        for prior in manifest.priors {
+            if source_name_from_image(&prior.rig_frame_id) != source_id
+                || !root
+                    .join("images/lens0")
+                    .join(&prior.rig_frame_id)
+                    .is_file()
+            {
+                return Err(format!(
+                    "{source_id} 的 orientation prior 不對應目前影格：{}",
+                    prior.rig_frame_id
+                ));
+            }
+            for (lens, cam_from_rig) in camera_rotations.iter().enumerate() {
+                let camera_from_world = crate::orientation_constraints::multiply_quaternions(
+                    *cam_from_rig,
+                    prior.rig_quaternion_wxyz,
+                )
+                .ok_or_else(|| "calibrated camera orientation 無效".to_owned())?;
+                let world_from_camera = invert_quaternion(camera_from_world)
+                    .ok_or_else(|| "calibrated camera orientation 無法反轉".to_owned())?;
+                output.insert(
+                    format!("lens{lens}/{}", prior.rig_frame_id),
+                    world_from_camera,
+                );
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn calibrated_pair_overlap(
+    orientations: &BTreeMap<String, [f64; 4]>,
+    left_lens: usize,
+    left: &str,
+    right_lens: usize,
+    right: &str,
+) -> Option<bool> {
+    if orientations.is_empty() {
+        return None;
+    }
+    let left = orientations.get(&format!("lens{left_lens}/{left}"))?;
+    let right = orientations.get(&format!("lens{right_lens}/{right}"))?;
+    // Slightly wider than a mathematical hemisphere preserves DJI's seam
+    // transition while still rejecting clearly disjoint long-range views.
+    crate::visual_retrieval::camera_views_overlap(*left, *right, 95.0, 95.0)
+}
+
+#[cfg(test)]
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
+    write_rig_and_pairs_with_options(root, true, false)
+}
+
+fn write_rig_and_pairs_with_options(
+    root: &Path,
+    use_visual_retrieval: bool,
+    use_calibrated_fov: bool,
+) -> Result<u64, String> {
     let rig_config = root.join("rig_config.json");
     let legacy_default = json!([{"cameras":[
         {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]);
@@ -3140,6 +3250,13 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
         return Err("至少需要兩組同名的 lens0/lens1 影格才能對齊".to_owned());
     }
     let frame_motion = load_frame_motion_metadata(root);
+    // Calibrated FOV pruning is an optimization only. Any missing, stale, or
+    // malformed calibration must preserve the conservative temporal graph.
+    let calibrated_camera_orientations = if use_calibrated_fov {
+        load_calibrated_camera_orientations(root).unwrap_or_default()
+    } else {
+        BTreeMap::new()
+    };
     let mut pairs = BTreeSet::new();
     for (index, name) in names.iter().enumerate() {
         pairs.insert(format!("lens0/{name} lens1/{name}"));
@@ -3161,11 +3278,51 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
                 pairs.insert(format!("lens0/{name} lens0/{neighbor}"));
                 pairs.insert(format!("lens1/{name} lens1/{neighbor}"));
             } else {
-                conditional_temporal_pair(&mut pairs, 0, 0, name, neighbor, offset, source_motion);
-                conditional_temporal_pair(&mut pairs, 1, 1, name, neighbor, offset, source_motion);
+                conditional_temporal_pair(
+                    &mut pairs,
+                    0,
+                    0,
+                    name,
+                    neighbor,
+                    offset,
+                    source_motion,
+                    None,
+                );
+                conditional_temporal_pair(
+                    &mut pairs,
+                    1,
+                    1,
+                    name,
+                    neighbor,
+                    offset,
+                    source_motion,
+                    None,
+                );
             }
-            conditional_temporal_pair(&mut pairs, 0, 1, name, neighbor, offset, source_motion);
-            conditional_temporal_pair(&mut pairs, 1, 0, name, neighbor, offset, source_motion);
+            let overlap_01 =
+                calibrated_pair_overlap(&calibrated_camera_orientations, 0, name, 1, neighbor);
+            let overlap_10 =
+                calibrated_pair_overlap(&calibrated_camera_orientations, 1, name, 0, neighbor);
+            conditional_temporal_pair(
+                &mut pairs,
+                0,
+                1,
+                name,
+                neighbor,
+                offset,
+                source_motion,
+                overlap_01,
+            );
+            conditional_temporal_pair(
+                &mut pairs,
+                1,
+                0,
+                name,
+                neighbor,
+                offset,
+                source_motion,
+                overlap_10,
+            );
         }
     }
     // Temporal neighbors alone only connect adjacent capture filenames.  For
@@ -3176,28 +3333,79 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
         let source = name.split_once('_').map_or("source", |(source, _)| source);
         sources.entry(source).or_default().push(name);
     }
-    let groups: Vec<Vec<&String>> = sources
-        .into_values()
-        .map(|frames| {
+    let groups: Vec<(&str, Vec<&String>)> = sources
+        .into_iter()
+        .map(|(source, frames)| {
             let step = (frames.len() / 20).max(1);
-            frames.into_iter().step_by(step).take(20).collect()
+            (source, frames.into_iter().step_by(step).take(20).collect())
         })
         .collect();
-    for left_index in 0..groups.len() {
-        for right_index in (left_index + 1)..groups.len() {
-            for left in &groups[left_index] {
-                for right in &groups[right_index] {
-                    for left_lens in 0..2 {
-                        for right_lens in 0..2 {
-                            pairs
-                                .insert(format!("lens{left_lens}/{left} lens{right_lens}/{right}"));
+    let retrieval_sources = groups
+        .iter()
+        .map(
+            |(source, frames)| crate::visual_retrieval::RetrievalSource {
+                source_id: (*source).to_owned(),
+                anchors: frames
+                    .iter()
+                    .map(|name| crate::visual_retrieval::RetrievalAnchor {
+                        frame_id: (*name).clone(),
+                        path: root.join("images/lens0").join(name),
+                        timestamp_ms: sequence_from_image_name(name).and_then(|sequence| {
+                            frame_motion
+                                .get(*source)
+                                .and_then(|motion| motion.frames.get(&sequence))
+                                .and_then(|frame| frame.timestamp_ms)
+                        }),
+                    })
+                    .collect(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let retrieval_report = use_visual_retrieval.then(|| {
+        crate::visual_retrieval::retrieve_cross_source_candidates(
+            &retrieval_sources,
+            &crate::visual_retrieval::RetrievalConfig::default(),
+        )
+    });
+    let use_legacy_cross_source = retrieval_report
+        .as_ref()
+        .is_none_or(crate::visual_retrieval::RetrievalReport::requires_fallback);
+    if use_legacy_cross_source {
+        for left_index in 0..groups.len() {
+            for right_index in (left_index + 1)..groups.len() {
+                for left in &groups[left_index].1 {
+                    for right in &groups[right_index].1 {
+                        for left_lens in 0..2 {
+                            for right_lens in 0..2 {
+                                pairs.insert(format!(
+                                    "lens{left_lens}/{left} lens{right_lens}/{right}"
+                                ));
+                            }
                         }
                     }
                 }
             }
         }
+    } else if let Some(report) = &retrieval_report {
+        for candidate in report.frame_candidates() {
+            for left_lens in 0..2 {
+                for right_lens in 0..2 {
+                    pairs.insert(format!(
+                        "lens{left_lens}/{} lens{right_lens}/{}",
+                        candidate.frame_a, candidate.frame_b
+                    ));
+                }
+            }
+        }
     }
     fs::create_dir_all(root.join("metadata")).map_err(|e| e.to_string())?;
+    if let Some(report) = &retrieval_report {
+        fs::write(
+            root.join("metadata/cross_source_retrieval.json"),
+            serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+    }
     fs::write(
         root.join("metadata/pairs.txt"),
         pairs.into_iter().collect::<Vec<_>>().join("\n") + "\n",
@@ -3206,18 +3414,38 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     Ok(names.len() as u64)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct RigBootstrapConfig {
     cameras: Vec<RigBootstrapCamera>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct RigBootstrapCamera {
     image_prefix: String,
     #[serde(default)]
     ref_sensor: bool,
     cam_from_rig_rotation: Option<Vec<f64>>,
     cam_from_rig_translation: Option<Vec<f64>>,
+}
+
+fn persist_rig_config_from_database(
+    root: &Path,
+    database: &Path,
+) -> Result<Vec<RigBootstrapConfig>, String> {
+    let cameras = crate::colmap_priors::read_rig_camera_extrinsics(database)?
+        .into_iter()
+        .map(|camera| RigBootstrapCamera {
+            image_prefix: camera.image_prefix,
+            ref_sensor: camera.ref_sensor,
+            cam_from_rig_rotation: (!camera.ref_sensor)
+                .then(|| camera.cam_from_rig_rotation.to_vec()),
+            cam_from_rig_translation: (!camera.ref_sensor)
+                .then(|| camera.cam_from_rig_translation.to_vec()),
+        })
+        .collect::<Vec<_>>();
+    let configs = vec![RigBootstrapConfig { cameras }];
+    write_json_atomic(&root.join("rig_config.json"), &configs)?;
+    Ok(configs)
 }
 
 impl RigBootstrapCamera {
@@ -3690,6 +3918,10 @@ fn build_align_fingerprint(
         rig_config_sha256: file_sha256(&root.join("rig_config.json"))?,
         pairs_sha256: file_sha256(&root.join("metadata/pairs.txt"))?,
         frame_motion_sha256: frame_motion_metadata_sha256(root)?,
+        imu_calibration_sha256: optional_file_sha256(&root.join("metadata/imu_calibration.json"))?,
+        orientation_priors_sha256: optional_file_sha256(
+            &root.join("metadata/orientation_priors.json"),
+        )?,
         global_mapper_priors_sha256: optional_file_sha256(
             &root.join("metadata/global_mapper_priors.json"),
         )?,
@@ -3733,11 +3965,13 @@ fn write_align_checkpoint(
     fingerprint: &str,
     feature_fingerprint: &str,
     completed: bool,
+    effective_mapper: Option<&str>,
 ) -> Result<(), String> {
     let checkpoint = AlignCheckpoint {
         schema_version: ALIGN_CHECKPOINT_SCHEMA_VERSION,
         fingerprint: fingerprint.to_owned(),
         feature_fingerprint: Some(feature_fingerprint.to_owned()),
+        effective_mapper: effective_mapper.map(str::to_owned),
         completed,
     };
     let bytes = serde_json::to_vec_pretty(&checkpoint).map_err(|error| error.to_string())?;
@@ -3874,12 +4108,40 @@ fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), S
         root.join("metadata/.align-unconfigured-database.backup.partial"),
     ];
     if !preserve_database {
+        invalidate_calibrated_prior_artifacts(root)?;
         paths.extend([
             root.join("database.db"),
             root.join("database.db-wal"),
             root.join("database.db-shm"),
             root.join("database.db-journal"),
         ]);
+    }
+    for path in paths {
+        remove_align_artifact(&path)?;
+    }
+    Ok(())
+}
+
+fn invalidate_calibrated_prior_artifacts(root: &Path) -> Result<(), String> {
+    let metadata = root.join("metadata");
+    let mut paths = vec![
+        metadata.join("global_mapper_priors.json"),
+        metadata.join("imu_calibration.json"),
+        metadata.join("orientation_priors.json"),
+    ];
+    if let Ok(entries) = fs::read_dir(&metadata) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if (name.starts_with("orientation_priors_source")
+                || name.starts_with("rolling_shutter_source"))
+                && name.ends_with(".json")
+            {
+                paths.push(path);
+            }
+        }
     }
     for path in paths {
         remove_align_artifact(&path)?;
@@ -4364,8 +4626,9 @@ fn global_mapper_args(
     use_gpu: bool,
     gpu_index: &str,
     use_gravity_prior: bool,
+    fixed_rotation_ba: bool,
 ) -> Vec<String> {
-    vec![
+    let mut args = vec![
         "global_mapper".into(),
         "--database_path".into(),
         db.to_string_lossy().into_owned(),
@@ -4385,7 +4648,11 @@ fn global_mapper_args(
             "0".into()
         },
         "--GlobalMapper.ra_use_stratified".into(),
-        "1".into(),
+        if use_gravity_prior {
+            "1".into()
+        } else {
+            "0".into()
+        },
         "--GlobalMapper.gp_use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--GlobalMapper.gp_gpu_index".into(),
@@ -4394,6 +4661,28 @@ fn global_mapper_args(
         if use_gpu { "1".into() } else { "0".into() },
         "--GlobalMapper.ba_ceres_gpu_index".into(),
         mapper_gpu_index(gpu_index).to_owned(),
+    ];
+    if fixed_rotation_ba {
+        args.extend([
+            "--GlobalMapper.ba_skip_joint_optimization_stage".into(),
+            "1".into(),
+        ]);
+    }
+    args
+}
+
+fn view_graph_calibrator_args(database: &Path) -> Vec<String> {
+    vec![
+        "view_graph_calibrator".into(),
+        "--database_path".into(),
+        database.to_string_lossy().into_owned(),
+        // Keep COLMAP 4.1.1's documented cross-validation and relative-pose
+        // refresh enabled.  The command writes an estimated focal length and
+        // sets has_prior_focal_length only after calibration succeeds.
+        "--cross_validate_prior_focal_lengths".into(),
+        "1".into(),
+        "--reestimate_relative_pose".into(),
+        "1".into(),
     ]
 }
 
@@ -4416,10 +4705,574 @@ struct GlobalMapperPriorMetadata {
     database_pose_priors_injected: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceImuCalibration {
+    source_id: String,
+    telemetry_sha256: String,
+    visual_sample_count: usize,
+    telemetry_sample_count: usize,
+    model: crate::imu_calibration::CalibrationModel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImuCalibrationBundle {
+    schema_version: u32,
+    calibration_version: String,
+    valid_source_count: usize,
+    source_count: usize,
+    sources: Vec<SourceImuCalibration>,
+}
+
+fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} 沒有 parent directory", path.display()))?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let temporary = path.with_extension("json.partial");
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    fs::rename(&temporary, path).map_err(|error| error.to_string())
+}
+
+fn export_colmap_text_model(
+    app: &AppHandle,
+    id: &str,
+    colmap: &Path,
+    input: &Path,
+    output: &Path,
+    control: &JobControl,
+) -> Result<(), String> {
+    remove_align_artifact(output)?;
+    fs::create_dir_all(output).map_err(|error| error.to_string())?;
+    run_child(
+        app,
+        id,
+        colmap,
+        &[
+            "model_converter".into(),
+            "--input_path".into(),
+            input.to_string_lossy().into_owned(),
+            "--output_path".into(),
+            output.to_string_lossy().into_owned(),
+            "--output_type".into(),
+            "TXT".into(),
+        ],
+        control,
+    )
+}
+
+fn visual_samples_by_source(
+    root: &Path,
+    model: &crate::reconstruction_benchmark::ColmapTextModel,
+) -> BTreeMap<String, Vec<crate::imu_calibration::VisualRotationSample>> {
+    let motion = load_frame_motion_metadata(root);
+    let mut sources = BTreeMap::<String, Vec<_>>::new();
+    for image in &model.images {
+        let Some(name) = image.name.strip_prefix("lens0/") else {
+            continue;
+        };
+        let source = source_name_from_image(name);
+        let Some(sequence) = sequence_from_image_name(name) else {
+            continue;
+        };
+        let Some(timestamp_ms) = motion
+            .get(source)
+            .and_then(|source| source.frames.get(&sequence))
+            .and_then(|frame| frame.timestamp_ms)
+            .filter(|timestamp| timestamp.is_finite())
+        else {
+            continue;
+        };
+        sources.entry(source.to_owned()).or_default().push(
+            crate::imu_calibration::VisualRotationSample {
+                timestamp_ms,
+                rotation_wxyz: image.qvec_camera_from_world,
+            },
+        );
+    }
+    for samples in sources.values_mut() {
+        samples.sort_by(|left, right| left.timestamp_ms.total_cmp(&right.timestamp_ms));
+    }
+    sources
+}
+
+fn calibrate_imu_sources(
+    root: &Path,
+    text_model: &crate::reconstruction_benchmark::ColmapTextModel,
+) -> Result<ImuCalibrationBundle, String> {
+    let visual = visual_samples_by_source(root, text_model);
+    let mut sources = Vec::new();
+    for (source_id, visual_samples) in visual {
+        let telemetry_path = root
+            .join("metadata")
+            .join(format!("{source_id}_telemetry.json"));
+        let telemetry_sha256 = optional_file_sha256(&telemetry_path)?;
+        let normalized = match telemetry::read_normalized_telemetry(&telemetry_path) {
+            Ok(value) => value,
+            Err(error) => {
+                sources.push(SourceImuCalibration {
+                    source_id,
+                    telemetry_sha256,
+                    visual_sample_count: visual_samples.len(),
+                    telemetry_sample_count: 0,
+                    model: crate::imu_calibration::CalibrationModel::invalid(error),
+                });
+                continue;
+            }
+        };
+        let telemetry_sample_count = normalized.fused_attitude.len();
+        let model = crate::imu_calibration::estimate_calibration(
+            &visual_samples,
+            &normalized.fused_attitude,
+            crate::imu_calibration::CalibrationConfig::default(),
+        )
+        .unwrap_or_else(|error| {
+            crate::imu_calibration::CalibrationModel::invalid(error.to_string())
+        });
+        sources.push(SourceImuCalibration {
+            source_id,
+            telemetry_sha256,
+            visual_sample_count: visual_samples.len(),
+            telemetry_sample_count,
+            model,
+        });
+    }
+    let valid_source_count = sources.iter().filter(|source| source.model.valid).count();
+    // Orientation manifests are rig-frame values, so the calibration identity
+    // must change when either telemetry/hand-eye results or rig extrinsics do.
+    let version_payload = serde_json::to_vec(&json!({
+        "sources": &sources,
+        "rigConfigSha256": file_sha256(&root.join("rig_config.json"))?,
+    }))
+    .map_err(|error| error.to_string())?;
+    let digest = sha256_hex(&version_payload);
+    let bundle = ImuCalibrationBundle {
+        schema_version: crate::imu_calibration::IMU_CALIBRATION_SCHEMA_VERSION,
+        calibration_version: format!("imu-hand-eye-v1-{}", &digest[..16]),
+        valid_source_count,
+        source_count: sources.len(),
+        sources,
+    };
+    write_json_atomic(&root.join("metadata/imu_calibration.json"), &bundle)?;
+    Ok(bundle)
+}
+
+fn invert_quaternion(value: [f64; 4]) -> Option<[f64; 4]> {
+    telemetry::normalize_quaternion(value).map(|value| [value[0], -value[1], -value[2], -value[3]])
+}
+
+fn rig_camera_rotations(configs: &[RigBootstrapConfig]) -> Result<[[f64; 4]; 2], String> {
+    let mut rotations = [[1.0, 0.0, 0.0, 0.0]; 2];
+    let mut found = [false; 2];
+    for camera in configs.iter().flat_map(|config| &config.cameras) {
+        let lens = if camera.image_prefix == "lens0/" {
+            Some(0)
+        } else if camera.image_prefix == "lens1/" {
+            Some(1)
+        } else {
+            None
+        };
+        let Some(lens) = lens else { continue };
+        let rotation = if camera.ref_sensor {
+            [1.0, 0.0, 0.0, 0.0]
+        } else {
+            let values = camera
+                .cam_from_rig_rotation
+                .as_ref()
+                .filter(|values| values.len() == 4)
+                .ok_or_else(|| format!("lens{lens} 缺少 cam_from_rig rotation"))?;
+            telemetry::normalize_quaternion([values[0], values[1], values[2], values[3]])
+                .ok_or_else(|| format!("lens{lens} cam_from_rig rotation 無效"))?
+        };
+        rotations[lens] = rotation;
+        found[lens] = true;
+    }
+    if found != [true, true] {
+        return Err("rig_config.json 必須同時包含 lens0/ 與 lens1/".to_owned());
+    }
+    Ok(rotations)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OrientationPriorIndex {
+    schema_version: u32,
+    format: &'static str,
+    calibration_version: String,
+    source_manifests: Vec<String>,
+    valid_source_count: usize,
+}
+
+fn source_frames_with_timestamps(root: &Path, source_id: &str) -> Vec<(String, f64)> {
+    let motion = load_frame_motion_metadata(root);
+    let Some(source_motion) = motion.get(source_id) else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(root.join("images/lens0")) else {
+        return Vec::new();
+    };
+    let mut frames = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_owned();
+            if source_name_from_image(&name) != source_id {
+                return None;
+            }
+            let sequence = sequence_from_image_name(&name)?;
+            let timestamp_ms = source_motion.frames.get(&sequence)?.timestamp_ms?;
+            timestamp_ms.is_finite().then_some((name, timestamp_ms))
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by(|left, right| {
+        left.1
+            .total_cmp(&right.1)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    frames
+}
+
+fn build_orientation_and_gravity_priors(
+    root: &Path,
+    bundle: &ImuCalibrationBundle,
+    rig_configs: &[RigBootstrapConfig],
+    export_rolling_shutter: bool,
+) -> Result<Vec<crate::colmap_priors::GravityPriorInput>, String> {
+    let camera_rotations = rig_camera_rotations(rig_configs)?;
+    let rig_from_camera0 = invert_quaternion(camera_rotations[0])
+        .ok_or_else(|| "lens0 cam_from_rig quaternion 無效".to_owned())?;
+    let mut gravity = Vec::new();
+    let mut source_manifests = Vec::new();
+    for source in &bundle.sources {
+        if !source.model.valid {
+            continue;
+        }
+        let time_offset_ms = source
+            .model
+            .time_offset_ms
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| format!("{} 缺少有效 time offset", source.source_id))?;
+        let sensor_to_camera = source
+            .model
+            .sensor_to_camera_quaternion
+            .ok_or_else(|| format!("{} 缺少 sensor-to-camera quaternion", source.source_id))?;
+        let sensor_to_rig = crate::orientation_constraints::multiply_quaternions(
+            rig_from_camera0,
+            sensor_to_camera,
+        )
+        .ok_or_else(|| format!("{} sensor-to-rig quaternion 無效", source.source_id))?;
+        let normalized = telemetry::read_normalized_telemetry(
+            &root
+                .join("metadata")
+                .join(format!("{}_telemetry.json", source.source_id)),
+        )?;
+        let timeline = normalized.attitude_timeline();
+        let frames = source_frames_with_timestamps(root, &source.source_id);
+        if frames.is_empty() {
+            continue;
+        }
+        let invert_telemetry = matches!(
+            source.model.telemetry_orientation_convention,
+            Some(crate::imu_calibration::TelemetryOrientationConvention::Inverted)
+        );
+        let provenance = crate::orientation_constraints::OrientationProvenance {
+            source: "dji_fused_attitude_calibrated".to_owned(),
+            telemetry_sha256: Some(source.telemetry_sha256.clone()),
+            parser_revision: Some(normalized.parser_revision.clone()),
+            timestamp_source: "ffmpeg_pts_exposure_center".to_owned(),
+            coordinate_transform: bundle.calibration_version.clone(),
+        };
+        let residuals = vec![source.model.residual_deg.unwrap_or(8.0); frames.len()];
+        let priors = crate::orientation_constraints::build_orientation_priors(
+            &frames,
+            &timeline,
+            time_offset_ms,
+            invert_telemetry,
+            sensor_to_rig,
+            None,
+            None,
+            &provenance,
+            &bundle.calibration_version,
+            Some(&residuals),
+        )?;
+        let validation = crate::orientation_constraints::OrientationValidationConfig {
+            min_coverage_ratio: MIN_GLOBAL_GRAVITY_COVERAGE_RATIO,
+            max_residual_angle_deg: 8.0,
+            max_abs_time_offset_ms: 500.0,
+            max_timestamp_error_ms: 1.0,
+            expected_calibration_version: Some(bundle.calibration_version.clone()),
+        };
+        let manifest = crate::orientation_constraints::OrientationPriorManifest::new(
+            priors,
+            &frames.iter().map(|frame| frame.1).collect::<Vec<_>>(),
+            timeline.coverage().map(|(start, end)| [start, end]),
+            time_offset_ms,
+            bundle.calibration_version.clone(),
+            provenance,
+            &validation,
+        )?;
+        let manifest_name = format!("orientation_priors_{}.json", source.source_id);
+        manifest.write_json(&root.join("metadata").join(&manifest_name))?;
+        source_manifests.push(manifest_name);
+        if export_rolling_shutter {
+            let mut trajectories = Vec::new();
+            if let Some(readout_time_ms) = normalized
+                .sensor_readout_time_ms
+                .filter(|value| value.is_finite() && *value >= 0.0)
+            {
+                for (frame_id, timestamp_ms) in &frames {
+                    let image_path = root.join("images/lens0").join(frame_id);
+                    let Ok((_, image_height)) = image::image_dimensions(&image_path) else {
+                        continue;
+                    };
+                    trajectories.push(
+                        crate::orientation_constraints::sample_rolling_shutter_trajectory(
+                            frame_id,
+                            *timestamp_ms,
+                            readout_time_ms,
+                            time_offset_ms,
+                            invert_telemetry,
+                            sensor_to_rig,
+                            image_height,
+                            9,
+                            &timeline,
+                        )?,
+                    );
+                }
+            }
+            write_json_atomic(
+                &root
+                    .join("metadata")
+                    .join(format!("rolling_shutter_{}.json", source.source_id)),
+                &json!({
+                    "schemaVersion": 1,
+                    "sourceId": source.source_id,
+                    "readoutTimeMs": normalized.sensor_readout_time_ms,
+                    "available": normalized.sensor_readout_time_ms.is_some(),
+                    "pixelsModified": false,
+                    "trajectories": trajectories,
+                }),
+            )?;
+        }
+        for prior in &manifest.priors {
+            for (lens, cam_from_rig) in camera_rotations.iter().enumerate() {
+                let camera_from_world = crate::orientation_constraints::multiply_quaternions(
+                    *cam_from_rig,
+                    prior.rig_quaternion_wxyz,
+                )
+                .ok_or_else(|| format!("{} lens{lens} pose 無效", prior.rig_frame_id))?;
+                let gravity_camera =
+                    crate::visual_retrieval::rotate_vector(camera_from_world, [0.0, 0.0, 1.0])
+                        .ok_or_else(|| format!("{} lens{lens} gravity 無效", prior.rig_frame_id))?;
+                gravity.push(crate::colmap_priors::GravityPriorInput {
+                    image_name: format!("lens{lens}/{}", prior.rig_frame_id),
+                    gravity: gravity_camera,
+                });
+            }
+        }
+    }
+    let canonical_path = root.join("metadata/orientation_priors.json");
+    if source_manifests.len() == 1 {
+        let manifest = crate::orientation_constraints::OrientationPriorManifest::read_json(
+            &root.join("metadata").join(&source_manifests[0]),
+        )?;
+        manifest.write_json(&canonical_path)?;
+    } else {
+        let index = OrientationPriorIndex {
+            schema_version: 1,
+            format: "gs360.orientation-prior-index/v1",
+            calibration_version: bundle.calibration_version.clone(),
+            valid_source_count: source_manifests.len(),
+            source_manifests,
+        };
+        write_json_atomic(&canonical_path, &index)?;
+    }
+    Ok(gravity)
+}
+
+fn representative_time_offset(bundle: &ImuCalibrationBundle) -> Option<f64> {
+    let mut offsets = bundle
+        .sources
+        .iter()
+        .filter(|source| source.model.valid)
+        .filter_map(|source| source.model.time_offset_ms)
+        .filter(|value| value.is_finite())
+        .collect::<Vec<_>>();
+    offsets.sort_by(f64::total_cmp);
+    offsets.get(offsets.len() / 2).copied()
+}
+
+#[allow(clippy::too_many_arguments)] // This orchestration boundary carries progress and cancellation context.
+fn prepare_global_mapper_priors_from_seed(
+    app: &AppHandle,
+    id: &str,
+    root: &Path,
+    colmap: &Path,
+    seed_model: &Path,
+    database: &Path,
+    rig_configs: &[RigBootstrapConfig],
+    export_rolling_shutter: bool,
+    control: &JobControl,
+) -> Result<crate::colmap_priors::GlobalMapperPriorReport, String> {
+    let text_model_dir = root.join("metadata/final-model-text");
+    export_colmap_text_model(app, id, colmap, seed_model, &text_model_dir, control)?;
+    let text_model = crate::reconstruction_benchmark::read_colmap_text_model(&text_model_dir)?;
+    let bundle = calibrate_imu_sources(root, &text_model)?;
+    if bundle.valid_source_count == 0 {
+        return Err("沒有來源通過時間偏移與 rotational hand-eye 校正".to_owned());
+    }
+    let gravity =
+        build_orientation_and_gravity_priors(root, &bundle, rig_configs, export_rolling_shutter)?;
+    if gravity.is_empty() {
+        return Err("校正通過但沒有影格落在 fused attitude coverage 內".to_owned());
+    }
+    let focal = crate::colmap_priors::read_focal_prior_inputs(database, "view_graph_calibrator")?;
+    let calibration = crate::colmap_priors::PriorCalibrationMetadata {
+        calibration_version: Some(bundle.calibration_version.clone()),
+        time_offset_ms: representative_time_offset(&bundle),
+        require_complete_rig_extrinsics: true,
+    };
+    let report = crate::colmap_priors::inject_global_mapper_priors(
+        database,
+        &focal,
+        &gravity,
+        &calibration,
+    )?;
+    if !report.marker.focal_prior_valid || !report.marker.gravity_prior_valid {
+        return Err(format!(
+            "prior coverage 不足：focal {:.1}%、gravity {:.1}%",
+            report.marker.focal_coverage_ratio * 100.0,
+            report.marker.gravity_coverage_ratio * 100.0
+        ));
+    }
+    crate::colmap_priors::write_global_mapper_prior_marker(
+        &root.join("metadata/global_mapper_priors.json"),
+        &report,
+    )?;
+    Ok(report)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn refresh_calibrated_pair_matches(
+    app: &AppHandle,
+    id: &str,
+    root: &Path,
+    colmap: &Path,
+    database: &Path,
+    gpu_index: &str,
+    use_gpu: bool,
+    use_visual_retrieval: bool,
+    use_calibrated_fov: bool,
+    control: &JobControl,
+) -> Result<bool, String> {
+    let pairs_path = root.join("metadata/pairs.txt");
+    let original_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
+    let original_hash = sha256_hex(&original_pairs);
+    write_rig_and_pairs_with_options(root, use_visual_retrieval, use_calibrated_fov)?;
+    let calibrated_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
+    if sha256_hex(&calibrated_pairs) == original_hash {
+        return Ok(false);
+    }
+    let database_backup = root.join("metadata/.align-pre-calibrated-pairs.backup");
+    remove_align_artifact(&database_backup)?;
+    create_colmap_database_backup(database, &database_backup)?;
+    let result = clear_matching_cache(database)
+        .map_err(|error| error.to_string())
+        .and_then(|()| {
+            let args = matches_importer_args(root, database, use_gpu, gpu_index);
+            run_child(app, id, colmap, &args, control)
+        });
+    match result {
+        Ok(()) => {
+            remove_align_artifact(&database_backup)?;
+            Ok(true)
+        }
+        Err(error) => {
+            restore_colmap_database_backup(database, &database_backup)?;
+            remove_align_artifact(&database_backup)?;
+            fs::write(&pairs_path, original_pairs)
+                .map_err(|write_error| format!("{error}；還原 pairs.txt 失敗：{write_error}"))?;
+            Err(error)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // External solver invocation keeps all validated paths explicit.
+fn run_external_orientation_ba_candidate(
+    app: &AppHandle,
+    id: &str,
+    root: &Path,
+    executable: &Path,
+    colmap: &Path,
+    database: &Path,
+    sparse: &Path,
+    fixed_rotation: bool,
+    control: &JobControl,
+) -> Result<(), String> {
+    if !executable.is_file() {
+        return Err(format!(
+            "找不到 orientation BA 執行檔：{}",
+            executable.display()
+        ));
+    }
+    if control.cancelled.load(Ordering::SeqCst) {
+        return Err("cancelled before external orientation BA capability probe".to_owned());
+    }
+    let capability_output = silent_command(executable)
+        .args(crate::orientation_constraints::external_orientation_ba_capability_args())
+        .output()
+        .map_err(|error| format!("無法執行 orientation BA capability probe：{error}"))?;
+    if !capability_output.status.success() {
+        return Err(format!(
+            "orientation BA capability probe 失敗：{}",
+            String::from_utf8_lossy(&capability_output.stderr).trim()
+        ));
+    }
+    let capability = crate::orientation_constraints::parse_external_orientation_ba_capability(
+        &String::from_utf8_lossy(&capability_output.stdout),
+    )?;
+    capability.validate()?;
+    let manifest_path = root.join("metadata/orientation_priors.json");
+    crate::orientation_constraints::OrientationPriorManifest::read_json(&manifest_path)?;
+    let candidate = root.join("sparse_orientation_candidate");
+    let output_database = root.join("metadata/orientation-ba-database.db");
+    remove_align_artifact(&candidate)?;
+    remove_colmap_database_artifacts(&output_database)?;
+    fs::create_dir_all(candidate.join("0")).map_err(|error| error.to_string())?;
+    let args = crate::orientation_constraints::external_orientation_ba_model_args(
+        &manifest_path,
+        database,
+        &output_database,
+        &sparse.join("0"),
+        &candidate.join("0"),
+        fixed_rotation,
+    )?;
+    run_child(app, id, executable, &args, control)?;
+    if !sparse_rig_model_exists(&candidate) {
+        return Err("orientation BA 未產生可驗證的 rig sparse model".to_owned());
+    }
+    validate_colmap_configured_rig_model(app, id, colmap, root, &candidate.join("0"), control)?;
+    let visual_backup = root.join("sparse_visual_backup");
+    remove_align_artifact(&visual_backup)?;
+    fs::rename(sparse, &visual_backup)
+        .map_err(|error| format!("無法保存 visual sparse model：{error}"))?;
+    if let Err(error) = fs::rename(&candidate, sparse) {
+        fs::rename(&visual_backup, sparse).map_err(|restore_error| {
+            format!("orientation BA 模型提交失敗：{error}；visual 模型還原也失敗：{restore_error}")
+        })?;
+        return Err(format!("orientation BA 模型提交失敗：{error}"));
+    }
+    Ok(())
+}
+
 fn has_valid_global_mapper_priors(root: &Path, require_gravity: bool) -> bool {
-    // The current extractor deliberately does not inject COLMAP focal/gravity
-    // priors. Treat an explicit, validated marker as the opt-in contract for
-    // a future calibration stage instead of guessing from default focal 0.3.
+    // Treat only the marker emitted after database round-trip validation as
+    // authoritative. This prevents an interrupted calibration or the default
+    // focal 0.3 initialization from enabling global mapping on a later run.
     let path = root.join("metadata/global_mapper_priors.json");
     let Ok(metadata) =
         serde_json::from_slice::<GlobalMapperPriorMetadata>(&fs::read(path).unwrap_or_default())
@@ -4447,6 +5300,7 @@ fn global_mapper_prerequisite_error(
     rig_preconfigured: bool,
     capabilities: &crate::doctor::ColmapCapabilities,
     use_gravity_prior: bool,
+    fixed_rotation_ba: bool,
 ) -> Option<String> {
     if !capabilities.global_mapper {
         return Some("指定的 COLMAP 不提供 global_mapper command".to_owned());
@@ -4469,6 +5323,9 @@ fn global_mapper_prerequisite_error(
                 .to_owned(),
         );
     }
+    if fixed_rotation_ba && !capabilities.global_mapper_fixed_rotation_ba {
+        return Some("指定的 global_mapper 缺少 fixed-rotation/joint BA stage 選項".to_owned());
+    }
     if !has_valid_global_mapper_priors(root, use_gravity_prior) {
         return Some(
             "尚未提供已驗證的 focal prior（gravity 模式另需 database pose prior、至少 80% coverage、時間偏移與 sensor-to-camera 校正版本；metadata/global_mapper_priors.json）；global mapper 拒絕執行以避免錯誤重建"
@@ -4486,13 +5343,25 @@ fn run_align(
     force_rebuild: bool,
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
+    let align_started = Instant::now();
+    let mut phase_durations_ms = BTreeMap::<String, f64>::new();
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
     let gpu_index = parse_gpu_index(&manifest.settings)?;
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", false);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
-    let rig_frame_count = write_rig_and_pairs(&root)?;
+    let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
+    let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
+    let use_calibrated_fov_pairs =
+        setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", true);
+    let pair_graph_started = Instant::now();
+    let rig_frame_count =
+        write_rig_and_pairs_with_options(&root, use_visual_retrieval, use_calibrated_fov_pairs)?;
+    phase_durations_ms.insert(
+        "pairGraph".to_owned(),
+        pair_graph_started.elapsed().as_secs_f64() * 1000.0,
+    );
     let pairs_path = root.join("metadata/pairs.txt");
     let pair_count = fs::read_to_string(&pairs_path)
         .map_err(|error| format!("無法讀取 {}：{error}", pairs_path.display()))?
@@ -4507,7 +5376,7 @@ fn run_align(
     );
     let (independent_image_total, rig_frame_total) = dual_fisheye_registration_totals(&root)?;
     let rig_config_path = root.join("rig_config.json");
-    let rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+    let mut rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
         &fs::read(&rig_config_path)
             .map_err(|error| format!("無法讀取 {}：{error}", rig_config_path.display()))?,
     )
@@ -4542,7 +5411,7 @@ fn run_align(
                 .to_owned(),
         );
     }
-    let mapper_mode = match requested_mapper_mode {
+    let mut mapper_mode = match requested_mapper_mode {
         MapperMode::Incremental => MapperMode::Incremental,
         MapperMode::Global => {
             if let Some(error) = global_mapper_prerequisite_error(
@@ -4550,6 +5419,7 @@ fn run_align(
                 rig_preconfigured,
                 &colmap_capabilities,
                 use_gravity_prior,
+                fixed_rotation_ba,
             ) {
                 return Err(format!(
                     "align.mapperMode=global 的前提不成立：{error}；請改用 incremental 或 auto"
@@ -4563,6 +5433,7 @@ fn run_align(
                 rig_preconfigured,
                 &colmap_capabilities,
                 use_gravity_prior,
+                fixed_rotation_ba,
             ) {
                 emit_log(
                     app,
@@ -4587,10 +5458,28 @@ fn run_align(
     let feature_fingerprint = build_feature_fingerprint(&root, &colmap_version, use_masks)?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
+    let external_orientation_requested = manifest
+        .settings
+        .pointer("/align/orientationPriorExecutable")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty());
+    let expected_effective_mapper = if external_orientation_requested {
+        "external_orientation_ba"
+    } else if mapper_mode == MapperMode::Global {
+        "global_mapper"
+    } else {
+        "final_mapper"
+    };
     let checkpoint_matches = !force_rebuild
-        && checkpoint
-            .as_ref()
-            .is_some_and(|value| value.fingerprint == fingerprint);
+        && checkpoint.as_ref().is_some_and(|value| {
+            value.fingerprint == fingerprint
+                && value
+                    .effective_mapper
+                    .as_deref()
+                    .map_or(mapper_mode == MapperMode::Incremental, |mapper| {
+                        mapper == expected_effective_mapper
+                    })
+        });
     let feature_checkpoint_matches = !force_rebuild
         && checkpoint.as_ref().is_some_and(|value| {
             value.feature_fingerprint.as_deref() == Some(feature_fingerprint.as_str())
@@ -4694,6 +5583,13 @@ fn run_align(
         || !final_complete
         || cached_validation_error.is_some()
     {
+        if !checkpoint_matches {
+            // Calibration products depend on telemetry, rig configuration,
+            // image timing, pair policy, and parser revisions in the align
+            // fingerprint. Never carry them across a fingerprint change even
+            // when the SIFT feature cache itself remains reusable.
+            invalidate_calibrated_prior_artifacts(&root)?;
+        }
         if force_rebuild {
             emit_log(
                 app,
@@ -4812,7 +5708,13 @@ fn run_align(
         } else if !preserve_database {
             feature_cache_reusable = false;
         }
-        write_align_checkpoint(&checkpoint_path, &fingerprint, &feature_fingerprint, false)?;
+        write_align_checkpoint(
+            &checkpoint_path,
+            &fingerprint,
+            &feature_fingerprint,
+            false,
+            None,
+        )?;
     }
     let (feature_extraction_gpu, feature_matching_gpu, mapper_gpu) = if requested_gpu {
         if !colmap_capabilities.cuda_build {
@@ -4864,6 +5766,7 @@ fn run_align(
         );
     }
     let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
+    let feature_started = Instant::now();
     let feature_gpu_args = feature_extractor_args(&root, &db, true, &gpu_index, use_masks);
     let feature_cpu_args = feature_extractor_args(&root, &db, false, &gpu_index, use_masks);
     if feature_cache_reusable {
@@ -4928,6 +5831,7 @@ fn run_align(
             || {
                 // A GPU failure may leave a partially committed SQLite database.
                 // Retry CPU only after restoring the clean feature database.
+                invalidate_calibrated_prior_artifacts(&root)?;
                 remove_colmap_database_artifacts(&db)?;
                 highest_feature_fraction.set(0.0);
                 last_feature_emit.set(None);
@@ -4974,6 +5878,10 @@ fn run_align(
             "feature_extractor",
         );
     }
+    phase_durations_ms.insert(
+        "featureExtraction".to_owned(),
+        feature_started.elapsed().as_secs_f64() * 1000.0,
+    );
     if rig_preconfigured {
         // With calibrated extrinsics, configure frames before mapping so both
         // back-to-back sensors contribute to one rig pose from the beginning.
@@ -5001,6 +5909,7 @@ fn run_align(
         remove_align_artifact(&unconfigured_database_backup)?;
         emit_log(app, id, "info", "已在初始建模前套用固定雙鏡頭相對外參");
     }
+    let matching_started = Instant::now();
     emit_progress_detailed(
         app,
         id,
@@ -5098,6 +6007,109 @@ fn run_align(
         (Err(error), Err(cleanup_error)) => return Err(format!("{error}；{cleanup_error}")),
     }
     emit_colmap_step_completed(app, id, "matching", 1, "影像配對完成", "matches_importer");
+    phase_durations_ms.insert(
+        "matching".to_owned(),
+        matching_started.elapsed().as_secs_f64() * 1000.0,
+    );
+    let calibrate_focal_prior =
+        setting_bool(&manifest.settings, "/align/calibrateFocalPrior", true);
+    if calibrate_focal_prior && !has_valid_global_mapper_priors(&root, false) {
+        if colmap_capabilities.view_graph_calibrator {
+            let calibration_backup = root.join("metadata/.align-focal-calibration.backup");
+            remove_align_artifact(&calibration_backup)?;
+            create_colmap_database_backup(&db, &calibration_backup)?;
+            emit_log(
+                app,
+                id,
+                "info",
+                "正在以 view graph 校正 focal length；只有成功結果才會標記為 focal prior",
+            );
+            let result = run_child(app, id, &colmap, &view_graph_calibrator_args(&db), control);
+            match result {
+                Ok(()) => {
+                    match crate::colmap_priors::read_focal_prior_report(
+                        &db,
+                        "view_graph_calibrator",
+                    ) {
+                        Ok(report) if report.focal_prior_valid => {
+                            remove_align_artifact(&calibration_backup)?;
+                            emit_log(
+                                app,
+                                id,
+                                "info",
+                                format!(
+                                    "view graph focal calibration 已驗證（{:.1}% cameras）",
+                                    report.focal_coverage_ratio * 100.0
+                                ),
+                            );
+                        }
+                        Ok(report) => {
+                            restore_colmap_database_backup(&db, &calibration_backup)?;
+                            remove_align_artifact(&calibration_backup)?;
+                            emit_log(
+                                app,
+                                id,
+                                "warning",
+                                format!(
+                                    "view graph focal coverage 只有 {:.1}%，已還原資料庫",
+                                    report.focal_coverage_ratio * 100.0
+                                ),
+                            );
+                        }
+                        Err(error) => {
+                            restore_colmap_database_backup(&db, &calibration_backup)?;
+                            remove_align_artifact(&calibration_backup)?;
+                            emit_log(
+                                app,
+                                id,
+                                "warning",
+                                format!(
+                                    "view graph focal round-trip 驗證失敗，已還原資料庫：{error}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                Err(error) => {
+                    restore_colmap_database_backup(&db, &calibration_backup)?;
+                    remove_align_artifact(&calibration_backup)?;
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!(
+                            "view graph focal calibration 失敗，已還原資料庫並繼續 incremental：{error}"
+                        ),
+                    );
+                }
+            }
+        } else {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "目前 COLMAP 缺少 view_graph_calibrator，無法自動建立可信 focal prior",
+            );
+        }
+    }
+    if mapper_mode == MapperMode::Global
+        && !has_valid_global_mapper_priors(&root, use_gravity_prior)
+    {
+        let reason = "特徵資料庫重建後已驗證的 global prior marker 不再有效";
+        if requested_mapper_mode == MapperMode::Global {
+            return Err(format!(
+                "align.mapperMode=global 的前提在 mapping 前失效：{reason}；請先用 auto 建立新的 calibration seed"
+            ));
+        }
+        mapper_mode = MapperMode::Incremental;
+        emit_log(
+            app,
+            id,
+            "warning",
+            format!("mapperMode=auto：{reason}，先建立 incremental calibration seed"),
+        );
+    }
+    let mapping_started = Instant::now();
     if rig_mapping_plan == RigMappingPlan::BootstrapThenFinal {
         emit_progress_detailed(
             app,
@@ -5304,6 +6316,10 @@ fn run_align(
             }
             (Ok(_), Err(error)) => return Err(error),
         };
+        rig_configs = persist_rig_config_from_database(&root, &db)?;
+        if !rig_config_has_complete_sensor_poses(&rig_configs) {
+            return Err("rig_configurator 完成但無法持久化完整 sensor_from_rig 外參".to_owned());
+        }
         emit_log(
             app,
             id,
@@ -5388,6 +6404,7 @@ fn run_align(
             true,
             &gpu_index,
             use_gravity_prior,
+            fixed_rotation_ba,
         )
     } else {
         mapper_args(
@@ -5408,6 +6425,7 @@ fn run_align(
             false,
             &gpu_index,
             use_gravity_prior,
+            fixed_rotation_ba,
         )
     } else {
         mapper_args(
@@ -5487,7 +6505,310 @@ fn run_align(
         "info",
         format!("已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"),
     );
-    write_align_checkpoint(&checkpoint_path, &fingerprint, &feature_fingerprint, true)?;
+    let mut effective_final_mapper_component = final_mapper_component;
+    let rig_extrinsics_ready = rig_config_has_complete_sensor_poses(&rig_configs);
+    let auto_calibrate_telemetry =
+        setting_bool(&manifest.settings, "/align/autoCalibrateTelemetry", true);
+    if requested_mapper_mode == MapperMode::Auto
+        && mapper_mode == MapperMode::Incremental
+        && auto_calibrate_telemetry
+        && rig_extrinsics_ready
+        && colmap_capabilities.global_mapper
+        && colmap_capabilities.global_mapper_gravity
+    {
+        emit_log(
+            app,
+            id,
+            "info",
+            "正在從 incremental 種子模型估計 IMU 時間偏移與 rotational hand-eye calibration",
+        );
+        match prepare_global_mapper_priors_from_seed(
+            app,
+            id,
+            &root,
+            &colmap,
+            &sparse.join("0"),
+            &db,
+            &rig_configs,
+            setting_bool(
+                &manifest.settings,
+                "/align/exportRollingShutterTrajectory",
+                false,
+            ),
+            control,
+        ) {
+            Ok(report) => {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!(
+                        "IMU/focal prior 驗證通過：gravity coverage {:.1}%、focal coverage {:.1}%",
+                        report.marker.gravity_coverage_ratio * 100.0,
+                        report.marker.focal_coverage_ratio * 100.0
+                    ),
+                );
+                match refresh_calibrated_pair_matches(
+                    app,
+                    id,
+                    &root,
+                    &colmap,
+                    &db,
+                    &gpu_index,
+                    feature_matching_gpu,
+                    use_visual_retrieval,
+                    use_calibrated_fov_pairs,
+                    control,
+                ) {
+                    Ok(true) => emit_log(
+                        app,
+                        id,
+                        "info",
+                        "已依 calibrated FOV overlap 更新 pairs 並重新 matching",
+                    ),
+                    Ok(false) => {}
+                    Err(error) => emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!(
+                            "calibrated FOV pair refresh 失敗，已還原原 matching graph：{error}"
+                        ),
+                    ),
+                }
+                let fixed_validation =
+                    crate::orientation_constraints::validate_fixed_rotation_global_ba(
+                        crate::orientation_constraints::FixedRotationBackend::StockGlobalMapperGravity,
+                        &crate::orientation_constraints::FixedRotationGlobalBaPrerequisites {
+                            global_mapper_available: colmap_capabilities.global_mapper,
+                            fixed_rotation_option_available: colmap_capabilities
+                                .global_mapper_fixed_rotation_ba,
+                            rig_extrinsics_complete: rig_extrinsics_ready,
+                            focal_prior_valid: report.marker.focal_prior_valid,
+                            orientation_manifest_valid: false,
+                            gravity_prior_valid: report.marker.gravity_prior_valid,
+                            gravity_coverage_ratio: Some(
+                                report.marker.gravity_coverage_ratio,
+                            ),
+                            external_capability: None,
+                        },
+                    );
+                let enable_fixed_rotation = fixed_rotation_ba && fixed_validation.valid;
+                if fixed_rotation_ba && !enable_fixed_rotation {
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!(
+                            "固定旋轉 BA 前提不完整，維持 joint optimization：{}",
+                            fixed_validation.issues.join("；")
+                        ),
+                    );
+                }
+                let global_candidate = root.join("sparse_global_candidate");
+                remove_align_artifact(&global_candidate)?;
+                fs::create_dir_all(&global_candidate).map_err(|error| error.to_string())?;
+                let global_gpu = requested_gpu
+                    && colmap_capabilities.cuda_build
+                    && colmap_capabilities.global_mapper_gp_gpu
+                    && colmap_capabilities.global_mapper_ba_gpu;
+                let gpu_args = global_mapper_args(
+                    &db,
+                    &root.join("images"),
+                    &global_candidate,
+                    true,
+                    &gpu_index,
+                    use_gravity_prior,
+                    enable_fixed_rotation,
+                );
+                let cpu_args = global_mapper_args(
+                    &db,
+                    &root.join("images"),
+                    &global_candidate,
+                    false,
+                    &gpu_index,
+                    use_gravity_prior,
+                    enable_fixed_rotation,
+                );
+                let global_result = run_mapper_with_gpu_fallback(
+                    app,
+                    id,
+                    &colmap,
+                    &global_candidate,
+                    &gpu_args,
+                    &cpu_args,
+                    global_gpu,
+                    "global_mapper",
+                    control,
+                    || {},
+                    |_| {},
+                )
+                .and_then(|()| {
+                    if !sparse_rig_model_exists(&global_candidate) {
+                        return Err("global_mapper 未產生含 rigs/frames 的候選模型".to_owned());
+                    }
+                    validate_colmap_configured_rig_model(
+                        app,
+                        id,
+                        &colmap,
+                        &root,
+                        &global_candidate.join("0"),
+                        control,
+                    )?;
+                    Ok(())
+                });
+                match global_result {
+                    Ok(()) => {
+                        let incremental_seed = root.join("sparse_incremental_seed");
+                        remove_align_artifact(&incremental_seed)?;
+                        fs::rename(&sparse, &incremental_seed)
+                            .map_err(|error| format!("無法保存 incremental 種子模型：{error}"))?;
+                        if let Err(error) = fs::rename(&global_candidate, &sparse) {
+                            fs::rename(&incremental_seed, &sparse).map_err(|restore_error| {
+                                format!(
+                                    "global 模型提交失敗：{error}；incremental 種子還原也失敗：{restore_error}"
+                                )
+                            })?;
+                            return Err(format!("global 模型提交失敗：{error}"));
+                        }
+                        effective_final_mapper_component = "global_mapper";
+                        emit_log(
+                            app,
+                            id,
+                            "info",
+                            "global_mapper 候選模型驗證通過，已保留 incremental seed 並提交 global 結果",
+                        );
+                    }
+                    Err(error) if cancelled_error(&error, control) => return Err(error),
+                    Err(error) => {
+                        remove_align_artifact(&global_candidate)?;
+                        emit_log(
+                            app,
+                            id,
+                            "warning",
+                            format!("global_mapper 候選失敗，保留已驗證 incremental 結果：{error}"),
+                        );
+                    }
+                }
+            }
+            Err(error) if cancelled_error(&error, control) => return Err(error),
+            Err(error) => emit_log(
+                app,
+                id,
+                "warning",
+                format!("IMU/global 前提未通過，保留 incremental 結果：{error}"),
+            ),
+        }
+    }
+    if let Some(executable) = manifest
+        .settings
+        .pointer("/align/orientationPriorExecutable")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        emit_log(
+            app,
+            id,
+            "info",
+            "正在驗證並執行外部 orientation-aware BA；不會將 quaternion 傳給 stock COLMAP",
+        );
+        match run_external_orientation_ba_candidate(
+            app,
+            id,
+            &root,
+            &PathBuf::from(executable),
+            &colmap,
+            &db,
+            &sparse,
+            fixed_rotation_ba,
+            control,
+        ) {
+            Ok(()) => {
+                effective_final_mapper_component = "external_orientation_ba";
+                emit_log(app, id, "info", "外部 orientation BA 候選已驗證並提交");
+            }
+            Err(error) if cancelled_error(&error, control) => return Err(error),
+            Err(error) => {
+                remove_align_artifact(&root.join("sparse_orientation_candidate"))?;
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!("外部 orientation BA 未套用，保留 visual 模型：{error}"),
+                );
+            }
+        }
+    }
+    phase_durations_ms.insert(
+        "mapping".to_owned(),
+        mapping_started.elapsed().as_secs_f64() * 1000.0,
+    );
+    phase_durations_ms.insert(
+        "alignTotal".to_owned(),
+        align_started.elapsed().as_secs_f64() * 1000.0,
+    );
+    let timing_path = root.join("metadata/align_timings.json");
+    write_json_atomic(
+        &timing_path,
+        &json!({
+            "schemaVersion": 1,
+            "phaseDurationsMs": phase_durations_ms,
+            "effectiveMapper": effective_final_mapper_component,
+        }),
+    )?;
+    let final_fingerprint =
+        build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
+    write_align_checkpoint(
+        &checkpoint_path,
+        &final_fingerprint,
+        &feature_fingerprint,
+        true,
+        Some(effective_final_mapper_component),
+    )?;
+    let final_text_model = root.join("metadata/final-model-text");
+    export_colmap_text_model(
+        app,
+        id,
+        &colmap,
+        &sparse.join("0"),
+        &final_text_model,
+        control,
+    )?;
+    let benchmark_variant = if effective_final_mapper_component == "global_mapper" {
+        crate::reconstruction_benchmark::BenchmarkVariant::CGlobal
+    } else if setting_bool(&manifest.settings, "/extract/keyframePruning", true) {
+        crate::reconstruction_benchmark::BenchmarkVariant::BImuPruning
+    } else {
+        crate::reconstruction_benchmark::BenchmarkVariant::ACurrent
+    };
+    let benchmark_request = crate::reconstruction_benchmark::BenchmarkRequest {
+        variant: benchmark_variant,
+        model_dir: Some(final_text_model),
+        timing_path: Some(timing_path),
+    };
+    let benchmark_path = root
+        .join("metadata")
+        .join(format!("benchmark_{}.json", benchmark_variant.as_str()));
+    let benchmark = crate::reconstruction_benchmark::write_benchmark_report(
+        &root,
+        &benchmark_request,
+        &benchmark_path,
+    )?;
+    emit_log(
+        app,
+        id,
+        "info",
+        format!(
+            "已輸出 {} benchmark report（{}）",
+            benchmark_variant.as_str(),
+            if benchmark.partial {
+                "partial"
+            } else {
+                "complete"
+            }
+        ),
+    );
     remove_align_artifact(&unconfigured_database_backup)?;
     emit_colmap_step_completed(
         app,
@@ -5495,7 +6816,7 @@ fn run_align(
         "final-mapping",
         4,
         "最終模型重建完成",
-        final_mapper_component,
+        effective_final_mapper_component,
     );
     emit_progress_detailed(
         app,
@@ -5515,6 +6836,7 @@ fn run_align(
         db.to_string_lossy().into_owned(),
         root.join("rig_config.json").to_string_lossy().into_owned(),
         sparse.to_string_lossy().into_owned(),
+        benchmark_path.to_string_lossy().into_owned(),
     ])
 }
 
@@ -5528,9 +6850,10 @@ mod tests {
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
         extraction_completed_count, feature_extractor_args, global_mapper_args,
         global_mapper_prerequisite_error, has_valid_global_mapper_priors,
-        is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
-        keyframe_pruning_settings, load_candidate_selection_checkpoint, map_full_res_candidates,
-        mapper_args, mapper_gpu_index, mapper_mode, mask_classes, mask_confidence, mask_enabled,
+        invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
+        is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
+        load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
+        mapper_gpu_index, mapper_mode, mask_classes, mask_confidence, mask_enabled,
         matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
@@ -5987,6 +7310,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(checkpoint.feature_fingerprint, None);
+        assert_eq!(checkpoint.effective_mapper, None);
     }
 
     #[test]
@@ -6527,6 +7851,7 @@ mod tests {
             true,
             "2,3",
             true,
+            false,
         );
         let pairs = args
             .windows(2)
@@ -6539,6 +7864,22 @@ mod tests {
         assert!(pairs.contains(&("--GlobalMapper.ba_ceres_use_gpu", "1")));
         assert!(pairs.contains(&("--GlobalMapper.ba_ceres_gpu_index", "2")));
         assert!(pairs.contains(&("--GlobalMapper.refine_sensor_from_rig", "0")));
+
+        let without_gravity = global_mapper_args(
+            Path::new("database.db"),
+            Path::new("images"),
+            Path::new("sparse"),
+            false,
+            "-1",
+            false,
+            false,
+        );
+        let pairs = without_gravity
+            .windows(2)
+            .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+            .collect::<BTreeSet<_>>();
+        assert!(pairs.contains(&("--GlobalMapper.ra_use_gravity", "0")));
+        assert!(pairs.contains(&("--GlobalMapper.ra_use_stratified", "0")));
     }
 
     #[test]
@@ -6551,10 +7892,38 @@ mod tests {
             global_mapper_ba_gpu: true,
             ..Default::default()
         };
-        let error = global_mapper_prerequisite_error(temp.path(), true, &capabilities, true)
+        let error = global_mapper_prerequisite_error(temp.path(), true, &capabilities, true, false)
             .expect("missing global mapper priors must block explicit mode");
         assert!(error.contains("focal prior"));
         assert!(error.contains("global_mapper_priors.json"));
+    }
+
+    #[test]
+    fn invalidating_priors_removes_only_calibration_derived_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let metadata = temp.path().join("metadata");
+        fs::create_dir_all(&metadata).unwrap();
+        for name in [
+            "global_mapper_priors.json",
+            "imu_calibration.json",
+            "orientation_priors.json",
+            "orientation_priors_source000.json",
+            "rolling_shutter_source000.json",
+        ] {
+            fs::write(metadata.join(name), b"derived").unwrap();
+        }
+        fs::write(metadata.join("source000_telemetry.json"), b"source").unwrap();
+        fs::write(metadata.join("pairs.txt"), b"pairs").unwrap();
+
+        invalidate_calibrated_prior_artifacts(temp.path()).unwrap();
+
+        assert!(metadata.join("source000_telemetry.json").is_file());
+        assert!(metadata.join("pairs.txt").is_file());
+        assert!(!metadata.join("global_mapper_priors.json").exists());
+        assert!(!metadata.join("imu_calibration.json").exists());
+        assert!(!metadata.join("orientation_priors.json").exists());
+        assert!(!metadata.join("orientation_priors_source000.json").exists());
+        assert!(!metadata.join("rolling_shutter_source000.json").exists());
     }
 
     #[test]

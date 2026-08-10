@@ -78,6 +78,8 @@ pub struct ColmapCapabilities {
     pub global_mapper_ba_gpu: bool,
     /// `global_mapper` accepts the fixed-rotation BA stage controls.
     pub global_mapper_fixed_rotation_ba: bool,
+    /// The binary exposes COLMAP's focal-length view-graph calibration pass.
+    pub view_graph_calibrator: bool,
     pub caspar: bool,
     pub rig_configurator: bool,
     pub matches_importer: bool,
@@ -460,6 +462,7 @@ fn parse_colmap_capabilities_with_feature_help(
         global_mapper_gp_gpu,
         global_mapper_ba_gpu,
         global_mapper_fixed_rotation_ba,
+        view_graph_calibrator: has_help_command(main_help, "view_graph_calibrator"),
         caspar: cuda_build && has_caspar_marker(bundle_adjuster_help),
         rig_configurator: has_help_command(main_help, "rig_configurator")
             || has_help_usage(rig_configurator_help, "rig_configurator"),
@@ -693,6 +696,12 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
                 );
             }
         }
+        if !colmap_capabilities.view_graph_calibrator {
+            warnings.push(
+                "指定的 COLMAP 不提供 view_graph_calibrator；global mapper 的 focal prior 必須由外部校正提供"
+                    .to_owned(),
+            );
+        }
         if !colmap_capabilities.feature_extractor
             || !colmap_capabilities.mapper
             || !colmap_capabilities.model_converter
@@ -760,7 +769,7 @@ mod tests {
     fn parser_reads_cuda_and_colmap_4_commands_from_help() {
         let capabilities = parse_colmap_capabilities(
             "COLMAP 4.1.1 -- Structure-from-Motion (Commit abc with CUDA)",
-            "Available commands:\n  global_mapper\n  rig_configurator\n  matches_importer",
+            "Available commands:\n  global_mapper\n  view_graph_calibrator\n  rig_configurator\n  matches_importer",
             "Usage: colmap global_mapper [options]\n  --GlobalMapper.ra_use_gravity\n  --GlobalMapper.ra_use_stratified\n  --GlobalMapper.gp_use_gpu\n  --GlobalMapper.gp_gpu_index\n  --GlobalMapper.ba_ceres_use_gpu\n  --GlobalMapper.ba_ceres_gpu_index\n  --GlobalMapper.ba_skip_fixed_rotation_stage\n  --GlobalMapper.ba_skip_joint_optimization_stage",
             "Usage: colmap mapper [options]\n  --Mapper.ba_use_gpu\n  --Mapper.ba_gpu_index",
             "Usage: colmap bundle_adjuster [options]\n  --BundleAdjustmentCeres.use_gpu\n  --BundleAdjustmentCeres.gpu_index\n  --BundleAdjustmentCaspar.gpu_index",
@@ -775,6 +784,7 @@ mod tests {
         assert!(capabilities.global_mapper_gp_gpu);
         assert!(capabilities.global_mapper_ba_gpu);
         assert!(capabilities.global_mapper_fixed_rotation_ba);
+        assert!(capabilities.view_graph_calibrator);
         assert!(capabilities.caspar);
         assert!(capabilities.rig_configurator);
         assert!(capabilities.matches_importer);

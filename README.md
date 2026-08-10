@@ -21,10 +21,11 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 
 - **一個任務處理多段素材**：同一空間拍攝的多個 Osmo 360 檔案可整理進同一個重建專案。
 - **保留原生雙魚眼資料**：直接處理正反兩側魚眼影像，不先轉換為等距柱狀投影，避免多一次不必要的重採樣。
-- **自動挑選清晰影格**：先以輕量候選影格評分，再只輸出入選的完整解析度雙鏡配對。
+- **IMU＋畫面變化挑選影格**：以 fused attitude 相對角、低解析 visual novelty 與最大時間間隔挑選 keyframe，再只解碼入選的完整解析度雙鏡配對。
 - **減少動態干擾**：可遮除人、腳踏車、汽車、機車、公車、卡車與天空，讓重建更聚焦於穩定場景。
-- **針對 360 rig 對齊**：建立雙鏡頭相機設定、影像配對與 COLMAP 專案，不必手動串接每一個步驟。
-- **保留拍攝中繼資料**：可解析時保存原始 telemetry 與標準化摘要；尚未驗證的姿態不會直接套用到 COLMAP。
+- **針對 360 rig 對齊**：來源內使用 IMU-aware temporal graph，跨來源使用 bounded 視覺 retrieval；校正完成後可依魚眼 FOV overlap 再縮減配對。
+- **安全使用拍攝中繼資料**：先以視覺模型估時間偏移與 rotational hand-eye；通過 residual、coverage、rig 與 focal gate 後才寫入每鏡頭 gravity prior。完整 DJI quaternion 永遠不會直接冒充 COLMAP qvec。
+- **Incremental／Global 自動切換**：首次可用 incremental 建立校正種子；COLMAP 4.1.1 前提通過後，以候選 global model 驗證成功才取代原結果。
 - **本機優先**：影片、影格、遮罩與重建結果都在本機處理；首次使用遮罩功能時可能需要下載對應模型。
 - **環境能力檢查**：集中顯示 FFmpeg、COLMAP、硬體加速與儲存空間等執行條件。
 
@@ -34,4 +35,4 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 
 影格擷取、遮罩與對齊都能分開執行、取消、重試或重跑。已完成的產物會保留在專案中；再次開啟任務時，GS360 Studio 會檢查既有結果，盡可能從可安全沿用的進度繼續，而不是每次全部重來。
 
-開發環境、建置方式、架構、完整輸出結構與實作界線請參閱 [開發文件](docs/DEVELOPMENT.md)。
+IMU／global mapper 的校正 gate、產物與 benchmark 方法請參閱 [IMU 重建流程](docs/IMU_RECONSTRUCTION.md)。開發環境、建置方式、架構、完整輸出結構與實作界線請參閱 [開發文件](docs/DEVELOPMENT.md)。

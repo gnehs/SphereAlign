@@ -52,6 +52,7 @@ import { Progress, ProgressValue } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -101,7 +102,19 @@ interface PipelineSettings {
     minVisualNovelty: number;
   };
   mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
-  align: { useGpu: boolean; gpuIndex: string; mapperMode: "auto" | "incremental" | "global"; useGravityPrior: boolean };
+  align: {
+    useGpu: boolean;
+    gpuIndex: string;
+    mapperMode: "auto" | "incremental" | "global";
+    useGravityPrior: boolean;
+    autoCalibrateTelemetry: boolean;
+    calibrateFocalPrior: boolean;
+    useVisualRetrieval: boolean;
+    useCalibratedFovPairs: boolean;
+    fixedRotationBa: boolean;
+    exportRollingShutterTrajectory: boolean;
+    orientationPriorExecutable: string;
+  };
 }
 
 interface OsvSource {
@@ -229,7 +242,19 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     minVisualNovelty: 0.08,
   },
   mask: { yoloEnabled: true, classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
-  align: { useGpu: false, gpuIndex: "-1", mapperMode: "auto", useGravityPrior: false },
+  align: {
+    useGpu: false,
+    gpuIndex: "-1",
+    mapperMode: "auto",
+    useGravityPrior: true,
+    autoCalibrateTelemetry: true,
+    calibrateFocalPrior: true,
+    useVisualRetrieval: true,
+    useCalibratedFovPairs: true,
+    fixedRotationBa: false,
+    exportRollingShutterTrajectory: false,
+    orientationPriorExecutable: "",
+  },
 };
 const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
 
@@ -284,6 +309,13 @@ function normalisePipelineSettings(value: unknown): Record<string, unknown> {
       gpuIndex,
       mapperMode,
       useGravityPrior: typeof align.useGravityPrior === "boolean" ? align.useGravityPrior : DEFAULT_SETTINGS.align.useGravityPrior,
+      autoCalibrateTelemetry: typeof align.autoCalibrateTelemetry === "boolean" ? align.autoCalibrateTelemetry : DEFAULT_SETTINGS.align.autoCalibrateTelemetry,
+      calibrateFocalPrior: typeof align.calibrateFocalPrior === "boolean" ? align.calibrateFocalPrior : DEFAULT_SETTINGS.align.calibrateFocalPrior,
+      useVisualRetrieval: typeof align.useVisualRetrieval === "boolean" ? align.useVisualRetrieval : DEFAULT_SETTINGS.align.useVisualRetrieval,
+      useCalibratedFovPairs: typeof align.useCalibratedFovPairs === "boolean" ? align.useCalibratedFovPairs : DEFAULT_SETTINGS.align.useCalibratedFovPairs,
+      fixedRotationBa: typeof align.fixedRotationBa === "boolean" ? align.fixedRotationBa : DEFAULT_SETTINGS.align.fixedRotationBa,
+      exportRollingShutterTrajectory: typeof align.exportRollingShutterTrajectory === "boolean" ? align.exportRollingShutterTrajectory : DEFAULT_SETTINGS.align.exportRollingShutterTrajectory,
+      orientationPriorExecutable: typeof align.orientationPriorExecutable === "string" ? align.orientationPriorExecutable : DEFAULT_SETTINGS.align.orientationPriorExecutable,
     },
   };
 }
@@ -1660,14 +1692,16 @@ function App() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">自動（建議）</SelectItem>
-                    <SelectItem value="incremental">Incremental mapper</SelectItem>
-                    <SelectItem value="global">Global mapper</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="auto">自動（建議）</SelectItem>
+                      <SelectItem value="incremental">Incremental mapper</SelectItem>
+                      <SelectItem value="global">Global mapper</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
-                <FieldDescription>自動模式只會在 rig、focal prior 與所需 capability 都驗證完成後切換 global，否則安全回退 incremental。</FieldDescription>
+                <FieldDescription>自動模式首跑會建立視覺種子；時間、座標、focal 與 gravity 驗證通過後才重跑 global，否則保留 incremental 成果。</FieldDescription>
               </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
+              <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
                 <Switch
                   id="gravity-prior"
                   size="sm"
@@ -1682,6 +1716,35 @@ function App() {
                   <FieldLabel htmlFor="gravity-prior">Global mapper 使用 gravity prior</FieldLabel>
                   <FieldDescription>需要已驗證的時間偏移、sensor-to-camera 校正、gravity coverage 與 database pose priors；不會直接使用 DJI quaternion。</FieldDescription>
                 </FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Switch id="telemetry-calibration" size="sm" checked={settingsDraft.align.autoCalibrateTelemetry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, autoCalibrateTelemetry: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="telemetry-calibration">自動校正 IMU 時間與座標</FieldLabel><FieldDescription>以視覺旋轉速度估時間差，再用多軸旋轉求 rotational hand-eye；激發不足或 residual 過大時拒絕套用。</FieldDescription></FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Switch id="focal-calibration" size="sm" checked={settingsDraft.align.calibrateFocalPrior} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, calibrateFocalPrior: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="focal-calibration">校正 focal prior</FieldLabel><FieldDescription>matching 後執行 COLMAP view graph calibration；不會把 0.3 初始猜值冒充已校正 prior。</FieldDescription></FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Switch id="visual-retrieval" size="sm" checked={settingsDraft.align.useVisualRetrieval} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useVisualRetrieval: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="visual-retrieval">跨來源視覺 retrieval</FieldLabel><FieldDescription>以低解析 global descriptor 與 mutual top-k 篩選 loop closure，不用不連續的 IMU yaw 判斷跨檔案位置。</FieldDescription></FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Switch id="fov-pairs" size="sm" checked={settingsDraft.align.useCalibratedFovPairs} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useCalibratedFovPairs: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="fov-pairs">校正後 FOV overlap 配對</FieldLabel><FieldDescription>有可靠 hand-eye 與鏡頭外參時再縮減長距離 cross-lens temporal pairs；缺資料會保守回退。</FieldDescription></FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
+                <Switch id="fixed-rotation-ba" size="sm" disabled={settingsDraft.align.mapperMode === "incremental"} checked={settingsDraft.align.fixedRotationBa} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, fixedRotationBa: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="fixed-rotation-ba">固定旋轉 BA（實驗）</FieldLabel><FieldDescription>只在 calibration residual 與 global rotation graph 通過驗證後略過 joint rotation optimization；品質風險較高。</FieldDescription></FieldContent>
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Switch id="rolling-shutter-trajectory" size="sm" checked={settingsDraft.align.exportRollingShutterTrajectory} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, exportRollingShutterTrajectory: checked } }))} />
+                <FieldContent><FieldLabel htmlFor="rolling-shutter-trajectory">輸出 rolling-shutter 姿態軌跡</FieldLabel><FieldDescription>以 SLERP 產生逐列姿態 sidecar，供後續 dewarp 使用；目前不修改原始像素。</FieldDescription></FieldContent>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="orientation-prior-executable">自訂 orientation BA 執行檔（選用）</FieldLabel>
+                <Input id="orientation-prior-executable" value={settingsDraft.align.orientationPriorExecutable} placeholder="留白時不執行完整 quaternion constraint" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, orientationPriorExecutable: value } })); }} />
+                <FieldDescription>Stock COLMAP 沒有完整 quaternion prior；只有明確指定相容工具時才會執行 SO(3) constraint BA。</FieldDescription>
               </Field>
               <label className="control-line">
                 <Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} />
