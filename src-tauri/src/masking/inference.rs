@@ -4,8 +4,12 @@
 //! native lens frames are loaded and decoded at their original aspect ratio, then
 //! letterboxed for YOLO and projected back to the original pixel grid.
 
-use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex, TryLockError,
+};
+use std::{fs::File, io::Read};
 
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageBuffer, Luma};
@@ -23,8 +27,9 @@ use ndarray::{Array4, ArrayD, Axis, Ix3, Ix4};
 ))]
 use ort::ep::ExecutionProvider;
 use ort::session::builder::{GraphOptimizationLevel, SessionBuilder};
-use ort::session::{Session, SessionInputValue};
+use ort::session::{OutputSelector, RunOptions, Session, SessionInputValue};
 use ort::value::Tensor;
+use sha2::{Digest, Sha256};
 
 use super::{CancelToken, MaskError, MaskResult, SegmentationMask};
 use crate::masking::models::ModelPaths;
@@ -136,10 +141,119 @@ struct Detection {
     mask_coeffs: [f32; MASK_DIM],
 }
 
+/// A small pool of independently-created sessions.  ORT's `Run` API requires
+/// exclusive access to each `Session`; the pool therefore serializes runs per
+/// session while allowing different sessions to run in parallel where the
+/// provider supports it (CUDA and DirectML).
+pub(crate) struct SessionPool {
+    sessions: Vec<Mutex<Session>>,
+    next: AtomicUsize,
+}
+
+impl SessionPool {
+    pub(crate) fn new(sessions: Vec<Session>) -> MaskResult<Self> {
+        if sessions.is_empty() {
+            return Err(MaskError::inference("session pool cannot be empty"));
+        }
+        Ok(Self {
+            sessions: sessions.into_iter().map(Mutex::new).collect(),
+            next: AtomicUsize::new(0),
+        })
+    }
+
+    pub(crate) fn with_session<T, F>(&self, f: F) -> MaskResult<T>
+    where
+        F: FnOnce(&mut Session) -> MaskResult<T>,
+    {
+        let session_count = self.sessions.len();
+        if session_count == 0 {
+            return Err(MaskError::inference("session pool cannot be empty"));
+        }
+        let start = self.next.fetch_add(1, Ordering::Relaxed) % session_count;
+        let mut guard = None;
+        for offset in 0..session_count {
+            let index = (start + offset) % session_count;
+            match self.sessions[index].try_lock() {
+                Ok(session) => {
+                    guard = Some(session);
+                    break;
+                }
+                Err(TryLockError::WouldBlock) => {}
+                Err(TryLockError::Poisoned(_)) => {
+                    return Err(MaskError::inference("ONNX session lock poisoned"));
+                }
+            }
+        }
+        let mut guard = match guard {
+            Some(guard) => guard,
+            None => self.sessions[start]
+                .lock()
+                .map_err(|_| MaskError::inference("ONNX session lock poisoned"))?,
+        };
+        f(&mut guard)
+    }
+}
+
+/// Build the provider-specific session pool.  The first session is required;
+/// additional GPU replicas are optional and fall back to the sessions
+/// already created when a driver or VRAM limit rejects another session.
+pub(crate) fn load_session_pool(
+    model_path: &Path,
+    provider: &str,
+    cache_dir: Option<&Path>,
+) -> MaskResult<SessionPool> {
+    let provider = normalize_provider_name(provider);
+    if provider == "CPU" {
+        return Err(MaskError::inference(
+            "CPU mask inference is disabled; select a GPU execution provider",
+        ));
+    }
+    let mut cache_dir = prepare_coreml_cache_dir(&provider, cache_dir);
+    let requested_pool_size = session_pool_size_for_provider(&provider);
+    let mut sessions = Vec::with_capacity(requested_pool_size);
+    let mut index = 0;
+    let mut cache_disabled_after_failure = false;
+    while index < requested_pool_size {
+        let result = (|| {
+            let mut builder = session_builder_for_provider(&provider)?;
+            register_execution_provider_with_cache(&mut builder, &provider, cache_dir.as_deref())?;
+            builder
+                .commit_from_file(model_path)
+                .map_err(|error| MaskError::inference(format!("{provider} session: {error}")))
+        })();
+        match result {
+            Ok(session) => {
+                sessions.push(session);
+                index += 1;
+            }
+            Err(_error)
+                if index == 0
+                    && cache_dir.is_some()
+                    && !cache_disabled_after_failure
+                    && provider == "CoreML" =>
+            {
+                // A read-only cache directory may exist already, so
+                // create_dir_all alone cannot prove that CoreML can write it.
+                // Retry one time without caching to keep model loading safe.
+                cache_dir = None;
+                cache_disabled_after_failure = true;
+            }
+            Err(_error) if index > 0 => {
+                // A second CUDA/DirectML session is only an optional throughput
+                // optimization. Driver/VRAM limits must not make a model that
+                // already loaded successfully unusable.
+                break;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    SessionPool::new(sessions)
+}
+
 /// YOLO11 ONNX segmentation pipeline.
 #[derive(Clone)]
 pub struct YoloSegPipeline {
-    session: Arc<Mutex<Session>>,
+    session: Arc<SessionPool>,
     input_name: String,
     output0_name: String,
     output1_name: String,
@@ -174,38 +288,53 @@ impl YoloSegPipeline {
     /// names used by the gs360masker build.  Unsupported providers return an
     /// actionable error and are subsequently handled by [`Self::load`].
     pub fn load_with_provider(model_path: &Path, provider: &str) -> MaskResult<Self> {
-        if provider.eq_ignore_ascii_case("CPU") {
+        let provider = normalize_provider_name(provider);
+        let cache_dir = (provider == "CoreML")
+            .then(|| default_coreml_cache_dir(model_path))
+            .flatten();
+        Self::load_with_cache(model_path, &provider, cache_dir.as_deref())
+    }
+
+    /// Load one provider explicitly, optionally reusing a compiled CoreML
+    /// graph from `cache_dir`.  Cache setup is best-effort: an inaccessible
+    /// directory simply disables the cache and does not prevent model loading.
+    pub fn load_with_cache(
+        model_path: &Path,
+        provider: &str,
+        cache_dir: Option<&Path>,
+    ) -> MaskResult<Self> {
+        let provider = normalize_provider_name(provider);
+        if provider == "CPU" {
             return Err(MaskError::inference(
                 "CPU mask inference is disabled; select a GPU execution provider",
             ));
         }
-        let mut builder = session_builder_for_provider(provider)?;
-        register_execution_provider(&mut builder, provider)?;
-        let session = builder
-            .commit_from_file(model_path)
-            .map_err(|error| MaskError::inference(format!("{provider} session: {error}")))?;
-        let input_name = session
-            .inputs()
-            .first()
-            .map(|input| input.name().to_string())
-            .ok_or_else(|| MaskError::model("YOLO11 model has no input"))?;
-        let output0_name = session
-            .outputs()
-            .first()
-            .map(|output| output.name().to_string())
-            .ok_or_else(|| MaskError::model("YOLO11 model has no detection output"))?;
-        let output1_name = session
-            .outputs()
-            .get(1)
-            .map(|output| output.name().to_string())
-            .ok_or_else(|| MaskError::model("YOLO11 model has no prototype output"))?;
+        let session = load_session_pool(model_path, &provider, cache_dir)?;
+        let (input_name, output0_name, output1_name) = session.with_session(|session| {
+            let input_name = session
+                .inputs()
+                .first()
+                .map(|input| input.name().to_string())
+                .ok_or_else(|| MaskError::model("YOLO11 model has no input"))?;
+            let output0_name = session
+                .outputs()
+                .first()
+                .map(|output| output.name().to_string())
+                .ok_or_else(|| MaskError::model("YOLO11 model has no detection output"))?;
+            let output1_name = session
+                .outputs()
+                .get(1)
+                .map(|output| output.name().to_string())
+                .ok_or_else(|| MaskError::model("YOLO11 model has no prototype output"))?;
+            Ok((input_name, output0_name, output1_name))
+        })?;
 
         Ok(Self {
-            session: Arc::new(Mutex::new(session)),
+            session: Arc::new(session),
             input_name,
             output0_name,
             output1_name,
-            execution_provider: provider.to_string(),
+            execution_provider: provider,
         })
     }
 
@@ -256,24 +385,40 @@ impl YoloSegPipeline {
         image: &DynamicImage,
     ) -> MaskResult<(ArrayD<f32>, ArrayD<f32>, LetterboxInfo)> {
         let (input, letterbox) = preprocess_yolo(image)?;
-        let mut session = self
-            .session
-            .lock()
-            .map_err(|_| MaskError::inference("YOLO11 session lock poisoned"))?;
-        let outputs = session
-            .run(vec![(
-                self.input_name.clone(),
-                SessionInputValue::from(
-                    Tensor::from_array(input)
-                        .map_err(|error| MaskError::inference(error.to_string()))?,
-                ),
-            )])
-            .map_err(|error| MaskError::inference(format!("YOLO11 inference: {error}")))?;
-        let output0 = outputs[self.output0_name.as_str()]
+        let run_options = RunOptions::new()
+            .map_err(|error| MaskError::inference(error.to_string()))?
+            .with_outputs(
+                OutputSelector::no_default()
+                    .with(self.output0_name.clone())
+                    .with(self.output1_name.clone()),
+            );
+        let (output0_value, output1_value) = self.session.with_session(|session| {
+            let outputs = session
+                .run_with_options(
+                    vec![(
+                        self.input_name.clone(),
+                        SessionInputValue::from(
+                            Tensor::from_array(input)
+                                .map_err(|error| MaskError::inference(error.to_string()))?,
+                        ),
+                    )],
+                    &run_options,
+                )
+                .map_err(|error| MaskError::inference(format!("YOLO11 inference: {error}")))?;
+            let mut outputs = outputs;
+            let output0 = outputs
+                .remove(self.output0_name.as_str())
+                .ok_or_else(|| MaskError::inference("YOLO11 detection output was not returned"))?;
+            let output1 = outputs
+                .remove(self.output1_name.as_str())
+                .ok_or_else(|| MaskError::inference("YOLO11 prototype output was not returned"))?;
+            Ok((output0, output1))
+        })?;
+        let output0 = output0_value
             .try_extract_array::<f32>()
             .map_err(|error| MaskError::inference(error.to_string()))?
             .to_owned();
-        let output1 = outputs[self.output1_name.as_str()]
+        let output1 = output1_value
             .try_extract_array::<f32>()
             .map_err(|error| MaskError::inference(error.to_string()))?
             .to_owned();
@@ -291,8 +436,7 @@ fn preprocess_yolo(image: &DynamicImage) -> MaskResult<(Array4<f32>, LetterboxIn
         (INPUT_SIZE as f32 / original_width as f32).min(INPUT_SIZE as f32 / original_height as f32);
     let resized_width = ((original_width as f32 * scale).round() as u32).clamp(1, INPUT_SIZE);
     let resized_height = ((original_height as f32 * scale).round() as u32).clamp(1, INPUT_SIZE);
-    let resized =
-        image::imageops::resize(&rgb, resized_width, resized_height, FilterType::Triangle);
+    let resized = resize_yolo_source(rgb, resized_width, resized_height);
     let mut canvas =
         image::RgbImage::from_pixel(INPUT_SIZE, INPUT_SIZE, image::Rgb([114, 114, 114]));
     let pad_x = ((INPUT_SIZE - resized_width) / 2) as i64;
@@ -319,6 +463,14 @@ fn preprocess_yolo(image: &DynamicImage) -> MaskResult<(Array4<f32>, LetterboxIn
             original_height,
         },
     ))
+}
+
+fn resize_yolo_source(rgb: image::RgbImage, width: u32, height: u32) -> image::RgbImage {
+    if rgb.width() == width && rgb.height() == height {
+        rgb
+    } else {
+        image::imageops::resize(&rgb, width, height, FilterType::Triangle)
+    }
 }
 
 fn decode_detections(
@@ -614,6 +766,59 @@ fn pixel_count(width: u32, height: u32) -> MaskResult<usize> {
         .ok_or_else(|| MaskError::invalid_input("image dimensions overflow"))
 }
 
+pub(crate) fn session_pool_size_for_provider(provider: &str) -> usize {
+    session_pool_size_for_target(provider, cfg!(target_os = "windows"))
+}
+
+fn session_pool_size_for_target(provider: &str, is_windows: bool) -> usize {
+    if provider.eq_ignore_ascii_case("CUDA")
+        || (is_windows && provider.eq_ignore_ascii_case("DirectML"))
+    {
+        // The Rust Session API requires exclusive access while Run is active.
+        // Two replicas allow adjacent images to overlap GPU work without
+        // tripling model memory for the three outer pipeline workers. DirectML
+        // explicitly permits concurrent Run calls on different sessions; CUDA
+        // likewise benefits from independent execution streams/sessions.
+        2
+    } else {
+        // CoreML has a single session by design; keeping other providers at
+        // one also avoids surprising memory growth and provider-specific
+        // concurrency behavior.
+        1
+    }
+}
+
+pub(crate) fn default_coreml_cache_dir(model_path: &Path) -> Option<PathBuf> {
+    let parent = model_path.parent()?;
+    let mut model = File::open(model_path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = model.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    // CoreML's own invalidation follows model graph/metadata changes and can
+    // reuse a compiled graph when only weights change. A content-addressed
+    // subdirectory makes that reuse safe for replaced/custom ONNX files.
+    let model_digest = format!("{:x}", hasher.finalize());
+    Some(parent.join(".ort-coreml-cache").join(model_digest))
+}
+
+pub(crate) fn prepare_coreml_cache_dir(
+    provider: &str,
+    cache_dir: Option<&Path>,
+) -> Option<PathBuf> {
+    if !provider.eq_ignore_ascii_case("CoreML") {
+        return None;
+    }
+    let cache_dir = cache_dir?;
+    std::fs::create_dir_all(cache_dir).ok()?;
+    Some(cache_dir.to_path_buf())
+}
+
 fn provider_candidates(requested: Option<&str>) -> Vec<String> {
     if let Some(provider) = requested
         .map(normalize_provider_name)
@@ -635,7 +840,7 @@ fn provider_candidates(requested: Option<&str>) -> Vec<String> {
     candidates
 }
 
-fn normalize_provider_name(provider: &str) -> String {
+pub(crate) fn normalize_provider_name(provider: &str) -> String {
     match provider.trim().to_ascii_lowercase().as_str() {
         "cuda" => "CUDA",
         "coreml" => "CoreML",
@@ -670,11 +875,13 @@ pub(crate) fn session_builder_for_provider(provider: &str) -> MaskResult<Session
 }
 
 #[allow(unused_variables)]
-pub(crate) fn register_execution_provider(
+pub(crate) fn register_execution_provider_with_cache(
     builder: &mut SessionBuilder,
     provider: &str,
+    cache_dir: Option<&Path>,
 ) -> MaskResult<()> {
-    match provider {
+    let provider = normalize_provider_name(provider);
+    match provider.as_str() {
         "CPU" => Ok(()),
         #[cfg(feature = "cuda")]
         "CUDA" => ort::ep::CUDA::default()
@@ -685,12 +892,17 @@ pub(crate) fn register_execution_provider(
             #[cfg(target_os = "macos")]
             {
                 use ort::ep::coreml::{ComputeUnits, ModelFormat, SpecializationStrategy};
-                return ort::ep::CoreML::default()
+                let mut execution_provider = ort::ep::CoreML::default()
                     .with_static_input_shapes(true)
                     .with_subgraphs(true)
                     .with_compute_units(ComputeUnits::All)
                     .with_model_format(ModelFormat::MLProgram)
-                    .with_specialization_strategy(SpecializationStrategy::FastPrediction)
+                    .with_specialization_strategy(SpecializationStrategy::FastPrediction);
+                if let Some(cache_dir) = cache_dir {
+                    execution_provider = execution_provider
+                        .with_model_cache_dir(cache_dir.to_string_lossy().into_owned());
+                }
+                return execution_provider
                     .register(builder)
                     .map_err(|error| MaskError::inference(format!("register CoreML: {error}")));
             }
@@ -702,9 +914,14 @@ pub(crate) fn register_execution_provider(
             }
         }
         #[cfg(any(feature = "directml", target_os = "windows"))]
-        "DirectML" => ort::ep::DirectML::default()
-            .register(builder)
-            .map_err(|error| MaskError::inference(format!("register DirectML: {error}"))),
+        "DirectML" => {
+            use ort::ep::directml::{DeviceFilter, PerformancePreference};
+            return ort::ep::DirectML::default()
+                .with_device_filter(DeviceFilter::Gpu)
+                .with_performance_preference(PerformancePreference::HighPerformance)
+                .register(builder)
+                .map_err(|error| MaskError::inference(format!("register DirectML: {error}")));
+        }
         #[cfg(feature = "xnnpack")]
         "XNNPACK" => ort::ep::XNNPACK::default()
             .register(builder)
@@ -767,6 +984,79 @@ mod tests {
         assert!((input[[0, 0, 0, 1]] - 64.0 / 255.0).abs() < f32::EPSILON);
         assert!((input[[0, 1, 1, 0]] - 4.0 / 255.0).abs() < f32::EPSILON);
         assert!((input[[0, 2, 1, 0]] - 2.0 / 255.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn reuses_rgb_when_yolo_resize_dimensions_match() {
+        let mut pixels = image::RgbImage::from_pixel(4, 2, image::Rgb([0, 0, 0]));
+        pixels.put_pixel(1, 1, image::Rgb([17, 31, 47]));
+        let resized = resize_yolo_source(pixels, 4, 2);
+
+        assert_eq!(resized.dimensions(), (4, 2));
+        assert_eq!(resized.get_pixel(1, 1), &image::Rgb([17, 31, 47]));
+    }
+
+    #[test]
+    fn resizes_rgb_when_yolo_resize_dimensions_differ() {
+        let pixels = image::RgbImage::from_pixel(4, 2, image::Rgb([17, 31, 47]));
+        let resized = resize_yolo_source(pixels, 2, 1);
+
+        assert_eq!(resized.dimensions(), (2, 1));
+    }
+
+    #[test]
+    fn directml_session_pool_policy_is_conservative() {
+        assert_eq!(session_pool_size_for_target("DirectML", true), 2);
+        assert_eq!(session_pool_size_for_target("DirectML", false), 1);
+    }
+
+    #[test]
+    fn cuda_session_pool_policy_allows_two_in_flight_runs() {
+        assert_eq!(session_pool_size_for_target("CUDA", true), 2);
+        assert_eq!(session_pool_size_for_target("CUDA", false), 2);
+    }
+
+    #[test]
+    fn coreml_session_pool_policy_stays_single_session() {
+        assert_eq!(session_pool_size_for_target("CoreML", true), 1);
+        assert_eq!(session_pool_size_for_target("CoreML", false), 1);
+        assert_eq!(session_pool_size_for_provider("CoreML"), 1);
+    }
+
+    #[test]
+    fn non_coreml_cache_requests_are_ignored() {
+        let cache = tempfile::tempdir().unwrap();
+        assert!(prepare_coreml_cache_dir("DirectML", Some(cache.path())).is_none());
+    }
+
+    #[test]
+    fn coreml_cache_directory_is_best_effort() {
+        let parent = tempfile::tempdir().unwrap();
+        let cache_path = parent.path().join("coreml-cache");
+        let prepared = prepare_coreml_cache_dir("CoreML", Some(&cache_path));
+
+        assert_eq!(prepared.as_deref(), Some(cache_path.as_path()));
+        assert!(cache_path.is_dir());
+    }
+
+    #[test]
+    fn coreml_cache_path_is_keyed_by_model_contents() {
+        let parent = tempfile::tempdir().unwrap();
+        let model_path = parent.path().join("model.onnx");
+        std::fs::write(&model_path, b"weights-a").unwrap();
+        let first = default_coreml_cache_dir(&model_path).unwrap();
+
+        // Keep the same path and byte length to prove the key is not based on
+        // file identity or size alone.
+        std::fs::write(&model_path, b"weights-b").unwrap();
+        let second = default_coreml_cache_dir(&model_path).unwrap();
+
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), second.parent());
+        assert_eq!(
+            first.parent(),
+            Some(parent.path().join(".ort-coreml-cache").as_path())
+        );
     }
 
     #[test]

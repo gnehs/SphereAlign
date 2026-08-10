@@ -2,15 +2,17 @@
 
 use std::borrow::Cow;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageBuffer, Luma};
 use ndarray::Array4;
-use ort::session::{Session, SessionInputValue};
+use ort::session::{OutputSelector, RunOptions, SessionInputValue};
 use ort::value::Tensor;
 
-use super::inference::{register_execution_provider, session_builder_for_provider};
+use super::inference::{
+    default_coreml_cache_dir, load_session_pool, normalize_provider_name, SessionPool,
+};
 use super::{CancelToken, MaskError, MaskResult, SegmentationMask};
 use crate::masking::models::ModelPaths;
 
@@ -22,7 +24,7 @@ const STD: [f32; 3] = [0.229, 0.224, 0.225];
 /// Sky segmentation model.  The returned mask is an exclusion mask (255 = sky).
 #[derive(Clone)]
 pub struct SkysegPipeline {
-    session: Arc<Mutex<Session>>,
+    session: Arc<SessionPool>,
     input_name: String,
     output_name: String,
 }
@@ -38,28 +40,40 @@ impl SkysegPipeline {
     }
 
     pub fn load_with_provider(model_path: &Path, provider: &str) -> MaskResult<Self> {
-        if provider.eq_ignore_ascii_case("CPU") {
+        let provider = normalize_provider_name(provider);
+        let cache_dir = (provider == "CoreML")
+            .then(|| default_coreml_cache_dir(model_path))
+            .flatten();
+        Self::load_with_cache(model_path, &provider, cache_dir.as_deref())
+    }
+
+    pub fn load_with_cache(
+        model_path: &Path,
+        provider: &str,
+        cache_dir: Option<&Path>,
+    ) -> MaskResult<Self> {
+        let provider = normalize_provider_name(provider);
+        if provider == "CPU" {
             return Err(MaskError::inference(
                 "CPU mask inference is disabled; select a GPU execution provider",
             ));
         }
-        let mut builder = session_builder_for_provider(provider)?;
-        register_execution_provider(&mut builder, provider)?;
-        let session = builder
-            .commit_from_file(model_path)
-            .map_err(|error| MaskError::inference(format!("skyseg session: {error}")))?;
-        let input_name = session
-            .inputs()
-            .first()
-            .map(|input| input.name().to_string())
-            .ok_or_else(|| MaskError::model("skyseg model has no input"))?;
-        let output_name = session
-            .outputs()
-            .first()
-            .map(|output| output.name().to_string())
-            .ok_or_else(|| MaskError::model("skyseg model has no output"))?;
+        let session = load_session_pool(model_path, &provider, cache_dir)?;
+        let (input_name, output_name) = session.with_session(|session| {
+            let input_name = session
+                .inputs()
+                .first()
+                .map(|input| input.name().to_string())
+                .ok_or_else(|| MaskError::model("skyseg model has no input"))?;
+            let output_name = session
+                .outputs()
+                .first()
+                .map(|output| output.name().to_string())
+                .ok_or_else(|| MaskError::model("skyseg model has no output"))?;
+            Ok((input_name, output_name))
+        })?;
         Ok(Self {
-            session: Arc::new(Mutex::new(session)),
+            session: Arc::new(session),
             input_name,
             output_name,
         })
@@ -75,25 +89,31 @@ impl SkysegPipeline {
             return Err(MaskError::Cancelled);
         }
         let input = preprocess_skyseg(image)?;
-        let raw_output = {
-            let mut session = self
-                .session
-                .lock()
-                .map_err(|_| MaskError::inference("skyseg session lock poisoned"))?;
+        let run_options = RunOptions::new()
+            .map_err(|error| MaskError::inference(error.to_string()))?
+            .with_outputs(OutputSelector::no_default().with(self.output_name.clone()));
+        let output_value = self.session.with_session(|session| {
             let outputs = session
-                .run(vec![(
-                    self.input_name.clone(),
-                    SessionInputValue::from(
-                        Tensor::from_array(input)
-                            .map_err(|error| MaskError::inference(error.to_string()))?,
-                    ),
-                )])
+                .run_with_options(
+                    vec![(
+                        self.input_name.clone(),
+                        SessionInputValue::from(
+                            Tensor::from_array(input)
+                                .map_err(|error| MaskError::inference(error.to_string()))?,
+                        ),
+                    )],
+                    &run_options,
+                )
                 .map_err(|error| MaskError::inference(format!("skyseg inference: {error}")))?;
-            outputs[self.output_name.as_str()]
-                .try_extract_array::<f32>()
-                .map_err(|error| MaskError::inference(error.to_string()))?
-                .to_owned()
-        };
+            let mut outputs = outputs;
+            outputs
+                .remove(self.output_name.as_str())
+                .ok_or_else(|| MaskError::inference("skyseg output was not returned"))
+        })?;
+        let raw_output = output_value
+            .try_extract_array::<f32>()
+            .map_err(|error| MaskError::inference(error.to_string()))?
+            .to_owned();
         if cancel.is_cancelled() {
             return Err(MaskError::Cancelled);
         }

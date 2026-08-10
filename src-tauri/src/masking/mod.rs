@@ -25,7 +25,9 @@ pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
 
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma};
+use image::{
+    ColorType, DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Luma,
+};
 use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -40,10 +42,10 @@ use crate::fisheye::{
     LensOpticalOcclusions, OpticalOcclusion, ValidRegion, DJI_VALID_RADIUS_RATIO,
 };
 
-/// Three in-flight images keep decode, GPU inference, post-processing, and
+/// Four in-flight images keep decode, GPU inference, post-processing, and
 /// durable writes overlapped without allowing full-resolution buffers to grow
 /// with the host's CPU count.
-const MASK_PIPELINE_WORKERS: usize = 3;
+const MASK_PIPELINE_WORKERS: usize = 4;
 /// Semantic exclusions do not need source-image precision. Keep all model
 /// preprocessing, mask merging, and valid-region composition bounded, then
 /// expand the final binary mask exactly once for COLMAP/source compatibility.
@@ -685,6 +687,30 @@ where
         return FileOutcome::Cancelled;
     }
 
+    // A partially resumed batch reaches this per-file path even when some
+    // outputs are already complete. Read only the source header before deciding
+    // to skip so completed high-resolution frames are not decoded in full.
+    if request.skip_verified && mask_path.is_file() && colmap_path.is_file() {
+        let source_dimensions = ImageReader::open(input)
+            .and_then(|reader| reader.with_guessed_format())
+            .ok()
+            .and_then(|reader| reader.into_dimensions().ok());
+        if let Some((width, height)) = source_dimensions {
+            if is_valid_mask_file(&mask_path, width, height)
+                && is_valid_mask_file(&colmap_path, width, height)
+            {
+                let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+                report(
+                    MaskStage::Skipped,
+                    completed_count as f32 / total as f32,
+                    completed_count,
+                    "已確認遮罩存在，已略過",
+                );
+                return FileOutcome::Skipped;
+            }
+        }
+    }
+
     let image = match ImageReader::open(input)
         .and_then(|reader| reader.with_guessed_format())
         .map_err(MaskError::from)
@@ -705,20 +731,6 @@ where
     };
 
     let (width, height) = image.dimensions();
-    if request.skip_verified
-        && is_valid_mask_file(&mask_path, width, height)
-        && is_valid_mask_file(&colmap_path, width, height)
-    {
-        let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
-        report(
-            MaskStage::Skipped,
-            completed_count as f32 / total as f32,
-            completed_count,
-            "已確認遮罩存在，已略過",
-        );
-        return FileOutcome::Skipped;
-    }
-
     let image = resize_for_mask_working_resolution(image);
     let (mask_width, mask_height) = image.dimensions();
 
@@ -1071,9 +1083,12 @@ fn write_mask_atomic(
             _ => ImageFormat::Png,
         }
     };
-    let image = ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width, height, data.to_vec())
-        .ok_or_else(|| MaskError::image("failed to build output mask"))?;
-    let write_result = image.save_with_format(&temporary, format);
+    // Encode directly from the shared mask slice. Constructing an owned
+    // ImageBuffer here used to clone the full-resolution mask once for each of
+    // the two output files, adding two avoidable allocations and memory copies
+    // per source image.
+    let write_result =
+        image::save_buffer_with_format(&temporary, data, width, height, ColorType::L8, format);
     if let Err(error) = write_result {
         let _ = fs::remove_file(&temporary);
         return Err(MaskError::from(error));
