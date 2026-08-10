@@ -35,7 +35,7 @@ colmap-{filename}/
 ### Extract
 
 - 透過系統 `ffmpeg` / `ffprobe` 找出前兩路 video stream，保留 native fisheye，不先轉 equirectangular。
-- 第一遍由 FFmpeg 將雙鏡候選縮成 512 px 灰階 rawvideo，直接透過 stdout 串流到 Rust 記憶體；不編碼、不保存候選圖片。一般擷取使用 `baseFps`，啟用「跳過模糊影格」時使用 `denseFps`，並以 Gaussian pre-blur、Laplacian variance 與 Tenengrad 評估 fisheye 有效圓。
+- 第一遍由 FFmpeg 將雙鏡候選縮成 512 px 灰階 rawvideo，直接透過 stdout 串流到 Rust 記憶體；不編碼、不保存候選圖片。一般擷取預設使用 3 FPS 的 `baseFps`；啟用「清晰度過濾」時，`denseFps` 可設定為截取影格率的 2–10 倍，並以 Gaussian pre-blur、Laplacian variance 與 Tenengrad 評估 fisheye 有效圓。
 - 選定時間點後，第二遍只重新解碼入選影格並以原始解析度寫入 `images/`。兩遍 FFmpeg 都會先嘗試自動硬體解碼，失敗時清理部分輸出並安全回退 CPU 軟體解碼。
 - 每個時間區間以 `min(lens0, lens1)` 選同一組影格，避免左右鏡頭不同步或單側模糊。
 - 候選階段只保存分數與序號的輕量 JSON checkpoint，不保存圖片；最終影格另使用 partial file、雙鏡配對回滾與原子 selection metadata，避免取消或失敗時留下單側或未提交結果。
@@ -45,7 +45,7 @@ colmap-{filename}/
 
 - 使用 ONNX Runtime 執行 YOLO11 segmentation 與可選的 skyseg。
 - macOS 使用 Core ML（GPU／Neural Engine），Windows 使用 DirectML；模型無法完整交給硬體 provider 時會直接失敗，不會回退 CPU 推論。
-- 支援 person、bicycle、car、motorcycle、bus、truck，以及天空遮罩。
+- YOLO 物件遮罩與 SkySeg 天空遮罩可獨立啟用；兩者皆關閉時會略過 Mask 階段並直接進入 Align。YOLO 支援 person、bicycle、car、motorcycle、bus、truck。
 - 物件、fisheye 圓外，以及 DJI OSV metadata 標記的固定光學遮擋區為黑色；校正曲線會依輸出解析度縮放，不額外內縮可用圓。手與自拍棒不由光學遮罩排除，仍交給物件 mask 流程處理。
 - 原生鏡頭超過 180° 的雙鏡頭重疊區仍保留；目前的 optical mask 只表示「無法成像／固定遮擋」，不把邊緣畫質下降當成硬裁切。若要仿 DJI Studio 只取每顆鏡頭約 180° 的高品質區，應在鏡頭模型轉換後另產生 reconstruction-quality mask。
 - 每張 mask 先寫 partial file，再原子替換。重跑 Mask 時，只有一般 mask 與 COLMAP mask 都能解碼且尺寸與來源影像一致才會自動略過；缺少、損壞或尺寸不符的輸出會重新產生。
@@ -61,9 +61,10 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 
 ### Align
 
-- 使用 `OPENCV_FISHEYE`，每個 lens 一台 camera。
+- 使用 `OPENCV_FISHEYE`，每個 lens 一台 camera；無 EXIF 焦距時以適合 180–190° 等距魚眼的 `default_focal_length_factor=0.3` 初始化，而非 COLMAP 的一般鏡頭預設值 1.2。
 - 同時間的 lens0 / lens1 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
-- 未知 rig extrinsics 採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
+- 預設把原生 `lens0`／`lens1` 視為共心、背對背且上下方向一致的 360 rig；`lens1` 相對 `lens0` 固定為繞相機 Y 軸 180°（WXYZ quaternion `[0, 0, 1, 0]`），並在第一次 mapper 前套用 `rig_configurator`。舊版自動產生、未含外參的預設 config 會升級，其他自訂 config 保持不變。
+- 自訂 config 若省略 rig extrinsics，仍採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
 - Mask stage 已完成時才傳入 COLMAP mask path；沒有 mask 也能獨立 Align。
 - 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 使用清單中的第一張 GPU。
 - GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
@@ -102,7 +103,7 @@ cargo test --lib
 
 ## 目前界線
 
-- `denseFps` 目前是模糊過濾的候選密度，不宣稱已實作基於 motion / IMU 的 adaptive cadence。
+- `denseFps` 目前是清晰度過濾的候選密度，不宣稱已實作基於 motion / IMU 的 adaptive cadence。
 - Telemetry 先無損保存；在沒有相機座標系、時間同步與尺度驗證前，不會把 raw IMU 當成 COLMAP pose prior。
 - Caspar bundle-adjustment backend 目前不啟用，因為它與本流程使用的 `OPENCV_FISHEYE` 不相容；Align 以 Ceres BA 為界線。
 - Align checkpoint 只驗證目前輸入與設定的 fingerprint；settings、COLMAP version、rig、pairs、images 或使用中的 masks 改變時會失效並重建，不保證沿用舊 sparse 結果。

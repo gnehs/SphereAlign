@@ -482,6 +482,11 @@ button:active {
   line-height: 1.55;
 }
 
+.task-dialog > [data-slot="dialog-footer"] {
+  margin-inline: -24px;
+  margin-bottom: -24px;
+}
+
 .dialog-scroll {
   max-height: 575px;
   overflow: auto;
@@ -667,7 +672,11 @@ button:active {
 }
 
 .settings-form .mask-checkbox-option,
-.settings-form .mask-sky-option {
+.settings-form .mask-feature-option,
+.settings-form .mask-confidence-field,
+.settings-form .extract-base-fps-field,
+.settings-form .extract-filter-option,
+.settings-form .extract-candidate-field {
   min-height: 28px;
   padding: 2px 0;
   border: 0;
@@ -675,9 +684,40 @@ button:active {
 }
 
 .mask-checkbox-option [data-slot="field-label"],
-.mask-sky-option [data-slot="field-label"] {
+.mask-feature-option [data-slot="field-label"],
+.extract-filter-option [data-slot="field-label"] {
   cursor: pointer;
   font-weight: 400;
+}
+
+.extract-filter-option {
+  margin-top: 10px;
+}
+
+.extract-candidate-field {
+  margin-top: 8px;
+}
+
+.mask-feature-settings {
+  gap: 8px;
+  padding: 4px 0 8px;
+}
+
+.mask-feature-option + .mask-feature-option {
+  margin-top: 8px;
+}
+
+.slider-heading,
+.range-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.range-scale {
+  color: var(--studio-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--studio-font-sm);
 }
 
 .range-input {
@@ -1316,6 +1356,7 @@ button:active {
   .stage-row-list { margin-left: 0; }
   .empty-actions { align-items: stretch; flex-direction: column; width: min(280px, 100%); }
   .task-dialog { padding: 20px 16px 16px; }
+  .task-dialog > [data-slot="dialog-footer"] { margin-inline: -16px; margin-bottom: -16px; }
   .settings-sheet,
   .task-detail-sheet { width: 100vw; }
   .task-detail-stage-footer { align-items: flex-start; }

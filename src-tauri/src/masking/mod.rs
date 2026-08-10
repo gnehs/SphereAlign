@@ -286,8 +286,9 @@ pub trait MaskEngine: Send + Sync {
 
 /// Native YOLO11 + skyseg backend.
 pub struct NativeMaskEngine {
-    pub yolo: YoloSegPipeline,
+    pub yolo: Option<YoloSegPipeline>,
     pub skyseg: Option<SkysegPipeline>,
+    pub execution_provider: String,
 }
 
 impl NativeMaskEngine {
@@ -301,17 +302,43 @@ impl NativeMaskEngine {
             request.model_cache_dir.as_deref(),
             request.yolo_model.as_deref(),
             request.skyseg_model.as_deref(),
+            !request.classes.is_empty(),
             request.mask_sky,
             cancel,
             on_download,
         )?;
-        let yolo = YoloSegPipeline::load(&paths, request.execution_provider.as_deref())?;
+        let yolo = if request.classes.is_empty() {
+            None
+        } else {
+            Some(YoloSegPipeline::load(
+                &paths,
+                request.execution_provider.as_deref(),
+            )?)
+        };
         let skyseg = if request.mask_sky {
-            Some(SkysegPipeline::load(&paths, &yolo.execution_provider)?)
+            Some(match yolo.as_ref() {
+                Some(yolo) => SkysegPipeline::load(&paths, &yolo.execution_provider)?,
+                None => {
+                    SkysegPipeline::load_available(&paths, request.execution_provider.as_deref())?
+                }
+            })
         } else {
             None
         };
-        Ok(Self { yolo, skyseg })
+        let execution_provider = yolo
+            .as_ref()
+            .map(|pipeline| pipeline.execution_provider.clone())
+            .or_else(|| {
+                skyseg
+                    .as_ref()
+                    .map(|pipeline| pipeline.execution_provider.clone())
+            })
+            .ok_or_else(|| MaskError::invalid_input("at least one mask model must be enabled"))?;
+        Ok(Self {
+            yolo,
+            skyseg,
+            execution_provider,
+        })
     }
 }
 
@@ -324,9 +351,17 @@ impl MaskEngine for NativeMaskEngine {
         mask_sky: bool,
         cancel: &CancelToken,
     ) -> MaskResult<SegmentationMask> {
-        let mut result = self
-            .yolo
-            .generate_exclusion_mask(image, classes, confidence, cancel)?;
+        let mut result = if classes.is_empty() {
+            let (width, height) = image.dimensions();
+            SegmentationMask::new(width, height, vec![0; (width * height) as usize])?
+        } else {
+            self.yolo
+                .as_ref()
+                .ok_or_else(|| {
+                    MaskError::model("YOLO11 backend is not loaded but classes are enabled")
+                })?
+                .generate_exclusion_mask(image, classes, confidence, cancel)?
+        };
         if mask_sky {
             let skyseg = self.skyseg.as_ref().ok_or_else(|| {
                 MaskError::model("skyseg backend is not loaded but mask_sky is true")
@@ -411,7 +446,7 @@ pub fn process_mask_batch(
         fraction: 0.0,
         message: format!(
             "模型已載入 {}，CPU 推論回退已停用",
-            engine.yolo.execution_provider
+            engine.execution_provider
         ),
     });
     process_with_engine(request, cancel, &engine, on_progress)

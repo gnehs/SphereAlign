@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress, ProgressValue } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
 import {
   Sheet,
   SheetContent,
@@ -83,7 +84,7 @@ interface StageState {
 
 interface PipelineSettings {
   extract: { baseFps: number; denseFps: number; skipBlurry: boolean };
-  mask: { classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
+  mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
   align: { useGpu: boolean; gpuIndex: string };
 }
 
@@ -197,15 +198,31 @@ const MASK_CLASS_LABELS: Record<string, string> = {
   bus: "公車",
   truck: "卡車",
 };
+const MIN_CANDIDATE_MULTIPLIER = 2;
+const MAX_CANDIDATE_MULTIPLIER = 10;
+const DEFAULT_CANDIDATE_MULTIPLIER = 4;
 const DEFAULT_SETTINGS: PipelineSettings = {
-  extract: { baseFps: 2, denseFps: 8, skipBlurry: true },
-  mask: { classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
+  extract: { baseFps: 3, denseFps: 12, skipBlurry: true },
+  mask: { yoloEnabled: true, classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
   align: { useGpu: false, gpuIndex: "-1" },
 };
 const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
 
+function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
+  if (!Number.isFinite(extract.baseFps) || extract.baseFps <= 0 || !Number.isFinite(extract.denseFps)) {
+    return DEFAULT_CANDIDATE_MULTIPLIER;
+  }
+  return Math.min(
+    MAX_CANDIDATE_MULTIPLIER,
+    Math.max(MIN_CANDIDATE_MULTIPLIER, Math.round(extract.denseFps / extract.baseFps)),
+  );
+}
+
 function normalisePipelineSettings(value: unknown): Record<string, unknown> {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const mask = source.mask && typeof source.mask === "object" ? source.mask as Record<string, unknown> : {};
+  const classes = Array.isArray(mask.classes) ? mask.classes.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+  const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : classes.length > 0) && classes.length > 0;
   const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
   const rawGpuIndex = align.gpuIndex;
   const gpuIndex = typeof rawGpuIndex === "string"
@@ -215,6 +232,7 @@ function normalisePipelineSettings(value: unknown): Record<string, unknown> {
       : DEFAULT_SETTINGS.align.gpuIndex;
   return {
     ...source,
+    mask: { ...mask, classes, yoloEnabled },
     align: { ...align, gpuIndex },
   };
 }
@@ -1356,49 +1374,136 @@ function App() {
     applySourcePaths(paths);
   };
 
-  const renderSettingsFields = () => (
-    <div className="settings-form">
-      <FieldGroup>
-        <Field><FieldLabel>影格擷取</FieldLabel><FieldContent><div className="field-pair"><Field><FieldLabel htmlFor="base-fps">基本影格率</FieldLabel><Input id="base-fps" type="number" min={1} max={30} value={settingsDraft.extract.baseFps} onChange={(event) => { const value = Number(event.currentTarget.value) || 1; setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, baseFps: value } })); }} /></Field><Field><FieldLabel htmlFor="dense-fps">候選影格率</FieldLabel><Input id="dense-fps" type="number" min={1} max={60} value={settingsDraft.extract.denseFps} onChange={(event) => { const value = Number(event.currentTarget.value) || 1; setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, denseFps: value } })); }} /></Field></div><FieldDescription>設定雙魚眼影格取樣頻率，以及模糊篩選時的候選密度。</FieldDescription><div className="control-line"><Checkbox checked={settingsDraft.extract.skipBlurry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, skipBlurry: checked === true } }))} /><span>跳過模糊影格</span></div></FieldContent></Field>
-        <Field>
-          <FieldLabel>遮罩／物件與天空</FieldLabel>
-          <FieldContent>
-            <FieldSet className="mask-object-options">
-              <FieldLegend variant="label">要遮蔽的物件（可複選）</FieldLegend>
-              <FieldGroup data-slot="checkbox-group" className="mask-checkbox-list">
-                {MASK_CLASSES.map((maskClass) => {
-                  const checkboxId = `mask-class-${maskClass}`;
-                  return (
-                    <Field key={maskClass} orientation="horizontal" className="mask-checkbox-option">
-                      <Checkbox
-                        id={checkboxId}
-                        checked={settingsDraft.mask.classes.includes(maskClass)}
-                        onCheckedChange={(checked) => setSettingsDraft((current) => {
-                          const classes = checked === true
-                            ? Array.from(new Set([...current.mask.classes, maskClass]))
-                            : current.mask.classes.filter((value) => value !== maskClass);
-                          return { ...current, mask: { ...current.mask, classes } };
-                        })}
-                      />
-                      <FieldLabel htmlFor={checkboxId}>{MASK_CLASS_LABELS[maskClass]}</FieldLabel>
-                    </Field>
-                  );
-                })}
-              </FieldGroup>
-            </FieldSet>
-            <Field orientation="horizontal" className="mask-sky-option">
-              <Checkbox
-                id="mask-sky"
-                checked={settingsDraft.mask.maskSky}
-                onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, maskSky: checked === true } }))}
-              />
-              <FieldLabel htmlFor="mask-sky">遮蔽天空</FieldLabel>
-              <span className="range-label">信心度 {settingsDraft.mask.confidence}%</span>
-            </Field>
-            <input className="range-input" type="range" min={10} max={98} aria-label="遮罩信心度" value={settingsDraft.mask.confidence} onChange={(event) => { const value = Number(event.currentTarget.value); setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, confidence: value } })); }} />
-            <div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: value } })); }} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div>
-          </FieldContent>
-        </Field>
+  const renderSettingsFields = () => {
+    const candidateMultiplier = candidateMultiplierFor(settingsDraft.extract);
+    const candidateFps = settingsDraft.extract.baseFps * candidateMultiplier;
+    return (
+      <div className="settings-form">
+        <FieldGroup>
+          <Field>
+            <FieldLabel>影格擷取</FieldLabel>
+            <FieldContent>
+              <Field className="extract-base-fps-field">
+                <FieldLabel htmlFor="base-fps">截取影格率（FPS）</FieldLabel>
+                <Input
+                  id="base-fps"
+                  type="number"
+                  min={1}
+                  max={30}
+                  step={1}
+                  value={settingsDraft.extract.baseFps}
+                  onChange={(event) => {
+                    const baseFps = Math.min(30, Math.max(1, Number(event.currentTarget.value) || 1));
+                    setSettingsDraft((current) => {
+                      const multiplier = candidateMultiplierFor(current.extract);
+                      return { ...current, extract: { ...current.extract, baseFps, denseFps: baseFps * multiplier } };
+                    });
+                  }}
+                />
+              </Field>
+              <Field orientation="horizontal" className="extract-filter-option">
+                <Checkbox
+                  id="sharpness-filter"
+                  checked={settingsDraft.extract.skipBlurry}
+                  onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, skipBlurry: checked === true } }))}
+                />
+                <FieldLabel htmlFor="sharpness-filter">清晰度過濾</FieldLabel>
+              </Field>
+              {settingsDraft.extract.skipBlurry && (
+                <Field className="extract-candidate-field">
+                  <div className="slider-heading">
+                    <FieldLabel id="candidate-fps-label">候選影格率</FieldLabel>
+                    <span className="range-label">{candidateMultiplier}× · {candidateFps} FPS</span>
+                  </div>
+                  <Slider
+                    aria-labelledby="candidate-fps-label"
+                    min={MIN_CANDIDATE_MULTIPLIER}
+                    max={MAX_CANDIDATE_MULTIPLIER}
+                    step={1}
+                    value={[candidateMultiplier]}
+                    onValueChange={(value) => {
+                      const multiplier = Array.isArray(value) ? value[0] : value;
+                      if (multiplier === undefined) return;
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        extract: { ...current.extract, denseFps: current.extract.baseFps * multiplier },
+                      }));
+                    }}
+                  />
+                  <div className="range-scale" aria-hidden="true"><span>2×</span><span>10×</span></div>
+                  <FieldDescription>以截取影格率的倍率取樣候選，再挑選較清晰的影格。</FieldDescription>
+                </Field>
+              )}
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel>遮罩</FieldLabel>
+            <FieldContent>
+              <Field orientation="horizontal" className="mask-feature-option">
+                <Checkbox
+                  id="mask-yolo"
+                  checked={settingsDraft.mask.yoloEnabled}
+                  onCheckedChange={(checked) => setSettingsDraft((current) => ({
+                    ...current,
+                    mask: {
+                      ...current.mask,
+                      yoloEnabled: checked === true,
+                      classes: checked === true && current.mask.classes.length === 0 ? [...MASK_CLASSES] : current.mask.classes,
+                    },
+                  }))}
+                />
+                <FieldLabel htmlFor="mask-yolo">YOLO 物件過濾</FieldLabel>
+              </Field>
+              {settingsDraft.mask.yoloEnabled && (
+                <FieldGroup className="mask-feature-settings">
+                  <FieldSet className="mask-object-options">
+                    <FieldLegend variant="label">要遮蔽的物件（可複選）</FieldLegend>
+                    <FieldGroup data-slot="checkbox-group" className="mask-checkbox-list">
+                      {MASK_CLASSES.map((maskClass) => {
+                        const checkboxId = `mask-class-${maskClass}`;
+                        return (
+                          <Field key={maskClass} orientation="horizontal" className="mask-checkbox-option">
+                            <Checkbox
+                              id={checkboxId}
+                              checked={settingsDraft.mask.classes.includes(maskClass)}
+                              onCheckedChange={(checked) => setSettingsDraft((current) => {
+                                const classes = checked === true
+                                  ? Array.from(new Set([...current.mask.classes, maskClass]))
+                                  : current.mask.classes.filter((value) => value !== maskClass);
+                                return { ...current, mask: { ...current.mask, classes, yoloEnabled: classes.length > 0 } };
+                              })}
+                            />
+                            <FieldLabel htmlFor={checkboxId}>{MASK_CLASS_LABELS[maskClass]}</FieldLabel>
+                          </Field>
+                        );
+                      })}
+                    </FieldGroup>
+                  </FieldSet>
+                  <Field className="mask-confidence-field">
+                    <div className="slider-heading">
+                      <FieldLabel htmlFor="mask-confidence">YOLO 信心度</FieldLabel>
+                      <span className="range-label">{settingsDraft.mask.confidence}%</span>
+                    </div>
+                    <input id="mask-confidence" className="range-input" type="range" min={10} max={98} value={settingsDraft.mask.confidence} onChange={(event) => { const value = Number(event.currentTarget.value); setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, confidence: value } })); }} />
+                  </Field>
+                </FieldGroup>
+              )}
+              <Field orientation="horizontal" className="mask-feature-option">
+                <Checkbox
+                  id="mask-sky"
+                  checked={settingsDraft.mask.maskSky}
+                  onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, maskSky: checked === true } }))}
+                />
+                <FieldLabel htmlFor="mask-sky">天空過濾</FieldLabel>
+              </Field>
+              {settingsDraft.mask.maskSky && <FieldDescription>使用 SkySeg 產生天空遮罩。</FieldDescription>}
+              {(settingsDraft.mask.yoloEnabled || settingsDraft.mask.maskSky) ? (
+                <div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: value } })); }} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div>
+              ) : (
+                <FieldDescription>未啟用遮罩；影格擷取完成後會直接進入對齊。</FieldDescription>
+              )}
+            </FieldContent>
+          </Field>
         <Field>
           <FieldLabel>對齊</FieldLabel>
           <FieldContent>
@@ -1417,9 +1522,10 @@ function App() {
             </div>
           </FieldContent>
         </Field>
-      </FieldGroup>
-    </div>
-  );
+        </FieldGroup>
+      </div>
+    );
+  };
 
   return (
     <div className="studio-app">

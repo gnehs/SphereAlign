@@ -264,6 +264,9 @@ impl YoloSegPipeline {
     /// Load YOLO11 from resolved model paths. Provider loading is attempted in
     /// the requested/platform order, but never falls back to CPU.
     pub fn load(paths: &ModelPaths, requested_provider: Option<&str>) -> MaskResult<Self> {
+        let model_path = paths.yolo.as_ref().ok_or_else(|| {
+            MaskError::model("YOLO11 model is required when object masking is enabled")
+        })?;
         let candidates = provider_candidates(requested_provider);
         if candidates.is_empty() {
             return Err(MaskError::model(
@@ -272,14 +275,14 @@ impl YoloSegPipeline {
         }
         let mut errors = Vec::new();
         for provider in candidates {
-            match Self::load_with_provider(&paths.yolo, &provider) {
+            match Self::load_with_provider(model_path, &provider) {
                 Ok(pipeline) => return Ok(pipeline),
                 Err(error) => errors.push(format!("{provider}: {error}")),
             }
         }
         Err(MaskError::model(format!(
             "unable to load YOLO11 segmentation model {} ({})",
-            paths.yolo.display(),
+            model_path.display(),
             errors.join("; ")
         )))
     }
@@ -819,7 +822,7 @@ pub(crate) fn prepare_coreml_cache_dir(
     Some(cache_dir.to_path_buf())
 }
 
-fn provider_candidates(requested: Option<&str>) -> Vec<String> {
+pub(crate) fn provider_candidates(requested: Option<&str>) -> Vec<String> {
     if let Some(provider) = requested
         .map(normalize_provider_name)
         .filter(|value| !value.is_empty())
@@ -1115,7 +1118,7 @@ mod tests {
     #[test]
     fn explicit_cpu_provider_returns_actionable_error() {
         let paths = ModelPaths {
-            yolo: Path::new("unused.onnx").to_path_buf(),
+            yolo: Some(Path::new("unused.onnx").to_path_buf()),
             skyseg: None,
         };
         let error = match YoloSegPipeline::load(&paths, Some("CPU")) {

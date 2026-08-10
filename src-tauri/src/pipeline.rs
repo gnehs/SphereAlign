@@ -392,12 +392,18 @@ pub fn start_stage(
     let response = StartStageResponse { job_id: id.clone() };
     thread::spawn(move || {
         let stage_started_at = Instant::now();
+        let skipped_mask = stage == StageName::Mask && !mask_enabled(&manifest.settings);
+        let starting_message = if skipped_mask {
+            "未啟用遮罩，正在略過"
+        } else {
+            "處理階段已開始"
+        };
         let _ = project::update_stage_timed(
             &mut manifest,
             &stage,
             StageStatus::Running,
             0.0,
-            "處理階段已開始",
+            starting_message,
             Vec::new(),
             Vec::new(),
             Some(stage_started_at),
@@ -408,7 +414,7 @@ pub fn start_stage(
             &stage,
             "starting",
             0.0,
-            "正在準備工作",
+            starting_message,
             "running",
             false,
         );
@@ -455,12 +461,17 @@ pub fn start_stage(
             match result {
                 Ok(artifacts) => {
                     let stage_elapsed_ms = elapsed_ms(stage_started_at);
+                    let completed_message = if skipped_mask {
+                        "未啟用 YOLO 或天空過濾，已略過遮罩階段"
+                    } else {
+                        "處理階段已完成"
+                    };
                     let _ = project::update_stage_timed(
                         &mut manifest,
                         &stage,
                         StageStatus::Completed,
                         1.0,
-                        "處理階段已完成",
+                        completed_message,
                         artifacts,
                         Vec::new(),
                         Some(stage_started_at),
@@ -469,9 +480,9 @@ pub fn start_stage(
                         &app,
                         &id,
                         &stage,
-                        "completed",
+                        if skipped_mask { "skipped" } else { "completed" },
                         1.0,
-                        "處理完成",
+                        completed_message,
                         "completed",
                         true,
                         None,
@@ -539,6 +550,14 @@ fn setting_bool(settings: &Value, key: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn extract_frame_settings(settings: &Value) -> (f64, f64, bool) {
+    let base_fps = setting_f64(settings, "/extract/baseFps", 3.0).clamp(0.1, 30.0);
+    let dense_fps =
+        setting_f64(settings, "/extract/denseFps", 12.0).clamp(base_fps * 2.0, base_fps * 10.0);
+    let skip_blurry = setting_bool(settings, "/extract/skipBlurry", true);
+    (base_fps, dense_fps, skip_blurry)
+}
+
 const INVALID_GPU_INDEX_MESSAGE: &str = "align.gpuIndex 必須是 -1 或逗號分隔的非負整數（例如 0,1）";
 
 fn parse_gpu_index(settings: &Value) -> Result<String, String> {
@@ -580,6 +599,35 @@ fn mask_confidence(settings: &Value) -> f64 {
     } else {
         configured
     }
+}
+
+fn mask_classes(settings: &Value) -> Vec<String> {
+    let classes = settings
+        .pointer("/mask/classes")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let yolo_enabled = settings
+        .pointer("/mask/yoloEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(!classes.is_empty());
+    if yolo_enabled {
+        classes
+    } else {
+        Vec::new()
+    }
+}
+
+fn mask_enabled(settings: &Value) -> bool {
+    !mask_classes(settings).is_empty() || setting_bool(settings, "/mask/maskSky", false)
 }
 
 fn run_child(
@@ -1770,9 +1818,7 @@ fn run_extract(
     let ffmpeg = find_executable("ffmpeg").ok_or("在系統 PATH 中找不到 FFmpeg")?;
     let ffprobe = find_executable("ffprobe").ok_or("在系統 PATH 中找不到 ffprobe")?;
     let output = PathBuf::from(&manifest.output_path);
-    let base_fps = setting_f64(&manifest.settings, "/extract/baseFps", 2.0).clamp(0.1, 30.0);
-    let dense_fps = setting_f64(&manifest.settings, "/extract/denseFps", 8.0).clamp(base_fps, 60.0);
-    let skip_blurry = setting_bool(&manifest.settings, "/extract/skipBlurry", true);
+    let (base_fps, dense_fps, skip_blurry) = extract_frame_settings(&manifest.settings);
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
     let total_sources = manifest.input_paths.len().max(1);
     let mut telemetry_streams = Vec::new();
@@ -2251,19 +2297,12 @@ fn run_mask(
     manifest: &ProjectManifest,
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
+    if !mask_enabled(&manifest.settings) {
+        emit_log(app, id, "info", "未啟用 YOLO 或天空過濾，已略過遮罩階段");
+        return Ok(Vec::new());
+    }
     let root = PathBuf::from(&manifest.output_path);
-    let classes = manifest
-        .settings
-        .pointer("/mask/classes")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_else(Vec::new);
+    let classes = mask_classes(&manifest.settings);
     let confidence = mask_confidence(&manifest.settings);
     let mask_sky = setting_bool(&manifest.settings, "/mask/maskSky", false);
     let mut optical_occlusions = BTreeMap::new();
@@ -2384,12 +2423,29 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     }
 
     let rig_config = root.join("rig_config.json");
-    if !rig_config.is_file() {
+    let legacy_default = json!([{"cameras":[
+        {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]);
+    let calibrated_default = json!([{"cameras":[
+    {"image_prefix":"lens0/","ref_sensor":true},
+    {
+        "image_prefix":"lens1/",
+        "cam_from_rig_rotation":[0.0,0.0,1.0,0.0],
+        "cam_from_rig_translation":[0.0,0.0,0.0]
+    }]}]);
+    let should_write_calibrated_default = if rig_config.is_file() {
+        serde_json::from_slice::<Value>(&fs::read(&rig_config).map_err(|e| e.to_string())?)
+            .is_ok_and(|config| config == legacy_default)
+    } else {
+        true
+    };
+    if should_write_calibrated_default {
+        // DJI's two native fisheye streams are upright and back-to-back.  Model
+        // them as a co-located panoramic rig: lens1 is lens0 rotated 180° about
+        // the camera Y axis.  Also migrate only the exact uncalibrated default
+        // emitted by older GS360 Studio versions; preserve every custom config.
         fs::write(
-            rig_config,
-            serde_json::to_vec_pretty(&json!([{"cameras":[
-            {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]))
-            .unwrap(),
+            &rig_config,
+            serde_json::to_vec_pretty(&calibrated_default).unwrap(),
         )
         .map_err(|e| e.to_string())?;
     }
@@ -2482,6 +2538,23 @@ impl RigBootstrapCamera {
                 .as_ref()
                 .is_some_and(|translation| translation.len() == 3)
     }
+}
+
+fn rig_config_has_complete_sensor_poses(configs: &[RigBootstrapConfig]) -> bool {
+    !configs.is_empty()
+        && configs.iter().all(|config| {
+            !config.cameras.is_empty()
+                && config
+                    .cameras
+                    .iter()
+                    .filter(|camera| camera.ref_sensor)
+                    .count()
+                    == 1
+                && config
+                    .cameras
+                    .iter()
+                    .all(|camera| camera.ref_sensor || camera.has_explicit_pose())
+        })
 }
 
 /// Extract registered image names from COLMAP's text sparse-model format.
@@ -3350,6 +3423,12 @@ fn feature_extractor_args(
         "1".into(),
         "--ImageReader.camera_model".into(),
         "OPENCV_FISHEYE".into(),
+        // COLMAP otherwise initializes an EXIF-less 3840 px fisheye at its
+        // perspective-camera default of 4608 px (factor 1.2).  An equidistant
+        // 180–190° circular fisheye starts near width / pi, so 0.3 gives the
+        // mapper a physically plausible basin while distortion remains free.
+        "--ImageReader.default_focal_length_factor".into(),
+        "0.3".into(),
         "--FeatureExtraction.use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureExtraction.gpu_index".into(),
@@ -3433,10 +3512,11 @@ fn run_align(
     let frame_count = write_rig_and_pairs(&root)?;
     let db = root.join("database.db");
     let sparse = root.join("sparse");
-    let use_masks = matches!(
-        manifest.stage(&StageName::Mask).status,
-        StageStatus::Completed
-    );
+    let use_masks = mask_enabled(&manifest.settings)
+        && matches!(
+            manifest.stage(&StageName::Mask).status,
+            StageStatus::Completed
+        );
     let checkpoint_path = root.join("metadata/align.checkpoint.json");
     let colmap_version = crate::doctor::command_version(&colmap)
         .ok_or_else(|| "無法讀取 COLMAP 版本；Align 需要 COLMAP 4.1.1 以上".to_owned())?;
@@ -3683,6 +3763,32 @@ fn run_align(
         "影像特徵擷取完成",
         "feature_extractor",
     );
+    let rig_config_path = root.join("rig_config.json");
+    let rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+        &fs::read(&rig_config_path)
+            .map_err(|error| format!("無法讀取 {}：{error}", rig_config_path.display()))?,
+    )
+    .map_err(|error| format!("rig_config.json 格式無效：{error}"))?;
+    let rig_preconfigured = rig_config_has_complete_sensor_poses(&rig_configs);
+    if rig_preconfigured {
+        // With calibrated extrinsics, configure frames before mapping so both
+        // back-to-back sensors contribute to one rig pose from the beginning.
+        // The independent-camera bootstrap is only necessary for unknown poses.
+        run_child(
+            app,
+            id,
+            &colmap,
+            &[
+                "rig_configurator".into(),
+                "--database_path".into(),
+                db.to_string_lossy().into_owned(),
+                "--rig_config_path".into(),
+                rig_config_path.to_string_lossy().into_owned(),
+            ],
+            control,
+        )?;
+        emit_log(app, id, "info", "已在初始建模前套用固定雙鏡頭相對外參");
+    }
     emit_progress_detailed(
         app,
         id,
@@ -3810,7 +3916,7 @@ fn run_align(
             &bootstrap,
             mapper_gpu,
             &mapper_gpu_index,
-            false,
+            rig_preconfigured,
         );
         let bootstrap_cpu_args = mapper_args(
             &db,
@@ -3818,7 +3924,7 @@ fn run_align(
             &bootstrap,
             false,
             &mapper_gpu_index,
-            false,
+            rig_preconfigured,
         );
         run_mapper_with_gpu_fallback(
             app,
@@ -4111,13 +4217,14 @@ mod tests {
         balanced_select_expression, build_align_fingerprint, can_reuse_align_result,
         candidate_ffmpeg_args, candidate_image_names, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_step_progress, expected_candidate_frames,
-        extraction_completed_count, feature_extractor_args, is_mapper_gpu_cpu_fallback_line,
-        is_rig_pose_derivation_failure_line, load_candidate_selection_checkpoint,
-        map_full_res_candidates, mapper_args, mapper_gpu_index, mask_confidence,
-        matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
-        parse_mapper_registration, parse_matching_progress, probe_duration_seconds,
-        read_raw_frames, registered_rig_image_names, selected_ffmpeg_args, source_stage_progress,
-        synchronized_candidate_count, validate_rig_bootstrap_registration,
+        extract_frame_settings, extraction_completed_count, feature_extractor_args,
+        is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
+        load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
+        mapper_gpu_index, mask_classes, mask_confidence, mask_enabled, matches_importer_args,
+        parse_feature_name, parse_feature_progress, parse_gpu_index, parse_mapper_registration,
+        parse_matching_progress, probe_duration_seconds, read_raw_frames,
+        registered_rig_image_names, rig_config_has_complete_sensor_poses, selected_ffmpeg_args,
+        source_stage_progress, synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, with_hwaccel_auto, write_candidate_selection_checkpoint,
         write_rig_and_pairs, ColmapFraction, ExtractionStage, JobControl, JobManager, LogEvent,
         ProgressEvent, RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, StageName,
@@ -4134,6 +4241,29 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn extract_frame_settings_use_three_fps_and_preserve_candidate_multipliers() {
+        assert_eq!(extract_frame_settings(&json!({})), (3.0, 12.0, true));
+        assert_eq!(
+            extract_frame_settings(&json!({
+                "extract": { "baseFps": 5.0, "denseFps": 50.0, "skipBlurry": false }
+            })),
+            (5.0, 50.0, false)
+        );
+        assert_eq!(
+            extract_frame_settings(&json!({
+                "extract": { "baseFps": 30.0, "denseFps": 500.0 }
+            })),
+            (30.0, 300.0, true)
+        );
+        assert_eq!(
+            extract_frame_settings(&json!({
+                "extract": { "baseFps": 30.0, "denseFps": 1.0 }
+            })),
+            (30.0, 60.0, true)
+        );
+    }
+
+    #[test]
     fn migrates_only_the_legacy_default_mask_confidence() {
         assert_eq!(mask_confidence(&json!({"mask": {"confidence": 72}})), 25.0);
         assert_eq!(mask_confidence(&json!({"mask": {"confidence": 60}})), 60.0);
@@ -4141,6 +4271,30 @@ mod tests {
             mask_confidence(&json!({"mask": {"confidence": 72, "confidenceVersion": 2}})),
             72.0
         );
+    }
+
+    #[test]
+    fn mask_settings_support_independent_yolo_and_sky_filters() {
+        let all_off = json!({
+            "mask": { "yoloEnabled": false, "classes": ["person"], "maskSky": false }
+        });
+        assert!(!mask_enabled(&all_off));
+        assert!(mask_classes(&all_off).is_empty());
+
+        let yolo_only = json!({
+            "mask": { "yoloEnabled": true, "classes": ["person", "  "], "maskSky": false }
+        });
+        assert!(mask_enabled(&yolo_only));
+        assert_eq!(mask_classes(&yolo_only), vec!["person"]);
+
+        let sky_only = json!({
+            "mask": { "yoloEnabled": false, "classes": [], "maskSky": true }
+        });
+        assert!(mask_enabled(&sky_only));
+
+        let legacy = json!({ "mask": { "classes": ["car"], "maskSky": false } });
+        assert!(mask_enabled(&legacy));
+        assert_eq!(mask_classes(&legacy), vec!["car"]);
     }
 
     #[test]
@@ -4180,6 +4334,9 @@ mod tests {
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--FeatureExtraction.gpu_index", "0,1"] }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--ImageReader.default_focal_length_factor", "0.3"] }));
         assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
 
         let matching = matches_importer_args(root, &db, true, "0,1");
@@ -4644,6 +4801,38 @@ mod tests {
         write_rig_and_pairs(temp.path()).unwrap();
 
         assert_eq!(fs::read(&rig_path).unwrap(), custom_rig);
+    }
+
+    #[test]
+    fn default_rig_uses_a_fixed_back_to_back_rotation_and_migrates_legacy_default() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+        let rig_path = temp.path().join("rig_config.json");
+        fs::write(
+            &rig_path,
+            br#"[{"cameras":[{"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]"#,
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+
+        let configs =
+            serde_json::from_slice::<Vec<RigBootstrapConfig>>(&fs::read(&rig_path).unwrap())
+                .unwrap();
+        assert!(rig_config_has_complete_sensor_poses(&configs));
+        assert_eq!(
+            configs[0].cameras[1].cam_from_rig_rotation,
+            Some(vec![0.0, 0.0, 1.0, 0.0])
+        );
+        assert_eq!(
+            configs[0].cameras[1].cam_from_rig_translation,
+            Some(vec![0.0, 0.0, 0.0])
+        );
     }
 
     #[test]

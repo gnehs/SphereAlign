@@ -51,9 +51,9 @@ pub struct ModelDownloadProgress {
 /// Resolved ONNX model files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelPaths {
-    /// YOLO11 segmentation model (`[1,116,8400]` + prototype output).
-    pub yolo: PathBuf,
-    /// Optional sky segmentation model. It is required when `mask_sky` is true.
+    /// YOLO11 segmentation model (`[1,116,8400]` + prototype output), when enabled.
+    pub yolo: Option<PathBuf>,
+    /// Sky segmentation model, when enabled.
     pub skyseg: Option<PathBuf>,
 }
 
@@ -65,34 +65,42 @@ impl ModelPaths {
         cache_dir: Option<&Path>,
         yolo_model: Option<&Path>,
         skyseg_model: Option<&Path>,
+        require_yolo: bool,
         require_skyseg: bool,
         cancel: &CancelToken,
         on_download: &dyn Fn(ModelDownloadProgress),
     ) -> MaskResult<Self> {
         let roots = model_roots(model_dir, cache_dir);
-        let yolo = match yolo_model {
-            Some(path) => validate_model_path(path, "YOLO11 segmentation")?,
-            None => resolve_required_model(
-                &roots,
-                cache_dir,
-                YOLO_CANDIDATES,
-                &YOLO_SPEC,
-                cancel,
-                on_download,
-            )?,
+        let yolo = if require_yolo {
+            Some(match yolo_model {
+                Some(path) => validate_model_path(path, "YOLO11 segmentation")?,
+                None => resolve_required_model(
+                    &roots,
+                    cache_dir,
+                    YOLO_CANDIDATES,
+                    &YOLO_SPEC,
+                    cancel,
+                    on_download,
+                )?,
+            })
+        } else {
+            None
         };
 
-        let skyseg = match skyseg_model {
-            Some(path) => Some(validate_model_path(path, "SkySeg")?),
-            None => resolve_optional_model(
-                &roots,
-                cache_dir,
-                SKYSEG_CANDIDATES,
-                &SKYSEG_SPEC,
-                require_skyseg,
-                cancel,
-                on_download,
-            )?,
+        let skyseg = if require_skyseg {
+            Some(match skyseg_model {
+                Some(path) => validate_model_path(path, "SkySeg")?,
+                None => resolve_required_model(
+                    &roots,
+                    cache_dir,
+                    SKYSEG_CANDIDATES,
+                    &SKYSEG_SPEC,
+                    cancel,
+                    on_download,
+                )?,
+            })
+        } else {
+            None
         };
 
         Ok(Self { yolo, skyseg })
@@ -138,28 +146,6 @@ fn resolve_required_model(
         return Err(model_not_found(spec.label, roots));
     };
     download_model(cache_dir, spec, cancel, on_download)
-}
-
-fn resolve_optional_model(
-    roots: &[PathBuf],
-    cache_dir: Option<&Path>,
-    candidates: &[&str],
-    spec: &DownloadSpec<'_>,
-    required: bool,
-    cancel: &CancelToken,
-    on_download: &dyn Fn(ModelDownloadProgress),
-) -> MaskResult<Option<PathBuf>> {
-    if let Some(path) = find_usable_model(roots, candidates, cache_dir, spec)? {
-        return Ok(Some(path));
-    }
-
-    if !required {
-        return Ok(None);
-    }
-    let Some(cache_dir) = cache_dir else {
-        return Err(model_not_found(spec.label, roots));
-    };
-    download_model(cache_dir, spec, cancel, on_download).map(Some)
 }
 
 fn model_roots(explicit: Option<&Path>, cache_dir: Option<&Path>) -> Vec<PathBuf> {
@@ -423,6 +409,44 @@ mod tests {
     use std::net::TcpListener;
     use std::thread;
     use tempfile::TempDir;
+
+    #[test]
+    fn resolves_only_the_models_required_by_enabled_filters() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let yolo = dir.path().join("yolo.onnx");
+        let skyseg = dir.path().join("skyseg.onnx");
+        fs::write(&yolo, b"yolo")?;
+        fs::write(&skyseg, b"skyseg")?;
+        let missing = dir.path().join("disabled-model-does-not-exist.onnx");
+        let cancel = CancelToken::new();
+
+        let sky_only = ModelPaths::resolve(
+            None,
+            None,
+            Some(&missing),
+            Some(&skyseg),
+            false,
+            true,
+            &cancel,
+            &|_| {},
+        )?;
+        assert_eq!(sky_only.yolo, None);
+        assert_eq!(sky_only.skyseg, Some(skyseg));
+
+        let yolo_only = ModelPaths::resolve(
+            None,
+            None,
+            Some(&yolo),
+            Some(&missing),
+            true,
+            false,
+            &cancel,
+            &|_| {},
+        )?;
+        assert_eq!(yolo_only.yolo, Some(yolo));
+        assert_eq!(yolo_only.skyseg, None);
+        Ok(())
+    }
 
     #[test]
     fn downloads_verifies_and_reuses_cached_model() -> MaskResult<()> {

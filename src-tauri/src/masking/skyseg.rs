@@ -11,7 +11,8 @@ use ort::session::{OutputSelector, RunOptions, SessionInputValue};
 use ort::value::Tensor;
 
 use super::inference::{
-    default_coreml_cache_dir, load_session_pool, normalize_provider_name, SessionPool,
+    default_coreml_cache_dir, load_session_pool, normalize_provider_name, provider_candidates,
+    SessionPool,
 };
 use super::{CancelToken, MaskError, MaskResult, SegmentationMask};
 use crate::masking::models::ModelPaths;
@@ -27,9 +28,38 @@ pub struct SkysegPipeline {
     session: Arc<SessionPool>,
     input_name: String,
     output_name: String,
+    pub execution_provider: String,
 }
 
 impl SkysegPipeline {
+    /// Load SkySeg using the requested/platform GPU provider order.
+    pub fn load_available(
+        paths: &ModelPaths,
+        requested_provider: Option<&str>,
+    ) -> MaskResult<Self> {
+        let model_path = paths.skyseg.as_ref().ok_or_else(|| {
+            MaskError::model("skyseg model is required when sky masking is enabled")
+        })?;
+        let candidates = provider_candidates(requested_provider);
+        if candidates.is_empty() {
+            return Err(MaskError::model(
+                "GPU execution provider is required; CPU mask inference is disabled",
+            ));
+        }
+        let mut errors = Vec::new();
+        for provider in candidates {
+            match Self::load_with_provider(model_path, &provider) {
+                Ok(pipeline) => return Ok(pipeline),
+                Err(error) => errors.push(format!("{provider}: {error}")),
+            }
+        }
+        Err(MaskError::model(format!(
+            "unable to load SkySeg model {} ({})",
+            model_path.display(),
+            errors.join("; ")
+        )))
+    }
+
     /// Load skyseg with the same provider selected for YOLO. GPU failures are
     /// surfaced instead of silently moving the model to CPU.
     pub fn load(paths: &ModelPaths, provider: &str) -> MaskResult<Self> {
@@ -76,6 +106,7 @@ impl SkysegPipeline {
             session: Arc::new(session),
             input_name,
             output_name,
+            execution_provider: provider,
         })
     }
 
