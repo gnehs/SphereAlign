@@ -3660,18 +3660,17 @@ fn mapper_args(
         gpu_index.to_owned(),
     ];
     if reduce_global_ba_frequency {
-        // Use COLMAP's documented redundant-landmark pruning. A 1.3 growth
-        // ratio is a conservative video tuning between the 1.1 default and
-        // COLMAP's 1.4 video preset, reducing repeated global BA passes.
+        // Use COLMAP's documented redundant-landmark pruning and its 1.4
+        // video growth-ratio preset to reduce repeated global BA passes.
         // Keep unknown-rig bootstrap on conservative COLMAP defaults because
         // that first pass exists to maximize registration/calibration coverage.
         args.extend([
             "--Mapper.ba_global_ignore_redundant_points3D".into(),
             "1".into(),
             "--Mapper.ba_global_frames_ratio".into(),
-            "1.3".into(),
+            "1.4".into(),
             "--Mapper.ba_global_points_ratio".into(),
-            "1.3".into(),
+            "1.4".into(),
         ]);
     }
     if disable_sensor_refinement {
@@ -4797,10 +4796,10 @@ mod tests {
             .any(|args| { args == ["--Mapper.ba_global_ignore_redundant_points3D", "1"] }));
         assert!(mapper
             .windows(2)
-            .any(|args| { args == ["--Mapper.ba_global_frames_ratio", "1.3"] }));
+            .any(|args| { args == ["--Mapper.ba_global_frames_ratio", "1.4"] }));
         assert!(mapper
             .windows(2)
-            .any(|args| { args == ["--Mapper.ba_global_points_ratio", "1.3"] }));
+            .any(|args| { args == ["--Mapper.ba_global_points_ratio", "1.4"] }));
         assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
     }
 

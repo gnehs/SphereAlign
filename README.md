@@ -67,7 +67,7 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - 自訂 config 若省略 rig extrinsics，仍採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
 - Mask stage 已完成時才傳入 COLMAP mask path；沒有 mask 也能獨立 Align。
 - 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 使用清單中的第一張 GPU。
-- SIFT 明確限制為每張影像最多 8192 個 features，matcher 則限制每個 image pair 最多 8192 個 matches，避免為不存在的 descriptor 配置過大的 GPU matching workspace。最終 mapper 會裁減 global BA 的冗餘 3D points，並把 frames／points growth ratio 設為 1.3 以降低大型場景反覆 global BA 的頻率；未知外參的 bootstrap 仍使用 COLMAP 保守預設，優先確保註冊與 rig 校正覆蓋率。
+- SIFT 明確限制為每張影像最多 8192 個 features，matcher 則限制每個 image pair 最多 8192 個 matches，避免為不存在的 descriptor 配置過大的 GPU matching workspace。最終 mapper 會裁減 global BA 的冗餘 3D points，並套用 COLMAP 影片預設的 1.4 frames／points growth ratio，以降低大型場景反覆 global BA 的頻率；未知外參的 bootstrap 仍使用 COLMAP 保守預設，優先確保註冊與 rig 校正覆蓋率。
 - GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 的 GPU fallback 會刪除可能半提交的資料庫後從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
 - 目前固定使用 Ceres backend，不啟用 Caspar；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容。
 - 已存在的自訂 `rig_config.json` 會保留；只有缺少時才建立預設雙鏡頭 rig，或在內容恰好等於舊版無外參預設時升級為固定背對背外參。
