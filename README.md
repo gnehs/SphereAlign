@@ -65,19 +65,20 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - 同時間的 lens0 / lens1 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
 - 未知 rig extrinsics 採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
 - Mask stage 已完成時才傳入 COLMAP mask path；沒有 mask 也能獨立 Align。
-- 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 也會原樣收到指定字串，但實際支援與排程仍由 COLMAP build 決定，不宣稱 Ceres 一定能以多 GPU 執行。
-- GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；mapper 重試前會清理不完整的 sparse 輸出。
+- 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 使用清單中的第一張 GPU。
+- GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
 - 目前固定使用 Ceres backend，不啟用 Caspar；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容。
 - 已存在的 `rig_config.json` 會保留，不會被覆寫；只有缺少時才建立預設雙鏡頭 rig。
-- `metadata/align.checkpoint.json` 的 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images，以及本次使用的 masks；其中任一輸入變更，checkpoint 就會失效並清理舊 COLMAP 輸出後重建。
-- 已驗證存在且 fingerprint 相符的 sparse model 會直接續用；checkpoint 不符時會清理後重算。
+- bootstrap 完成後會把 sparse model 轉成官方文字格式，確認每顆設定鏡頭都有註冊影像，且每個未知外參鏡頭都至少有一組與參考鏡頭同名且同時註冊的影格；`rig_configurator` 後再核對 rig／sensor 數量並驗證所有 non-reference sensor 的 `HAS_POSE=1`，不讓缺鏡頭或未知 `sensor_from_rig` 進入 final mapper。
+- `metadata/align.checkpoint.json` 的 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images／masks 的路徑、大小與修改時間；任一受追蹤輸入變更或前次流程未完成，都會清理舊 COLMAP 輸出後重建。
+- 只有 checkpoint 已標記完成、database 具有有效 SQLite header／page size、sparse model 同時包含非空的 rigs、frames、cameras、images 與 points3D，且選定的 COLMAP 能重新轉換並通過 rig 驗證時才會續用。
 
 ## 執行需求
 
 - Node.js 與 `pnpm`
 - Rust stable toolchain
 - 系統 `ffmpeg`、`ffprobe`（必須在 `PATH`）
-- Align 需要 COLMAP；可從系統 `PATH` 自動偵測，或在設定中指定啟動程式。Windows 官方免安裝版應選根目錄的 `COLMAP.bat`，讓它一併設定必要的 DLL 與 Qt plugin 路徑
+- Align 最低支援 [COLMAP 4.1.1+](https://colmap.github.io/changelog.html)；不提供舊版參數相容層。可從系統 `PATH` 自動偵測，或在設定中指定啟動程式。Windows 官方免安裝版應選根目錄的 `COLMAP.bat`，讓它一併設定必要的 DLL 與 Qt plugin 路徑
 - 首次執行物件／天空 Mask 時需要網路下載相應 ONNX 模型，或預先放入支援的模型目錄
 
 預設 build 在 Apple silicon 使用 CoreML、Windows 使用 DirectML，並停用 ONNX Runtime 的 CPU execution-provider fallback。若模型含硬體 provider 不支援的節點，Mask 會回報錯誤而不是靜默改用 CPU。Cargo 另提供 `cuda`、`webgpu` 等 opt-in features；原生 WebGPU 在 macOS 與目前 YOLO／ONNX Runtime 組合的實機測試仍不穩定，因此不列為預設。COLMAP GPU 能力只由設定中選定的 COLMAP version/help banner 判斷，不使用 FFmpeg 或 `nvidia-smi` 代判；未確認 CUDA/Ceres 能力時，對應 Align stage 會使用 CPU。即使已確認 GPU，feature、matching 或 mapper 的 GPU 執行失敗仍會自動以 CPU 重試，mapper retry 會先清理不完整輸出。

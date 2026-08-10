@@ -13,6 +13,7 @@ use crate::telemetry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -36,7 +37,7 @@ const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
 const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
-const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
@@ -47,6 +48,7 @@ const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 struct AlignCheckpoint {
     schema_version: u32,
     fingerprint: String,
+    completed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -89,6 +91,8 @@ struct CandidateSelectionCheckpoint {
 pub struct StartStageRequest {
     pub project_path: String,
     pub stage: StageName,
+    #[serde(default)]
+    pub mode: Option<String>,
     #[serde(default)]
     pub settings: Option<Value>,
     #[serde(default)]
@@ -383,6 +387,7 @@ pub fn start_stage(
     manager.insert(id.clone(), control.clone())?;
     let manager = manager.clone();
     let stage = request.stage.clone();
+    let force_retry = request.mode.as_deref() == Some("retry");
     let colmap_path = request.colmap_path.clone();
     let response = StartStageResponse { job_id: id.clone() };
     thread::spawn(move || {
@@ -410,7 +415,14 @@ pub fn start_stage(
         let result = match stage {
             StageName::Extract => run_extract(&app, &id, &manifest, &control),
             StageName::Mask => run_mask(&app, &id, &manifest, &control),
-            StageName::Align => run_align(&app, &id, &manifest, colmap_path.as_deref(), &control),
+            StageName::Align => run_align(
+                &app,
+                &id,
+                &manifest,
+                colmap_path.as_deref(),
+                force_retry,
+                &control,
+            ),
         };
         let cancelled = control.cancelled.load(Ordering::Acquire);
         if cancelled {
@@ -792,7 +804,7 @@ fn cancelled_error(error: &str, control: &JobControl) -> bool {
     error == "cancelled" || control.cancelled.load(Ordering::Acquire)
 }
 
-fn run_colmap_with_gpu_fallback<F>(
+fn run_colmap_with_gpu_fallback<F, R>(
     app: &AppHandle,
     id: &str,
     program: &Path,
@@ -801,10 +813,12 @@ fn run_colmap_with_gpu_fallback<F>(
     use_gpu: bool,
     component: &str,
     control: &JobControl,
+    mut reset_before_cpu_retry: R,
     mut on_line: F,
 ) -> Result<(), String>
 where
     F: FnMut(&str),
+    R: FnMut() -> Result<(), String>,
 {
     if !use_gpu {
         return run_child_with_output(app, id, program, cpu_args, control, &mut on_line);
@@ -819,12 +833,13 @@ where
                 "warning",
                 format!("COLMAP {component} GPU 執行失敗，改用 CPU 重試：{error}"),
             );
+            reset_before_cpu_retry()?;
             run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
         }
     }
 }
 
-fn run_mapper_with_gpu_fallback<F>(
+fn run_mapper_with_gpu_fallback<F, R>(
     app: &AppHandle,
     id: &str,
     program: &Path,
@@ -834,10 +849,12 @@ fn run_mapper_with_gpu_fallback<F>(
     use_gpu: bool,
     component: &str,
     control: &JobControl,
+    mut reset_progress_before_cpu_retry: R,
     mut on_line: F,
 ) -> Result<(), String>
 where
     F: FnMut(&str),
+    R: FnMut(),
 {
     if !use_gpu {
         return run_child_with_output(app, id, program, cpu_args, control, &mut on_line);
@@ -860,6 +877,7 @@ where
             fs::create_dir_all(output_path).map_err(|create_error| {
                 format!("無法建立 COLMAP {component} CPU 輸出資料夾：{create_error}")
             })?;
+            reset_progress_before_cpu_retry();
             run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
         }
     }
@@ -2355,6 +2373,16 @@ fn run_mask(
 }
 
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
+    fn is_supported_image(path: &Path) -> bool {
+        matches!(
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .map(|extension| extension.to_ascii_lowercase())
+                .as_deref(),
+            Some("png") | Some("jpg") | Some("jpeg")
+        )
+    }
+
     let rig_config = root.join("rig_config.json");
     if !rig_config.is_file() {
         fs::write(
@@ -2369,7 +2397,7 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     let mut names: Vec<String> = fs::read_dir(root.join("images/lens0"))
         .map_err(|e| e.to_string())?
         .flatten()
-        .filter(|entry| entry.path().is_file())
+        .filter(|entry| entry.path().is_file() && is_supported_image(&entry.path()))
         .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
         .filter(|name| lens1.join(name).is_file())
         .collect();
@@ -2383,6 +2411,13 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
         for neighbor in names.iter().skip(index + 1).take(5) {
             pairs.insert(format!("lens0/{name} lens0/{neighbor}"));
             pairs.insert(format!("lens1/{name} lens1/{neighbor}"));
+            // Back-to-back fisheye lenses may have too little overlap at the
+            // exact same timestamp to connect both camera tracks.  A bounded
+            // temporal cross-lens window lets a static scene observed by one
+            // lens enter the other lens shortly before or after, while keeping
+            // the imported pair list linear in the number of frames.
+            pairs.insert(format!("lens0/{name} lens1/{neighbor}"));
+            pairs.insert(format!("lens1/{name} lens0/{neighbor}"));
         }
     }
     // Temporal neighbors alone only connect adjacent capture filenames.  For
@@ -2421,6 +2456,303 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(names.len() as u64)
+}
+
+#[derive(Debug, Deserialize)]
+struct RigBootstrapConfig {
+    cameras: Vec<RigBootstrapCamera>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RigBootstrapCamera {
+    image_prefix: String,
+    #[serde(default)]
+    ref_sensor: bool,
+    cam_from_rig_rotation: Option<Vec<f64>>,
+    cam_from_rig_translation: Option<Vec<f64>>,
+}
+
+impl RigBootstrapCamera {
+    fn has_explicit_pose(&self) -> bool {
+        self.cam_from_rig_rotation
+            .as_ref()
+            .is_some_and(|rotation| rotation.len() == 4)
+            && self
+                .cam_from_rig_translation
+                .as_ref()
+                .is_some_and(|translation| translation.len() == 3)
+    }
+}
+
+/// Extract registered image names from COLMAP's text sparse-model format.
+///
+/// Image header lines contain nine scalar fields followed by the image name.
+/// Point-observation lines cannot match one of the configured path prefixes,
+/// which keeps this compatible with both the legacy and current text formats.
+fn registered_rig_image_names(images_text: &str, prefixes: &BTreeSet<String>) -> BTreeSet<String> {
+    fn remainder_after_fields(line: &str, fields_to_skip: usize) -> Option<&str> {
+        let mut completed_fields = 0;
+        let mut in_field = false;
+        for (index, character) in line.char_indices() {
+            if character.is_whitespace() {
+                if in_field {
+                    completed_fields += 1;
+                    in_field = false;
+                }
+            } else if !in_field {
+                if completed_fields == fields_to_skip {
+                    return Some(line[index..].trim_end());
+                }
+                in_field = true;
+            }
+        }
+        None
+    }
+
+    images_text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter_map(|line| {
+            let name = remainder_after_fields(line, 9)?.to_owned();
+            prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+                .then_some(name)
+        })
+        .collect()
+}
+
+/// Verify the official precondition for deriving unknown sensor-from-rig
+/// poses: every uncalibrated non-reference camera must share at least one
+/// registered frame name with its rig's reference camera.
+fn validate_rig_bootstrap_registration(
+    configs: &[RigBootstrapConfig],
+    registered_images: &BTreeSet<String>,
+) -> Result<String, String> {
+    if configs.is_empty() {
+        return Err("rig_config.json 必須至少定義一組相機組".to_owned());
+    }
+
+    let mut summaries = Vec::new();
+    let mut configured_prefixes = BTreeSet::new();
+    for (rig_index, config) in configs.iter().enumerate() {
+        if config.cameras.is_empty() {
+            return Err(format!(
+                "rig_config.json 的第 {} 組相機組沒有任何 camera",
+                rig_index + 1
+            ));
+        }
+        for camera in &config.cameras {
+            if camera.image_prefix.is_empty() {
+                return Err("rig_config.json 的 image_prefix 不得為空".to_owned());
+            }
+            if configured_prefixes.iter().any(|existing: &&str| {
+                camera.image_prefix.starts_with(*existing)
+                    || existing.starts_with(camera.image_prefix.as_str())
+            }) {
+                return Err(format!(
+                    "rig_config.json 的 image_prefix 重複或互相重疊：{}",
+                    camera.image_prefix
+                ));
+            }
+            configured_prefixes.insert(camera.image_prefix.as_str());
+            let has_rotation = camera.cam_from_rig_rotation.is_some();
+            let has_translation = camera.cam_from_rig_translation.is_some();
+            if has_rotation != has_translation {
+                return Err(format!(
+                    "rig_config.json 的 {} 必須同時提供 cam_from_rig_rotation 與 cam_from_rig_translation",
+                    camera.image_prefix
+                ));
+            }
+            if (has_rotation || has_translation) && !camera.has_explicit_pose() {
+                return Err(format!(
+                    "rig_config.json 的 {} 外參格式錯誤；rotation 必須為 4 個 WXYZ 值，translation 必須為 3 個 XYZ 值",
+                    camera.image_prefix
+                ));
+            }
+            if let (Some(rotation), Some(translation)) = (
+                &camera.cam_from_rig_rotation,
+                &camera.cam_from_rig_translation,
+            ) {
+                if !rotation
+                    .iter()
+                    .chain(translation.iter())
+                    .all(|value| value.is_finite())
+                    || rotation.iter().map(|value| value * value).sum::<f64>() <= f64::EPSILON
+                {
+                    return Err(format!(
+                        "rig_config.json 的 {} 外參包含非有限值或零長度 quaternion",
+                        camera.image_prefix
+                    ));
+                }
+            }
+            if camera.ref_sensor && (has_rotation || has_translation) {
+                return Err(format!(
+                    "rig_config.json 的參考鏡頭 {} 不得提供 cam_from_rig 外參",
+                    camera.image_prefix
+                ));
+            }
+        }
+        let references = config
+            .cameras
+            .iter()
+            .filter(|camera| camera.ref_sensor)
+            .collect::<Vec<_>>();
+        if references.len() != 1 {
+            return Err(format!(
+                "rig_config.json 的第 {} 組相機組必須恰好有一個 ref_sensor: true",
+                rig_index + 1
+            ));
+        }
+        for camera in &config.cameras {
+            let registered_count = registered_images
+                .iter()
+                .filter(|name| name.starts_with(&camera.image_prefix))
+                .count();
+            if registered_count == 0 {
+                return Err(format!(
+                    "COLMAP 初始模型未註冊設定鏡頭 {} 的任何影像；無法確認 rig_configurator 會建立完整相機組。請改善該鏡頭的特徵／配對，或檢查 image_prefix",
+                    camera.image_prefix
+                ));
+            }
+        }
+        let reference = references[0];
+        let reference_frames = registered_images
+            .iter()
+            .filter_map(|name| name.strip_prefix(&reference.image_prefix))
+            .collect::<BTreeSet<_>>();
+
+        for camera in config
+            .cameras
+            .iter()
+            .filter(|camera| !camera.ref_sensor && !camera.has_explicit_pose())
+        {
+            let camera_frames = registered_images
+                .iter()
+                .filter_map(|name| name.strip_prefix(&camera.image_prefix))
+                .collect::<BTreeSet<_>>();
+            let shared_frames = reference_frames.intersection(&camera_frames).count();
+            if shared_frames == 0 {
+                return Err(format!(
+                    "COLMAP 初始模型無法估計相機組外參：參考鏡頭 {} 已註冊 {} 張、鏡頭 {} 已註冊 {} 張，但沒有任何同名影格同時註冊。請增加跨鏡頭重疊／配對品質，或提供已校正的 cam_from_rig_rotation 與 cam_from_rig_translation",
+                    reference.image_prefix,
+                    reference_frames.len(),
+                    camera.image_prefix,
+                    camera_frames.len()
+                ));
+            }
+            summaries.push(format!(
+                "{} ↔ {}：{} 組共同影格",
+                reference.image_prefix, camera.image_prefix, shared_frames
+            ));
+        }
+    }
+
+    if summaries.is_empty() {
+        Ok("相機組已提供完整外參".to_owned())
+    } else {
+        Ok(summaries.join("；"))
+    }
+}
+
+fn validate_rigs_text_sensor_poses(
+    rigs_text: &str,
+    expected_sensor_counts: &[usize],
+) -> Result<usize, String> {
+    let mut calibrated_non_reference_sensors = 0;
+    let mut rig_count = 0;
+    let mut actual_sensor_counts = Vec::new();
+    for line in rigs_text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        rig_count += 1;
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        if fields.len() < 4 {
+            return Err("COLMAP rigs.txt 欄位不足".to_owned());
+        }
+        let rig_id = fields[0];
+        let num_sensors = fields[1]
+            .parse::<usize>()
+            .map_err(|_| format!("COLMAP rig {rig_id} 的 sensor 數量無效"))?;
+        if num_sensors == 0 {
+            return Err(format!("COLMAP rig {rig_id} 沒有任何 sensor"));
+        }
+        actual_sensor_counts.push(num_sensors);
+        let mut index = 4;
+        for _ in 1..num_sensors {
+            if fields.len() < index + 3 {
+                return Err(format!(
+                    "COLMAP rig {rig_id} 的 non-reference sensor 欄位不足"
+                ));
+            }
+            let sensor_type = fields[index];
+            let sensor_id = fields[index + 1];
+            let has_pose = fields[index + 2];
+            index += 3;
+            match has_pose {
+                "0" => {
+                    return Err(format!(
+                        "COLMAP rig {rig_id} 的 {sensor_type} sensor {sensor_id} 缺少 sensor_from_rig"
+                    ));
+                }
+                "1" => {
+                    if fields.len() < index + 7 {
+                        return Err(format!(
+                            "COLMAP rig {rig_id} 的 {sensor_type} sensor {sensor_id} 外參欄位不足"
+                        ));
+                    }
+                    let pose = fields[index..index + 7]
+                        .iter()
+                        .map(|value| {
+                            let parsed = value.parse::<f64>().map_err(|_| {
+                                format!(
+                                    "COLMAP rig {rig_id} 的 {sensor_type} sensor {sensor_id} 外參不是有效數值"
+                                )
+                            })?;
+                            if !parsed.is_finite() {
+                                return Err(format!(
+                                    "COLMAP rig {rig_id} 的 {sensor_type} sensor {sensor_id} 外參不是有限數值"
+                                ));
+                            }
+                            Ok(parsed)
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+                    let quaternion_norm = pose[..4]
+                        .iter()
+                        .map(|value| value * value)
+                        .sum::<f64>()
+                        .sqrt();
+                    if quaternion_norm <= f64::EPSILON || (quaternion_norm - 1.0).abs() > 1e-3 {
+                        return Err(format!(
+                            "COLMAP rig {rig_id} 的 {sensor_type} sensor {sensor_id} quaternion 未正規化或為零"
+                        ));
+                    }
+                    index += 7;
+                    calibrated_non_reference_sensors += 1;
+                }
+                value => {
+                    return Err(format!("COLMAP rig {rig_id} 的 HAS_POSE 值無效：{value}"));
+                }
+            }
+        }
+        if index != fields.len() {
+            return Err(format!("COLMAP rig {rig_id} 含有無法辨識的額外欄位"));
+        }
+    }
+    if rig_count == 0 {
+        return Err("COLMAP rig_configurator 未輸出任何 rig".to_owned());
+    }
+    let mut expected_sensor_counts = expected_sensor_counts.to_vec();
+    expected_sensor_counts.sort_unstable();
+    actual_sensor_counts.sort_unstable();
+    if actual_sensor_counts != expected_sensor_counts {
+        return Err(format!(
+            "COLMAP rig_configurator 輸出的相機組結構不完整：預期每組 sensor 數量為 {expected_sensor_counts:?}，實際為 {actual_sensor_counts:?}"
+        ));
+    }
+    Ok(calibrated_non_reference_sensors)
 }
 
 fn canonical_json(value: &Value) -> Result<String, String> {
@@ -2545,10 +2877,11 @@ fn load_align_checkpoint(path: &Path) -> Option<AlignCheckpoint> {
     (checkpoint.schema_version == ALIGN_CHECKPOINT_SCHEMA_VERSION).then_some(checkpoint)
 }
 
-fn write_align_checkpoint(path: &Path, fingerprint: &str) -> Result<(), String> {
+fn write_align_checkpoint(path: &Path, fingerprint: &str, completed: bool) -> Result<(), String> {
     let checkpoint = AlignCheckpoint {
         schema_version: ALIGN_CHECKPOINT_SCHEMA_VERSION,
         fingerprint: fingerprint.to_owned(),
+        completed,
     };
     let bytes = serde_json::to_vec_pretty(&checkpoint).map_err(|error| error.to_string())?;
     let parent = path
@@ -2556,7 +2889,12 @@ fn write_align_checkpoint(path: &Path, fingerprint: &str) -> Result<(), String> 
         .ok_or_else(|| "對齊 checkpoint 缺少父資料夾".to_owned())?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("無法建立對齊 checkpoint 資料夾：{error}"))?;
-    fs::write(path, bytes).map_err(|error| format!("無法寫入對齊 checkpoint：{error}"))
+    let partial = path.with_extension("json.partial");
+    fs::write(&partial, bytes).map_err(|error| format!("無法寫入對齊 checkpoint：{error}"))?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| format!("無法替換舊對齊 checkpoint：{error}"))?;
+    }
+    fs::rename(&partial, path).map_err(|error| format!("無法啟用對齊 checkpoint：{error}"))
 }
 
 fn remove_align_artifact(path: &Path) -> Result<(), String> {
@@ -2571,21 +2909,247 @@ fn remove_align_artifact(path: &Path) -> Result<(), String> {
     .map_err(|error| format!("無法移除 COLMAP 對齊輸出 {}：{error}", path.display()))
 }
 
+fn colmap_database_artifacts(database: &Path) -> Result<[PathBuf; 4], String> {
+    let file_name = database
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("COLMAP 資料庫路徑無效：{}", database.display()))?;
+    Ok([
+        database.to_owned(),
+        database.with_file_name(format!("{file_name}-wal")),
+        database.with_file_name(format!("{file_name}-shm")),
+        database.with_file_name(format!("{file_name}-journal")),
+    ])
+}
+
+fn remove_colmap_database_artifacts(database: &Path) -> Result<(), String> {
+    for artifact in colmap_database_artifacts(database)? {
+        remove_align_artifact(&artifact)?;
+    }
+    Ok(())
+}
+
+fn create_colmap_database_backup(database: &Path, backup: &Path) -> Result<(), String> {
+    remove_align_artifact(backup)?;
+    fs::create_dir_all(backup)
+        .map_err(|error| format!("無法建立 COLMAP 資料庫備份資料夾：{error}"))?;
+    let artifacts = colmap_database_artifacts(database)?;
+    // The shared-memory file is transient and SQLite recreates it from WAL.
+    // Preserve the main database plus either durable recovery log format.
+    for source in [&artifacts[0], &artifacts[1], &artifacts[3]] {
+        if source.is_file() {
+            let file_name = source
+                .file_name()
+                .ok_or_else(|| format!("COLMAP 資料庫備份來源無檔名：{}", source.display()))?;
+            fs::copy(source, backup.join(file_name))
+                .map_err(|error| format!("無法備份 COLMAP 資料庫 {}：{error}", source.display()))?;
+        }
+    }
+    if !backup
+        .join(database.file_name().unwrap_or_default())
+        .is_file()
+    {
+        return Err(format!("COLMAP 資料庫不存在：{}", database.display()));
+    }
+    Ok(())
+}
+
+fn restore_colmap_database_backup(database: &Path, backup: &Path) -> Result<(), String> {
+    remove_colmap_database_artifacts(database)?;
+    let database_name = database
+        .file_name()
+        .ok_or_else(|| format!("COLMAP 資料庫路徑無效：{}", database.display()))?;
+    fs::copy(backup.join(database_name), database).map_err(|error| {
+        format!(
+            "無法還原 GPU 配對前的 COLMAP 資料庫 {}：{error}",
+            database.display()
+        )
+    })?;
+    for suffix in ["-wal", "-journal"] {
+        let recovery_name = format!("{}{suffix}", database_name.to_string_lossy());
+        let backup_recovery_log = backup.join(&recovery_name);
+        if backup_recovery_log.is_file() {
+            fs::copy(
+                &backup_recovery_log,
+                database.with_file_name(&recovery_name),
+            )
+            .map_err(|error| {
+                format!(
+                    "無法還原 GPU 配對前的 COLMAP recovery log {}：{error}",
+                    backup_recovery_log.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
 fn cleanup_align_artifacts(root: &Path) -> Result<(), String> {
     for path in [
         root.join("database.db"),
         root.join("database.db-wal"),
         root.join("database.db-shm"),
+        root.join("database.db-journal"),
         root.join("sparse"),
         root.join("sparse_bootstrap"),
+        root.join("metadata/.align-bootstrap-text"),
+        root.join("metadata/.align-configured-rig"),
+        root.join("metadata/.align-configured-rig-text"),
+        root.join("metadata/.align-matching-database.backup"),
     ] {
         remove_align_artifact(&path)?;
     }
     Ok(())
 }
 
-fn can_reuse_align_result(final_complete: bool, checkpoint_matches: bool) -> bool {
-    final_complete && checkpoint_matches
+fn validate_colmap_bootstrap_for_rig(
+    app: &AppHandle,
+    id: &str,
+    colmap: &Path,
+    root: &Path,
+    bootstrap_model: &Path,
+    control: &JobControl,
+) -> Result<(), String> {
+    let config_path = root.join("rig_config.json");
+    let configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+        &fs::read(&config_path)
+            .map_err(|error| format!("無法讀取 {}：{error}", config_path.display()))?,
+    )
+    .map_err(|error| format!("rig_config.json 格式無效：{error}"))?;
+    let prefixes = configs
+        .iter()
+        .flat_map(|config| config.cameras.iter())
+        .map(|camera| camera.image_prefix.clone())
+        .collect::<BTreeSet<_>>();
+
+    let text_model = root.join("metadata/.align-bootstrap-text");
+    remove_align_artifact(&text_model)?;
+    fs::create_dir_all(&text_model)
+        .map_err(|error| format!("無法建立 COLMAP 初始模型驗證資料夾：{error}"))?;
+    let result = run_child(
+        app,
+        id,
+        colmap,
+        &[
+            "model_converter".into(),
+            "--input_path".into(),
+            bootstrap_model.to_string_lossy().into_owned(),
+            "--output_path".into(),
+            text_model.to_string_lossy().into_owned(),
+            "--output_type".into(),
+            "TXT".into(),
+        ],
+        control,
+    )
+    .and_then(|()| {
+        let images_path = text_model.join("images.txt");
+        let images_text = fs::read_to_string(&images_path)
+            .map_err(|error| format!("無法讀取 {}：{error}", images_path.display()))?;
+        let registered_images = registered_rig_image_names(&images_text, &prefixes);
+        validate_rig_bootstrap_registration(&configs, &registered_images)
+    });
+    let cleanup = remove_align_artifact(&text_model);
+    match (result, cleanup) {
+        (Ok(summary), Ok(())) => {
+            emit_log(
+                app,
+                id,
+                "info",
+                format!("已驗證初始模型可推算相機組外參：{summary}"),
+            );
+            Ok(())
+        }
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
+        (Err(error), Err(cleanup_error)) => Err(format!("{error}；{cleanup_error}")),
+    }
+}
+
+fn validate_colmap_configured_rig_model(
+    app: &AppHandle,
+    id: &str,
+    colmap: &Path,
+    root: &Path,
+    configured_model: &Path,
+    control: &JobControl,
+) -> Result<usize, String> {
+    let config_path = root.join("rig_config.json");
+    let expected_sensor_counts = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+        &fs::read(&config_path)
+            .map_err(|error| format!("無法讀取 {}：{error}", config_path.display()))?,
+    )
+    .map_err(|error| format!("rig_config.json 格式無效：{error}"))?
+    .into_iter()
+    .map(|config| config.cameras.len())
+    .collect::<Vec<_>>();
+    let text_model = root.join("metadata/.align-configured-rig-text");
+    remove_align_artifact(&text_model)?;
+    fs::create_dir_all(&text_model)
+        .map_err(|error| format!("無法建立 COLMAP 相機組驗證資料夾：{error}"))?;
+    let result = run_child(
+        app,
+        id,
+        colmap,
+        &[
+            "model_converter".into(),
+            "--input_path".into(),
+            configured_model.to_string_lossy().into_owned(),
+            "--output_path".into(),
+            text_model.to_string_lossy().into_owned(),
+            "--output_type".into(),
+            "TXT".into(),
+        ],
+        control,
+    )
+    .and_then(|()| {
+        let rigs_path = text_model.join("rigs.txt");
+        let rigs_text = fs::read_to_string(&rigs_path)
+            .map_err(|error| format!("無法讀取 {}：{error}", rigs_path.display()))?;
+        validate_rigs_text_sensor_poses(&rigs_text, &expected_sensor_counts)
+    });
+    let cleanup = remove_align_artifact(&text_model);
+    match (result, cleanup) {
+        (Ok(count), Ok(())) => Ok(count),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
+        (Err(error), Err(cleanup_error)) => Err(format!("{error}；{cleanup_error}")),
+    }
+}
+
+fn is_rig_pose_derivation_failure_line(line: &str) -> bool {
+    let normalized = line.to_ascii_lowercase();
+    normalized.contains("failed to derive sensor_from_rig")
+        || normalized.contains("unknown sensor_from_rig")
+}
+
+fn can_reuse_align_result(
+    final_complete: bool,
+    checkpoint_matches: bool,
+    checkpoint_completed: bool,
+) -> bool {
+    final_complete && checkpoint_matches && checkpoint_completed
+}
+
+fn colmap_database_header_valid(path: &Path) -> bool {
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return false;
+    };
+    let mut header = [0_u8; 100];
+    if file.read_exact(&mut header).is_err() || header[..16] != *b"SQLite format 3\0" {
+        return false;
+    }
+    let encoded_page_size = u16::from_be_bytes([header[16], header[17]]);
+    let page_size = if encoded_page_size == 1 {
+        65_536_u64
+    } else {
+        u64::from(encoded_page_size)
+    };
+    page_size.is_power_of_two()
+        && (512..=65_536).contains(&page_size)
+        && metadata.len() >= page_size
 }
 
 fn sparse_model_exists(root: &Path) -> bool {
@@ -2601,6 +3165,26 @@ fn sparse_model_exists(root: &Path) -> bool {
                     model.join(format!("{name}.bin")).is_file()
                         || model.join(format!("{name}.txt")).is_file()
                 })
+        })
+}
+
+fn sparse_rig_model_exists(root: &Path) -> bool {
+    fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            let model = entry.path();
+            model.is_dir()
+                && ["rigs", "cameras", "frames", "images", "points3D"]
+                    .iter()
+                    .all(|name| {
+                        ["bin", "txt"].iter().any(|extension| {
+                            fs::metadata(model.join(format!("{name}.{extension}")))
+                                .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+                        })
+                    })
         })
 }
 
@@ -2796,35 +3380,8 @@ fn matches_importer_args(root: &Path, db: &Path, use_gpu: bool, gpu_index: &str)
     ]
 }
 
-fn colmap_mapper_backend_supported(version: &str) -> bool {
-    let lower = version.to_ascii_lowercase();
-    let Some(colmap_offset) = lower.find("colmap") else {
-        return false;
-    };
-    let version = &version[colmap_offset + "colmap".len()..];
-    let Some(start) = version.find(|character: char| character.is_ascii_digit()) else {
-        return false;
-    };
-    let version = &version[start..];
-    let major = version
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse::<u32>()
-        .ok();
-    let Some(major) = major else {
-        return false;
-    };
-    let Some(dot) = version.find('.') else {
-        return major > 4;
-    };
-    let minor = version[dot + 1..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse::<u32>()
-        .unwrap_or_default();
-    major > 4 || (major == 4 && minor >= 1)
+fn mapper_gpu_index(gpu_index: &str) -> &str {
+    gpu_index.split(',').next().unwrap_or("-1")
 }
 
 fn mapper_args(
@@ -2834,7 +3391,6 @@ fn mapper_args(
     use_gpu: bool,
     gpu_index: &str,
     disable_sensor_refinement: bool,
-    include_ceres_backend: bool,
 ) -> Vec<String> {
     let mut args = vec![
         "mapper".into(),
@@ -2846,23 +3402,15 @@ fn mapper_args(
         output.to_string_lossy().into_owned(),
         "--Mapper.multiple_models".into(),
         "0".into(),
+        "--Mapper.ba_local_backend".into(),
+        "CERES".into(),
+        "--Mapper.ba_global_backend".into(),
+        "CERES".into(),
         "--Mapper.ba_use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--Mapper.ba_gpu_index".into(),
         gpu_index.to_owned(),
     ];
-    if include_ceres_backend {
-        let insertion = args.len() - 4;
-        args.splice(
-            insertion..insertion,
-            [
-                "--Mapper.ba_local_backend".into(),
-                "CERES".into(),
-                "--Mapper.ba_global_backend".into(),
-                "CERES".into(),
-            ],
-        );
-    }
     if disable_sensor_refinement {
         args.push("--Mapper.ba_refine_sensor_from_rig".into());
         args.push("0".into());
@@ -2875,6 +3423,7 @@ fn run_align(
     id: &str,
     manifest: &ProjectManifest,
     custom_colmap_path: Option<&str>,
+    force_rebuild: bool,
     control: &JobControl,
 ) -> Result<Vec<String>, String> {
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
@@ -2890,16 +3439,63 @@ fn run_align(
     );
     let checkpoint_path = root.join("metadata/align.checkpoint.json");
     let colmap_version = crate::doctor::command_version(&colmap)
-        .unwrap_or_else(|| "<unknown-colmap-version>".to_owned());
+        .ok_or_else(|| "無法讀取 COLMAP 版本；Align 需要 COLMAP 4.1.1 以上".to_owned())?;
+    if !crate::doctor::colmap_version_at_least_4_1_1(&colmap_version) {
+        return Err(format!(
+            "不支援的 COLMAP 版本：{colmap_version}；Align 需要 COLMAP 4.1.1 以上"
+        ));
+    }
+    let colmap_capabilities = crate::doctor::probe_colmap_capabilities(&colmap);
+    if !colmap_capabilities.feature_extractor
+        || !colmap_capabilities.mapper
+        || !colmap_capabilities.model_converter
+        || !colmap_capabilities.rig_configurator
+        || !colmap_capabilities.matches_importer
+    {
+        return Err(
+            "指定的 COLMAP 4.1.1+ 缺少 feature_extractor、matches_importer、mapper、model_converter 或 rig_configurator，無法執行雙鏡頭 rig 重建"
+                .to_owned(),
+        );
+    }
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
-    let checkpoint_matches = checkpoint
-        .as_ref()
-        .is_some_and(|value| value.fingerprint == fingerprint);
-    let final_complete = db.is_file() && sparse_model_exists(&sparse);
-    if can_reuse_align_result(final_complete, checkpoint_matches) {
+    let checkpoint_matches = !force_rebuild
+        && checkpoint
+            .as_ref()
+            .is_some_and(|value| value.fingerprint == fingerprint);
+    let checkpoint_completed =
+        !force_rebuild && checkpoint.as_ref().is_some_and(|value| value.completed);
+    let final_complete = colmap_database_header_valid(&db) && sparse_rig_model_exists(&sparse);
+    let reuse_candidate =
+        can_reuse_align_result(final_complete, checkpoint_matches, checkpoint_completed);
+    let cached_validation_error = if reuse_candidate {
+        match validate_colmap_configured_rig_model(
+            app,
+            id,
+            &colmap,
+            &root,
+            &sparse.join("0"),
+            control,
+        ) {
+            Ok(calibrated_sensor_count) => {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!(
+                        "已重新驗證 checkpoint 模型與 {calibrated_sensor_count} 個 non-reference sensor 外參"
+                    ),
+                );
+                None
+            }
+            Err(error) => Some(error),
+        }
+    } else {
+        None
+    };
+    if reuse_candidate && cached_validation_error.is_none() {
         emit_log(
             app,
             id,
@@ -2926,13 +3522,39 @@ fn run_align(
             sparse.to_string_lossy().into_owned(),
         ]);
     }
-    if !checkpoint_matches {
-        if checkpoint_present {
+    if let Some(error) = &cached_validation_error {
+        emit_log(
+            app,
+            id,
+            "warning",
+            format!("既有 COLMAP checkpoint 模型驗證失敗，將安全重建：{error}"),
+        );
+    }
+    if !checkpoint_matches
+        || !checkpoint_completed
+        || !final_complete
+        || cached_validation_error.is_some()
+    {
+        if force_rebuild {
+            emit_log(
+                app,
+                id,
+                "info",
+                "已要求重跑 Align；清理舊 COLMAP 輸出後完整重建",
+            );
+        } else if checkpoint_present && !checkpoint_matches {
             emit_log(
                 app,
                 id,
                 "warning",
                 "對齊輸入 checkpoint 已變更；清理舊 COLMAP 輸出後重建",
+            );
+        } else if checkpoint_present {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "先前對齊未完整完成；清理舊 COLMAP 輸出後安全重建",
             );
         } else {
             emit_log(
@@ -2943,11 +3565,10 @@ fn run_align(
             );
         }
         cleanup_align_artifacts(&root)?;
-        write_align_checkpoint(&checkpoint_path, &fingerprint)?;
+        write_align_checkpoint(&checkpoint_path, &fingerprint, false)?;
     }
-    let (feature_gpu, mapper_gpu) = if requested_gpu {
-        let capabilities = crate::doctor::probe_colmap_capabilities(&colmap);
-        if !capabilities.cuda_build {
+    let (feature_extraction_gpu, feature_matching_gpu, mapper_gpu) = if requested_gpu {
+        if !colmap_capabilities.cuda_build {
             emit_log(
                 app,
                 id,
@@ -2955,22 +3576,39 @@ fn run_align(
                 "COLMAP 未以 CUDA 建置；SIFT 擷取與影像配對改用 CPU",
             );
         }
-        if capabilities.cuda_build && !capabilities.ceres_gpu {
+        if colmap_capabilities.cuda_build && !colmap_capabilities.feature_extraction_gpu {
             emit_log(
                 app,
                 id,
                 "warning",
-                "COLMAP 的 Ceres 未支援 GPU；增量 mapper 的 BA 改用 CPU",
+                "指定的 COLMAP feature_extractor 不支援 GPU 選項；特徵擷取改用 CPU",
+            );
+        }
+        if colmap_capabilities.cuda_build && !colmap_capabilities.feature_matching_gpu {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "指定的 COLMAP matches_importer 不支援 GPU 選項；影像配對改用 CPU",
+            );
+        }
+        if colmap_capabilities.cuda_build && !colmap_capabilities.mapper_ba_gpu {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "指定的 COLMAP mapper 不支援 Ceres GPU 選項；Bundle Adjustment 改用 CPU",
             );
         }
         (
-            capabilities.cuda_build,
-            capabilities.cuda_build && capabilities.ceres_gpu,
+            colmap_capabilities.feature_extraction_gpu,
+            colmap_capabilities.feature_matching_gpu,
+            colmap_capabilities.mapper_ba_gpu,
         )
     } else {
-        (false, false)
+        (false, false, false)
     };
-    let mapper_backend_supported = colmap_mapper_backend_supported(&colmap_version);
+    let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
     let feature_gpu_args = feature_extractor_args(&root, &db, true, &gpu_index, use_masks);
     let feature_cpu_args = feature_extractor_args(&root, &db, false, &gpu_index, use_masks);
     emit_progress_detailed(
@@ -2988,38 +3626,45 @@ fn run_align(
         None,
     );
     let mut feature_item = Some("feature_extractor".to_owned());
-    let mut highest_feature_fraction = 0.0_f32;
-    let mut last_feature_emit = None;
+    let highest_feature_fraction = Cell::new(0.0_f32);
+    let last_feature_emit = Cell::new(None);
     run_colmap_with_gpu_fallback(
         app,
         id,
         &colmap,
         &feature_gpu_args,
         &feature_cpu_args,
-        feature_gpu,
+        feature_extraction_gpu,
         "feature_extractor",
         control,
+        || {
+            remove_colmap_database_artifacts(&db)?;
+            highest_feature_fraction.set(0.0);
+            last_feature_emit.set(None);
+            Ok(())
+        },
         |line| {
             if let Some(progress) = parse_feature_progress(line) {
                 let fraction = progress.current as f32 / progress.total as f32;
-                if fraction < highest_feature_fraction {
+                if fraction < highest_feature_fraction.get() {
                     return;
                 }
-                highest_feature_fraction = fraction;
+                highest_feature_fraction.set(fraction);
                 let terminal = progress.current == progress.total;
                 if !terminal
                     && last_feature_emit
+                        .get()
                         .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
                 {
                     return;
                 }
-                last_feature_emit = Some(Instant::now());
+                last_feature_emit.set(Some(Instant::now()));
                 emit_colmap_progress(
                     app,
                     id,
                     "feature-extraction",
                     0,
-                    highest_feature_fraction,
+                    highest_feature_fraction.get(),
                     format!("已處理 {} / {} 張影像", progress.current, progress.total),
                     feature_item.clone(),
                 );
@@ -3052,19 +3697,30 @@ fn run_align(
         Some("matches_importer".to_owned()),
         None,
     );
-    let mut matching_progress: Option<ColmapFraction> = None;
-    let mut highest_matching_fraction = 0.0_f32;
+    let matching_progress = Cell::new(None::<ColmapFraction>);
+    let highest_matching_fraction = Cell::new(0.0_f32);
     let matching_gpu_args = matches_importer_args(&root, &db, true, &gpu_index);
     let matching_cpu_args = matches_importer_args(&root, &db, false, &gpu_index);
-    run_colmap_with_gpu_fallback(
+    let matching_database_backup = root.join("metadata/.align-matching-database.backup");
+    remove_align_artifact(&matching_database_backup)?;
+    if feature_matching_gpu {
+        create_colmap_database_backup(&db, &matching_database_backup)?;
+    }
+    let matching_result = run_colmap_with_gpu_fallback(
         app,
         id,
         &colmap,
         &matching_gpu_args,
         &matching_cpu_args,
-        feature_gpu,
+        feature_matching_gpu,
         "matches_importer",
         control,
+        || {
+            restore_colmap_database_backup(&db, &matching_database_backup)?;
+            matching_progress.set(None);
+            highest_matching_fraction.set(0.0);
+            Ok(())
+        },
         |line| {
             let parsed = parse_matching_progress(line);
             if parsed.is_none() && line.contains(" in ") {
@@ -3072,16 +3728,16 @@ fn run_align(
                     return;
                 };
                 let fraction = progress.current as f32 / progress.total as f32;
-                if fraction < highest_matching_fraction {
+                if fraction < highest_matching_fraction.get() {
                     return;
                 }
-                highest_matching_fraction = fraction;
+                highest_matching_fraction.set(fraction);
                 emit_colmap_progress(
                     app,
                     id,
                     "matching",
                     1,
-                    highest_matching_fraction,
+                    highest_matching_fraction.get(),
                     format!("已完成配對區塊 {} / {}", progress.current, progress.total),
                     Some(format!("區塊 {} / {}", progress.current, progress.total)),
                 );
@@ -3094,28 +3750,35 @@ fn run_align(
                 .split_once(']')
                 .is_some_and(|(_, suffix)| suffix.contains(" in "))
             {
-                matching_progress = None;
+                matching_progress.set(None);
                 progress.current
             } else {
-                matching_progress = Some(progress);
+                matching_progress.set(Some(progress));
                 progress.current.saturating_sub(1)
             };
             let fraction = completed as f32 / progress.total as f32;
-            if fraction < highest_matching_fraction {
+            if fraction < highest_matching_fraction.get() {
                 return;
             }
-            highest_matching_fraction = fraction;
+            highest_matching_fraction.set(fraction);
             emit_colmap_progress(
                 app,
                 id,
                 "matching",
                 1,
-                highest_matching_fraction,
+                highest_matching_fraction.get(),
                 format!("正在處理配對區塊 {} / {}", progress.current, progress.total),
                 Some(format!("區塊 {} / {}", progress.current, progress.total)),
             );
         },
-    )?;
+    );
+    let matching_backup_cleanup = remove_align_artifact(&matching_database_backup);
+    match (matching_result, matching_backup_cleanup) {
+        (Ok(()), Ok(())) => {}
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(()), Err(cleanup_error)) => return Err(cleanup_error),
+        (Err(error), Err(cleanup_error)) => return Err(format!("{error}；{cleanup_error}")),
+    }
     emit_colmap_step_completed(app, id, "matching", 1, "影像配對完成", "matches_importer");
     emit_progress_detailed(
         app,
@@ -3137,8 +3800,8 @@ fn run_align(
             fs::remove_dir_all(&bootstrap).map_err(|e| e.to_string())?;
         }
         fs::create_dir_all(&bootstrap).map_err(|e| e.to_string())?;
-        let mut highest_registered = 0;
-        let mut last_bootstrap_emit = None;
+        let highest_registered = Cell::new(0);
+        let last_bootstrap_emit = Cell::new(None);
         let mut bootstrap_gpu_warning_emitted = false;
         let bootstrap_total = frame_count.saturating_mul(2).max(1);
         let bootstrap_gpu_args = mapper_args(
@@ -3146,18 +3809,16 @@ fn run_align(
             &root.join("images"),
             &bootstrap,
             mapper_gpu,
-            &gpu_index,
+            &mapper_gpu_index,
             false,
-            mapper_backend_supported,
         );
         let bootstrap_cpu_args = mapper_args(
             &db,
             &root.join("images"),
             &bootstrap,
             false,
-            &gpu_index,
+            &mapper_gpu_index,
             false,
-            mapper_backend_supported,
         );
         run_mapper_with_gpu_fallback(
             app,
@@ -3169,6 +3830,10 @@ fn run_align(
             mapper_gpu,
             "bootstrap_mapper",
             control,
+            || {
+                highest_registered.set(0);
+                last_bootstrap_emit.set(None);
+            },
             |line| {
                 maybe_log_mapper_gpu_cpu_fallback(
                     app,
@@ -3181,24 +3846,31 @@ fn run_align(
                 let Some((image_id, registered)) = parse_mapper_registration(line) else {
                     return;
                 };
-                highest_registered = highest_registered.max(registered).min(bootstrap_total);
-                let terminal = highest_registered == bootstrap_total;
+                highest_registered.set(
+                    highest_registered
+                        .get()
+                        .max(registered)
+                        .min(bootstrap_total),
+                );
+                let terminal = highest_registered.get() == bootstrap_total;
                 if !terminal
                     && last_bootstrap_emit
+                        .get()
                         .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
                 {
                     return;
                 }
-                last_bootstrap_emit = Some(Instant::now());
+                last_bootstrap_emit.set(Some(Instant::now()));
                 emit_colmap_progress(
                     app,
                     id,
                     "bootstrap",
                     2,
-                    highest_registered as f32 / bootstrap_total as f32,
+                    highest_registered.get() as f32 / bootstrap_total as f32,
                     format!(
                         "正在建立初始模型，已註冊約 {} / {} 張影像",
-                        highest_registered, bootstrap_total
+                        highest_registered.get(),
+                        bootstrap_total
                     ),
                     Some(format!("影像 #{image_id}")),
                 );
@@ -3209,6 +3881,7 @@ fn run_align(
     if !boot0.is_dir() {
         return Err("COLMAP 初始建模未產生 sparse/0".into());
     }
+    validate_colmap_bootstrap_for_rig(app, id, &colmap, &root, &boot0, control)?;
     emit_colmap_step_completed(
         app,
         id,
@@ -3231,7 +3904,12 @@ fn run_align(
         Some("rig_configurator".to_owned()),
         None,
     );
-    run_child(
+    let configured_bootstrap = root.join("metadata/.align-configured-rig");
+    remove_align_artifact(&configured_bootstrap)?;
+    fs::create_dir_all(&configured_bootstrap)
+        .map_err(|error| format!("無法建立 COLMAP 相機組驗證模型資料夾：{error}"))?;
+    let mut rig_derivation_failure = None;
+    let configure_result = run_child_with_output(
         app,
         id,
         &colmap,
@@ -3243,9 +3921,52 @@ fn run_align(
             boot0.to_string_lossy().into_owned(),
             "--rig_config_path".into(),
             root.join("rig_config.json").to_string_lossy().into_owned(),
+            "--output_path".into(),
+            configured_bootstrap.to_string_lossy().into_owned(),
         ],
         control,
-    )?;
+        |line| {
+            if is_rig_pose_derivation_failure_line(line) {
+                rig_derivation_failure = Some(line.trim().to_owned());
+            }
+        },
+    )
+    .and_then(|()| {
+        if let Some(detail) = rig_derivation_failure {
+            return Err(format!(
+                "COLMAP 無法從初始模型推算 sensor_from_rig：{detail}"
+            ));
+        }
+        validate_colmap_configured_rig_model(
+            app,
+            id,
+            &colmap,
+            &root,
+            &configured_bootstrap,
+            control,
+        )
+    });
+    let configured_cleanup = remove_align_artifact(&configured_bootstrap);
+    let calibrated_sensor_count = match (configure_result, configured_cleanup) {
+        (Ok(count), Ok(())) => count,
+        (Err(error), cleanup) => {
+            let cleanup_detail = cleanup
+                .err()
+                .map(|value| format!("；{value}"))
+                .unwrap_or_default();
+            cleanup_align_artifacts(&root)?;
+            return Err(format!(
+                "{error}；已清理受污染的 COLMAP 對齊快取以便安全重試{cleanup_detail}"
+            ));
+        }
+        (Ok(_), Err(error)) => return Err(error),
+    };
+    emit_log(
+        app,
+        id,
+        "info",
+        format!("已驗證 {calibrated_sensor_count} 個 non-reference sensor 的相機組外參"),
+    );
     emit_colmap_step_completed(
         app,
         id,
@@ -3272,8 +3993,8 @@ fn run_align(
         fs::remove_dir_all(&sparse).map_err(|e| e.to_string())?;
     }
     fs::create_dir_all(&sparse).map_err(|e| e.to_string())?;
-    let mut highest_registered = 0;
-    let mut last_final_mapper_emit = None;
+    let highest_registered = Cell::new(0);
+    let last_final_mapper_emit = Cell::new(None);
     let mut final_gpu_warning_emitted = false;
     let final_total = frame_count.max(1);
     let final_gpu_args = mapper_args(
@@ -3281,18 +4002,16 @@ fn run_align(
         &root.join("images"),
         &sparse,
         mapper_gpu,
-        &gpu_index,
+        &mapper_gpu_index,
         true,
-        mapper_backend_supported,
     );
     let final_cpu_args = mapper_args(
         &db,
         &root.join("images"),
         &sparse,
         false,
-        &gpu_index,
+        &mapper_gpu_index,
         true,
-        mapper_backend_supported,
     );
     run_mapper_with_gpu_fallback(
         app,
@@ -3304,6 +4023,10 @@ fn run_align(
         mapper_gpu,
         "final_mapper",
         control,
+        || {
+            highest_registered.set(0);
+            last_final_mapper_emit.set(None);
+        },
         |line| {
             maybe_log_mapper_gpu_cpu_fallback(
                 app,
@@ -3316,33 +4039,43 @@ fn run_align(
             let Some((image_id, registered)) = parse_mapper_registration(line) else {
                 return;
             };
-            highest_registered = highest_registered.max(registered).min(final_total);
-            let terminal = highest_registered == final_total;
+            highest_registered.set(highest_registered.get().max(registered).min(final_total));
+            let terminal = highest_registered.get() == final_total;
             if !terminal
                 && last_final_mapper_emit
+                    .get()
                     .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
             {
                 return;
             }
-            last_final_mapper_emit = Some(Instant::now());
+            last_final_mapper_emit.set(Some(Instant::now()));
             emit_colmap_progress(
                 app,
                 id,
                 "final-mapping",
                 4,
-                highest_registered as f32 / final_total as f32,
+                highest_registered.get() as f32 / final_total as f32,
                 format!(
                     "正在重建最終模型，已註冊約 {} / {} 組影格",
-                    highest_registered, final_total
+                    highest_registered.get(),
+                    final_total
                 ),
                 Some(format!("影像 #{image_id}")),
             );
         },
     )?;
-    if !sparse_model_exists(&sparse) {
-        return Err("COLMAP 最終建模結束但未產生有效 sparse model".into());
+    if !sparse_rig_model_exists(&sparse) {
+        return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
     }
-    write_align_checkpoint(&checkpoint_path, &fingerprint)?;
+    let final_calibrated_sensor_count =
+        validate_colmap_configured_rig_model(app, id, &colmap, &root, &sparse.join("0"), control)?;
+    emit_log(
+        app,
+        id,
+        "info",
+        format!("已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"),
+    );
+    write_align_checkpoint(&checkpoint_path, &fingerprint, true)?;
     emit_colmap_step_completed(
         app,
         id,
@@ -3377,15 +4110,17 @@ mod tests {
     use super::{
         balanced_select_expression, build_align_fingerprint, can_reuse_align_result,
         candidate_ffmpeg_args, candidate_image_names, cleanup_obsolete_candidate_cache,
-        cleanup_stale_full_res_dirs, colmap_mapper_backend_supported, colmap_step_progress,
-        expected_candidate_frames, extraction_completed_count, feature_extractor_args,
-        is_mapper_gpu_cpu_fallback_line, load_candidate_selection_checkpoint,
-        map_full_res_candidates, mapper_args, mask_confidence, matches_importer_args,
-        parse_feature_name, parse_feature_progress, parse_gpu_index, parse_mapper_registration,
-        parse_matching_progress, probe_duration_seconds, read_raw_frames, selected_ffmpeg_args,
-        source_stage_progress, synchronized_candidate_count, with_hwaccel_auto,
-        write_candidate_selection_checkpoint, write_rig_and_pairs, ColmapFraction, ExtractionStage,
-        JobControl, JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName,
+        cleanup_stale_full_res_dirs, colmap_step_progress, expected_candidate_frames,
+        extraction_completed_count, feature_extractor_args, is_mapper_gpu_cpu_fallback_line,
+        is_rig_pose_derivation_failure_line, load_candidate_selection_checkpoint,
+        map_full_res_candidates, mapper_args, mapper_gpu_index, mask_confidence,
+        matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
+        parse_mapper_registration, parse_matching_progress, probe_duration_seconds,
+        read_raw_frames, registered_rig_image_names, selected_ffmpeg_args, source_stage_progress,
+        synchronized_candidate_count, validate_rig_bootstrap_registration,
+        validate_rigs_text_sensor_poses, with_hwaccel_auto, write_candidate_selection_checkpoint,
+        write_rig_and_pairs, ColmapFraction, ExtractionStage, JobControl, JobManager, LogEvent,
+        ProgressEvent, RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, StageName,
         StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
         CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
@@ -3455,7 +4190,8 @@ mod tests {
             .windows(2)
             .any(|args| { args == ["--FeatureMatching.gpu_index", "0,1"] }));
 
-        let mapper = mapper_args(&db, &images, &sparse, true, "0,1", true, true);
+        let mapper_index = mapper_gpu_index("0,1");
+        let mapper = mapper_args(&db, &images, &sparse, true, mapper_index, true);
         assert!(mapper
             .windows(2)
             .any(|args| { args == ["--Mapper.multiple_models", "0"] }));
@@ -3470,18 +4206,18 @@ mod tests {
             .any(|args| { args == ["--Mapper.ba_use_gpu", "1"] }));
         assert!(mapper
             .windows(2)
-            .any(|args| { args == ["--Mapper.ba_gpu_index", "0,1"] }));
+            .any(|args| { args == ["--Mapper.ba_gpu_index", "0"] }));
         assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
     }
 
     #[test]
-    fn mapper_backend_flag_is_gated_for_colmap_3x() {
-        assert!(!colmap_mapper_backend_supported("COLMAP 3.12.6"));
-        assert!(!colmap_mapper_backend_supported("COLMAP 4.0.0"));
-        assert!(colmap_mapper_backend_supported("COLMAP 4.1.0"));
-        assert!(colmap_mapper_backend_supported("COLMAP 5.0.0"));
-        assert!(!colmap_mapper_backend_supported("unknown"));
+    fn mapper_uses_the_first_device_from_a_multi_gpu_sift_list() {
+        assert_eq!(mapper_gpu_index("2,0,1"), "2");
+        assert_eq!(mapper_gpu_index("-1"), "-1");
+    }
 
+    #[test]
+    fn mapper_always_selects_ceres_on_supported_colmap() {
         let args = mapper_args(
             Path::new("database.db"),
             Path::new("images"),
@@ -3489,10 +4225,13 @@ mod tests {
             false,
             "-1",
             false,
-            false,
         );
-        assert!(!args.iter().any(|arg| arg == "--Mapper.ba_local_backend"));
-        assert!(!args.iter().any(|arg| arg == "--Mapper.ba_global_backend"));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.ba_local_backend", "CERES"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.ba_global_backend", "CERES"]));
     }
 
     #[test]
@@ -3509,6 +4248,102 @@ mod tests {
         assert!(!is_mapper_gpu_cpu_fallback_line(
             "Bundle adjustment converged"
         ));
+    }
+
+    #[test]
+    fn bootstrap_model_requires_registered_same_name_images_for_unknown_rig_pose() {
+        let config = RigBootstrapConfig {
+            cameras: vec![
+                RigBootstrapCamera {
+                    image_prefix: "lens0/".to_owned(),
+                    ref_sensor: true,
+                    cam_from_rig_rotation: None,
+                    cam_from_rig_translation: None,
+                },
+                RigBootstrapCamera {
+                    image_prefix: "lens1/".to_owned(),
+                    ref_sensor: false,
+                    cam_from_rig_rotation: None,
+                    cam_from_rig_translation: None,
+                },
+            ],
+        };
+        let prefixes = BTreeSet::from(["lens0/".to_owned(), "lens1/".to_owned()]);
+        let registered = registered_rig_image_names(
+            "# images\n1 1 0 0 0 0 0 0 1 lens0/frame one.png\n0 0 -1\n2 1 0 0 0 0 0 0 2 lens1/frame one.png\n0 0 -1\n",
+            &prefixes,
+        );
+        let summary = validate_rig_bootstrap_registration(&[config], &registered).unwrap();
+        assert!(summary.contains("1 組共同影格"));
+    }
+
+    #[test]
+    fn bootstrap_model_reports_disconnected_rig_cameras_before_final_mapper() {
+        let configs = serde_json::from_value::<Vec<RigBootstrapConfig>>(json!([{
+            "cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {"image_prefix": "lens1/"}
+            ]
+        }]))
+        .unwrap();
+        let registered = BTreeSet::from([
+            "lens0/frame0001.png".to_owned(),
+            "lens1/frame0002.png".to_owned(),
+        ]);
+        let error = validate_rig_bootstrap_registration(&configs, &registered).unwrap_err();
+        assert!(error.contains("沒有任何同名影格同時註冊"));
+        assert!(error.contains("lens0/"));
+        assert!(error.contains("lens1/"));
+    }
+
+    #[test]
+    fn explicit_rig_pose_requires_registered_cameras_but_not_shared_frames() {
+        let configs = serde_json::from_value::<Vec<RigBootstrapConfig>>(json!([{
+            "cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {
+                    "image_prefix": "lens1/",
+                    "cam_from_rig_rotation": [1.0, 0.0, 0.0, 0.0],
+                    "cam_from_rig_translation": [0.0, 0.0, 0.0]
+                }
+            ]
+        }]))
+        .unwrap();
+        let registered = BTreeSet::from([
+            "lens0/frame0001.png".to_owned(),
+            "lens1/frame0002.png".to_owned(),
+        ]);
+        assert_eq!(
+            validate_rig_bootstrap_registration(&configs, &registered).unwrap(),
+            "相機組已提供完整外參"
+        );
+    }
+
+    #[test]
+    fn configured_rig_text_rejects_unknown_sensor_poses() {
+        assert_eq!(
+            validate_rigs_text_sensor_poses(
+                "# rigs\n1 2 CAMERA 1 CAMERA 2 1 1 0 0 0 0.1 0 0\n2 1 CAMERA 3\n",
+                &[2, 1],
+            ),
+            Ok(1)
+        );
+        let error = validate_rigs_text_sensor_poses("1 2 CAMERA 1 CAMERA 2 0\n", &[2]).unwrap_err();
+        assert!(error.contains("缺少 sensor_from_rig"));
+        let error =
+            validate_rigs_text_sensor_poses("1 2 CAMERA 1 CAMERA 2 1 0 0 0 0 0.1 0 0\n", &[2])
+                .unwrap_err();
+        assert!(error.contains("quaternion"));
+        assert!(is_rig_pose_derivation_failure_line(
+            "Failed to derive sensor_from_rig transformation for camera 2"
+        ));
+    }
+
+    #[test]
+    fn configured_rig_text_rejects_trivial_or_missing_rigs() {
+        let error =
+            validate_rigs_text_sensor_poses("1 1 CAMERA 1\n2 1 CAMERA 2\n", &[2]).unwrap_err();
+        assert!(error.contains("相機組結構不完整"));
     }
 
     #[test]
@@ -3529,15 +4364,15 @@ mod tests {
         let settings = json!({"align": {"useGpu": false, "gpuIndex": "-1"}});
 
         let baseline =
-            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap();
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap();
         assert_ne!(
             baseline,
-            build_align_fingerprint(temp.path(), &settings, "COLMAP 3.12.6", false).unwrap()
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.2.0", false).unwrap()
         );
         let changed_settings = json!({"align": {"useGpu": true, "gpuIndex": "-1"}});
         assert_ne!(
             baseline,
-            build_align_fingerprint(temp.path(), &changed_settings, "COLMAP 4.1.0", false).unwrap()
+            build_align_fingerprint(temp.path(), &changed_settings, "COLMAP 4.1.1", false).unwrap()
         );
 
         fs::write(
@@ -3547,13 +4382,13 @@ mod tests {
         .unwrap();
         assert_ne!(
             baseline,
-            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap()
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
         );
 
         fs::write(images.join("lens0/frame0001.png"), b"frame-with-new-size").unwrap();
         assert_ne!(
             baseline,
-            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", false).unwrap()
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
         );
 
         fs::create_dir_all(temp.path().join("masks_colmap")).unwrap();
@@ -3566,10 +4401,10 @@ mod tests {
 
     #[test]
     fn align_result_reuse_requires_both_complete_output_and_matching_checkpoint() {
-        assert!(can_reuse_align_result(true, true));
-        assert!(!can_reuse_align_result(true, false));
-        assert!(!can_reuse_align_result(false, true));
-        assert!(!can_reuse_align_result(false, false));
+        assert!(can_reuse_align_result(true, true, true));
+        assert!(!can_reuse_align_result(true, true, false));
+        assert!(!can_reuse_align_result(true, false, true));
+        assert!(!can_reuse_align_result(false, true, true));
     }
 
     #[test]
@@ -3725,6 +4560,7 @@ mod tests {
         let request: StartStageRequest = serde_json::from_value(json!({
             "projectPath": "C:\\project",
             "stage": "align",
+            "mode": "retry",
             "colmapPath": "C:\\COLMAP portable\\COLMAP.bat"
         }))
         .unwrap();
@@ -3733,6 +4569,7 @@ mod tests {
             request.colmap_path.as_deref(),
             Some("C:\\COLMAP portable\\COLMAP.bat")
         );
+        assert_eq!(request.mode.as_deref(), Some("retry"));
     }
 
     #[test]
@@ -3773,14 +4610,22 @@ mod tests {
             ] {
                 fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
             }
+            fs::write(
+                temp.path().join("images").join(lens).join(".DS_Store"),
+                b"metadata",
+            )
+            .unwrap();
         }
 
-        write_rig_and_pairs(temp.path()).unwrap();
+        assert_eq!(write_rig_and_pairs(temp.path()).unwrap(), 4);
 
         let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
         assert!(pairs.contains("lens0/source000_00000001.png lens0/source001_00000001.png"));
         assert!(pairs.contains("lens1/source000_00000001.png lens1/source001_00000001.png"));
         assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000001.png"));
+        assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000002.png"));
+        assert!(pairs.contains("lens1/source000_00000001.png lens0/source000_00000002.png"));
+        assert!(!pairs.contains(".DS_Store"));
     }
 
     #[test]

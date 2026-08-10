@@ -261,7 +261,6 @@ const USER_MESSAGE_TRANSLATIONS: Record<string, string> = {
   "This project manifest was recovered from existing artifacts": "已依現有處理結果復原專案資訊",
   "Extract requires both system ffmpeg and ffprobe": "影格擷取需要系統已安裝 FFmpeg 與 ffprobe",
   "COLMAP is unavailable; alignment will remain in a resumable pending state": "找不到 COLMAP；對齊階段會維持可繼續的待執行狀態",
-  "COLMAP 3.x is supported for incremental alignment, but gravity/global mapper capabilities are not claimed without COLMAP 4.x": "COLMAP 3.x 可用於增量對齊；若未安裝 COLMAP 4.x，將不啟用重力與全域對齊功能",
   "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder": "FFmpeg 不支援 VideoToolbox；影格擷取將使用 CPU 解碼",
 };
 
@@ -637,21 +636,30 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     return { known: false, available: false, text: "未回報" };
   };
   const colmapCuda = capabilityState(colmapCapabilities?.cudaBuild);
-  const ceresGpu = capabilityState(colmapCapabilities?.ceresGpu);
+  const featureExtractionGpu = capabilityState(colmapCapabilities?.featureExtractionGpu);
+  const featureMatchingGpu = capabilityState(colmapCapabilities?.featureMatchingGpu);
+  const mapperBaGpu = capabilityState(colmapCapabilities?.mapperBaGpu ?? colmapCapabilities?.ceresGpu);
   const globalMapper = capabilityState(colmapCapabilities?.globalMapper);
   const hasColmapCapabilities = Boolean(colmapCapabilities && Object.keys(colmapCapabilities).length > 0);
+  const gpuStages = [featureExtractionGpu, featureMatchingGpu, mapperBaGpu];
+  const gpuStagesKnown = gpuStages.every((stage) => stage.known);
+  const gpuStagesAvailable = gpuStages.every((stage) => stage.available);
   const colmapCudaDetail = hasColmapCapabilities
     ? [
-      `COLMAP SIFT：${colmapCuda.text}`,
-      `Ceres BA：${ceresGpu.known ? ceresGpu.available ? "可嘗試（執行期確認 CUDA／cuDSS）" : "僅 CPU" : "未回報"}`,
+      `CUDA build：${colmapCuda.text}`,
+      `SIFT 擷取：${featureExtractionGpu.text}`,
+      `SIFT 配對：${featureMatchingGpu.text}`,
+      `Ceres BA：${mapperBaGpu.known ? mapperBaGpu.available ? "可嘗試（執行期確認 CUDA／cuDSS）" : "僅 CPU" : "未回報"}`,
       globalMapper.known ? `Global Mapper：${globalMapper.text}` : "",
     ].filter(Boolean).join(" · ")
     : "舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA";
   const colmapCudaStatus: DiagnosticStatus = hasColmapCapabilities && colmapCuda.known
-    ? colmapCuda.available ? "ready" : "warning"
+    ? colmapCuda.available && gpuStagesKnown && gpuStagesAvailable ? "ready" : "warning"
     : "unknown";
   const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
-    ? colmapCuda.available ? "已確認支援" : "未支援"
+    ? colmapCuda.available
+      ? gpuStagesKnown && gpuStagesAvailable ? "完整支援" : "部分支援"
+      : "未支援"
     : "未確認";
   const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
   const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
@@ -841,6 +849,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeJobIds = useRef<Record<string, string>>({});
   const jobTaskIds = useRef<Record<string, string>>({});
+  const terminalJobIds = useRef<Set<string>>(new Set());
   const pendingStageStarts = useRef<Record<string, StageKey>>({});
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
   const taskSnapshot = useRef<Task[]>([]);
@@ -1163,6 +1172,10 @@ function App() {
       }
       return;
     }
+    if (terminalJobIds.current.delete(result.jobId)) {
+      delete pendingStageStarts.current[taskId];
+      return;
+    }
     if (currentRun !== run || run.stage !== stageKey) {
       // A user cancellation can race with the command response. Do not leave
       // a backend job running after its auto-pipeline session was stopped.
@@ -1227,6 +1240,7 @@ function App() {
     const result = await invokeSafely<{ jobId?: string }>("start_stage", { request: { projectPath: task.rootPath || task.outputPath, stage: stageKey, mode, settings: normalisePipelineSettings(task.settings || settingsDraft), colmapPath: colmapPath.trim() || null } });
     if (result?.jobId) {
       delete pendingStageStarts.current[task.projectId];
+      if (terminalJobIds.current.delete(result.jobId)) return;
       bindJobToTask(task.projectId, result.jobId);
       const receivedEarlyProgress = jobTaskIds.current[result.jobId] === task.projectId
         || taskSnapshot.current.some((currentTask) => currentTask.projectId === task.projectId && currentTask.stages[stageKey].jobId === result.jobId);
@@ -1264,6 +1278,12 @@ function App() {
           const payload = readProgress(event.payload);
           const stageKey = payload.stage;
           if (!stageKey) return;
+          if (
+            payload.jobId
+            && (payload.done || payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled")
+          ) {
+            terminalJobIds.current.add(payload.jobId);
+          }
           const targetProjectId = resolveTaskForJob(payload.jobId, stageKey);
           if (targetProjectId && payload.jobId) {
             bindJobToTask(targetProjectId, payload.jobId);

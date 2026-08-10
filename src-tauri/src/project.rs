@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -513,6 +513,43 @@ fn masks_cover_images(root: &Path) -> bool {
     })
 }
 
+fn valid_colmap_database(path: &Path) -> bool {
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return false;
+    };
+    let mut header = [0_u8; 100];
+    if file.read_exact(&mut header).is_err() || header[..16] != *b"SQLite format 3\0" {
+        return false;
+    }
+    let encoded_page_size = u16::from_be_bytes([header[16], header[17]]);
+    let page_size = if encoded_page_size == 1 {
+        65_536_u64
+    } else {
+        u64::from(encoded_page_size)
+    };
+    page_size.is_power_of_two()
+        && (512..=65_536).contains(&page_size)
+        && metadata.len() >= page_size
+}
+
+fn valid_align_checkpoint(path: &Path) -> bool {
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(checkpoint) = serde_json::from_slice::<Value>(&bytes) else {
+        return false;
+    };
+    checkpoint.get("schema_version").and_then(Value::as_u64) == Some(2)
+        && checkpoint.get("completed").and_then(Value::as_bool) == Some(true)
+        && checkpoint
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(|fingerprint| !fingerprint.is_empty())
+}
+
 fn valid_sparse_model(root: &Path) -> bool {
     fs::read_dir(root)
         .ok()
@@ -522,10 +559,14 @@ fn valid_sparse_model(root: &Path) -> bool {
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .any(|model| {
-            ["cameras", "images", "points3D"].iter().all(|name| {
-                model.join(format!("{name}.bin")).is_file()
-                    || model.join(format!("{name}.txt")).is_file()
-            })
+            ["rigs", "cameras", "frames", "images", "points3D"]
+                .iter()
+                .all(|name| {
+                    ["bin", "txt"].iter().any(|extension| {
+                        fs::metadata(model.join(format!("{name}.{extension}")))
+                            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+                    })
+                })
         })
 }
 
@@ -571,7 +612,10 @@ fn infer_stage_checkpoints(root: &Path) -> BTreeMap<String, StageCheckpoint> {
         );
     }
     let sparse = root.join("sparse");
-    if root.join("database.db").is_file() && valid_sparse_model(&sparse) {
+    if valid_align_checkpoint(&root.join("metadata/align.checkpoint.json"))
+        && valid_colmap_database(&root.join("database.db"))
+        && valid_sparse_model(&sparse)
+    {
         stages.insert(
             "align".to_owned(),
             completed_checkpoint(
@@ -1103,8 +1147,23 @@ mod tests {
             }
         }
         fs::create_dir_all(root.join("sparse/0")).unwrap();
-        fs::write(root.join("database.db"), b"database").unwrap();
-        for name in ["cameras.bin", "images.bin", "points3D.bin"] {
+        fs::create_dir_all(root.join("metadata")).unwrap();
+        fs::write(
+            root.join("metadata/align.checkpoint.json"),
+            br#"{"schema_version":2,"fingerprint":"test","completed":true}"#,
+        )
+        .unwrap();
+        let mut database = vec![0_u8; 512];
+        database[..16].copy_from_slice(b"SQLite format 3\0");
+        database[16..18].copy_from_slice(&512_u16.to_be_bytes());
+        fs::write(root.join("database.db"), database).unwrap();
+        for name in [
+            "rigs.bin",
+            "cameras.bin",
+            "frames.bin",
+            "images.bin",
+            "points3D.bin",
+        ] {
             fs::write(root.join("sparse/0").join(name), b"model").unwrap();
         }
 
