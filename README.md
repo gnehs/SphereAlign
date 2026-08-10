@@ -69,7 +69,7 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 - 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 使用清單中的第一張 GPU。
 - GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
 - 目前固定使用 Ceres backend，不啟用 Caspar；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容。
-- 已存在的 `rig_config.json` 會保留，不會被覆寫；只有缺少時才建立預設雙鏡頭 rig。
+- 已存在的自訂 `rig_config.json` 會保留；只有缺少時才建立預設雙鏡頭 rig，或在內容恰好等於舊版無外參預設時升級為固定背對背外參。
 - bootstrap 完成後會把 sparse model 轉成官方文字格式，確認每顆設定鏡頭都有註冊影像，且每個未知外參鏡頭都至少有一組與參考鏡頭同名且同時註冊的影格；`rig_configurator` 後再核對 rig／sensor 數量並驗證所有 non-reference sensor 的 `HAS_POSE=1`，不讓缺鏡頭或未知 `sensor_from_rig` 進入 final mapper。
 - `metadata/align.checkpoint.json` 的 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images／masks 的路徑、大小與修改時間；任一受追蹤輸入變更或前次流程未完成，都會清理舊 COLMAP 輸出後重建。
 - 只有 checkpoint 已標記完成、database 具有有效 SQLite header／page size、sparse model 同時包含非空的 rigs、frames、cameras、images 與 points3D，且選定的 COLMAP 能重新轉換並通過 rig 驗證時才會續用。

@@ -2442,7 +2442,8 @@ fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
         // DJI's two native fisheye streams are upright and back-to-back.  Model
         // them as a co-located panoramic rig: lens1 is lens0 rotated 180° about
         // the camera Y axis.  Also migrate only the exact uncalibrated default
-        // emitted by older GS360 Studio versions; preserve every custom config.
+        // emitted by older GS360 Studio versions; preserve configs that differ
+        // from that generated legacy value.
         fs::write(
             &rig_config,
             serde_json::to_vec_pretty(&calibrated_default).unwrap(),
