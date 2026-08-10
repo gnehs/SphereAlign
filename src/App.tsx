@@ -321,7 +321,7 @@ function timestampMs(value: unknown): number | undefined {
 }
 
 function nonNegativeInteger(value: unknown): number | undefined {
-  if (typeof value === "boolean") return undefined;
+  if ((typeof value !== "number" && typeof value !== "string") || (typeof value === "string" && !value.trim())) return undefined;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : undefined;
 }
@@ -459,9 +459,11 @@ function taskStageLabel(stage?: StageKey) {
 }
 
 function logCountLabel(completed?: number, total?: number) {
-  if (completed !== undefined && total !== undefined) return `${completed.toLocaleString("zh-TW")} / ${total.toLocaleString("zh-TW")}`;
-  if (total !== undefined) return `總計 ${total.toLocaleString("zh-TW")}`;
-  if (completed !== undefined) return `已處理 ${completed.toLocaleString("zh-TW")}`;
+  const hasCompleted = completed !== undefined && completed > 0;
+  const hasTotal = total !== undefined && total > 0;
+  if (completed !== undefined && hasTotal) return `${completed.toLocaleString("zh-TW")} / ${total.toLocaleString("zh-TW")}`;
+  if (hasTotal) return `總計 ${total.toLocaleString("zh-TW")}`;
+  if (hasCompleted) return `已處理 ${completed.toLocaleString("zh-TW")}`;
   return undefined;
 }
 
