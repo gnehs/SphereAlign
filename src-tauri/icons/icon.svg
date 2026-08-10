@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">GS360 Studio</title>
+  <desc id="description">A minimal split sphere representing two opposing fisheye lenses.</desc>
+
+  <rect width="1024" height="1024" rx="224" fill="#0B1520" />
+
+  <path d="M488 252A260 260 0 0 0 488 772Z" fill="#31C3D5" />
+  <path d="M536 252A260 260 0 0 1 536 772Z" fill="#F4F5F2" />
+
+  <circle cx="512" cy="512" r="92" fill="#0B1520" />
+</svg>
