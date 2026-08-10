@@ -61,18 +61,19 @@ Ultralytics 模型權重預設採 AGPL-3.0，另有 Enterprise License；執行�
 
 ### Align
 
-- 使用 `OPENCV_FISHEYE`，每個 lens 一台 camera；無 EXIF 焦距時以適合 180–190° 等距魚眼的 `default_focal_length_factor=0.3` 初始化，而非 COLMAP 的一般鏡頭預設值 1.2。
+- 使用 SIFT 與 `OPENCV_FISHEYE`，每個 lens 一台 camera；無 EXIF 焦距時以適合 180–190° 等距魚眼的 `default_focal_length_factor=0.3` 初始化，而非 COLMAP 的一般鏡頭預設值 1.2。
 - 同時間的 lens0 / lens1 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
 - 預設把原生 `lens0`／`lens1` 視為共心、背對背且上下方向一致的 360 rig；`lens1` 相對 `lens0` 固定為繞相機 Y 軸 180°（WXYZ quaternion `[0, 0, 1, 0]`），並在第一次 mapper 前套用 `rig_configurator`。舊版自動產生、未含外參的預設 config 會升級，其他自訂 config 保持不變。
 - 自訂 config 若省略 rig extrinsics，仍採兩階段流程：先以獨立相機 bootstrap，再用 `rig_configurator` 推算 rig，最後固定 sensor-from-rig 重新 mapper。
 - Mask stage 已完成時才傳入 COLMAP mask path；沒有 mask 也能獨立 Align。
 - 啟用 `align.useGpu` 時，GPU 開關涵蓋 SIFT feature extraction、matching，以及 incremental mapper 的 Ceres bundle adjustment。`align.gpuIndex` 預設為 `-1`；feature extraction 與 matching 可傳入逗號分隔的多 GPU（例如 `0,1`），Ceres BA 使用清單中的第一張 GPU。
-- GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
+- GPU 能力只依設定中選定的 COLMAP 執行檔之 version banner 與 help 判斷，不以 FFmpeg 的 CUDA hwaccel 或 `nvidia-smi` 推論 COLMAP CUDA 能力。GPU stage 失敗時會以 CPU 重試；feature extraction 的 GPU fallback 會刪除可能半提交的資料庫後從乾淨資料庫重跑，matching 先還原 GPU 執行前的資料庫／WAL 備份，mapper 則先清理不完整的 sparse 輸出。
 - 目前固定使用 Ceres backend，不啟用 Caspar；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容。
 - 已存在的自訂 `rig_config.json` 會保留；只有缺少時才建立預設雙鏡頭 rig，或在內容恰好等於舊版無外參預設時升級為固定背對背外參。
 - bootstrap 完成後會把 sparse model 轉成官方文字格式，確認每顆設定鏡頭都有註冊影像，且每個未知外參鏡頭都至少有一組與參考鏡頭同名且同時註冊的影格；`rig_configurator` 後再核對 rig／sensor 數量並驗證所有 non-reference sensor 的 `HAS_POSE=1`，不讓缺鏡頭或未知 `sensor_from_rig` 進入 final mapper。
-- `metadata/align.checkpoint.json` 的 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images／masks 的路徑、大小與修改時間；任一受追蹤輸入變更或前次流程未完成，都會清理舊 COLMAP 輸出後重建。
-- 只有 checkpoint 已標記完成、database 具有有效 SQLite header／page size、sparse model 同時包含非空的 rigs、frames、cameras、images 與 points3D，且選定的 COLMAP 能重新轉換並通過 rig 驗證時才會續用。
+- Align 會唯讀檢查 SQLite database 的 `images`、`keypoints` 與 `descriptors`；每張影像都有成對特徵資料（即使 `rows=0`）時標記為完整，明確略過 `feature_extractor`。部分完成時保留資料庫，讓 COLMAP 依每張影像的既有特徵自動跳過並補齊缺項；影像集合不符、schema 或 feature blob 損壞時會記錄 warning、刪除資料庫後重跑。
+- `metadata/align.checkpoint.json` 的完整 fingerprint 會納入 settings、COLMAP version、`rig_config.json`、pairs、images／masks 的路徑、大小與修改時間；另存只涵蓋影像／遮罩、COLMAP version 與固定 SIFT／`OPENCV_FISHEYE`／`0.3` 語意的 feature fingerprint。非 retry 且 feature fingerprint 相符時才保留 `database.db` 及其 WAL／journal；若完整 fingerprint 已變更，會保留 features 但清除 `matches`／`two_view_geometries`，再重建 sparse、bootstrap 與配對結果。舊 checkpoint 尚未記錄 feature fingerprint 時，只有完整 fingerprint 相符才會安全遷移並沿用一次；feature fingerprint 不符時則完整清理。
+- 只有 checkpoint 已標記完成、feature database 完整、database 具有有效 SQLite header／page size、sparse model 同時包含非空的 rigs、frames、cameras、images 與 points3D，且選定的 COLMAP 能重新轉換並通過 rig 驗證時才會續用完整結果。
 
 ## 執行需求
 

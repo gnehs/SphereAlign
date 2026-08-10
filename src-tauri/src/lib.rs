@@ -1,3 +1,4 @@
+mod colmap_feature_cache;
 mod doctor;
 mod extraction;
 mod fisheye;

@@ -2,6 +2,7 @@
 //! and COLMAP. External commands are always passed as argument arrays (never a
 //! shell string), so paths containing spaces cannot inject commands.
 
+use crate::colmap_feature_cache::{clear_matching_cache, inspect_feature_cache};
 use crate::doctor::find_executable;
 use crate::extraction::{
     self, ExtractionRequest, ExtractionStage, SelectionMetadata, SelectionRecord,
@@ -38,6 +39,10 @@ const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_H
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
 const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
+const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
+const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
+const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
+const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
@@ -48,6 +53,8 @@ const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 struct AlignCheckpoint {
     schema_version: u32,
     fingerprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    feature_fingerprint: Option<String>,
     completed: bool,
 }
 
@@ -68,6 +75,18 @@ struct AlignFingerprintPayload {
     include_masks: bool,
     rig_config_sha256: String,
     pairs_sha256: String,
+    files: Vec<AlignFileIdentity>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FeatureFingerprintPayload {
+    schema_version: u32,
+    colmap_version: String,
+    extractor_type: &'static str,
+    camera_model: &'static str,
+    default_focal_length_factor: f64,
+    include_masks: bool,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -2946,15 +2965,45 @@ fn build_align_fingerprint(
     Ok(sha256_hex(&bytes))
 }
 
+fn build_feature_fingerprint(
+    root: &Path,
+    colmap_version: &str,
+    include_masks: bool,
+) -> Result<String, String> {
+    let mut files = Vec::new();
+    collect_align_file_identities(&root.join("images"), root, &mut files)?;
+    if include_masks {
+        collect_align_file_identities(&root.join("masks_colmap"), root, &mut files)?;
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    let payload = FeatureFingerprintPayload {
+        schema_version: FEATURE_FINGERPRINT_SCHEMA_VERSION,
+        colmap_version: colmap_version.to_owned(),
+        extractor_type: FEATURE_EXTRACTION_TYPE,
+        camera_model: FEATURE_CAMERA_MODEL,
+        default_focal_length_factor: FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR,
+        include_masks,
+        files,
+    };
+    let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
 fn load_align_checkpoint(path: &Path) -> Option<AlignCheckpoint> {
     let checkpoint = serde_json::from_slice::<AlignCheckpoint>(&fs::read(path).ok()?).ok()?;
     (checkpoint.schema_version == ALIGN_CHECKPOINT_SCHEMA_VERSION).then_some(checkpoint)
 }
 
-fn write_align_checkpoint(path: &Path, fingerprint: &str, completed: bool) -> Result<(), String> {
+fn write_align_checkpoint(
+    path: &Path,
+    fingerprint: &str,
+    feature_fingerprint: &str,
+    completed: bool,
+) -> Result<(), String> {
     let checkpoint = AlignCheckpoint {
         schema_version: ALIGN_CHECKPOINT_SCHEMA_VERSION,
         fingerprint: fingerprint.to_owned(),
+        feature_fingerprint: Some(feature_fingerprint.to_owned()),
         completed,
     };
     let bytes = serde_json::to_vec_pretty(&checkpoint).map_err(|error| error.to_string())?;
@@ -3058,19 +3107,24 @@ fn restore_colmap_database_backup(database: &Path, backup: &Path) -> Result<(), 
     Ok(())
 }
 
-fn cleanup_align_artifacts(root: &Path) -> Result<(), String> {
-    for path in [
-        root.join("database.db"),
-        root.join("database.db-wal"),
-        root.join("database.db-shm"),
-        root.join("database.db-journal"),
+fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), String> {
+    let mut paths = vec![
         root.join("sparse"),
         root.join("sparse_bootstrap"),
         root.join("metadata/.align-bootstrap-text"),
         root.join("metadata/.align-configured-rig"),
         root.join("metadata/.align-configured-rig-text"),
         root.join("metadata/.align-matching-database.backup"),
-    ] {
+    ];
+    if !preserve_database {
+        paths.extend([
+            root.join("database.db"),
+            root.join("database.db-wal"),
+            root.join("database.db-shm"),
+            root.join("database.db-journal"),
+        ]);
+    }
+    for path in paths {
         remove_align_artifact(&path)?;
     }
     Ok(())
@@ -3202,6 +3256,17 @@ fn can_reuse_align_result(
     checkpoint_completed: bool,
 ) -> bool {
     final_complete && checkpoint_matches && checkpoint_completed
+}
+
+fn can_reuse_feature_database(
+    force_rebuild: bool,
+    feature_checkpoint_matches: bool,
+    legacy_align_checkpoint_matches: bool,
+    feature_cache_valid: bool,
+) -> bool {
+    !force_rebuild
+        && (feature_checkpoint_matches || legacy_align_checkpoint_matches)
+        && feature_cache_valid
 }
 
 fn colmap_database_header_valid(path: &Path) -> bool {
@@ -3423,13 +3488,15 @@ fn feature_extractor_args(
         "--ImageReader.single_camera_per_folder".into(),
         "1".into(),
         "--ImageReader.camera_model".into(),
-        "OPENCV_FISHEYE".into(),
+        FEATURE_CAMERA_MODEL.into(),
         // COLMAP otherwise initializes an EXIF-less 3840 px fisheye at its
         // perspective-camera default of 4608 px (factor 1.2).  An equidistant
         // 180–190° circular fisheye starts near width / pi, so 0.3 gives the
         // mapper a physically plausible basin while distortion remains free.
         "--ImageReader.default_focal_length_factor".into(),
-        "0.3".into(),
+        FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR.to_string(),
+        "--FeatureExtraction.type".into(),
+        FEATURE_EXTRACTION_TYPE.into(),
         "--FeatureExtraction.use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureExtraction.gpu_index".into(),
@@ -3540,15 +3607,48 @@ fn run_align(
     }
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
+    let feature_fingerprint = build_feature_fingerprint(&root, &colmap_version, use_masks)?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
     let checkpoint_matches = !force_rebuild
         && checkpoint
             .as_ref()
             .is_some_and(|value| value.fingerprint == fingerprint);
+    let feature_checkpoint_matches = !force_rebuild
+        && checkpoint.as_ref().is_some_and(|value| {
+            value.feature_fingerprint.as_deref() == Some(feature_fingerprint.as_str())
+        });
+    // Schema v2 checkpoints created before featureFingerprint used the same
+    // SIFT/OPENCV_FISHEYE/0.3 extraction semantics. Migrate them once when the
+    // broader fingerprint still matches. If those semantics change, the align
+    // checkpoint schema must be bumped rather than extending this fallback.
+    let legacy_feature_checkpoint_matches = !force_rebuild
+        && checkpoint_matches
+        && checkpoint
+            .as_ref()
+            .is_some_and(|value| value.feature_fingerprint.is_none());
     let checkpoint_completed =
         !force_rebuild && checkpoint.as_ref().is_some_and(|value| value.completed);
-    let final_complete = colmap_database_header_valid(&db) && sparse_rig_model_exists(&sparse);
+    let feature_cache = inspect_feature_cache(&root.join("images"), &db);
+    let feature_cache_complete = feature_cache
+        .as_ref()
+        .is_ok_and(|report| report.is_complete());
+    let feature_cache_counts = feature_cache
+        .as_ref()
+        .ok()
+        .map(|report| (report.expected, report.completed));
+    let feature_cache_error = feature_cache.as_ref().err();
+    let database_reusable = can_reuse_feature_database(
+        force_rebuild,
+        feature_checkpoint_matches,
+        legacy_feature_checkpoint_matches,
+        feature_cache.is_ok(),
+    );
+    let mut feature_cache_reusable = database_reusable && feature_cache_complete;
+    let final_complete = database_reusable
+        && feature_cache_reusable
+        && colmap_database_header_valid(&db)
+        && sparse_rig_model_exists(&sparse);
     let reuse_candidate =
         can_reuse_align_result(final_complete, checkpoint_matches, checkpoint_completed);
     let cached_validation_error = if reuse_candidate {
@@ -3645,8 +3745,65 @@ fn run_align(
                 "找不到有效對齊 checkpoint；不完整 COLMAP 輸出將清理後重建",
             );
         }
-        cleanup_align_artifacts(&root)?;
-        write_align_checkpoint(&checkpoint_path, &fingerprint, false)?;
+        if let Some(error) = feature_cache_error {
+            if db.is_file() {
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!("COLMAP 特徵資料庫無法使用，將刪除資料庫後重跑：{error}"),
+                );
+            }
+        } else if database_reusable {
+            let (expected, completed) = feature_cache_counts.unwrap_or((0, 0));
+            if feature_cache_complete {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!("COLMAP 特徵快取完整（{completed} / {expected} 張影像）"),
+                );
+            } else {
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!("COLMAP 特徵快取部分完成（{completed} / {expected} 張影像），保留資料庫續跑"),
+                );
+            }
+        } else if db.is_file() {
+            emit_log(
+                app,
+                id,
+                "info",
+                "COLMAP 特徵輸入 fingerprint 已變更或不存在，將重建特徵資料庫",
+            );
+        }
+        let preserve_database = database_reusable && cached_validation_error.is_none();
+        cleanup_align_artifacts(&root, preserve_database)?;
+        if preserve_database && !checkpoint_matches {
+            match clear_matching_cache(&db) {
+                Ok(()) => emit_log(
+                    app,
+                    id,
+                    "info",
+                    "特徵輸入未變，已保留特徵並清除需重新計算的影像配對快取",
+                ),
+                Err(error) => {
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!("無法清除舊 COLMAP 配對快取，將改用乾淨資料庫重跑：{error}"),
+                    );
+                    remove_colmap_database_artifacts(&db)?;
+                    feature_cache_reusable = false;
+                }
+            }
+        } else if !preserve_database {
+            feature_cache_reusable = false;
+        }
+        write_align_checkpoint(&checkpoint_path, &fingerprint, &feature_fingerprint, false)?;
     }
     let (feature_extraction_gpu, feature_matching_gpu, mapper_gpu) = if requested_gpu {
         if !colmap_capabilities.cuda_build {
@@ -3692,78 +3849,114 @@ fn run_align(
     let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
     let feature_gpu_args = feature_extractor_args(&root, &db, true, &gpu_index, use_masks);
     let feature_cpu_args = feature_extractor_args(&root, &db, false, &gpu_index, use_masks);
-    emit_progress_detailed(
-        app,
-        id,
-        &StageName::Align,
-        "feature-extraction",
-        0.0,
-        "正在擷取影像特徵",
-        "running",
-        false,
-        None,
-        None,
-        Some("feature_extractor".to_owned()),
-        None,
-    );
-    let mut feature_item = Some("feature_extractor".to_owned());
-    let highest_feature_fraction = Cell::new(0.0_f32);
-    let last_feature_emit = Cell::new(None);
-    run_colmap_with_gpu_fallback(
-        app,
-        id,
-        &colmap,
-        &feature_gpu_args,
-        &feature_cpu_args,
-        feature_extraction_gpu,
-        "feature_extractor",
-        control,
-        || {
-            remove_colmap_database_artifacts(&db)?;
-            highest_feature_fraction.set(0.0);
-            last_feature_emit.set(None);
-            Ok(())
-        },
-        |line| {
-            if let Some(progress) = parse_feature_progress(line) {
-                let fraction = progress.current as f32 / progress.total as f32;
-                if fraction < highest_feature_fraction.get() {
+    if feature_cache_reusable {
+        let (expected, completed) = feature_cache_counts.unwrap_or((0, 0));
+        emit_log(
+            app,
+            id,
+            "info",
+            format!(
+                "COLMAP 特徵快取完整（{completed} / {expected} 張影像），略過 feature_extractor"
+            ),
+        );
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Align,
+            "feature-extraction",
+            0.0,
+            format!("已確認 {completed} / {expected} 張影像已有特徵，略過擷取"),
+            "running",
+            false,
+            Some(completed as u64),
+            Some(expected as u64),
+            Some("feature cache".to_owned()),
+            None,
+        );
+        emit_colmap_step_completed(
+            app,
+            id,
+            "feature-extraction",
+            0,
+            "影像特徵已完整存在，略過特徵擷取",
+            "feature cache",
+        );
+    } else {
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Align,
+            "feature-extraction",
+            0.0,
+            "正在擷取影像特徵",
+            "running",
+            false,
+            None,
+            None,
+            Some("feature_extractor".to_owned()),
+            None,
+        );
+        let mut feature_item = Some("feature_extractor".to_owned());
+        let highest_feature_fraction = Cell::new(0.0_f32);
+        let last_feature_emit = Cell::new(None);
+        run_colmap_with_gpu_fallback(
+            app,
+            id,
+            &colmap,
+            &feature_gpu_args,
+            &feature_cpu_args,
+            feature_extraction_gpu,
+            "feature_extractor",
+            control,
+            || {
+                // A GPU failure may leave a partially committed SQLite database.
+                // Retry CPU only after restoring the clean feature database.
+                remove_colmap_database_artifacts(&db)?;
+                highest_feature_fraction.set(0.0);
+                last_feature_emit.set(None);
+                Ok(())
+            },
+            |line| {
+                if let Some(progress) = parse_feature_progress(line) {
+                    let fraction = progress.current as f32 / progress.total as f32;
+                    if fraction < highest_feature_fraction.get() {
+                        return;
+                    }
+                    highest_feature_fraction.set(fraction);
+                    let terminal = progress.current == progress.total;
+                    if !terminal
+                        && last_feature_emit
+                            .get()
+                            .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+                    {
+                        return;
+                    }
+                    last_feature_emit.set(Some(Instant::now()));
+                    emit_colmap_progress(
+                        app,
+                        id,
+                        "feature-extraction",
+                        0,
+                        highest_feature_fraction.get(),
+                        format!("已處理 {} / {} 張影像", progress.current, progress.total),
+                        feature_item.clone(),
+                    );
                     return;
                 }
-                highest_feature_fraction.set(fraction);
-                let terminal = progress.current == progress.total;
-                if !terminal
-                    && last_feature_emit
-                        .get()
-                        .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
-                {
-                    return;
+                if let Some(current_item) = parse_feature_name(line) {
+                    feature_item = Some(current_item);
                 }
-                last_feature_emit.set(Some(Instant::now()));
-                emit_colmap_progress(
-                    app,
-                    id,
-                    "feature-extraction",
-                    0,
-                    highest_feature_fraction.get(),
-                    format!("已處理 {} / {} 張影像", progress.current, progress.total),
-                    feature_item.clone(),
-                );
-                return;
-            }
-            if let Some(current_item) = parse_feature_name(line) {
-                feature_item = Some(current_item);
-            }
-        },
-    )?;
-    emit_colmap_step_completed(
-        app,
-        id,
-        "feature-extraction",
-        0,
-        "影像特徵擷取完成",
-        "feature_extractor",
-    );
+            },
+        )?;
+        emit_colmap_step_completed(
+            app,
+            id,
+            "feature-extraction",
+            0,
+            "影像特徵擷取完成",
+            "feature_extractor",
+        );
+    }
     let rig_config_path = root.join("rig_config.json");
     let rig_configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
         &fs::read(&rig_config_path)
@@ -4061,7 +4254,7 @@ fn run_align(
                 .err()
                 .map(|value| format!("；{value}"))
                 .unwrap_or_default();
-            cleanup_align_artifacts(&root)?;
+            cleanup_align_artifacts(&root, false)?;
             return Err(format!(
                 "{error}；已清理受污染的 COLMAP 對齊快取以便安全重試{cleanup_detail}"
             ));
@@ -4182,7 +4375,7 @@ fn run_align(
         "info",
         format!("已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"),
     );
-    write_align_checkpoint(&checkpoint_path, &fingerprint, true)?;
+    write_align_checkpoint(&checkpoint_path, &fingerprint, &feature_fingerprint, true)?;
     emit_colmap_step_completed(
         app,
         id,
@@ -4215,8 +4408,9 @@ fn run_align(
 #[cfg(test)]
 mod tests {
     use super::{
-        balanced_select_expression, build_align_fingerprint, can_reuse_align_result,
-        candidate_ffmpeg_args, candidate_image_names, cleanup_obsolete_candidate_cache,
+        balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
+        can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
+        candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_step_progress, expected_candidate_frames,
         extract_frame_settings, extraction_completed_count, feature_extractor_args,
         is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
@@ -4227,10 +4421,11 @@ mod tests {
         registered_rig_image_names, rig_config_has_complete_sensor_poses, selected_ffmpeg_args,
         source_stage_progress, synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, with_hwaccel_auto, write_candidate_selection_checkpoint,
-        write_rig_and_pairs, ColmapFraction, ExtractionStage, JobControl, JobManager, LogEvent,
-        ProgressEvent, RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, StageName,
-        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
-        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ExtractionStage, JobControl,
+        JobManager, LogEvent, ProgressEvent, RawFrameMessage, RigBootstrapCamera,
+        RigBootstrapConfig, StageName, StartStageRequest, StreamingCandidateSelector,
+        CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
+        CANDIDATE_STREAM_WIDTH,
     };
     use crate::masking::CancelToken;
     use serde_json::json;
@@ -4338,6 +4533,12 @@ mod tests {
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--ImageReader.default_focal_length_factor", "0.3"] }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--FeatureExtraction.type", "SIFT"] }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--ImageReader.camera_model", "OPENCV_FISHEYE"] }));
         assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
 
         let matching = matches_importer_args(root, &db, true, "0,1");
@@ -4558,11 +4759,82 @@ mod tests {
     }
 
     #[test]
+    fn feature_fingerprint_only_tracks_feature_inputs_and_fixed_semantics() {
+        let temp = tempfile::tempdir().unwrap();
+        let images = temp.path().join("images");
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(images.join(lens)).unwrap();
+            fs::write(images.join(lens).join("frame0001.png"), b"frame").unwrap();
+        }
+        let baseline = build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", false).unwrap();
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(temp.path().join("metadata/pairs.txt"), b"changed pairs").unwrap();
+        fs::write(temp.path().join("rig_config.json"), b"changed rig").unwrap();
+        assert_eq!(
+            baseline,
+            build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", false).unwrap()
+        );
+        assert_ne!(
+            baseline,
+            build_feature_fingerprint(temp.path(), "COLMAP 4.2.0", false).unwrap()
+        );
+        fs::create_dir_all(temp.path().join("masks_colmap/lens0")).unwrap();
+        fs::write(
+            temp.path().join("masks_colmap/lens0/frame0001.png"),
+            b"mask",
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", true).unwrap()
+        );
+    }
+
+    #[test]
+    fn align_checkpoint_accepts_legacy_without_feature_fingerprint() {
+        let checkpoint: AlignCheckpoint = serde_json::from_value(json!({
+            "schemaVersion": 2,
+            "fingerprint": "legacy",
+            "completed": false
+        }))
+        .unwrap();
+        assert_eq!(checkpoint.feature_fingerprint, None);
+    }
+
+    #[test]
+    fn cleanup_can_preserve_database_artifacts_for_feature_resume() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("sparse/0")).unwrap();
+        fs::write(temp.path().join("database.db"), b"db").unwrap();
+        fs::write(temp.path().join("database.db-wal"), b"wal").unwrap();
+        fs::write(temp.path().join("database.db-shm"), b"shm").unwrap();
+        fs::write(temp.path().join("database.db-journal"), b"journal").unwrap();
+
+        cleanup_align_artifacts(temp.path(), true).unwrap();
+        assert!(temp.path().join("database.db").is_file());
+        assert!(temp.path().join("database.db-wal").is_file());
+        assert!(!temp.path().join("sparse").exists());
+
+        cleanup_align_artifacts(temp.path(), false).unwrap();
+        assert!(!temp.path().join("database.db").exists());
+        assert!(!temp.path().join("database.db-wal").exists());
+    }
+
+    #[test]
     fn align_result_reuse_requires_both_complete_output_and_matching_checkpoint() {
         assert!(can_reuse_align_result(true, true, true));
         assert!(!can_reuse_align_result(true, true, false));
         assert!(!can_reuse_align_result(true, false, true));
         assert!(!can_reuse_align_result(false, true, true));
+    }
+
+    #[test]
+    fn feature_database_reuse_requires_feature_or_matching_legacy_fingerprint() {
+        assert!(can_reuse_feature_database(false, true, false, true));
+        assert!(can_reuse_feature_database(false, false, true, true));
+        assert!(!can_reuse_feature_database(false, false, false, true));
+        assert!(!can_reuse_feature_database(false, true, false, false));
+        assert!(!can_reuse_feature_database(true, true, true, true));
     }
 
     #[test]
