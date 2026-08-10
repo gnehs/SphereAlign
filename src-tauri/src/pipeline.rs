@@ -12,13 +12,13 @@ use crate::project::{self, ProjectManifest, StageName, StageStatus};
 use crate::telemetry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -36,6 +36,7 @@ const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_H
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
 const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
+const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 
@@ -592,6 +593,138 @@ fn run_child(
         if let Some(last) = summary.lines().rev().find(|line| !line.trim().is_empty()) {
             emit_log(app, id, "info", last.trim());
         }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum ChildOutputStream {
+    Stdout,
+    Stderr,
+}
+
+fn read_child_output<R: Read + Send + 'static>(
+    reader: R,
+    stream: ChildOutputStream,
+    sender: std::sync::mpsc::Sender<(ChildOutputStream, String)>,
+) {
+    let mut reader = BufReader::new(reader);
+    loop {
+        let mut bytes = Vec::new();
+        match reader.read_until(b'\n', &mut bytes) {
+            Ok(0) => break,
+            Ok(_) => {
+                let line = String::from_utf8_lossy(&bytes)
+                    .trim_end_matches(['\r', '\n'])
+                    .to_owned();
+                if sender.send((stream, line)).is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+fn run_child_with_output<F>(
+    app: &AppHandle,
+    id: &str,
+    program: &Path,
+    args: &[String],
+    control: &JobControl,
+    mut on_line: F,
+) -> Result<(), String>
+where
+    F: FnMut(&str),
+{
+    if control.cancelled.load(Ordering::Acquire) {
+        return Err("cancelled".to_string());
+    }
+    emit_log(
+        app,
+        id,
+        "info",
+        format!(
+            "執行 {}",
+            program.file_name().unwrap_or_default().to_string_lossy()
+        ),
+    );
+    let mut child = silent_command(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("啟動 {} 失敗: {error}", program.display()))?;
+    let stdout = child.stdout.take().ok_or("無法讀取子程序輸出")?;
+    let stderr = child.stderr.take().ok_or("無法讀取子程序錯誤輸出")?;
+    let (output_sender, output_receiver) = channel();
+    let stdout_sender = output_sender.clone();
+    let stdout_reader =
+        thread::spawn(move || read_child_output(stdout, ChildOutputStream::Stdout, stdout_sender));
+    let stderr_reader =
+        thread::spawn(move || read_child_output(stderr, ChildOutputStream::Stderr, output_sender));
+    let mut stderr_tail = VecDeque::with_capacity(12);
+    let mut last_stdout = None;
+    let mut handle_output = |(stream, line): (ChildOutputStream, String)| {
+        on_line(&line);
+        match stream {
+            ChildOutputStream::Stdout => {
+                if !line.trim().is_empty() {
+                    last_stdout = Some(line);
+                }
+            }
+            ChildOutputStream::Stderr => {
+                if !line.trim().is_empty() {
+                    if stderr_tail.len() == 12 {
+                        stderr_tail.pop_front();
+                    }
+                    stderr_tail.push_back(line);
+                }
+            }
+        }
+    };
+    let status = loop {
+        while let Ok(output) = output_receiver.try_recv() {
+            handle_output(output);
+        }
+        if control.cancelled.load(Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            while let Ok(output) = output_receiver.try_recv() {
+                handle_output(output);
+            }
+            return Err("cancelled".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => thread::sleep(Duration::from_millis(150)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("讀取子程序狀態失敗: {error}"));
+            }
+        }
+    };
+    let _ = stdout_reader.join();
+    let _ = stderr_reader.join();
+    while let Ok(output) = output_receiver.try_recv() {
+        handle_output(output);
+    }
+    if !status.success() {
+        let detail = stderr_tail.into_iter().collect::<Vec<_>>().join("\n");
+        return Err(if detail.trim().is_empty() {
+            format!("{} 結束，狀態碼 {:?}", program.display(), status.code())
+        } else {
+            detail
+        });
+    }
+    if let Some(last) = last_stdout {
+        emit_log(app, id, "info", last.trim());
     }
     Ok(())
 }
@@ -2053,7 +2186,7 @@ fn run_mask(
     ])
 }
 
-fn write_rig_and_pairs(root: &Path) -> Result<(), String> {
+fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
     fs::write(
         root.join("rig_config.json"),
         serde_json::to_vec_pretty(&json!([{"cameras":[
@@ -2115,7 +2248,8 @@ fn write_rig_and_pairs(root: &Path) -> Result<(), String> {
         root.join("metadata/pairs.txt"),
         pairs.into_iter().collect::<Vec<_>>().join("\n") + "\n",
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    Ok(names.len() as u64)
 }
 
 fn sparse_model_exists(root: &Path) -> bool {
@@ -2134,6 +2268,151 @@ fn sparse_model_exists(root: &Path) -> bool {
         })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ColmapFraction {
+    current: u64,
+    total: u64,
+}
+
+fn parse_fraction(value: &str) -> Option<ColmapFraction> {
+    let slash = value.find('/')?;
+    let current = value[..slash].trim().parse::<u64>().ok()?;
+    let total_digits = value[slash + 1..]
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    let total = total_digits.parse::<u64>().ok()?;
+    (current > 0 && total > 0 && current <= total).then_some(ColmapFraction { current, total })
+}
+
+fn parse_fraction_after(line: &str, marker: &str) -> Option<ColmapFraction> {
+    let body = line.split_once(marker)?.1;
+    let bracket = body.split_once(']').map_or(body, |(value, _)| value);
+    parse_fraction(bracket)
+}
+
+fn parse_feature_progress(line: &str) -> Option<ColmapFraction> {
+    [
+        "Processed file [",
+        "Processed image [",
+        "Processing file [",
+        "Processing image [",
+    ]
+    .into_iter()
+    .find_map(|marker| parse_fraction_after(line, marker))
+}
+
+fn parse_feature_name(line: &str) -> Option<String> {
+    let value = line.split_once("Name:")?.1.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn parse_matching_progress(line: &str) -> Option<ColmapFraction> {
+    let body = [
+        "Processing block [",
+        "Matching block [",
+        "Processing image [",
+        "Matching image [",
+    ]
+    .into_iter()
+    .find_map(|marker| line.split_once(marker).map(|(_, body)| body))?;
+    let bracket = body.split_once(']').map_or(body, |(value, _)| value);
+    let fractions = bracket
+        .split(',')
+        .map(parse_fraction)
+        .collect::<Option<Vec<_>>>()?;
+    match fractions.as_slice() {
+        [fraction] => Some(*fraction),
+        [row, column] => {
+            let total = row.total.checked_mul(column.total)?;
+            let current = row
+                .current
+                .saturating_sub(1)
+                .checked_mul(column.total)?
+                .checked_add(column.current)?;
+            Some(ColmapFraction {
+                current: current.min(total),
+                total,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_mapper_registration(line: &str) -> Option<(u64, u64)> {
+    let body = line.split_once("Registering image #")?.1;
+    let image_id = body
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u64>()
+        .ok()?;
+    let registered = body
+        .split_once("num_reg_frames=")?
+        .1
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u64>()
+        .ok()?;
+    Some((image_id, registered))
+}
+
+fn colmap_step_progress(step: u8, fraction: f32) -> f32 {
+    (step as f32 + fraction.clamp(0.0, 0.99)) / 5.0
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_colmap_progress(
+    app: &AppHandle,
+    id: &str,
+    phase: &str,
+    step: u8,
+    fraction: f32,
+    message: impl Into<String>,
+    current_item: Option<String>,
+) {
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        phase,
+        colmap_step_progress(step, fraction),
+        message,
+        "running",
+        false,
+        None,
+        None,
+        current_item,
+        None,
+    );
+}
+
+fn emit_colmap_step_completed(
+    app: &AppHandle,
+    id: &str,
+    phase: &str,
+    step: u8,
+    message: &str,
+    current_item: &str,
+) {
+    emit_progress_detailed(
+        app,
+        id,
+        &StageName::Align,
+        phase,
+        (step as f32 + 1.0) / 5.0,
+        message,
+        "running",
+        false,
+        None,
+        None,
+        Some(current_item.to_owned()),
+        None,
+    );
+}
+
 fn run_align(
     app: &AppHandle,
     id: &str,
@@ -2143,7 +2422,7 @@ fn run_align(
 ) -> Result<Vec<String>, String> {
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
-    write_rig_and_pairs(&root)?;
+    let frame_count = write_rig_and_pairs(&root)?;
     let db = root.join("database.db");
     let sparse = root.join("sparse");
     if db.is_file() && sparse_model_exists(&sparse) {
@@ -2157,8 +2436,8 @@ fn run_align(
             "已沿用現有 COLMAP 重建結果",
             "running",
             false,
-            Some(5),
-            Some(5),
+            None,
+            None,
             Some("existing sparse model".to_owned()),
             None,
         );
@@ -2206,12 +2485,52 @@ fn run_align(
         "正在擷取影像特徵",
         "running",
         false,
-        Some(0),
-        Some(5),
+        None,
+        None,
         Some("feature_extractor".to_owned()),
         None,
     );
-    run_child(app, id, &colmap, &args, control)?;
+    let mut feature_item = Some("feature_extractor".to_owned());
+    let mut highest_feature_fraction = 0.0_f32;
+    let mut last_feature_emit = None;
+    run_child_with_output(app, id, &colmap, &args, control, |line| {
+        if let Some(progress) = parse_feature_progress(line) {
+            let fraction = progress.current as f32 / progress.total as f32;
+            if fraction < highest_feature_fraction {
+                return;
+            }
+            highest_feature_fraction = fraction;
+            let terminal = progress.current == progress.total;
+            if !terminal
+                && last_feature_emit
+                    .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+            {
+                return;
+            }
+            last_feature_emit = Some(Instant::now());
+            emit_colmap_progress(
+                app,
+                id,
+                "feature-extraction",
+                0,
+                highest_feature_fraction,
+                format!("已處理 {} / {} 張影像", progress.current, progress.total),
+                feature_item.clone(),
+            );
+            return;
+        }
+        if let Some(current_item) = parse_feature_name(line) {
+            feature_item = Some(current_item);
+        }
+    })?;
+    emit_colmap_step_completed(
+        app,
+        id,
+        "feature-extraction",
+        0,
+        "影像特徵擷取完成",
+        "feature_extractor",
+    );
     emit_progress_detailed(
         app,
         id,
@@ -2221,12 +2540,14 @@ fn run_align(
         "正在匯入受限影像配對",
         "running",
         false,
-        Some(1),
-        Some(5),
+        None,
+        None,
         Some("matches_importer".to_owned()),
         None,
     );
-    run_child(
+    let mut matching_progress: Option<ColmapFraction> = None;
+    let mut highest_matching_fraction = 0.0_f32;
+    run_child_with_output(
         app,
         id,
         &colmap,
@@ -2244,7 +2565,58 @@ fn run_align(
             if gpu { "1".into() } else { "0".into() },
         ],
         control,
+        |line| {
+            let parsed = parse_matching_progress(line);
+            if parsed.is_none() && line.contains(" in ") {
+                let Some(progress) = matching_progress.take() else {
+                    return;
+                };
+                let fraction = progress.current as f32 / progress.total as f32;
+                if fraction < highest_matching_fraction {
+                    return;
+                }
+                highest_matching_fraction = fraction;
+                emit_colmap_progress(
+                    app,
+                    id,
+                    "matching",
+                    1,
+                    highest_matching_fraction,
+                    format!("已完成配對區塊 {} / {}", progress.current, progress.total),
+                    Some(format!("區塊 {} / {}", progress.current, progress.total)),
+                );
+                return;
+            }
+            let Some(progress) = parsed else {
+                return;
+            };
+            let completed = if line
+                .split_once(']')
+                .is_some_and(|(_, suffix)| suffix.contains(" in "))
+            {
+                matching_progress = None;
+                progress.current
+            } else {
+                matching_progress = Some(progress);
+                progress.current.saturating_sub(1)
+            };
+            let fraction = completed as f32 / progress.total as f32;
+            if fraction < highest_matching_fraction {
+                return;
+            }
+            highest_matching_fraction = fraction;
+            emit_colmap_progress(
+                app,
+                id,
+                "matching",
+                1,
+                highest_matching_fraction,
+                format!("正在處理配對區塊 {} / {}", progress.current, progress.total),
+                Some(format!("區塊 {} / {}", progress.current, progress.total)),
+            );
+        },
     )?;
+    emit_colmap_step_completed(app, id, "matching", 1, "影像配對完成", "matches_importer");
     emit_progress_detailed(
         app,
         id,
@@ -2254,8 +2626,8 @@ fn run_align(
         "正在建立初始模型",
         "running",
         false,
-        Some(2),
-        Some(5),
+        None,
+        None,
         Some("bootstrap_mapper".to_owned()),
         None,
     );
@@ -2265,7 +2637,10 @@ fn run_align(
             fs::remove_dir_all(&bootstrap).map_err(|e| e.to_string())?;
         }
         fs::create_dir_all(&bootstrap).map_err(|e| e.to_string())?;
-        run_child(
+        let mut highest_registered = 0;
+        let mut last_bootstrap_emit = None;
+        let bootstrap_total = frame_count.saturating_mul(2).max(1);
+        run_child_with_output(
             app,
             id,
             &colmap,
@@ -2279,12 +2654,46 @@ fn run_align(
                 bootstrap.to_string_lossy().into_owned(),
             ],
             control,
+            |line| {
+                let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                    return;
+                };
+                highest_registered = highest_registered.max(registered).min(bootstrap_total);
+                let terminal = highest_registered == bootstrap_total;
+                if !terminal
+                    && last_bootstrap_emit
+                        .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+                {
+                    return;
+                }
+                last_bootstrap_emit = Some(Instant::now());
+                emit_colmap_progress(
+                    app,
+                    id,
+                    "bootstrap",
+                    2,
+                    highest_registered as f32 / bootstrap_total as f32,
+                    format!(
+                        "正在建立初始模型，已註冊約 {} / {} 張影像",
+                        highest_registered, bootstrap_total
+                    ),
+                    Some(format!("影像 #{image_id}")),
+                );
+            },
         )?;
     }
     let boot0 = bootstrap.join("0");
     if !boot0.is_dir() {
         return Err("COLMAP 初始建模未產生 sparse/0".into());
     }
+    emit_colmap_step_completed(
+        app,
+        id,
+        "bootstrap",
+        2,
+        "初始模型建立完成",
+        "bootstrap_mapper",
+    );
     emit_progress_detailed(
         app,
         id,
@@ -2294,8 +2703,8 @@ fn run_align(
         "正在估計雙鏡頭相機組",
         "running",
         false,
-        Some(3),
-        Some(5),
+        None,
+        None,
         Some("rig_configurator".to_owned()),
         None,
     );
@@ -2314,6 +2723,14 @@ fn run_align(
         ],
         control,
     )?;
+    emit_colmap_step_completed(
+        app,
+        id,
+        "rig",
+        3,
+        "雙鏡頭相機組估計完成",
+        "rig_configurator",
+    );
     emit_progress_detailed(
         app,
         id,
@@ -2323,8 +2740,8 @@ fn run_align(
         "正在重建最終模型",
         "running",
         false,
-        Some(4),
-        Some(5),
+        None,
+        None,
         Some("final_mapper".to_owned()),
         None,
     );
@@ -2332,7 +2749,10 @@ fn run_align(
         fs::remove_dir_all(&sparse).map_err(|e| e.to_string())?;
     }
     fs::create_dir_all(&sparse).map_err(|e| e.to_string())?;
-    run_child(
+    let mut highest_registered = 0;
+    let mut last_final_mapper_emit = None;
+    let final_total = frame_count.max(1);
+    run_child_with_output(
         app,
         id,
         &colmap,
@@ -2348,7 +2768,41 @@ fn run_align(
             "0".into(),
         ],
         control,
+        |line| {
+            let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                return;
+            };
+            highest_registered = highest_registered.max(registered).min(final_total);
+            let terminal = highest_registered == final_total;
+            if !terminal
+                && last_final_mapper_emit
+                    .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+            {
+                return;
+            }
+            last_final_mapper_emit = Some(Instant::now());
+            emit_colmap_progress(
+                app,
+                id,
+                "final-mapping",
+                4,
+                highest_registered as f32 / final_total as f32,
+                format!(
+                    "正在重建最終模型，已註冊約 {} / {} 組影格",
+                    highest_registered, final_total
+                ),
+                Some(format!("影像 #{image_id}")),
+            );
+        },
     )?;
+    emit_colmap_step_completed(
+        app,
+        id,
+        "final-mapping",
+        4,
+        "最終模型重建完成",
+        "final_mapper",
+    );
     emit_progress_detailed(
         app,
         id,
@@ -2358,8 +2812,8 @@ fn run_align(
         "對齊處理完成",
         "running",
         false,
-        Some(5),
-        Some(5),
+        None,
+        None,
         Some("completed".to_owned()),
         None,
     );
@@ -2374,14 +2828,16 @@ fn run_align(
 mod tests {
     use super::{
         balanced_select_expression, candidate_ffmpeg_args, candidate_image_names,
-        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, expected_candidate_frames,
-        extraction_completed_count, load_candidate_selection_checkpoint, map_full_res_candidates,
-        mask_confidence, probe_duration_seconds, read_raw_frames, selected_ffmpeg_args,
-        source_stage_progress, synchronized_candidate_count, with_hwaccel_auto,
-        write_candidate_selection_checkpoint, write_rig_and_pairs, ExtractionStage, JobControl,
-        JobManager, LogEvent, ProgressEvent, RawFrameMessage, StageName, StartStageRequest,
-        StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
-        CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, colmap_step_progress,
+        expected_candidate_frames, extraction_completed_count, load_candidate_selection_checkpoint,
+        map_full_res_candidates, mask_confidence, parse_feature_name, parse_feature_progress,
+        parse_mapper_registration, parse_matching_progress, probe_duration_seconds,
+        read_raw_frames, selected_ffmpeg_args, source_stage_progress, synchronized_candidate_count,
+        with_hwaccel_auto, write_candidate_selection_checkpoint, write_rig_and_pairs,
+        ColmapFraction, ExtractionStage, JobControl, JobManager, LogEvent, ProgressEvent,
+        RawFrameMessage, StageName, StartStageRequest, StreamingCandidateSelector,
+        CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
+        CANDIDATE_STREAM_WIDTH,
     };
     use crate::masking::CancelToken;
     use serde_json::json;
@@ -2431,6 +2887,93 @@ mod tests {
         })
         .unwrap();
         assert_eq!(log["timestampMs"], 789);
+    }
+
+    #[test]
+    fn parses_colmap_feature_progress_across_log_formats() {
+        assert_eq!(
+            parse_feature_progress(
+                "I20250611 20:54:46.728052 2394999 feature_extraction.cc:258] Processed file [17/463]"
+            ),
+            Some(ColmapFraction {
+                current: 17,
+                total: 463,
+            })
+        );
+        assert_eq!(
+            parse_feature_progress("Processing file [2/11]"),
+            Some(ColmapFraction {
+                current: 2,
+                total: 11,
+            })
+        );
+        assert_eq!(
+            parse_feature_progress("Processed image [11/11]\r"),
+            Some(ColmapFraction {
+                current: 11,
+                total: 11,
+            })
+        );
+        assert_eq!(
+            parse_feature_name("I0101 feature_extraction.cc:261]   Name: lens0/frame.png"),
+            Some("lens0/frame.png".to_owned())
+        );
+        assert_eq!(parse_feature_progress("Processed file [12/10]"), None);
+        assert_eq!(parse_feature_progress("Processed file [0/10]"), None);
+        assert_eq!(parse_feature_progress("feature_extractor is running"), None);
+    }
+
+    #[test]
+    fn parses_colmap_matching_block_variants_without_stripping_raw_brackets() {
+        assert_eq!(
+            parse_matching_progress("Matching block [2/4, 3/4] in 0.123s"),
+            Some(ColmapFraction {
+                current: 7,
+                total: 16,
+            })
+        );
+        assert_eq!(
+            parse_matching_progress(
+                "I20260701 12:00:00.000001 42 pairing.cc:889] Processing block [3/9]"
+            ),
+            Some(ColmapFraction {
+                current: 3,
+                total: 9,
+            })
+        );
+        assert_eq!(
+            parse_matching_progress("Matching image [13/48] in 0.250s"),
+            Some(ColmapFraction {
+                current: 13,
+                total: 48,
+            })
+        );
+        assert_eq!(parse_matching_progress("Processing block [x/4]"), None);
+    }
+
+    #[test]
+    fn mapper_progress_uses_only_labeled_registered_frame_counts() {
+        assert_eq!(
+            parse_mapper_registration(
+                "I20250611 incremental_pipeline.cc:607] Registering image #1921 (num_reg_frames=239)"
+            ),
+            Some((1921, 239))
+        );
+        assert_eq!(
+            parse_mapper_registration("Registering image #12 (7)"),
+            None,
+            "legacy naked counts are attempt indices, not reliable completed counts"
+        );
+        assert_eq!(parse_mapper_registration("Registering image #x"), None);
+    }
+
+    #[test]
+    fn colmap_substeps_map_to_monotonic_align_segments() {
+        assert!((colmap_step_progress(0, 0.0) - 0.0).abs() < f32::EPSILON);
+        assert!((colmap_step_progress(0, 0.5) - 0.1).abs() < f32::EPSILON);
+        assert!((colmap_step_progress(1, 0.0) - 0.2).abs() < f32::EPSILON);
+        assert!(colmap_step_progress(4, 1.0) < 1.0);
+        assert!(colmap_step_progress(4, 1.0) > 0.99);
     }
 
     #[test]

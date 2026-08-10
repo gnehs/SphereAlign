@@ -7,7 +7,6 @@ import {
   FolderOpen,
   HardDrive,
   Info,
-  MapPin,
   MonitorCog,
   MoreHorizontal,
   Play,
@@ -17,7 +16,6 @@ import {
   ScanLine,
   Settings2,
   Square,
-  Timer,
   Upload,
   Video,
   Workflow,
@@ -670,60 +668,6 @@ function formatEta(value?: number) {
   return `約 ${minutes} 分鐘`;
 }
 
-interface TaskWorkSummary {
-  mode: "items" | "stages";
-  completed: number;
-  total: number;
-  remaining: number;
-  unit: string;
-  current: string;
-  currentStage?: StageKey;
-  elapsedMs?: number;
-  etaMs?: number;
-}
-
-function taskWorkSummary(task: Task, nowMs: number): TaskWorkSummary {
-  const running = STAGES.find(({ key }) => task.stages[key].status === "running");
-  const interrupted = STAGES.find(({ key }) => ["failed", "cancelled"].includes(task.stages[key].status));
-  const activeStage = running ?? interrupted;
-  const countedStage = activeStage
-    && task.stages[activeStage.key].total !== undefined
-    && task.stages[activeStage.key].total !== 0
-    ? activeStage
-    : undefined;
-  if (countedStage) {
-    const stage = task.stages[countedStage.key];
-    const total = stage.total ?? 0;
-    const completed = Math.min(total, stage.completed ?? Math.round((stage.progress / 100) * total));
-    return {
-      mode: "items",
-      completed,
-      total,
-      remaining: Math.max(0, total - completed),
-      unit: countedStage.key === "mask" ? "個檔案" : countedStage.key === "align" ? "個步驟" : "組影格",
-      current: stage.currentItem
-        ? `${stage.message || countedStage.label} · ${stage.currentItem}`
-        : stage.message || countedStage.label,
-      currentStage: countedStage.key,
-      elapsedMs: taskStageDuration(stage, nowMs),
-      etaMs: estimatedRemainingMs(stage, nowMs),
-    };
-  }
-  const completed = STAGES.filter(({ key }) => task.stages[key].status === "completed").length;
-  const active = running ?? STAGES.find(({ key }) => task.stages[key].status !== "completed");
-  return {
-    mode: "stages",
-    completed,
-    total: STAGES.length,
-    remaining: Math.max(0, STAGES.length - completed),
-    unit: "個階段",
-    current: active ? `${STAGES.find((stage) => stage.key === active.key)?.label ?? "處理階段"} · ${active ? (task.stages[active.key].message || stageStatusLabel(task.stages[active.key].status)) : ""}` : "所有階段已完成",
-    currentStage: active?.key,
-    elapsedMs: active ? taskStageDuration(task.stages[active.key], nowMs) : undefined,
-    etaMs: active ? estimatedRemainingMs(task.stages[active.key], nowMs) : undefined,
-  };
-}
-
 function logLevelForStatus(status?: StageStatus): TaskLogLevel {
   if (status === "failed") return "error";
   if (status === "cancelled") return "warning";
@@ -833,7 +777,6 @@ function App() {
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
-  const selectedWorkSummary = useMemo(() => selectedTask ? taskWorkSummary(selectedTask, clockMs) : undefined, [clockMs, selectedTask]);
   const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
   const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
 
@@ -1460,12 +1403,12 @@ function App() {
           <SheetContent className="task-detail-sheet" side="right">
             <SheetHeader>
               <SheetTitle>{selectedTask.name}</SheetTitle>
-              <SheetDescription>查看任務進度、目前處理位置、逐步耗時與處理紀錄。</SheetDescription>
+              <SheetDescription>查看整體進度、各階段狀態、耗時與處理紀錄。</SheetDescription>
             </SheetHeader>
             <div className="task-detail-scroll">
               <section className="task-detail-overview">
                 <div className="task-detail-heading"><span>整體進度</span><strong>{taskProgress(selectedTask)}%</strong></div>
-                <Progress value={taskProgress(selectedTask)}><ProgressValue /></Progress>
+                <Progress value={taskProgress(selectedTask)} aria-label={`${selectedTask.name} 整體進度`}><ProgressValue /></Progress>
                 <dl className="task-detail-meta">
                   <div><dt>輸出資料夾</dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || "尚未指定"}</dd></div>
                   <div><dt>來源數量</dt><dd>{selectedTask.inputPaths.length} 個</dd></div>
@@ -1473,28 +1416,17 @@ function App() {
                 </dl>
               </section>
 
-              {selectedWorkSummary && (
-                <section className="task-detail-section task-detail-summary">
-                  <div className="task-detail-section-title"><h2>處理摘要</h2><span>{selectedWorkSummary.mode === "items" ? "目前階段" : "整體管線"}</span></div>
-                  <div className="task-detail-summary-grid">
-                    <div><span>已處理</span><strong>{selectedWorkSummary.completed.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
-                    <div><span>剩餘</span><strong>{selectedWorkSummary.remaining.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
-                    <div><span>總計</span><strong>{selectedWorkSummary.total.toLocaleString("zh-TW")}</strong><small>{selectedWorkSummary.unit}</small></div>
-                  </div>
-                  <div className="task-detail-current"><MapPin /><span><small>現在處理</small><strong>{selectedWorkSummary.current}</strong></span></div>
-                  <div className="task-detail-timing"><span><Clock3 />經過 {formatDuration(selectedWorkSummary.elapsedMs)}</span><span><Timer />剩餘 {formatEta(selectedWorkSummary.etaMs)}</span></div>
-                </section>
-              )}
-
               <section className="task-detail-section">
                 <div className="task-detail-section-title"><h2>處理階段</h2><span>{STAGES.length} 個階段</span></div>
                 <div className="task-detail-stages">
-                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const elapsed = taskStageDuration(current, clockMs); const eta = estimatedRemainingMs(current, clockMs); return (
+                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const elapsed = taskStageDuration(current, clockMs); const eta = estimatedRemainingMs(current, clockMs); const showProgress = current.status === "running" || (["cancelled", "failed"].includes(current.status) && current.progress > 0); const count = logCountLabel(current.completed, current.total); return (
                     <div className="task-detail-stage" key={stage.key}>
                       <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{current.phase ? `${phaseLabel(current.phase)} · ` : ""}{current.message || stage.description}{current.currentItem ? ` · ${current.currentItem}` : ""}</small></span><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
-                      <div className="task-detail-stage-progress"><Progress value={current.progress}><ProgressValue /></Progress><span>{current.progress}%</span></div>
-                      <div className="task-detail-stage-time"><span><Clock3 />{current.status === "running" ? `經過 ${formatDuration(elapsed)}` : elapsed !== undefined ? `耗時 ${formatDuration(elapsed)}` : "尚未開始"}</span>{current.status === "running" ? <span>剩餘 {formatEta(eta)}</span> : current.finishedAtMs ? <small>結束 {formatTimestamp(current.finishedAtMs, true)}</small> : current.startedAtMs ? <small>開始 {formatTimestamp(current.startedAtMs, true)}</small> : null}</div>
-                      <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                      {showProgress && <div className="task-detail-stage-progress"><Progress value={current.progress} aria-label={`${stage.label}進度`}><ProgressValue /></Progress><span>{count ? `${count} · ` : ""}{current.progress}%</span></div>}
+                      <div className="task-detail-stage-footer">
+                        <div className="task-detail-stage-time"><span><Clock3 />{current.status === "running" ? `經過 ${formatDuration(elapsed)}` : elapsed !== undefined ? `耗時 ${formatDuration(elapsed)}` : "尚未開始"}</span>{current.status === "running" ? <span>剩餘 {formatEta(eta)}</span> : current.finishedAtMs ? <small>結束 {formatTimestamp(current.finishedAtMs, true)}</small> : current.startedAtMs ? <small>開始 {formatTimestamp(current.startedAtMs, true)}</small> : null}</div>
+                        <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                      </div>
                     </div>
                   ); })}
                 </div>
