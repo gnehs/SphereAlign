@@ -215,6 +215,32 @@ pub(crate) fn clear_matching_cache(database: &Path) -> Result<(), FeatureCacheEr
     Ok(())
 }
 
+/// Return whether the database contains a configured multi-sensor rig.
+///
+/// COLMAP stores only non-reference sensors in `rig_sensors`, so any row means
+/// the mapper would no longer see the independent-camera state required to
+/// bootstrap unknown rig extrinsics.
+pub(crate) fn database_has_nontrivial_rig(database: &Path) -> Result<bool, FeatureCacheError> {
+    let connection = Connection::open_with_flags(
+        database,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|source| FeatureCacheError::Database {
+        path: database.to_path_buf(),
+        source,
+    })?;
+    validate_tables(&connection, database, &["rig_sensors"])?;
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM rig_sensors LIMIT 1)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|source| database_error(database, source))
+}
+
 #[derive(Debug)]
 struct FeatureRow {
     name: String,
@@ -523,8 +549,8 @@ fn format_image_names(names: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_matching_cache, inspect_feature_cache, FeatureCacheError, FeatureCacheStatus,
-        SIFT_DESCRIPTOR_COLS,
+        clear_matching_cache, database_has_nontrivial_rig, inspect_feature_cache,
+        FeatureCacheError, FeatureCacheStatus, SIFT_DESCRIPTOR_COLS,
     };
     use rusqlite::{params, Connection};
     use std::fs;
@@ -577,9 +603,32 @@ mod tests {
                     rows INTEGER NOT NULL,
                     cols INTEGER NOT NULL,
                     data BLOB
+                 );
+                 CREATE TABLE rig_sensors (
+                    rig_id INTEGER NOT NULL,
+                    sensor_id INTEGER NOT NULL,
+                    sensor_type INTEGER NOT NULL,
+                    sensor_from_rig BLOB
                  );",
             )
             .unwrap();
+    }
+
+    #[test]
+    fn detects_only_configured_non_reference_rig_sensors() {
+        let (_directory, database) = fixture();
+        assert!(!database_has_nontrivial_rig(&database).unwrap());
+
+        let connection = open_fixture_database(&database);
+        connection
+            .execute(
+                "INSERT INTO rig_sensors(rig_id, sensor_id, sensor_type) VALUES (1, 2, 0)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        assert!(database_has_nontrivial_rig(&database).unwrap());
     }
 
     fn insert_image(connection: &Connection, id: i64, name: &str) {
