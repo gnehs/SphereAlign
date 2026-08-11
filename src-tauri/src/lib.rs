@@ -1,4 +1,5 @@
 mod colmap_feature_cache;
+mod cli;
 mod colmap_priors;
 mod doctor;
 mod extraction;
@@ -84,4 +85,12 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub fn run_cli(args: Vec<String>) -> Result<(), String> {
+    let app = tauri::Builder::default()
+        .build(tauri::generate_context!("tauri.cli.conf.json"))
+        .map_err(|error| error.to_string())?;
+    let handle = app.handle().clone();
+    cli::run(&handle, args)
 }

@@ -45,11 +45,14 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 7;
-const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
+const ALIGN_PIPELINE_REVISION: u32 = 12;
+const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
+const FEATURE_MAX_NUM_FEATURES: usize = 10_240;
+const FEATURE_PEAK_THRESHOLD: f64 = 0.006;
+const MATCH_MAX_NUM_MATCHES: usize = 10_240;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const COLMAP_MAX_IMAGE_ID: i64 = 2_147_483_647;
@@ -104,6 +107,7 @@ struct FeatureFingerprintPayload {
     extractor_type: &'static str,
     camera_model: &'static str,
     default_focal_length_factor: f64,
+    quality_profile: &'static str,
     include_masks: bool,
     files: Vec<AlignFileIdentity>,
 }
@@ -213,7 +217,22 @@ pub struct JobManager {
     jobs: Arc<Mutex<HashMap<String, JobControl>>>,
 }
 
+struct JobCompletionGuard {
+    manager: JobManager,
+    id: String,
+}
+
+impl Drop for JobCompletionGuard {
+    fn drop(&mut self) {
+        self.manager.remove(&self.id);
+    }
+}
+
 impl JobManager {
+    pub fn is_running(&self) -> bool {
+        self.jobs.lock().is_ok_and(|jobs| !jobs.is_empty())
+    }
+
     pub fn cancel(&self, id: &str) -> bool {
         let Ok(jobs) = self.jobs.lock() else {
             return false;
@@ -462,6 +481,10 @@ pub fn start_stage(
     let colmap_path = request.colmap_path.clone();
     let response = StartStageResponse { job_id: id.clone() };
     thread::spawn(move || {
+        let _completion_guard = JobCompletionGuard {
+            manager: manager.clone(),
+            id: id.clone(),
+        };
         let stage_started_at = Instant::now();
         let skipped_mask = stage == StageName::Mask && !mask_enabled(&manifest.settings);
         let starting_message = if skipped_mask {
@@ -630,6 +653,39 @@ enum MapperMode {
     Auto,
     Incremental,
     Global,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColmapQualityProfile {
+    Baseline,
+    Tuned,
+}
+
+impl ColmapQualityProfile {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::Tuned => "tuned",
+        }
+    }
+}
+
+fn colmap_quality_profile(settings: &Value) -> Result<ColmapQualityProfile, String> {
+    match settings
+        .pointer("/align/colmapQualityProfile")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("baseline")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "baseline" => Ok(ColmapQualityProfile::Baseline),
+        "tuned" => Ok(ColmapQualityProfile::Tuned),
+        value => Err(format!(
+            "align.colmapQualityProfile must be baseline or tuned (got {value})"
+        )),
+    }
 }
 
 fn mapper_mode(settings: &Value) -> Result<MapperMode, String> {
@@ -4041,6 +4097,7 @@ fn build_feature_fingerprint(
     root: &Path,
     colmap_version: &str,
     include_masks: bool,
+    quality_profile: ColmapQualityProfile,
 ) -> Result<String, String> {
     let mut files = Vec::new();
     collect_align_file_identities(&root.join("images"), root, &mut files)?;
@@ -4054,6 +4111,7 @@ fn build_feature_fingerprint(
         extractor_type: FEATURE_EXTRACTION_TYPE,
         camera_model: FEATURE_CAMERA_MODEL,
         default_focal_length_factor: FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR,
+        quality_profile: quality_profile.as_str(),
         include_masks,
         files,
     };
@@ -4928,6 +4986,7 @@ fn feature_extractor_args(
     use_gpu: bool,
     gpu_index: &str,
     use_masks: bool,
+    quality_profile: ColmapQualityProfile,
 ) -> Vec<String> {
     let mut args = vec![
         "feature_extractor".into(),
@@ -4948,12 +5007,26 @@ fn feature_extractor_args(
         "--FeatureExtraction.type".into(),
         FEATURE_EXTRACTION_TYPE.into(),
         "--SiftExtraction.max_num_features".into(),
-        "8192".into(),
+        if quality_profile == ColmapQualityProfile::Tuned {
+            FEATURE_MAX_NUM_FEATURES.to_string()
+        } else {
+            "8192".into()
+        },
         "--FeatureExtraction.use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureExtraction.gpu_index".into(),
         gpu_index.to_owned(),
     ];
+    if quality_profile == ColmapQualityProfile::Tuned {
+        // Osmo 360 imagery often contains low-contrast wall and distant
+        // detail. Retain more of those stable extrema than COLMAP's default
+        // without enabling affine/DSP SIFT, which would disable the fast GPU
+        // extraction path on common Windows builds.
+        args.extend([
+            "--SiftExtraction.peak_threshold".into(),
+            FEATURE_PEAK_THRESHOLD.to_string(),
+        ]);
+    }
     if use_masks {
         args.push("--ImageReader.mask_path".into());
         args.push(root.join("masks_colmap").to_string_lossy().into_owned());
@@ -4961,8 +5034,14 @@ fn feature_extractor_args(
     args
 }
 
-fn matches_importer_args(root: &Path, db: &Path, use_gpu: bool, gpu_index: &str) -> Vec<String> {
-    vec![
+fn matches_importer_args(
+    root: &Path,
+    db: &Path,
+    use_gpu: bool,
+    gpu_index: &str,
+    quality_profile: ColmapQualityProfile,
+) -> Vec<String> {
+    let mut args = vec![
         "matches_importer".into(),
         "--database_path".into(),
         db.to_string_lossy().into_owned(),
@@ -4976,12 +5055,25 @@ fn matches_importer_args(root: &Path, db: &Path, use_gpu: bool, gpu_index: &str)
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureMatching.gpu_index".into(),
         gpu_index.to_owned(),
-        // SIFT extraction produces at most 8192 features per image by default.
-        // Keep the matcher at that same bound instead of reserving COLMAP's
-        // much larger default workspace for descriptors that cannot exist.
         "--FeatureMatching.max_num_matches".into(),
-        "8192".into(),
-    ]
+        if quality_profile == ColmapQualityProfile::Tuned {
+            MATCH_MAX_NUM_MATCHES.to_string()
+        } else {
+            "8192".into()
+        },
+    ];
+    if quality_profile == ColmapQualityProfile::Tuned {
+        args.extend([
+        // Spend modest extra RANSAC work on retrieval/cross-source pairs instead of
+        // accepting a weaker model merely because the default trial budget ran
+        // out in repetitive indoor scenes.
+            "--TwoViewGeometry.confidence".into(),
+            "0.999".into(),
+            "--TwoViewGeometry.max_num_trials".into(),
+            "15000".into(),
+        ]);
+    }
+    args
 }
 
 fn mapper_gpu_index(gpu_index: &str) -> &str {
@@ -5037,20 +5129,6 @@ fn mapper_args(
             "1".into(),
         ]);
     }
-    if options.reduce_global_ba_frequency {
-        // Use COLMAP's documented redundant-landmark pruning and its 1.4
-        // video growth-ratio preset to reduce repeated global BA passes.
-        // Keep unknown-rig bootstrap on conservative COLMAP defaults because
-        // that first pass exists to maximize registration/calibration coverage.
-        args.extend([
-            "--Mapper.ba_global_ignore_redundant_points3D".into(),
-            "1".into(),
-            "--Mapper.ba_global_frames_ratio".into(),
-            "1.4".into(),
-            "--Mapper.ba_global_points_ratio".into(),
-            "1.4".into(),
-        ]);
-    }
     if options.disable_sensor_refinement {
         args.push("--Mapper.ba_refine_sensor_from_rig".into());
         args.push("0".into());
@@ -5063,7 +5141,6 @@ struct MapperOptions {
     multiple_models: bool,
     initial_image_pair: Option<(i64, i64)>,
     disable_sensor_refinement: bool,
-    reduce_global_ba_frequency: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5071,6 +5148,7 @@ struct GlobalMapperOptions {
     use_gravity_prior: bool,
     fixed_rotation_ba: bool,
     disable_sensor_refinement: bool,
+    quality_refinement: bool,
 }
 
 fn global_mapper_args(
@@ -5119,6 +5197,21 @@ fn global_mapper_args(
         "--GlobalMapper.ba_ceres_gpu_index".into(),
         mapper_gpu_index(gpu_index).to_owned(),
     ];
+    if options.quality_refinement {
+        // COLMAP's global defaults favor broad registration (15 px track
+        // completion/merge gates). Tighten the final geometry and give global
+        // positioning plus BA enough iterations for dual-fisheye video.
+        args.extend([
+            "--GlobalMapper.gp_max_num_iterations".into(),
+            "120".into(),
+            "--GlobalMapper.tri_complete_max_reproj_error".into(),
+            "8".into(),
+            "--GlobalMapper.tri_merge_max_reproj_error".into(),
+            "8".into(),
+            "--GlobalMapper.max_normalized_reproj_error".into(),
+            "0.008".into(),
+        ]);
+    }
     if options.fixed_rotation_ba {
         args.extend([
             "--GlobalMapper.ba_skip_joint_optimization_stage".into(),
@@ -5622,15 +5715,21 @@ fn refresh_calibrated_pair_matches(
     database: &Path,
     gpu_index: &str,
     use_gpu: bool,
-    use_visual_retrieval: bool,
     use_calibrated_fov: bool,
+    quality_profile: ColmapQualityProfile,
     control: &JobControl,
 ) -> Result<bool, String> {
     let pairs_path = root.join("metadata/pairs.txt");
     let original_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
     let original_hash = sha256_hex(&original_pairs);
-    write_rig_and_pairs_with_options(root, use_visual_retrieval, use_calibrated_fov)?;
-    let calibrated_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
+    // Retrieval descriptors were already computed for the original graph.
+    // Rebuilding them here made the rig refresh as expensive as the complete
+    // first pair-graph pass. Generate only the newly available temporal/FOV
+    // pairs, then union them with the verified original retrieval pairs.
+    write_rig_and_pairs_with_options(root, false, use_calibrated_fov)?;
+    let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
+    let calibrated_pairs = merge_pair_lists(&original_pairs, &refreshed_pairs)?;
+    fs::write(&pairs_path, &calibrated_pairs).map_err(|error| error.to_string())?;
     if sha256_hex(&calibrated_pairs) == original_hash {
         return Ok(false);
     }
@@ -5640,7 +5739,8 @@ fn refresh_calibrated_pair_matches(
     let result = clear_matching_cache(database)
         .map_err(|error| error.to_string())
         .and_then(|()| {
-            let args = matches_importer_args(root, database, use_gpu, gpu_index);
+            let args =
+                matches_importer_args(root, database, use_gpu, gpu_index, quality_profile);
             run_child(app, id, colmap, &args, control)
         });
     match result {
@@ -5656,6 +5756,22 @@ fn refresh_calibrated_pair_matches(
             Err(error)
         }
     }
+}
+
+fn merge_pair_lists(first: &[u8], second: &[u8]) -> Result<Vec<u8>, String> {
+    let first = std::str::from_utf8(first).map_err(|error| error.to_string())?;
+    let second = std::str::from_utf8(second).map_err(|error| error.to_string())?;
+    let pairs = first
+        .lines()
+        .chain(second.lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<BTreeSet<_>>();
+    let mut merged = pairs.into_iter().collect::<Vec<_>>().join("\n").into_bytes();
+    if !merged.is_empty() {
+        merged.push(b'\n');
+    }
+    Ok(merged)
 }
 
 #[allow(clippy::too_many_arguments)] // External solver invocation keeps all validated paths explicit.
@@ -5807,6 +5923,7 @@ fn run_align(
     let gpu_index = parse_gpu_index(&manifest.settings)?;
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
+    let quality_profile = colmap_quality_profile(&manifest.settings)?;
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
@@ -5912,7 +6029,8 @@ fn run_align(
     };
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
-    let feature_fingerprint = build_feature_fingerprint(&root, &colmap_version, use_masks)?;
+    let feature_fingerprint =
+        build_feature_fingerprint(&root, &colmap_version, use_masks, quality_profile)?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
     let external_orientation_requested = manifest
@@ -6227,8 +6345,10 @@ fn run_align(
     }
     let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
     let feature_started = Instant::now();
-    let feature_gpu_args = feature_extractor_args(&root, &db, true, &gpu_index, use_masks);
-    let feature_cpu_args = feature_extractor_args(&root, &db, false, &gpu_index, use_masks);
+    let feature_gpu_args =
+        feature_extractor_args(&root, &db, true, &gpu_index, use_masks, quality_profile);
+    let feature_cpu_args =
+        feature_extractor_args(&root, &db, false, &gpu_index, use_masks, quality_profile);
     if feature_cache_reusable {
         let (expected, completed) = feature_cache_counts.unwrap_or((0, 0));
         emit_log(
@@ -6386,8 +6506,10 @@ fn run_align(
     );
     let matching_progress = Cell::new(None::<ColmapFraction>);
     let highest_matching_fraction = Cell::new(0.0_f32);
-    let matching_gpu_args = matches_importer_args(&root, &db, true, &gpu_index);
-    let matching_cpu_args = matches_importer_args(&root, &db, false, &gpu_index);
+    let matching_gpu_args =
+        matches_importer_args(&root, &db, true, &gpu_index, quality_profile);
+    let matching_cpu_args =
+        matches_importer_args(&root, &db, false, &gpu_index, quality_profile);
     let matching_database_backup = root.join("metadata/.align-matching-database.backup");
     remove_align_artifact(&matching_database_backup)?;
     if feature_matching_gpu {
@@ -6605,7 +6727,6 @@ fn run_align(
                     multiple_models: true,
                     initial_image_pair: None,
                     disable_sensor_refinement: false,
-                    reduce_global_ba_frequency: false,
                 },
             );
             let bootstrap_cpu_args = mapper_args(
@@ -6618,7 +6739,6 @@ fn run_align(
                     multiple_models: true,
                     initial_image_pair: None,
                     disable_sensor_refinement: false,
-                    reduce_global_ba_frequency: false,
                 },
             );
             run_mapper_with_gpu_fallback(
@@ -6719,7 +6839,6 @@ fn run_align(
                         multiple_models: false,
                         initial_image_pair: Some((pair.image_id1, pair.image_id2)),
                         disable_sensor_refinement: false,
-                        reduce_global_ba_frequency: false,
                     };
                     let retry_gpu_args = mapper_args(
                         &db,
@@ -6896,8 +7015,8 @@ fn run_align(
             &db,
             &gpu_index,
             feature_matching_gpu,
-            use_visual_retrieval,
             use_calibrated_fov_pairs,
+            quality_profile,
             control,
         ) {
             Ok(true) => emit_log(
@@ -6995,6 +7114,7 @@ fn run_align(
                 use_gravity_prior,
                 fixed_rotation_ba,
                 disable_sensor_refinement: rig_preconfigured,
+                quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
             },
         )
     } else {
@@ -7008,7 +7128,6 @@ fn run_align(
                 multiple_models: false,
                 initial_image_pair: None,
                 disable_sensor_refinement: rig_preconfigured,
-                reduce_global_ba_frequency: true,
             },
         )
     };
@@ -7023,6 +7142,7 @@ fn run_align(
                 use_gravity_prior,
                 fixed_rotation_ba,
                 disable_sensor_refinement: rig_preconfigured,
+                quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
             },
         )
     } else {
@@ -7036,7 +7156,6 @@ fn run_align(
                 multiple_models: false,
                 initial_image_pair: None,
                 disable_sensor_refinement: rig_preconfigured,
-                reduce_global_ba_frequency: true,
             },
         )
     };
@@ -7158,8 +7277,8 @@ fn run_align(
                     &db,
                     &gpu_index,
                     feature_matching_gpu,
-                    use_visual_retrieval,
                     use_calibrated_fov_pairs,
+                    quality_profile,
                     control,
                 ) {
                     Ok(true) => emit_log(
@@ -7224,6 +7343,7 @@ fn run_align(
                         use_gravity_prior,
                         fixed_rotation_ba: enable_fixed_rotation,
                         disable_sensor_refinement: rig_preconfigured,
+                        quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
                     },
                 );
                 let cpu_args = global_mapper_args(
@@ -7236,6 +7356,7 @@ fn run_align(
                         use_gravity_prior,
                         fixed_rotation_ba: enable_fixed_rotation,
                         disable_sensor_refinement: rig_preconfigured,
+                        quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
                     },
                 );
                 let global_result = run_mapper_with_gpu_fallback(
@@ -7467,6 +7588,7 @@ mod tests {
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_step_progress,
         complete_registered_dual_fisheye_frames, create_colmap_database_backup,
+        colmap_quality_profile, ColmapQualityProfile,
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
         extraction_completed_count, feature_extractor_args, global_mapper_args,
         global_mapper_prerequisite_error, has_valid_global_mapper_priors,
@@ -7474,7 +7596,8 @@ mod tests {
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
         mapper_gpu_index, mapper_mode, mask_classes, mask_confidence, mask_enabled,
-        matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
+        matches_importer_args, merge_pair_lists, parse_feature_name, parse_feature_progress,
+        parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
         restore_colmap_database_backup, rig_bootstrap_shared_frame_count,
@@ -7626,7 +7749,14 @@ mod tests {
         let db = root.join("database.db");
         let images = root.join("images");
         let sparse = root.join("sparse");
-        let feature = feature_extractor_args(root, &db, true, "0,1", true);
+        let feature = feature_extractor_args(
+            root,
+            &db,
+            true,
+            "0,1",
+            true,
+            ColmapQualityProfile::Tuned,
+        );
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--FeatureExtraction.use_gpu", "1"] }));
@@ -7641,13 +7771,37 @@ mod tests {
             .any(|args| { args == ["--FeatureExtraction.type", "SIFT"] }));
         assert!(feature
             .windows(2)
-            .any(|args| { args == ["--SiftExtraction.max_num_features", "8192"] }));
+            .any(|args| { args == ["--SiftExtraction.max_num_features", "10240"] }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--SiftExtraction.peak_threshold", "0.006"] }));
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--ImageReader.camera_model", "OPENCV_FISHEYE"] }));
         assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
 
-        let matching = matches_importer_args(root, &db, true, "0,1");
+        let baseline_feature = feature_extractor_args(
+            root,
+            &db,
+            true,
+            "0",
+            false,
+            ColmapQualityProfile::Baseline,
+        );
+        assert!(baseline_feature
+            .windows(2)
+            .any(|args| args == ["--SiftExtraction.max_num_features", "8192"]));
+        assert!(!baseline_feature
+            .iter()
+            .any(|arg| arg == "--SiftExtraction.peak_threshold"));
+
+        let matching = matches_importer_args(
+            root,
+            &db,
+            true,
+            "0,1",
+            ColmapQualityProfile::Tuned,
+        );
         assert!(matching
             .windows(2)
             .any(|args| { args == ["--FeatureMatching.use_gpu", "1"] }));
@@ -7656,7 +7810,26 @@ mod tests {
             .any(|args| { args == ["--FeatureMatching.gpu_index", "0,1"] }));
         assert!(matching
             .windows(2)
-            .any(|args| { args == ["--FeatureMatching.max_num_matches", "8192"] }));
+            .any(|args| { args == ["--FeatureMatching.max_num_matches", "10240"] }));
+        assert!(matching
+            .windows(2)
+            .any(|args| { args == ["--TwoViewGeometry.confidence", "0.999"] }));
+        assert!(matching
+            .windows(2)
+            .any(|args| { args == ["--TwoViewGeometry.max_num_trials", "15000"] }));
+        let baseline_matching = matches_importer_args(
+            root,
+            &db,
+            true,
+            "0",
+            ColmapQualityProfile::Baseline,
+        );
+        assert!(baseline_matching
+            .windows(2)
+            .any(|args| args == ["--FeatureMatching.max_num_matches", "8192"]));
+        assert!(!baseline_matching
+            .iter()
+            .any(|arg| arg == "--FeatureMatching.guided_matching"));
 
         let mapper_index = mapper_gpu_index("0,1");
         let mapper = mapper_args(
@@ -7669,7 +7842,6 @@ mod tests {
                 multiple_models: false,
                 initial_image_pair: None,
                 disable_sensor_refinement: true,
-                reduce_global_ba_frequency: true,
             },
         );
         assert!(mapper
@@ -7687,15 +7859,6 @@ mod tests {
         assert!(mapper
             .windows(2)
             .any(|args| { args == ["--Mapper.ba_gpu_index", "0"] }));
-        assert!(mapper
-            .windows(2)
-            .any(|args| { args == ["--Mapper.ba_global_ignore_redundant_points3D", "1"] }));
-        assert!(mapper
-            .windows(2)
-            .any(|args| { args == ["--Mapper.ba_global_frames_ratio", "1.4"] }));
-        assert!(mapper
-            .windows(2)
-            .any(|args| { args == ["--Mapper.ba_global_points_ratio", "1.4"] }));
         assert!(mapper
             .windows(2)
             .any(|args| { args == ["--Mapper.ba_refine_sensor_from_rig", "0"] }));
@@ -7720,7 +7883,6 @@ mod tests {
                 multiple_models: true,
                 initial_image_pair: Some((7, 9)),
                 disable_sensor_refinement: false,
-                reduce_global_ba_frequency: false,
             },
         );
         assert!(args
@@ -7746,10 +7908,10 @@ mod tests {
             .any(|args| args == ["--Mapper.ba_global_backend", "CERES"]));
         assert!(!args
             .iter()
-            .any(|arg| arg == "--Mapper.ba_global_ignore_redundant_points3D"));
+            .any(|arg| arg == "--Mapper.ba_local_num_images"));
         assert!(!args
             .iter()
-            .any(|arg| arg == "--Mapper.ba_global_frames_ratio"));
+            .any(|arg| arg == "--Mapper.filter_max_reproj_error"));
         assert!(!args
             .iter()
             .any(|arg| arg == "--Mapper.ba_refine_sensor_from_rig"));
@@ -8092,17 +8254,35 @@ mod tests {
             fs::create_dir_all(images.join(lens)).unwrap();
             fs::write(images.join(lens).join("frame0001.png"), b"frame").unwrap();
         }
-        let baseline = build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", false).unwrap();
+        let baseline = build_feature_fingerprint(
+            temp.path(),
+            "COLMAP 4.1.1",
+            false,
+            ColmapQualityProfile::Baseline,
+        )
+        .unwrap();
         fs::create_dir_all(temp.path().join("metadata")).unwrap();
         fs::write(temp.path().join("metadata/pairs.txt"), b"changed pairs").unwrap();
         fs::write(temp.path().join("rig_config.json"), b"changed rig").unwrap();
         assert_eq!(
             baseline,
-            build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", false).unwrap()
+            build_feature_fingerprint(
+                temp.path(),
+                "COLMAP 4.1.1",
+                false,
+                ColmapQualityProfile::Baseline,
+            )
+            .unwrap()
         );
         assert_ne!(
             baseline,
-            build_feature_fingerprint(temp.path(), "COLMAP 4.2.0", false).unwrap()
+            build_feature_fingerprint(
+                temp.path(),
+                "COLMAP 4.2.0",
+                false,
+                ColmapQualityProfile::Baseline,
+            )
+            .unwrap()
         );
         fs::create_dir_all(temp.path().join("masks_colmap/lens0")).unwrap();
         fs::write(
@@ -8112,7 +8292,23 @@ mod tests {
         .unwrap();
         assert_ne!(
             baseline,
-            build_feature_fingerprint(temp.path(), "COLMAP 4.1.1", true).unwrap()
+            build_feature_fingerprint(
+                temp.path(),
+                "COLMAP 4.1.1",
+                true,
+                ColmapQualityProfile::Baseline,
+            )
+            .unwrap()
+        );
+        assert_ne!(
+            baseline,
+            build_feature_fingerprint(
+                temp.path(),
+                "COLMAP 4.1.1",
+                false,
+                ColmapQualityProfile::Tuned,
+            )
+            .unwrap()
         );
     }
 
@@ -8742,6 +8938,36 @@ mod tests {
     }
 
     #[test]
+    fn colmap_quality_profile_defaults_to_baseline_and_supports_tuned() {
+        assert_eq!(
+            colmap_quality_profile(&json!({})).unwrap(),
+            ColmapQualityProfile::Baseline
+        );
+        assert_eq!(
+            colmap_quality_profile(&json!({"align": {"colmapQualityProfile": "tuned"}}))
+                .unwrap(),
+            ColmapQualityProfile::Tuned
+        );
+        assert!(colmap_quality_profile(
+            &json!({"align": {"colmapQualityProfile": "aggressive"}})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn refreshed_pair_graph_unions_original_retrieval_and_new_rig_pairs() {
+        let merged = merge_pair_lists(
+            b"lens0/a.png lens0/b.png\nlens0/c.png lens1/c.png\n",
+            b"lens0/a.png lens0/b.png\nlens1/d.png lens1/e.png\n",
+        )
+        .unwrap();
+        assert_eq!(
+            std::str::from_utf8(&merged).unwrap(),
+            "lens0/a.png lens0/b.png\nlens0/c.png lens1/c.png\nlens1/d.png lens1/e.png\n"
+        );
+    }
+
+    #[test]
     fn global_mapper_args_use_colmap_4_1_1_option_names() {
         let args = global_mapper_args(
             Path::new("database.db"),
@@ -8753,6 +8979,7 @@ mod tests {
                 use_gravity_prior: true,
                 fixed_rotation_ba: false,
                 disable_sensor_refinement: true,
+                quality_refinement: true,
             },
         );
         let pairs = args
@@ -8766,6 +8993,10 @@ mod tests {
         assert!(pairs.contains(&("--GlobalMapper.ba_ceres_use_gpu", "1")));
         assert!(pairs.contains(&("--GlobalMapper.ba_ceres_gpu_index", "2")));
         assert!(pairs.contains(&("--GlobalMapper.refine_sensor_from_rig", "0")));
+        assert!(pairs.contains(&("--GlobalMapper.gp_max_num_iterations", "120")));
+        assert!(pairs.contains(&("--GlobalMapper.tri_complete_max_reproj_error", "8")));
+        assert!(pairs.contains(&("--GlobalMapper.tri_merge_max_reproj_error", "8")));
+        assert!(pairs.contains(&("--GlobalMapper.max_normalized_reproj_error", "0.008")));
 
         let without_gravity = global_mapper_args(
             Path::new("database.db"),
@@ -8777,6 +9008,7 @@ mod tests {
                 use_gravity_prior: false,
                 fixed_rotation_ba: false,
                 disable_sensor_refinement: false,
+                quality_refinement: false,
             },
         );
         let pairs = without_gravity

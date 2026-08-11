@@ -2,5 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    gs360studio_lib::run()
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("cli") {
+        if let Err(error) = gs360studio_lib::run_cli(args.collect()) {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    } else {
+        gs360studio_lib::run()
+    }
 }
