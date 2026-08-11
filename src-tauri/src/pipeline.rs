@@ -13,6 +13,7 @@ use crate::fisheye::DJI_VALID_RADIUS_RATIO;
 use crate::masking::{self, CancelToken, MaskRequest};
 use crate::project::{self, ProjectManifest, StageName, StageStatus};
 use crate::telemetry;
+use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -44,13 +45,16 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 5;
+const ALIGN_PIPELINE_REVISION: u32 = 6;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+const COLMAP_MAX_IMAGE_ID: i64 = 2_147_483_647;
+const MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES: usize = 4;
+const MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS: usize = 100;
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 
@@ -4189,6 +4193,7 @@ fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), S
     let mut paths = vec![
         root.join("sparse"),
         root.join("sparse_bootstrap"),
+        root.join("sparse_bootstrap_retry"),
         root.join("metadata/.align-bootstrap-text"),
         root.join("metadata/.align-configured-rig"),
         root.join("metadata/.align-configured-rig-text"),
@@ -4239,14 +4244,221 @@ fn invalidate_calibrated_prior_artifacts(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_colmap_bootstrap_for_rig(
+#[derive(Debug)]
+struct RigBootstrapModelCandidate {
+    path: PathBuf,
+    shared_frame_count: usize,
+    registered_image_count: usize,
+    summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VerifiedBootstrapInitialPair {
+    image_id1: i64,
+    image_id2: i64,
+    inlier_count: usize,
+    image_names: String,
+    same_frame: bool,
+}
+
+fn colmap_image_pair_id(image_id1: i64, image_id2: i64) -> i64 {
+    let (smaller, larger) = if image_id1 < image_id2 {
+        (image_id1, image_id2)
+    } else {
+        (image_id2, image_id1)
+    };
+    smaller * COLMAP_MAX_IMAGE_ID + larger
+}
+
+fn verified_bootstrap_initial_pairs(
+    database: &Path,
+    configs: &[RigBootstrapConfig],
+) -> Result<Vec<VerifiedBootstrapInitialPair>, String> {
+    let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("無法唯讀開啟 COLMAP 資料庫 {}：{error}", database.display()))?;
+    let mut image_statement = connection
+        .prepare("SELECT image_id, name FROM images")
+        .map_err(|error| format!("無法讀取 COLMAP images 表：{error}"))?;
+    let images = image_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP images 表：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("無法解析 COLMAP images 表：{error}"))?
+        .into_iter()
+        .filter(|(image_id, _)| (0..COLMAP_MAX_IMAGE_ID).contains(image_id))
+        .collect::<Vec<_>>();
+    let mut geometry_statement = connection
+        .prepare("SELECT pair_id, rows, config FROM two_view_geometries")
+        .map_err(|error| format!("無法讀取 COLMAP two_view_geometries 表：{error}"))?;
+    let geometries = geometry_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP two_view_geometries 表：{error}"))?
+        .filter_map(Result::ok)
+        // COLMAP's DEGENERATE/WATERMARK/MULTIPLE configs do not provide a
+        // usable two-view pose for incremental initialization. The remaining
+        // calibrated, uncalibrated, planar, panoramic, mixed, and rig configs
+        // still pass through COLMAP's own pose and triangulation-angle gates.
+        .filter(|(_, rows, config)| {
+            matches!(*config, 2 | 3 | 4 | 5 | 6 | 9)
+                && *rows >= MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS as i64
+        })
+        .map(|(pair_id, rows, _)| (pair_id, rows as usize))
+        .collect::<HashMap<_, _>>();
+
+    let mut candidates = Vec::new();
+    for config in configs {
+        let Some(reference) = config.cameras.iter().find(|camera| camera.ref_sensor) else {
+            continue;
+        };
+        let reference_images = images
+            .iter()
+            .filter_map(|(image_id, name)| {
+                name.strip_prefix(&reference.image_prefix)
+                    .map(|frame| (*image_id, frame))
+            })
+            .collect::<Vec<_>>();
+        for camera in config
+            .cameras
+            .iter()
+            .filter(|camera| !camera.ref_sensor && !camera.has_explicit_pose())
+        {
+            let camera_images = images.iter().filter_map(|(image_id, name)| {
+                name.strip_prefix(&camera.image_prefix)
+                    .map(|frame| (*image_id, frame))
+            });
+            for (image_id2, camera_frame) in camera_images {
+                for (image_id1, reference_frame) in &reference_images {
+                    let pair_id = colmap_image_pair_id(*image_id1, image_id2);
+                    let Some(inlier_count) = geometries.get(&pair_id) else {
+                        continue;
+                    };
+                    candidates.push(VerifiedBootstrapInitialPair {
+                        image_id1: *image_id1,
+                        image_id2,
+                        inlier_count: *inlier_count,
+                        image_names: format!("{reference_frame} ↔ {camera_frame}"),
+                        same_frame: reference_frame == &camera_frame,
+                    });
+                }
+            }
+        }
+    }
+    candidates.sort_by(|left, right| {
+        right
+            .same_frame
+            .cmp(&left.same_frame)
+            .then_with(|| right.inlier_count.cmp(&left.inlier_count))
+            .then_with(|| left.image_names.cmp(&right.image_names))
+            .then_with(|| left.image_id1.cmp(&right.image_id1))
+            .then_with(|| left.image_id2.cmp(&right.image_id2))
+    });
+    candidates.dedup_by_key(|candidate| {
+        (
+            candidate.image_id1.min(candidate.image_id2),
+            candidate.image_id1.max(candidate.image_id2),
+        )
+    });
+    let mut selected = candidates
+        .iter()
+        .filter(|candidate| candidate.same_frame)
+        .take(MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES / 2)
+        .cloned()
+        .collect::<Vec<_>>();
+    selected.extend(
+        candidates
+            .iter()
+            .filter(|candidate| !candidate.same_frame)
+            .take(MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES - selected.len())
+            .cloned(),
+    );
+    if selected.len() < MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES {
+        for candidate in candidates {
+            if selected.len() == MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES {
+                break;
+            }
+            if !selected.iter().any(|existing| {
+                existing.image_id1 == candidate.image_id1
+                    && existing.image_id2 == candidate.image_id2
+            }) {
+                selected.push(candidate);
+            }
+        }
+    }
+    Ok(selected)
+}
+
+fn bootstrap_candidate_is_better(
+    candidate: &RigBootstrapModelCandidate,
+    current: &RigBootstrapModelCandidate,
+) -> bool {
+    (
+        candidate.shared_frame_count,
+        candidate.registered_image_count,
+    ) > (current.shared_frame_count, current.registered_image_count)
+}
+
+fn rig_bootstrap_shared_frame_count(
+    configs: &[RigBootstrapConfig],
+    registered_images: &BTreeSet<String>,
+) -> usize {
+    configs
+        .iter()
+        .map(|config| {
+            let Some(reference) = config.cameras.iter().find(|camera| camera.ref_sensor) else {
+                return 0;
+            };
+            let reference_frames = registered_images
+                .iter()
+                .filter_map(|name| name.strip_prefix(&reference.image_prefix))
+                .collect::<BTreeSet<_>>();
+            config
+                .cameras
+                .iter()
+                .filter(|camera| !camera.ref_sensor && !camera.has_explicit_pose())
+                .map(|camera| {
+                    let camera_frames = registered_images
+                        .iter()
+                        .filter_map(|name| name.strip_prefix(&camera.image_prefix))
+                        .collect::<BTreeSet<_>>();
+                    reference_frames.intersection(&camera_frames).count()
+                })
+                .sum::<usize>()
+        })
+        .sum()
+}
+
+fn sparse_model_directories(root: &Path) -> Vec<PathBuf> {
+    let mut models = fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let index = entry.file_name().to_str()?.parse::<u64>().ok()?;
+            path.is_dir().then_some((index, path))
+        })
+        .collect::<Vec<_>>();
+    models.sort_by_key(|(index, _)| *index);
+    models.into_iter().map(|(_, path)| path).collect()
+}
+
+fn select_colmap_bootstrap_for_rig(
     app: &AppHandle,
     id: &str,
     colmap: &Path,
     root: &Path,
-    bootstrap_model: &Path,
+    bootstrap_root: &Path,
     control: &JobControl,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let config_path = root.join("rig_config.json");
     let configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
         &fs::read(&config_path)
@@ -4259,47 +4471,105 @@ fn validate_colmap_bootstrap_for_rig(
         .map(|camera| camera.image_prefix.clone())
         .collect::<BTreeSet<_>>();
 
+    let models = sparse_model_directories(bootstrap_root);
+    if models.is_empty() {
+        return Err("COLMAP 初始建模未產生任何 sparse 子模型".to_owned());
+    }
+
     let text_model = root.join("metadata/.align-bootstrap-text");
+    let mut best: Option<RigBootstrapModelCandidate> = None;
+    let mut failures = Vec::new();
+    for bootstrap_model in models {
+        remove_align_artifact(&text_model)?;
+        fs::create_dir_all(&text_model)
+            .map_err(|error| format!("無法建立 COLMAP 初始模型驗證資料夾：{error}"))?;
+        let conversion_result = run_child(
+            app,
+            id,
+            colmap,
+            &[
+                "model_converter".into(),
+                "--input_path".into(),
+                bootstrap_model.to_string_lossy().into_owned(),
+                "--output_path".into(),
+                text_model.to_string_lossy().into_owned(),
+                "--output_type".into(),
+                "TXT".into(),
+            ],
+            control,
+        )
+        .and_then(|()| {
+            let images_path = text_model.join("images.txt");
+            let images_text = fs::read_to_string(&images_path)
+                .map_err(|error| format!("無法讀取 {}：{error}", images_path.display()))?;
+            Ok(registered_rig_image_names(&images_text, &prefixes))
+        });
+        let cleanup_result = remove_align_artifact(&text_model);
+        let registered_images = match (conversion_result, cleanup_result) {
+            (Ok(registered), Ok(())) => registered,
+            (Err(error), Ok(())) => return Err(error),
+            (Ok(_), Err(error)) => return Err(error),
+            (Err(error), Err(cleanup_error)) => {
+                return Err(format!("{error}；{cleanup_error}"));
+            }
+        };
+        let label = bootstrap_model
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("?");
+        match validate_rig_bootstrap_registration(&configs, &registered_images) {
+            Ok(summary) => {
+                let shared_frame_count =
+                    rig_bootstrap_shared_frame_count(&configs, &registered_images);
+                let candidate = RigBootstrapModelCandidate {
+                    path: bootstrap_model,
+                    shared_frame_count,
+                    registered_image_count: registered_images.len(),
+                    summary,
+                };
+                let should_replace = best
+                    .as_ref()
+                    .is_none_or(|current| bootstrap_candidate_is_better(&candidate, current));
+                if should_replace {
+                    best = Some(candidate);
+                }
+            }
+            Err(error) => failures.push(format!("子模型 {label}：{error}")),
+        }
+    }
     remove_align_artifact(&text_model)?;
-    fs::create_dir_all(&text_model)
-        .map_err(|error| format!("無法建立 COLMAP 初始模型驗證資料夾：{error}"))?;
-    let result = run_child(
+
+    let Some(best) = best else {
+        let mut failure_summary = failures
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("；");
+        if failures.len() > 5 {
+            failure_summary.push_str(&format!("；另有 {} 個不合格子模型", failures.len() - 5));
+        }
+        return Err(format!(
+            "COLMAP 產生了初始子模型，但沒有任何一個能估計相機組外參。{}",
+            failure_summary
+        ));
+    };
+    emit_log(
         app,
         id,
-        colmap,
-        &[
-            "model_converter".into(),
-            "--input_path".into(),
-            bootstrap_model.to_string_lossy().into_owned(),
-            "--output_path".into(),
-            text_model.to_string_lossy().into_owned(),
-            "--output_type".into(),
-            "TXT".into(),
-        ],
-        control,
-    )
-    .and_then(|()| {
-        let images_path = text_model.join("images.txt");
-        let images_text = fs::read_to_string(&images_path)
-            .map_err(|error| format!("無法讀取 {}：{error}", images_path.display()))?;
-        let registered_images = registered_rig_image_names(&images_text, &prefixes);
-        validate_rig_bootstrap_registration(&configs, &registered_images)
-    });
-    let cleanup = remove_align_artifact(&text_model);
-    match (result, cleanup) {
-        (Ok(summary), Ok(())) => {
-            emit_log(
-                app,
-                id,
-                "info",
-                format!("已驗證初始模型可推算相機組外參：{summary}"),
-            );
-            Ok(())
-        }
-        (Err(error), Ok(())) => Err(error),
-        (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
-        (Err(error), Err(cleanup_error)) => Err(format!("{error}；{cleanup_error}")),
-    }
+        "info",
+        format!(
+            "已從 COLMAP 初始子模型選出 {}（{} 張已註冊影像、{} 組共同影格）：{}",
+            best.path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?"),
+            best.registered_image_count,
+            best.shared_frame_count,
+            best.summary
+        ),
+    );
+    Ok(best.path)
 }
 
 fn validate_colmap_configured_rig_model(
@@ -4666,8 +4936,7 @@ fn mapper_args(
     output: &Path,
     use_gpu: bool,
     gpu_index: &str,
-    disable_sensor_refinement: bool,
-    reduce_global_ba_frequency: bool,
+    options: MapperOptions,
 ) -> Vec<String> {
     let mut args = vec![
         "mapper".into(),
@@ -4678,7 +4947,11 @@ fn mapper_args(
         "--output_path".into(),
         output.to_string_lossy().into_owned(),
         "--Mapper.multiple_models".into(),
-        "0".into(),
+        if options.multiple_models {
+            "1".into()
+        } else {
+            "0".into()
+        },
         "--Mapper.ba_local_backend".into(),
         "CERES".into(),
         "--Mapper.ba_global_backend".into(),
@@ -4688,7 +4961,25 @@ fn mapper_args(
         "--Mapper.ba_gpu_index".into(),
         gpu_index.to_owned(),
     ];
-    if reduce_global_ba_frequency {
+    if options.multiple_models {
+        // Unknown-rig calibration only needs one jointly registered frame.
+        // COLMAP otherwise discards secondary models smaller than 10 images,
+        // which can hide the only component that satisfies that official rig
+        // calibration precondition. Validation below still rejects components
+        // without both cameras and a shared frame name.
+        args.extend(["--Mapper.min_model_size".into(), "2".into()]);
+    }
+    if let Some((image_id1, image_id2)) = options.initial_image_pair {
+        args.extend([
+            "--Mapper.init_image_id1".into(),
+            image_id1.to_string(),
+            "--Mapper.init_image_id2".into(),
+            image_id2.to_string(),
+            "--Mapper.init_num_trials".into(),
+            "1".into(),
+        ]);
+    }
+    if options.reduce_global_ba_frequency {
         // Use COLMAP's documented redundant-landmark pruning and its 1.4
         // video growth-ratio preset to reduce repeated global BA passes.
         // Keep unknown-rig bootstrap on conservative COLMAP defaults because
@@ -4702,11 +4993,19 @@ fn mapper_args(
             "1.4".into(),
         ]);
     }
-    if disable_sensor_refinement {
+    if options.disable_sensor_refinement {
         args.push("--Mapper.ba_refine_sensor_from_rig".into());
         args.push("0".into());
     }
     args
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MapperOptions {
+    multiple_models: bool,
+    initial_image_pair: Option<(i64, i64)>,
+    disable_sensor_refinement: bool,
+    reduce_global_ba_frequency: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -6244,8 +6543,12 @@ fn run_align(
                 &bootstrap,
                 mapper_gpu,
                 &mapper_gpu_index,
-                false,
-                false,
+                MapperOptions {
+                    multiple_models: true,
+                    initial_image_pair: None,
+                    disable_sensor_refinement: false,
+                    reduce_global_ba_frequency: false,
+                },
             );
             let bootstrap_cpu_args = mapper_args(
                 &db,
@@ -6253,8 +6556,12 @@ fn run_align(
                 &bootstrap,
                 false,
                 &mapper_gpu_index,
-                false,
-                false,
+                MapperOptions {
+                    multiple_models: true,
+                    initial_image_pair: None,
+                    disable_sensor_refinement: false,
+                    reduce_global_ba_frequency: false,
+                },
             );
             run_mapper_with_gpu_fallback(
                 app,
@@ -6313,11 +6620,105 @@ fn run_align(
                 },
             )?;
         }
-        let boot0 = bootstrap.join("0");
-        if !boot0.is_dir() {
-            return Err("COLMAP 初始建模未產生 sparse/0".into());
-        }
-        validate_colmap_bootstrap_for_rig(app, id, &colmap, &root, &boot0, control)?;
+        let selected_bootstrap = match select_colmap_bootstrap_for_rig(
+            app, id, &colmap, &root, &bootstrap, control,
+        ) {
+            Ok(model) => model,
+            Err(initial_error) => {
+                let initial_pairs = verified_bootstrap_initial_pairs(&db, &rig_configs)?;
+                if initial_pairs.is_empty() {
+                    return Err(format!(
+                        "{initial_error}；資料庫中沒有達到 {} 個幾何 inliers 的跨鏡 pair 可供安全重試",
+                        MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS
+                    ));
+                }
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!(
+                        "自動 bootstrap 子模型皆無共同影格；將依序嘗試 {} 組已驗證的跨鏡初始 pair",
+                        initial_pairs.len()
+                    ),
+                );
+                let retry_root = root.join("sparse_bootstrap_retry");
+                let mut retry_failures = Vec::new();
+                let mut selected = None;
+                for pair in initial_pairs {
+                    remove_align_artifact(&retry_root)?;
+                    fs::create_dir_all(&retry_root)
+                        .map_err(|error| format!("無法建立 bootstrap 重試資料夾：{error}"))?;
+                    emit_log(
+                        app,
+                        id,
+                        "info",
+                        format!(
+                            "bootstrap 重試跨鏡影像 {}（image {} ↔ {}，{} inliers）",
+                            pair.image_names, pair.image_id1, pair.image_id2, pair.inlier_count
+                        ),
+                    );
+                    let retry_options = MapperOptions {
+                        multiple_models: false,
+                        initial_image_pair: Some((pair.image_id1, pair.image_id2)),
+                        disable_sensor_refinement: false,
+                        reduce_global_ba_frequency: false,
+                    };
+                    let retry_gpu_args = mapper_args(
+                        &db,
+                        &root.join("images"),
+                        &retry_root,
+                        mapper_gpu,
+                        &mapper_gpu_index,
+                        retry_options,
+                    );
+                    let retry_cpu_args = mapper_args(
+                        &db,
+                        &root.join("images"),
+                        &retry_root,
+                        false,
+                        &mapper_gpu_index,
+                        retry_options,
+                    );
+                    let run_result = run_mapper_with_gpu_fallback(
+                        app,
+                        id,
+                        &colmap,
+                        &retry_root,
+                        &retry_gpu_args,
+                        &retry_cpu_args,
+                        mapper_gpu,
+                        "bootstrap_mapper_retry",
+                        control,
+                        || {},
+                        |_| {},
+                    );
+                    let attempt = run_result.and_then(|()| {
+                        select_colmap_bootstrap_for_rig(
+                            app,
+                            id,
+                            &colmap,
+                            &root,
+                            &retry_root,
+                            control,
+                        )
+                    });
+                    match attempt {
+                        Ok(model) => {
+                            selected = Some(model);
+                            break;
+                        }
+                        Err(error) if cancelled_error(&error, control) => return Err(error),
+                        Err(error) => retry_failures.push(format!("{}：{error}", pair.image_names)),
+                    }
+                }
+                selected.ok_or_else(|| {
+                    format!(
+                        "{initial_error}；已驗證跨鏡初始 pair 的有界重試仍失敗：{}",
+                        retry_failures.join("；")
+                    )
+                })?
+            }
+        };
         emit_colmap_step_completed(
             app,
             id,
@@ -6356,7 +6757,7 @@ fn run_align(
                 "--database_path".into(),
                 db.to_string_lossy().into_owned(),
                 "--input_path".into(),
-                boot0.to_string_lossy().into_owned(),
+                selected_bootstrap.to_string_lossy().into_owned(),
                 "--rig_config_path".into(),
                 root.join("rig_config.json").to_string_lossy().into_owned(),
                 "--output_path".into(),
@@ -6519,8 +6920,12 @@ fn run_align(
             &sparse,
             final_mapper_gpu,
             &mapper_gpu_index,
-            rig_preconfigured,
-            true,
+            MapperOptions {
+                multiple_models: false,
+                initial_image_pair: None,
+                disable_sensor_refinement: rig_preconfigured,
+                reduce_global_ba_frequency: true,
+            },
         )
     };
     let final_cpu_args = if mapper_mode == MapperMode::Global {
@@ -6543,8 +6948,12 @@ fn run_align(
             &sparse,
             false,
             &mapper_gpu_index,
-            rig_preconfigured,
-            true,
+            MapperOptions {
+                multiple_models: false,
+                initial_image_pair: None,
+                disable_sensor_refinement: rig_preconfigured,
+                reduce_global_ba_frequency: true,
+            },
         )
     };
     let final_mapper_component = if mapper_mode == MapperMode::Global {
@@ -6969,10 +7378,11 @@ fn run_align(
 #[cfg(test)]
 mod tests {
     use super::{
-        balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
-        can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
-        candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
-        cleanup_stale_full_res_dirs, colmap_step_progress, complete_registered_dual_fisheye_frames,
+        balanced_select_expression, bootstrap_candidate_is_better, build_align_fingerprint,
+        build_feature_fingerprint, can_reuse_align_result, can_reuse_feature_database,
+        candidate_ffmpeg_args, candidate_image_names, cleanup_align_artifacts,
+        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, colmap_image_pair_id,
+        colmap_step_progress, complete_registered_dual_fisheye_frames,
         create_colmap_database_backup, dual_fisheye_registration_totals, expected_candidate_frames,
         extract_frame_settings, extraction_completed_count, feature_extractor_args,
         global_mapper_args, global_mapper_prerequisite_error, has_valid_global_mapper_priors,
@@ -6983,13 +7393,15 @@ mod tests {
         matches_importer_args, parse_feature_name, parse_feature_progress, parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
-        restore_colmap_database_backup, rig_config_has_complete_sensor_poses, rig_mapping_plan,
-        selected_ffmpeg_args, setting_bool, source_stage_progress, synchronized_candidate_count,
-        validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses, with_hwaccel_auto,
-        write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
-        ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
-        ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
-        RigBootstrapConfig, RigMappingPlan, StageName, StartStageRequest,
+        restore_colmap_database_backup, rig_bootstrap_shared_frame_count,
+        rig_config_has_complete_sensor_poses, rig_mapping_plan, selected_ffmpeg_args, setting_bool,
+        source_stage_progress, sparse_model_directories, synchronized_candidate_count,
+        validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses,
+        verified_bootstrap_initial_pairs, with_hwaccel_auto, write_candidate_selection_checkpoint,
+        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ExtractionStage, GlobalMapperOptions,
+        JobControl, JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent,
+        RawFrameMessage, RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig,
+        RigBootstrapModelCandidate, RigMappingPlan, StageName, StartStageRequest,
         StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
         CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
@@ -6998,7 +7410,7 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -7163,7 +7575,19 @@ mod tests {
             .any(|args| { args == ["--FeatureMatching.max_num_matches", "8192"] }));
 
         let mapper_index = mapper_gpu_index("0,1");
-        let mapper = mapper_args(&db, &images, &sparse, true, mapper_index, true, true);
+        let mapper = mapper_args(
+            &db,
+            &images,
+            &sparse,
+            true,
+            mapper_index,
+            MapperOptions {
+                multiple_models: false,
+                initial_image_pair: None,
+                disable_sensor_refinement: true,
+                reduce_global_ba_frequency: true,
+            },
+        );
         assert!(mapper
             .windows(2)
             .any(|args| { args == ["--Mapper.multiple_models", "0"] }));
@@ -7208,9 +7632,28 @@ mod tests {
             Path::new("sparse"),
             false,
             "-1",
-            false,
-            false,
+            MapperOptions {
+                multiple_models: true,
+                initial_image_pair: Some((7, 9)),
+                disable_sensor_refinement: false,
+                reduce_global_ba_frequency: false,
+            },
         );
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.multiple_models", "1"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.min_model_size", "2"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.init_image_id1", "7"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.init_image_id2", "9"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["--Mapper.init_num_trials", "1"]));
         assert!(args
             .windows(2)
             .any(|args| args == ["--Mapper.ba_local_backend", "CERES"]));
@@ -7293,6 +7736,134 @@ mod tests {
         assert!(error.contains("沒有任何同名影格同時註冊"));
         assert!(error.contains("lens0/"));
         assert!(error.contains("lens1/"));
+    }
+
+    #[test]
+    fn bootstrap_candidate_counts_shared_frames_across_lenses() {
+        let configs = serde_json::from_value::<Vec<RigBootstrapConfig>>(json!([{
+            "cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {"image_prefix": "lens1/"}
+            ]
+        }]))
+        .unwrap();
+        let registered = BTreeSet::from([
+            "lens0/frame0001.png".to_owned(),
+            "lens0/frame0002.png".to_owned(),
+            "lens0/frame0003.png".to_owned(),
+            "lens1/frame0002.png".to_owned(),
+            "lens1/frame0003.png".to_owned(),
+            "lens1/frame0004.png".to_owned(),
+        ]);
+        assert_eq!(rig_bootstrap_shared_frame_count(&configs, &registered), 2);
+    }
+
+    #[test]
+    fn bootstrap_models_are_discovered_in_numeric_order() {
+        let temp = tempfile::tempdir().unwrap();
+        for name in ["10", "2", "0", "not-a-model"] {
+            fs::create_dir(temp.path().join(name)).unwrap();
+        }
+        fs::write(temp.path().join("1"), b"not a directory").unwrap();
+        let names = sparse_model_directories(temp.path())
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["0", "2", "10"]);
+    }
+
+    #[test]
+    fn bootstrap_candidate_prefers_shared_frames_then_registered_coverage() {
+        let candidate = |shared_frame_count, registered_image_count| RigBootstrapModelCandidate {
+            path: PathBuf::new(),
+            shared_frame_count,
+            registered_image_count,
+            summary: String::new(),
+        };
+        assert!(bootstrap_candidate_is_better(
+            &candidate(2, 10),
+            &candidate(1, 100)
+        ));
+        assert!(bootstrap_candidate_is_better(
+            &candidate(2, 20),
+            &candidate(2, 10)
+        ));
+        assert!(!bootstrap_candidate_is_better(
+            &candidate(2, 10),
+            &candidate(2, 10)
+        ));
+    }
+
+    #[test]
+    fn bootstrap_retry_uses_only_strong_verified_cross_lens_geometry() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("database.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE images (image_id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE two_view_geometries (
+                    pair_id INTEGER PRIMARY KEY,
+                    rows INTEGER NOT NULL,
+                    config INTEGER NOT NULL
+                 );",
+            )
+            .unwrap();
+        for (image_id, name) in [
+            (1_i64, "lens0/frame0001.png"),
+            (2, "lens1/frame0001.png"),
+            (3, "lens0/frame0002.png"),
+            (4, "lens1/frame0003.png"),
+            (5, "lens0/degenerate.png"),
+            (6, "lens1/degenerate.png"),
+            (2_147_483_647, "lens0/malformed-id.png"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO images(image_id, name) VALUES (?1, ?2)",
+                    rusqlite::params![image_id, name],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, 120, 3)",
+                [colmap_image_pair_id(1, 2)],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, 130, 4)",
+                [colmap_image_pair_id(3, 4)],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, 99, 3)",
+                [colmap_image_pair_id(1, 4)],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, 200, 1)",
+                [colmap_image_pair_id(5, 6)],
+            )
+            .unwrap();
+        drop(connection);
+
+        let configs = serde_json::from_value::<Vec<RigBootstrapConfig>>(json!([{
+            "cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {"image_prefix": "lens1/"}
+            ]
+        }]))
+        .unwrap();
+        let pairs = verified_bootstrap_initial_pairs(&database, &configs).unwrap();
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs[0].same_frame);
+        assert_eq!((pairs[0].image_id1, pairs[0].image_id2), (1, 2));
+        assert_eq!(pairs[1].inlier_count, 130);
+        assert!(!pairs[1].same_frame);
     }
 
     #[test]

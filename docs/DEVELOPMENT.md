@@ -138,7 +138,7 @@ Mask 明確停用 ONNX Runtime CPU execution-provider fallback。模型若無法
 - 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs；另以固定、線性規模的 skip links 跨越短暫模糊或低紋理區段，避免局部註冊失敗永久切斷後續影格。
 - 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。
 - 有完整外參時，先執行 `rig_configurator` 再執行一次 mapper。
-- config 缺少外參時，先以獨立相機 bootstrap，再推算 rig，最後允許 BA refinement 的 constrained mapper。
+- config 缺少外參時，先以獨立相機 bootstrap；COLMAP 可建立多個子模型，pipeline 會挑選共同註冊同名雙鏡影格最多、其次已註冊影像最多的候選來推算 rig。若自動候選皆不合格，最多再用 4 組已通過 two-view 幾何與 100-inlier 門檻的跨鏡 pair 作為初始 pair 重試；只有通過共同影格驗證後才寫入外參，最後允許 BA refinement 的 constrained mapper。
 - 自訂 `rig_config.json` 會保留；只有缺少時才建立未知外參預設，或在內容精確等於舊版產生的共心 180° 預設時遷移。
 - Mask stage 完成時才傳入 COLMAP mask path；沒有 mask 也能單獨執行 Align。
 - 啟用 GPU 時，feature extraction、matching 與 Ceres bundle adjustment 都會使用對應 GPU 設定。
