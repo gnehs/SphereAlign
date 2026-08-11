@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 6;
+const ALIGN_PIPELINE_REVISION: u32 = 7;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -55,6 +55,7 @@ const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const COLMAP_MAX_IMAGE_ID: i64 = 2_147_483_647;
 const MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES: usize = 4;
 const MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS: usize = 100;
+const PREFERRED_RIG_BOOTSTRAP_SHARED_FRAMES: usize = 3;
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 
@@ -3275,6 +3276,10 @@ fn write_rig_and_pairs_with_options(
         )
         .map_err(|e| e.to_string())?;
     }
+    let rig_has_complete_sensor_poses = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+        &fs::read(&rig_config).map_err(|error| error.to_string())?,
+    )
+    .is_ok_and(|configs| rig_config_has_complete_sensor_poses(&configs));
     let lens1 = root.join("images/lens1");
     let mut names: Vec<String> = fs::read_dir(root.join("images/lens0"))
         .map_err(|e| e.to_string())?
@@ -3362,15 +3367,22 @@ fn write_rig_and_pairs_with_options(
                 overlap_10,
             );
         }
-        // A local +1..+5 graph can become permanently disconnected when a
+        // After the physical rig pose is calibrated, a local +1..+5 graph can
+        // become permanently disconnected when a
         // short blurry or texture-poor interval prevents any new frame from
         // acquiring enough 2D-to-3D correspondences.  Add a small, fixed set
         // of longer same-sensor skip links so a later usable frame can attempt
-        // registration directly against the established model.  The fixed
+        // registration directly against the established model. Keep these
+        // edges out of unknown-rig bootstrap so speculative long links cannot
+        // change the component used to estimate physical extrinsics. The fixed
         // offsets keep work O(n), stay inside one source recording, and still
         // pass through COLMAP's geometric verification.
-        for offset in TEMPORAL_RESCUE_OFFSETS {
-            let Some(rescue) = names.get(index + offset) else {
+        for offset in if rig_has_complete_sensor_poses {
+            TEMPORAL_RESCUE_OFFSETS.as_slice()
+        } else {
+            &[]
+        } {
+            let Some(rescue) = names.get(index + *offset) else {
                 continue;
             };
             if source_name_from_image(name) != source_name_from_image(rescue) {
@@ -4395,14 +4407,47 @@ fn verified_bootstrap_initial_pairs(
     Ok(selected)
 }
 
-fn bootstrap_candidate_is_better(
-    candidate: &RigBootstrapModelCandidate,
-    current: &RigBootstrapModelCandidate,
-) -> bool {
-    (
-        candidate.shared_frame_count,
-        candidate.registered_image_count,
-    ) > (current.shared_frame_count, current.registered_image_count)
+fn select_best_bootstrap_candidate(
+    candidates: Vec<RigBootstrapModelCandidate>,
+) -> Option<RigBootstrapModelCandidate> {
+    let require_robust_shared_coverage = candidates
+        .iter()
+        .any(|candidate| candidate.shared_frame_count >= PREFERRED_RIG_BOOTSTRAP_SHARED_FRAMES);
+    let mut best = None;
+    for candidate in candidates {
+        if require_robust_shared_coverage
+            && candidate.shared_frame_count < PREFERRED_RIG_BOOTSTRAP_SHARED_FRAMES
+        {
+            continue;
+        }
+        // Both broad reconstruction support and repeated shared-frame pose
+        // samples matter. Weight registered coverage quadratically so a small
+        // component cannot win merely by having a high shared-frame ratio,
+        // while still rewarding enough samples for COLMAP's rig pose average.
+        let candidate_score = (candidate.registered_image_count as u128)
+            .pow(2)
+            .saturating_mul(candidate.shared_frame_count as u128);
+        let should_replace = best
+            .as_ref()
+            .is_none_or(|current: &RigBootstrapModelCandidate| {
+                let current_score = (current.registered_image_count as u128)
+                    .pow(2)
+                    .saturating_mul(current.shared_frame_count as u128);
+                (
+                    candidate_score,
+                    candidate.registered_image_count,
+                    candidate.shared_frame_count,
+                ) > (
+                    current_score,
+                    current.registered_image_count,
+                    current.shared_frame_count,
+                )
+            });
+        if should_replace {
+            best = Some(candidate);
+        }
+    }
+    best
 }
 
 fn rig_bootstrap_shared_frame_count(
@@ -4477,7 +4522,7 @@ fn select_colmap_bootstrap_for_rig(
     }
 
     let text_model = root.join("metadata/.align-bootstrap-text");
-    let mut best: Option<RigBootstrapModelCandidate> = None;
+    let mut candidates = Vec::new();
     let mut failures = Vec::new();
     for bootstrap_model in models {
         remove_align_artifact(&text_model)?;
@@ -4516,7 +4561,8 @@ fn select_colmap_bootstrap_for_rig(
         let label = bootstrap_model
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("?");
+            .unwrap_or("?")
+            .to_owned();
         match validate_rig_bootstrap_registration(&configs, &registered_images) {
             Ok(summary) => {
                 let shared_frame_count =
@@ -4527,19 +4573,31 @@ fn select_colmap_bootstrap_for_rig(
                     registered_image_count: registered_images.len(),
                     summary,
                 };
-                let should_replace = best
-                    .as_ref()
-                    .is_none_or(|current| bootstrap_candidate_is_better(&candidate, current));
-                if should_replace {
-                    best = Some(candidate);
-                }
+                emit_log(
+                    app,
+                    id,
+                    "info",
+                    format!(
+                        "bootstrap 子模型 {label} 候選：{} 張已註冊影像、{} 組共同影格",
+                        candidate.registered_image_count, candidate.shared_frame_count
+                    ),
+                );
+                candidates.push(candidate);
             }
-            Err(error) => failures.push(format!("子模型 {label}：{error}")),
+            Err(error) => {
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!("bootstrap 子模型 {label} 不合格：{error}"),
+                );
+                failures.push(format!("子模型 {label}：{error}"));
+            }
         }
     }
     remove_align_artifact(&text_model)?;
 
-    let Some(best) = best else {
+    let Some(best) = select_best_bootstrap_candidate(candidates) else {
         let mut failure_summary = failures
             .iter()
             .take(5)
@@ -6830,6 +6888,32 @@ fn run_align(
             "info",
             format!("已驗證 {calibrated_sensor_count} 個 non-reference sensor 的相機組外參"),
         );
+        match refresh_calibrated_pair_matches(
+            app,
+            id,
+            &root,
+            &colmap,
+            &db,
+            &gpu_index,
+            feature_matching_gpu,
+            use_visual_retrieval,
+            use_calibrated_fov_pairs,
+            control,
+        ) {
+            Ok(true) => emit_log(
+                app,
+                id,
+                "info",
+                "相機組外參完成後已加入 temporal rescue pairs 並重新 matching",
+            ),
+            Ok(false) => {}
+            Err(error) => emit_log(
+                app,
+                id,
+                "warning",
+                format!("相機組校正後 temporal rescue pair refresh 失敗，沿用原配對：{error}"),
+            ),
+        }
         emit_colmap_step_completed(
             app,
             id,
@@ -7378,14 +7462,14 @@ fn run_align(
 #[cfg(test)]
 mod tests {
     use super::{
-        balanced_select_expression, bootstrap_candidate_is_better, build_align_fingerprint,
-        build_feature_fingerprint, can_reuse_align_result, can_reuse_feature_database,
-        candidate_ffmpeg_args, candidate_image_names, cleanup_align_artifacts,
-        cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs, colmap_image_pair_id,
-        colmap_step_progress, complete_registered_dual_fisheye_frames,
-        create_colmap_database_backup, dual_fisheye_registration_totals, expected_candidate_frames,
-        extract_frame_settings, extraction_completed_count, feature_extractor_args,
-        global_mapper_args, global_mapper_prerequisite_error, has_valid_global_mapper_priors,
+        balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
+        can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
+        candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
+        cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_step_progress,
+        complete_registered_dual_fisheye_frames, create_colmap_database_backup,
+        dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
+        extraction_completed_count, feature_extractor_args, global_mapper_args,
+        global_mapper_prerequisite_error, has_valid_global_mapper_priors,
         invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
@@ -7394,16 +7478,16 @@ mod tests {
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
         restore_colmap_database_backup, rig_bootstrap_shared_frame_count,
-        rig_config_has_complete_sensor_poses, rig_mapping_plan, selected_ffmpeg_args, setting_bool,
-        source_stage_progress, sparse_model_directories, synchronized_candidate_count,
-        validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses,
-        verified_bootstrap_initial_pairs, with_hwaccel_auto, write_candidate_selection_checkpoint,
-        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ExtractionStage, GlobalMapperOptions,
-        JobControl, JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent,
-        RawFrameMessage, RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig,
-        RigBootstrapModelCandidate, RigMappingPlan, StageName, StartStageRequest,
-        StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
-        CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        rig_config_has_complete_sensor_poses, rig_mapping_plan, select_best_bootstrap_candidate,
+        selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
+        synchronized_candidate_count, validate_rig_bootstrap_registration,
+        validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs, with_hwaccel_auto,
+        write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
+        ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
+        MapperOptions, ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
+        RigBootstrapConfig, RigBootstrapModelCandidate, RigMappingPlan, StageName,
+        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
+        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
     use crate::doctor::ColmapCapabilities;
     use crate::masking::CancelToken;
@@ -7773,25 +7857,33 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_candidate_prefers_shared_frames_then_registered_coverage() {
+    fn bootstrap_candidate_balances_model_size_and_shared_calibration_coverage() {
         let candidate = |shared_frame_count, registered_image_count| RigBootstrapModelCandidate {
             path: PathBuf::new(),
             shared_frame_count,
             registered_image_count,
             summary: String::new(),
         };
-        assert!(bootstrap_candidate_is_better(
-            &candidate(2, 10),
-            &candidate(1, 100)
-        ));
-        assert!(bootstrap_candidate_is_better(
-            &candidate(2, 20),
-            &candidate(2, 10)
-        ));
-        assert!(!bootstrap_candidate_is_better(
-            &candidate(2, 10),
-            &candidate(2, 10)
-        ));
+        let selected =
+            select_best_bootstrap_candidate(vec![candidate(2, 100), candidate(3, 10)]).unwrap();
+        assert_eq!(
+            (selected.shared_frame_count, selected.registered_image_count),
+            (3, 10)
+        );
+
+        let selected =
+            select_best_bootstrap_candidate(vec![candidate(35, 89), candidate(40, 80)]).unwrap();
+        assert_eq!(
+            (selected.shared_frame_count, selected.registered_image_count),
+            (35, 89)
+        );
+
+        let selected =
+            select_best_bootstrap_candidate(vec![candidate(3, 100), candidate(100, 99)]).unwrap();
+        assert_eq!(
+            (selected.shared_frame_count, selected.registered_image_count),
+            (100, 99)
+        );
     }
 
     #[test]
@@ -8438,7 +8530,25 @@ mod tests {
         .unwrap();
 
         write_rig_and_pairs(temp.path()).unwrap();
-        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        let pairs_path = temp.path().join("metadata/pairs.txt");
+        let pairs = fs::read_to_string(&pairs_path).unwrap();
+        assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000009.png"));
+
+        fs::write(
+            temp.path().join("rig_config.json"),
+            serde_json::to_vec(&json!([{"cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {
+                    "image_prefix": "lens1/",
+                    "cam_from_rig_rotation": [1.0, 0.0, 0.0, 0.0],
+                    "cam_from_rig_translation": [0.0, 0.0, 0.0]
+                }
+            ]}]))
+            .unwrap(),
+        )
+        .unwrap();
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(&pairs_path).unwrap();
         for rescue in [9, 13, 17] {
             assert!(pairs.contains(&format!(
                 "lens0/source000_00000001.png lens0/source000_{rescue:08}.png"
