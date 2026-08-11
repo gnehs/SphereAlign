@@ -176,6 +176,7 @@ interface DoctorReport {
   items: DiagnosticItem[];
   warnings: string[];
   colmapCapabilities?: Record<string, unknown>;
+  gpuAvailable?: boolean;
 }
 
 interface ProgressEventPayload {
@@ -243,7 +244,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
   },
   mask: { yoloEnabled: true, classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
   align: {
-    useGpu: false,
+    useGpu: true,
     gpuIndex: "-1",
     mapperMode: "auto",
     useGravityPrior: true,
@@ -306,6 +307,7 @@ function normalisePipelineSettings(value: unknown): Record<string, unknown> {
     mask: { ...mask, classes, yoloEnabled },
     align: {
       ...align,
+      useGpu: typeof align.useGpu === "boolean" ? align.useGpu : DEFAULT_SETTINGS.align.useGpu,
       gpuIndex,
       mapperMode,
       useGravityPrior: typeof align.useGravityPrior === "boolean" ? align.useGravityPrior : DEFAULT_SETTINGS.align.useGravityPrior,
@@ -325,7 +327,7 @@ const EMPTY_DOCTOR: DoctorReport = {
   summary: "執行環境診斷以確認可用能力",
   checkedAt: "尚未檢查",
   items: [
-    { label: "COLMAP CUDA", value: "尚未檢查", detail: "不預設 COLMAP build 或 FFmpeg／VideoToolbox 加速能力", status: "unknown" },
+    { label: "COLMAP CUDA", value: "尚未檢查", detail: "檢查 COLMAP 與 NVIDIA GPU 是否可用", status: "unknown" },
     { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
     { label: "執行環境", value: "尚未檢查", detail: "確認作業系統與執行環境", status: "unknown" },
     { label: "儲存空間", value: "尚未檢查", detail: "確認輸出磁碟可用空間", status: "unknown" },
@@ -747,8 +749,13 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const gpuStages = [featureExtractionGpu, featureMatchingGpu, mapperBaGpu];
   const gpuStagesKnown = gpuStages.every((stage) => stage.known);
   const gpuStagesAvailable = gpuStages.every((stage) => stage.available);
+  const gpuAvailable = typeof body.gpuAvailable === "boolean"
+    ? body.gpuAvailable
+    : colmapCuda.known ? colmapCuda.available : undefined;
+  const colmapCudaAccelerator = accelerators.find((entry) => /colmap\s+cuda/i.test(`${entryName(entry)} ${entryKind(entry)}`));
   const colmapCudaDetail = hasColmapCapabilities
     ? [
+      colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) : "",
       `CUDA build：${colmapCuda.text}`,
       `SIFT 擷取：${featureExtractionGpu.text}`,
       `SIFT 配對：${featureMatchingGpu.text}`,
@@ -757,12 +764,12 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     ].filter(Boolean).join(" · ")
     : "舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA";
   const colmapCudaStatus: DiagnosticStatus = hasColmapCapabilities && colmapCuda.known
-    ? colmapCuda.available && gpuStagesKnown && gpuStagesAvailable ? "ready" : "warning"
+    ? gpuAvailable && gpuStagesKnown && gpuStagesAvailable ? "ready" : "warning"
     : "unknown";
   const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
-    ? colmapCuda.available
+    ? gpuAvailable
       ? gpuStagesKnown && gpuStagesAvailable ? "完整支援" : "部分支援"
-      : "未支援"
+      : "未偵測到可用 GPU"
     : "未確認";
   const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
   const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
@@ -776,7 +783,15 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? entryPath(colmap) || "可執行原生雙魚眼相機組對齊" : entryNote(colmap) || "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
     { label: "執行環境", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri 執行環境", status: "ready" },
   ];
-  return { platform, summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary, checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }), items, warnings, colmapCapabilities };
+  return {
+    platform,
+    summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary,
+    checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),
+    items,
+    warnings,
+    colmapCapabilities,
+    gpuAvailable,
+  };
 }
 
 async function invokeSafely<T>(command: string, args?: Record<string, unknown>) {
@@ -958,6 +973,7 @@ function App() {
   const taskSnapshot = useRef<Task[]>([]);
   const logSequence = useRef(0);
   const doctorRunId = useRef(0);
+  const gpuPreferenceTouched = useRef(false);
   const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
@@ -1056,10 +1072,14 @@ function App() {
     setSourcePaths([]);
     setOutputDraft("");
     setSourceInspection("");
-    setSettingsDraft(DEFAULT_SETTINGS);
+    gpuPreferenceTouched.current = false;
+    setSettingsDraft({
+      ...DEFAULT_SETTINGS,
+      align: { ...DEFAULT_SETTINGS.align, useGpu: doctor.gpuAvailable !== false },
+    });
     setDragOver(false);
     setTaskDialogOpen(true);
-  }, []);
+  }, [doctor.gpuAvailable]);
 
   const handleBrowserFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -1098,21 +1118,6 @@ function App() {
     }
   }, []);
 
-  const openModelPicker = useCallback(async () => {
-    if (!IS_TAURI_RUNTIME) {
-      setToast("模型資料夾會由本機執行環境使用");
-      return;
-    }
-    try {
-      const result = await openDialog({ directory: true, multiple: false });
-      if (typeof result === "string") {
-        setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: result } }));
-      }
-    } catch (error) {
-      console.info("[GS360] model picker", error);
-    }
-  }, []);
-
   const openProject = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
       setToast("瀏覽器預覽不會讀取本機專案資訊");
@@ -1139,7 +1144,16 @@ function App() {
     setDoctorLoading(true);
     const result = await invokeSafely("doctor", { colmapPath: customColmapPath.trim() || null });
     if (runId !== doctorRunId.current) return;
-    if (result) setDoctor(parseDoctor(result, EMPTY_DOCTOR));
+    if (result) {
+      const parsed = parseDoctor(result, EMPTY_DOCTOR);
+      setDoctor(parsed);
+      if (parsed.gpuAvailable === false || (parsed.gpuAvailable === true && !gpuPreferenceTouched.current)) {
+        setSettingsDraft((current) => ({
+          ...current,
+          align: { ...current.align, useGpu: parsed.gpuAvailable === true },
+        }));
+      }
+    }
     else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機執行環境" });
     setDoctorLoading(false);
   }, []);
@@ -1665,9 +1679,7 @@ function App() {
                 <FieldLabel htmlFor="mask-sky">天空過濾</FieldLabel>
               </Field>
               {settingsDraft.mask.maskSky && <FieldDescription>使用 SkySeg 產生天空遮罩。</FieldDescription>}
-              {(settingsDraft.mask.yoloEnabled || settingsDraft.mask.maskSky) ? (
-                <div className="input-with-button model-dir-input"><Input value={settingsDraft.mask.modelDir} placeholder="模型資料夾（未指定時自動探索）" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, modelDir: value } })); }} /><Button type="button" variant="outline" size="sm" onClick={() => void openModelPicker()}>選擇</Button></div>
-              ) : (
+              {!settingsDraft.mask.yoloEnabled && !settingsDraft.mask.maskSky && (
                 <FieldDescription>未啟用遮罩；影格擷取完成後會直接進入對齊。</FieldDescription>
               )}
             </FieldContent>
@@ -1677,7 +1689,7 @@ function App() {
           <FieldContent>
             <div className="settings-stack">
               <Field>
-                <FieldLabel htmlFor="mapper-mode">Mapper 模式</FieldLabel>
+                <FieldLabel htmlFor="mapper-mode">重建模式</FieldLabel>
                 <Select
                   value={settingsDraft.align.mapperMode}
                   onValueChange={(value) => {
@@ -1694,12 +1706,12 @@ function App() {
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="auto">自動（建議）</SelectItem>
-                      <SelectItem value="incremental">Incremental mapper</SelectItem>
-                      <SelectItem value="global">Global mapper</SelectItem>
+                      <SelectItem value="incremental">逐步重建（較穩定）</SelectItem>
+                      <SelectItem value="global">全域重建（較快）</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <FieldDescription>自動模式首跑會建立視覺種子；時間、座標、focal 與 gravity 驗證通過後才重跑 global，否則保留 incremental 成果。</FieldDescription>
+                <FieldDescription>建議使用自動模式。程式會先產生穩定的初步結果，資料通過檢查後再嘗試較快的全域重建。</FieldDescription>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
                 <Switch
@@ -1713,49 +1725,60 @@ function App() {
                   }))}
                 />
                 <FieldContent>
-                  <FieldLabel htmlFor="gravity-prior">Global mapper 使用 gravity prior</FieldLabel>
-                  <FieldDescription>需要已驗證的時間偏移、sensor-to-camera 校正、gravity coverage 與 database pose priors；不會直接使用 DJI quaternion。</FieldDescription>
+                  <FieldLabel htmlFor="gravity-prior">利用 IMU 的重力方向輔助全域重建</FieldLabel>
+                  <FieldDescription>只有 IMU 與相機資料通過檢查後才會使用，避免錯誤的方向資訊影響重建結果。</FieldDescription>
                 </FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option">
                 <Switch id="telemetry-calibration" size="sm" checked={settingsDraft.align.autoCalibrateTelemetry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, autoCalibrateTelemetry: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="telemetry-calibration">自動校正 IMU 時間與座標</FieldLabel><FieldDescription>以視覺旋轉速度估時間差，再用多軸旋轉求 rotational hand-eye；激發不足或 residual 過大時拒絕套用。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="telemetry-calibration">自動對準 IMU 與相機資料</FieldLabel><FieldDescription>自動修正兩者的時間差與方向差；資料不足或結果不可靠時不會套用。</FieldDescription></FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option">
                 <Switch id="focal-calibration" size="sm" checked={settingsDraft.align.calibrateFocalPrior} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, calibrateFocalPrior: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="focal-calibration">校正 focal prior</FieldLabel><FieldDescription>matching 後執行 COLMAP view graph calibration；不會把 0.3 初始猜值冒充已校正 prior。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="focal-calibration">自動校正鏡頭焦距</FieldLabel><FieldDescription>畫面配對完成後自動估算焦距；只有校正成功才會使用，不會把預估值當成校正結果。</FieldDescription></FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option">
                 <Switch id="visual-retrieval" size="sm" checked={settingsDraft.align.useVisualRetrieval} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useVisualRetrieval: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="visual-retrieval">跨來源視覺 retrieval</FieldLabel><FieldDescription>以低解析 global descriptor 與 mutual top-k 篩選 loop closure，不用不連續的 IMU yaw 判斷跨檔案位置。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="visual-retrieval">尋找不同檔案中的相同場景</FieldLabel><FieldDescription>依畫面內容找出不同拍攝檔案的重疊位置，讓多段素材能正確接在一起。</FieldDescription></FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option">
                 <Switch id="fov-pairs" size="sm" checked={settingsDraft.align.useCalibratedFovPairs} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useCalibratedFovPairs: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="fov-pairs">校正後 FOV overlap 配對</FieldLabel><FieldDescription>有可靠 hand-eye 與鏡頭外參時再縮減長距離 cross-lens temporal pairs；缺資料會保守回退。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="fov-pairs">依鏡頭視野縮減配對</FieldLabel><FieldDescription>鏡頭位置校正可靠時，會減少不太可能重疊的跨鏡頭配對以加快處理；資料不足時仍會使用完整配對。</FieldDescription></FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
                 <Switch id="fixed-rotation-ba" size="sm" disabled={settingsDraft.align.mapperMode === "incremental"} checked={settingsDraft.align.fixedRotationBa} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, fixedRotationBa: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="fixed-rotation-ba">固定旋轉 BA（實驗）</FieldLabel><FieldDescription>只在 calibration residual 與 global rotation graph 通過驗證後略過 joint rotation optimization；品質風險較高。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="fixed-rotation-ba">固定相機旋轉方向（實驗功能）</FieldLabel><FieldDescription>只有方向校正通過檢查後才會略過部分最佳化。可能降低成果品質，通常不建議開啟。</FieldDescription></FieldContent>
               </Field>
               <Field orientation="horizontal" className="extract-filter-option">
                 <Switch id="rolling-shutter-trajectory" size="sm" checked={settingsDraft.align.exportRollingShutterTrajectory} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, exportRollingShutterTrajectory: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="rolling-shutter-trajectory">輸出 rolling-shutter 姿態軌跡</FieldLabel><FieldDescription>以 SLERP 產生逐列姿態 sidecar，供後續 dewarp 使用；目前不修改原始像素。</FieldDescription></FieldContent>
+                <FieldContent><FieldLabel htmlFor="rolling-shutter-trajectory">輸出捲簾快門校正資料</FieldLabel><FieldDescription>輸出每列影像的相機姿態，供其他工具修正果凍效應；不會直接修改原始影像。</FieldDescription></FieldContent>
               </Field>
               <Field>
-                <FieldLabel htmlFor="orientation-prior-executable">自訂 orientation BA 執行檔（選用）</FieldLabel>
-                <Input id="orientation-prior-executable" value={settingsDraft.align.orientationPriorExecutable} placeholder="留白時不執行完整 quaternion constraint" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, orientationPriorExecutable: value } })); }} />
-                <FieldDescription>Stock COLMAP 沒有完整 quaternion prior；只有明確指定相容工具時才會執行 SO(3) constraint BA。</FieldDescription>
+                <FieldLabel htmlFor="orientation-prior-executable">自訂方向最佳化工具（選用）</FieldLabel>
+                <Input id="orientation-prior-executable" value={settingsDraft.align.orientationPriorExecutable} placeholder="通常留白即可" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, orientationPriorExecutable: value } })); }} />
+                <FieldDescription>只有使用相容的外部工具時才需指定；一般 COLMAP 不支援完整的方向限制。</FieldDescription>
               </Field>
-              <label className="control-line">
-                <Switch size="sm" checked={settingsDraft.align.useGpu} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }))} />
-                <span>使用 COLMAP GPU（CUDA：SIFT＋Ceres BA）</span>
-              </label>
-              <Field>
-                <FieldLabel htmlFor="gpu-index">GPU index</FieldLabel>
-                <Input id="gpu-index" className="w-20" type="text" inputMode="numeric" value={settingsDraft.align.gpuIndex ?? DEFAULT_SETTINGS.align.gpuIndex} onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: value } })); }} />
-                <FieldDescription>-1 代表自動選擇；0,1 可讓 SIFT 使用多張 GPU，Ceres BA 會使用清單中的第一張。僅在 COLMAP build 確認支援 CUDA 時套用。</FieldDescription>
+              <Field orientation="horizontal" className="extract-filter-option" data-disabled={doctor.gpuAvailable === false || undefined}>
+                <Switch
+                  id="use-gpu"
+                  size="sm"
+                  disabled={doctor.gpuAvailable === false}
+                  checked={settingsDraft.align.useGpu}
+                  onCheckedChange={(checked) => {
+                    gpuPreferenceTouched.current = true;
+                    setSettingsDraft((current) => ({ ...current, align: { ...current.align, useGpu: checked } }));
+                  }}
+                />
+                <FieldContent>
+                  <FieldLabel htmlFor="use-gpu">對齊使用 GPU 加速</FieldLabel>
+                  <FieldDescription>{doctor.gpuAvailable === false ? "目前未偵測到可用的 COLMAP GPU 加速，因此會使用 CPU。" : "偵測到相容的 NVIDIA GPU 時預設開啟；若執行失敗會自動改用 CPU。"}</FieldDescription>
+                </FieldContent>
               </Field>
-              <small>只有指定的 COLMAP build 確認支援 CUDA 才啟用；執行失敗會以 CPU 重試。</small>
+              <Field data-disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu || undefined}>
+                <FieldLabel htmlFor="gpu-index">選擇 GPU（進階）</FieldLabel>
+                <Input id="gpu-index" className="w-20" type="text" inputMode="numeric" disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu} value={settingsDraft.align.gpuIndex ?? DEFAULT_SETTINGS.align.gpuIndex} onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: value } })); }} />
+                <FieldDescription>保持 -1 會自動選擇。多張 GPU 可輸入 0,1；部分處理只會使用清單中的第一張。</FieldDescription>
+              </Field>
               <div className="rig-note"><Workflow /><span><strong>實體雙鏡頭相機組流程</strong><small>未知外參先建模校正；已校正外參則直接沿用</small></span></div>
             </div>
           </FieldContent>
@@ -1916,7 +1939,7 @@ function App() {
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>以本機執行環境回報為準；不預設 GPU、FFmpeg 或模型已就緒。</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>會依本機環境自動選擇可用的加速功能，實際狀態請參考下方檢查結果。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
             <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor(colmapPath)} aria-label="重新檢查環境"><RefreshCw /></Button></div><Field><FieldLabel htmlFor="colmap-path">COLMAP 執行檔</FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder="留白時從 PATH 自動偵測" onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>選擇</Button></div><FieldDescription>Windows 官方免安裝版請選根目錄的 COLMAP.bat；也可指定自行編譯的 colmap.exe。</FieldDescription></FieldContent></Field><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
           </div>

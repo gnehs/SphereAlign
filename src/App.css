@@ -727,10 +727,6 @@ button:active {
   accent-color: var(--studio-blue);
 }
 
-.model-dir-input {
-  margin-top: 9px;
-}
-
 .settings-stack {
   display: flex;
   flex-direction: column;

@@ -94,6 +94,9 @@ pub struct DoctorReport {
     pub accelerators: Vec<AcceleratorInfo>,
     pub capabilities: DoctorCapabilities,
     pub colmap_capabilities: ColmapCapabilities,
+    /// Whether the selected COLMAP build and at least one NVIDIA device can
+    /// actually participate in the alignment stages.
+    pub gpu_available: bool,
     pub warnings: Vec<String>,
 }
 
@@ -551,7 +554,41 @@ fn ffmpeg_hwaccels(ffmpeg: &ToolInfo) -> String {
     )
 }
 
-fn cuda_accelerator(colmap: &ToolInfo, capabilities: &ColmapCapabilities) -> AcceleratorInfo {
+fn parse_nvidia_gpu_names(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.eq_ignore_ascii_case("no devices were found")
+                && !line.to_ascii_lowercase().contains("nvidia-smi has failed")
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+fn nvidia_gpu_names() -> Vec<String> {
+    let Some(path) = find_executable("nvidia-smi") else {
+        return Vec::new();
+    };
+    let Ok(output) = silent_command(path)
+        .args(["--query-gpu=name", "--format=csv,noheader"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_nvidia_gpu_names(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn cuda_accelerator(
+    colmap: &ToolInfo,
+    capabilities: &ColmapCapabilities,
+    gpu_names: &[String],
+) -> AcceleratorInfo {
+    let gpu_available = capabilities.cuda_build && !gpu_names.is_empty();
     let note = if !colmap.available {
         Some("尚未選取可執行的 COLMAP；無法判定 COLMAP CUDA 建置能力".to_owned())
     } else if !capabilities.cuda_build {
@@ -559,11 +596,13 @@ fn cuda_accelerator(colmap: &ToolInfo, capabilities: &ColmapCapabilities) -> Acc
             "指定的 COLMAP 未在 version/help banner 標示 CUDA；將使用 CPU 特徵擷取與配對"
                 .to_owned(),
         )
+    } else if gpu_names.is_empty() {
+        Some("未偵測到可供 COLMAP 使用的 NVIDIA GPU；將使用 CPU".to_owned())
     } else if capabilities.ceres_gpu {
-        Some(
-            "指定的 COLMAP 建置支援 CUDA，且可請求 Ceres GPU；實際 CUDA/cuDSS 支援會在 mapper 執行期確認"
-                .to_owned(),
-        )
+        Some(format!(
+            "已偵測到 {}；COLMAP 可請求 Ceres GPU，實際 CUDA/cuDSS 支援會在執行時確認",
+            gpu_names.join("、")
+        ))
     } else {
         Some(
             "指定的 COLMAP 建置支援 CUDA，但未確認 Ceres GPU 求解器；Bundle Adjustment 會使用 CPU"
@@ -573,7 +612,7 @@ fn cuda_accelerator(colmap: &ToolInfo, capabilities: &ColmapCapabilities) -> Acc
     AcceleratorInfo {
         kind: "cuda".to_owned(),
         name: "COLMAP CUDA".to_owned(),
-        available: capabilities.cuda_build,
+        available: gpu_available,
         note,
     }
 }
@@ -616,9 +655,17 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
         && colmap_capabilities.model_converter
         && colmap_capabilities.rig_configurator
         && colmap_capabilities.matches_importer;
+    let nvidia_gpus = nvidia_gpu_names();
+    let gpu_available = colmap_capabilities.cuda_build
+        && !nvidia_gpus.is_empty()
+        && (colmap_capabilities.feature_extraction_gpu
+            || colmap_capabilities.feature_matching_gpu
+            || colmap_capabilities.mapper_ba_gpu
+            || colmap_capabilities.global_mapper_gp_gpu
+            || colmap_capabilities.global_mapper_ba_gpu);
     let tools = vec![ffmpeg.clone(), ffprobe.clone(), colmap.clone()];
     let accelerators = vec![
-        cuda_accelerator(&colmap, &colmap_capabilities),
+        cuda_accelerator(&colmap, &colmap_capabilities, &nvidia_gpus),
         videotoolbox_accelerator(&ffmpeg),
     ];
 
@@ -729,6 +776,7 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
             align: colmap_workflow_supported,
         },
         colmap_capabilities,
+        gpu_available,
         tools,
         accelerators,
         warnings,
@@ -749,7 +797,21 @@ mod tests {
             .and_then(|v| v.get("extract"))
             .is_some());
         assert!(value.get("colmapCapabilities").is_some());
+        assert!(value.get("gpuAvailable").is_some());
         assert!(value.get("accelerators").is_some());
+    }
+
+    #[test]
+    fn parses_nvidia_smi_device_names_conservatively() {
+        assert_eq!(
+            parse_nvidia_gpu_names("NVIDIA GeForce RTX 4090\nNVIDIA RTX 6000 Ada\n"),
+            vec!["NVIDIA GeForce RTX 4090", "NVIDIA RTX 6000 Ada"]
+        );
+        assert!(parse_nvidia_gpu_names("No devices were found\n").is_empty());
+        assert!(parse_nvidia_gpu_names(
+            "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.\n"
+        )
+        .is_empty());
     }
 
     #[test]

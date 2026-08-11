@@ -5357,7 +5357,7 @@ fn run_align(
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
     let gpu_index = parse_gpu_index(&manifest.settings)?;
-    let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", false);
+    let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
@@ -6879,7 +6879,7 @@ mod tests {
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
         restore_colmap_database_backup, rig_config_has_complete_sensor_poses, rig_mapping_plan,
-        selected_ffmpeg_args, source_stage_progress, synchronized_candidate_count,
+        selected_ffmpeg_args, setting_bool, source_stage_progress, synchronized_candidate_count,
         validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
         ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
@@ -6990,6 +6990,21 @@ mod tests {
             parse_gpu_index(&json!({"align": {"gpuIndex": "0, 2,1"}})),
             Ok("0,2,1".to_owned())
         );
+    }
+
+    #[test]
+    fn gpu_is_requested_by_default_but_respects_an_explicit_choice() {
+        assert!(setting_bool(&json!({}), "/align/useGpu", true));
+        assert!(setting_bool(
+            &json!({"align": {"useGpu": true}}),
+            "/align/useGpu",
+            true
+        ));
+        assert!(!setting_bool(
+            &json!({"align": {"useGpu": false}}),
+            "/align/useGpu",
+            true
+        ));
     }
 
     #[test]
