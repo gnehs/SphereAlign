@@ -44,7 +44,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 4;
+const ALIGN_PIPELINE_REVISION: u32 = 5;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 1;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -3210,30 +3210,29 @@ fn write_rig_and_pairs_with_options(
     use_calibrated_fov: bool,
 ) -> Result<u64, String> {
     let rig_config = root.join("rig_config.json");
-    let legacy_default = json!([{"cameras":[
+    let unknown_default = json!([{"cameras":[
         {"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]);
-    let calibrated_default = json!([{"cameras":[
+    let deprecated_colocated_default = json!([{"cameras":[
     {"image_prefix":"lens0/","ref_sensor":true},
     {
         "image_prefix":"lens1/",
         "cam_from_rig_rotation":[0.0,0.0,1.0,0.0],
         "cam_from_rig_translation":[0.0,0.0,0.0]
     }]}]);
-    let should_write_calibrated_default = if rig_config.is_file() {
+    let should_write_unknown_default = if rig_config.is_file() {
         serde_json::from_slice::<Value>(&fs::read(&rig_config).map_err(|e| e.to_string())?)
-            .is_ok_and(|config| config == legacy_default)
+            .is_ok_and(|config| config == deprecated_colocated_default)
     } else {
         true
     };
-    if should_write_calibrated_default {
-        // DJI's two native fisheye streams are upright and back-to-back.  Model
-        // them as a co-located panoramic rig: lens1 is lens0 rotated 180° about
-        // the camera Y axis.  Also migrate only the exact uncalibrated default
-        // emitted by older GS360 Studio versions; preserve configs that differ
-        // from that generated legacy value.
+    if should_write_unknown_default {
+        // Native Osmo 360 streams come from two physical lenses. Their baseline
+        // and mounting error are not equivalent to the exact, co-located poses
+        // of virtual panorama faces. Migrate only the exact synthetic default
+        // emitted by older versions; preserve every other user-supplied config.
         fs::write(
             &rig_config,
-            serde_json::to_vec_pretty(&calibrated_default).unwrap(),
+            serde_json::to_vec_pretty(&unknown_default).unwrap(),
         )
         .map_err(|e| e.to_string())?;
     }
@@ -4619,14 +4618,20 @@ fn mapper_args(
     args
 }
 
+#[derive(Debug, Clone, Copy)]
+struct GlobalMapperOptions {
+    use_gravity_prior: bool,
+    fixed_rotation_ba: bool,
+    disable_sensor_refinement: bool,
+}
+
 fn global_mapper_args(
     db: &Path,
     images: &Path,
     output: &Path,
     use_gpu: bool,
     gpu_index: &str,
-    use_gravity_prior: bool,
-    fixed_rotation_ba: bool,
+    options: GlobalMapperOptions,
 ) -> Vec<String> {
     let mut args = vec![
         "global_mapper".into(),
@@ -4636,19 +4641,23 @@ fn global_mapper_args(
         images.to_string_lossy().into_owned(),
         "--output_path".into(),
         output.to_string_lossy().into_owned(),
-        // Known rig extrinsics are a prerequisite for gravity-aligned rig
-        // solving. Keep them fixed unless a future calibrated workflow opts
-        // into refinement explicitly.
+        // Only a rig supplied with complete extrinsics before this alignment is
+        // treated as pre-calibrated. A pose inferred by the bootstrap pass is
+        // an initialization and remains refinable in the final reconstruction.
         "--GlobalMapper.refine_sensor_from_rig".into(),
-        "0".into(),
+        if options.disable_sensor_refinement {
+            "0".into()
+        } else {
+            "1".into()
+        },
         "--GlobalMapper.ra_use_gravity".into(),
-        if use_gravity_prior {
+        if options.use_gravity_prior {
             "1".into()
         } else {
             "0".into()
         },
         "--GlobalMapper.ra_use_stratified".into(),
-        if use_gravity_prior {
+        if options.use_gravity_prior {
             "1".into()
         } else {
             "0".into()
@@ -4662,7 +4671,7 @@ fn global_mapper_args(
         "--GlobalMapper.ba_ceres_gpu_index".into(),
         mapper_gpu_index(gpu_index).to_owned(),
     ];
-    if fixed_rotation_ba {
+    if options.fixed_rotation_ba {
         args.extend([
             "--GlobalMapper.ba_skip_joint_optimization_stage".into(),
             "1".into(),
@@ -6403,8 +6412,11 @@ fn run_align(
             &sparse,
             true,
             &gpu_index,
-            use_gravity_prior,
-            fixed_rotation_ba,
+            GlobalMapperOptions {
+                use_gravity_prior,
+                fixed_rotation_ba,
+                disable_sensor_refinement: rig_preconfigured,
+            },
         )
     } else {
         mapper_args(
@@ -6413,7 +6425,7 @@ fn run_align(
             &sparse,
             final_mapper_gpu,
             &mapper_gpu_index,
-            true,
+            rig_preconfigured,
             true,
         )
     };
@@ -6424,8 +6436,11 @@ fn run_align(
             &sparse,
             false,
             &gpu_index,
-            use_gravity_prior,
-            fixed_rotation_ba,
+            GlobalMapperOptions {
+                use_gravity_prior,
+                fixed_rotation_ba,
+                disable_sensor_refinement: rig_preconfigured,
+            },
         )
     } else {
         mapper_args(
@@ -6434,7 +6449,7 @@ fn run_align(
             &sparse,
             false,
             &mapper_gpu_index,
-            true,
+            rig_preconfigured,
             true,
         )
     };
@@ -6618,8 +6633,11 @@ fn run_align(
                     &global_candidate,
                     true,
                     &gpu_index,
-                    use_gravity_prior,
-                    enable_fixed_rotation,
+                    GlobalMapperOptions {
+                        use_gravity_prior,
+                        fixed_rotation_ba: enable_fixed_rotation,
+                        disable_sensor_refinement: rig_preconfigured,
+                    },
                 );
                 let cpu_args = global_mapper_args(
                     &db,
@@ -6627,8 +6645,11 @@ fn run_align(
                     &global_candidate,
                     false,
                     &gpu_index,
-                    use_gravity_prior,
-                    enable_fixed_rotation,
+                    GlobalMapperOptions {
+                        use_gravity_prior,
+                        fixed_rotation_ba: enable_fixed_rotation,
+                        disable_sensor_refinement: rig_preconfigured,
+                    },
                 );
                 let global_result = run_mapper_with_gpu_fallback(
                     app,
@@ -6861,9 +6882,9 @@ mod tests {
         selected_ffmpeg_args, source_stage_progress, synchronized_candidate_count,
         validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
-        ExtractionStage, JobControl, JobManager, LogEvent, MapperMode, ProgressEvent,
-        RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, RigMappingPlan, StageName,
-        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
+        ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
+        ProgressEvent, RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, RigMappingPlan,
+        StageName, StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
         CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
     use crate::doctor::ColmapCapabilities;
@@ -7046,6 +7067,9 @@ mod tests {
         assert!(mapper
             .windows(2)
             .any(|args| { args == ["--Mapper.ba_global_points_ratio", "1.4"] }));
+        assert!(mapper
+            .windows(2)
+            .any(|args| { args == ["--Mapper.ba_refine_sensor_from_rig", "0"] }));
         assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
     }
 
@@ -7078,6 +7102,9 @@ mod tests {
         assert!(!args
             .iter()
             .any(|arg| arg == "--Mapper.ba_global_frames_ratio"));
+        assert!(!args
+            .iter()
+            .any(|arg| arg == "--Mapper.ba_refine_sensor_from_rig"));
     }
 
     #[test]
@@ -7164,6 +7191,10 @@ mod tests {
             "lens0/frame0001.png".to_owned(),
             "lens1/frame0002.png".to_owned(),
         ]);
+        assert_eq!(
+            rig_mapping_plan(&configs),
+            RigMappingPlan::PreconfiguredSinglePass
+        );
         assert_eq!(
             validate_rig_bootstrap_registration(&configs, &registered).unwrap(),
             "相機組已提供完整外參"
@@ -7850,8 +7881,11 @@ mod tests {
             Path::new("sparse"),
             true,
             "2,3",
-            true,
-            false,
+            GlobalMapperOptions {
+                use_gravity_prior: true,
+                fixed_rotation_ba: false,
+                disable_sensor_refinement: true,
+            },
         );
         let pairs = args
             .windows(2)
@@ -7871,8 +7905,11 @@ mod tests {
             Path::new("sparse"),
             false,
             "-1",
-            false,
-            false,
+            GlobalMapperOptions {
+                use_gravity_prior: false,
+                fixed_rotation_ba: false,
+                disable_sensor_refinement: false,
+            },
         );
         let pairs = without_gravity
             .windows(2)
@@ -7880,6 +7917,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(pairs.contains(&("--GlobalMapper.ra_use_gravity", "0")));
         assert!(pairs.contains(&("--GlobalMapper.ra_use_stratified", "0")));
+        assert!(pairs.contains(&("--GlobalMapper.refine_sensor_from_rig", "1")));
     }
 
     #[test]
@@ -8006,7 +8044,7 @@ mod tests {
     }
 
     #[test]
-    fn default_rig_uses_a_fixed_back_to_back_rotation_and_migrates_legacy_default() {
+    fn default_rig_has_unknown_extrinsics_and_migrates_colocated_default() {
         let temp = tempfile::tempdir().unwrap();
         for lens in ["lens0", "lens1"] {
             fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
@@ -8017,7 +8055,7 @@ mod tests {
         let rig_path = temp.path().join("rig_config.json");
         fs::write(
             &rig_path,
-            br#"[{"cameras":[{"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/"}]}]"#,
+            br#"[{"cameras":[{"image_prefix":"lens0/","ref_sensor":true},{"image_prefix":"lens1/","cam_from_rig_rotation":[0.0,0.0,1.0,0.0],"cam_from_rig_translation":[0.0,0.0,0.0]}]}]"#,
         )
         .unwrap();
 
@@ -8026,20 +8064,37 @@ mod tests {
         let configs =
             serde_json::from_slice::<Vec<RigBootstrapConfig>>(&fs::read(&rig_path).unwrap())
                 .unwrap();
-        assert!(rig_config_has_complete_sensor_poses(&configs));
+        assert!(!rig_config_has_complete_sensor_poses(&configs));
         assert_eq!(
             rig_mapping_plan(&configs),
-            RigMappingPlan::PreconfiguredSinglePass,
-            "known rig extrinsics must run only the final mapper pass"
+            RigMappingPlan::BootstrapThenFinal,
+            "physical lenses without measured extrinsics require calibration"
         );
+        assert_eq!(configs[0].cameras[1].cam_from_rig_rotation, None);
+        assert_eq!(configs[0].cameras[1].cam_from_rig_translation, None);
+    }
+
+    #[test]
+    fn missing_rig_config_creates_unknown_extrinsics_default() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+
+        write_rig_and_pairs(temp.path()).unwrap();
+
+        let configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+            &fs::read(temp.path().join("rig_config.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
-            configs[0].cameras[1].cam_from_rig_rotation,
-            Some(vec![0.0, 0.0, 1.0, 0.0])
+            rig_mapping_plan(&configs),
+            RigMappingPlan::BootstrapThenFinal
         );
-        assert_eq!(
-            configs[0].cameras[1].cam_from_rig_translation,
-            Some(vec![0.0, 0.0, 0.0])
-        );
+        assert!(!configs[0].cameras[1].has_explicit_pose());
     }
 
     #[test]

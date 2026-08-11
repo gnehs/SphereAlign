@@ -136,10 +136,10 @@ Mask 明確停用 ONNX Runtime CPU execution-provider fallback。模型若無法
 - 無 EXIF 焦距時，以 `default_focal_length_factor=0.3` 初始化。
 - 每張影像最多 8192 個 features；每個 image pair 最多 8192 個 matches。
 - 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
-- 預設 rig 將兩顆鏡頭視為共心、分別位於相機正反兩面且上下方向一致；`lens1` 相對 `lens0` 固定繞相機 Y 軸 180°。
+- 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。
 - 有完整外參時，先執行 `rig_configurator` 再執行一次 mapper。
-- 自訂 config 缺少外參時，先以獨立相機 bootstrap，再推算 rig，最後固定 `sensor_from_rig` 重新 mapper。
-- 自訂 `rig_config.json` 會保留；只有缺少時才建立預設，或在內容等於舊版無外參預設時升級。
+- config 缺少外參時，先以獨立相機 bootstrap，再推算 rig，最後允許 BA refinement 的 constrained mapper。
+- 自訂 `rig_config.json` 會保留；只有缺少時才建立未知外參預設，或在內容精確等於舊版產生的共心 180° 預設時遷移。
 - Mask stage 完成時才傳入 COLMAP mask path；沒有 mask 也能單獨執行 Align。
 - 啟用 GPU 時，feature extraction、matching 與 Ceres bundle adjustment 都會使用對應 GPU 設定。
 - GPU stage 失敗時會依階段清理或還原未完整的資料庫／sparse output，再以 CPU 重試。

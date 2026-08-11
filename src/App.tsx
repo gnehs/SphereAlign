@@ -1756,7 +1756,7 @@ function App() {
                 <FieldDescription>-1 代表自動選擇；0,1 可讓 SIFT 使用多張 GPU，Ceres BA 會使用清單中的第一張。僅在 COLMAP build 確認支援 CUDA 時套用。</FieldDescription>
               </Field>
               <small>只有指定的 COLMAP build 確認支援 CUDA 才啟用；執行失敗會以 CPU 重試。</small>
-              <div className="rig-note"><Workflow /><span><strong>雙階段相機組固定流程</strong><small>先建立初始模型，再固定相機組進行重建</small></span></div>
+              <div className="rig-note"><Workflow /><span><strong>實體雙鏡頭相機組流程</strong><small>未知外參先建模校正；已校正外參則直接沿用</small></span></div>
             </div>
           </FieldContent>
         </Field>
