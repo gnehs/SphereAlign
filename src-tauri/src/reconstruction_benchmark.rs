@@ -1435,6 +1435,7 @@ mod tests {
         assert_eq!(report.capture.selected_rig_frame_count, Some(1));
         assert_eq!(report.colmap.camera_count, Some(1));
         assert_eq!(report.colmap.registered_image_count, Some(2));
+        assert_eq!(report.colmap.complete_registered_rig_frame_count, Some(1));
         assert_eq!(report.colmap.points3d_count, Some(1));
         assert_eq!(report.colmap.median_track_length, Some(2.0));
         assert_eq!(report.colmap.median_reprojection_error_px, Some(1.0));

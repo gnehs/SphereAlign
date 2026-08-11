@@ -135,7 +135,7 @@ Mask 明確停用 ONNX Runtime CPU execution-provider fallback。模型若無法
 - 使用 SIFT 與 `OPENCV_FISHEYE`，每個 lens 對應一台 camera。
 - 無 EXIF 焦距時，以 `default_focal_length_factor=0.3` 初始化。
 - 每張影像最多 8192 個 features；每個 image pair 最多 8192 個 matches。
-- 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs。
+- 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs；另以固定、線性規模的 skip links 跨越短暫模糊或低紋理區段，避免局部註冊失敗永久切斷後續影格。
 - 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。
 - 有完整外參時，先執行 `rig_configurator` 再執行一次 mapper。
 - config 缺少外參時，先以獨立相機 bootstrap，再推算 rig，最後允許 BA refinement 的 constrained mapper。

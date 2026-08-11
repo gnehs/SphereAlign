@@ -173,6 +173,36 @@ struct JobControl {
     mask_cancel: CancelToken,
 }
 
+struct StageRunOutput {
+    artifacts: Vec<String>,
+    registration: Option<RegistrationSummary>,
+}
+
+impl StageRunOutput {
+    fn plain(artifacts: Vec<String>) -> Self {
+        Self {
+            artifacts,
+            registration: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RegistrationSummary {
+    registered: u64,
+    total: u64,
+}
+
+impl RegistrationSummary {
+    fn completion_message(self) -> String {
+        let percentage = self.registered as f64 / self.total as f64 * 100.0;
+        format!(
+            "對齊處理完成：已註冊 {} / {} 組相機組影格（{percentage:.1}%）",
+            self.registered, self.total
+        )
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct JobManager {
     jobs: Arc<Mutex<HashMap<String, JobControl>>>,
@@ -455,8 +485,10 @@ pub fn start_stage(
             false,
         );
         let result = match stage {
-            StageName::Extract => run_extract(&app, &id, &manifest, &control),
-            StageName::Mask => run_mask(&app, &id, &manifest, &control),
+            StageName::Extract => {
+                run_extract(&app, &id, &manifest, &control).map(StageRunOutput::plain)
+            }
+            StageName::Mask => run_mask(&app, &id, &manifest, &control).map(StageRunOutput::plain),
             StageName::Align => run_align(
                 &app,
                 &id,
@@ -495,20 +527,22 @@ pub fn start_stage(
             );
         } else {
             match result {
-                Ok(artifacts) => {
+                Ok(output) => {
                     let stage_elapsed_ms = elapsed_ms(stage_started_at);
                     let completed_message = if skipped_mask {
-                        "未啟用 YOLO 或天空過濾，已略過遮罩階段"
+                        "未啟用 YOLO 或天空過濾，已略過遮罩階段".to_owned()
+                    } else if let Some(registration) = output.registration {
+                        registration.completion_message()
                     } else {
-                        "處理階段已完成"
+                        "處理階段已完成".to_owned()
                     };
                     let _ = project::update_stage_timed(
                         &mut manifest,
                         &stage,
                         StageStatus::Completed,
                         1.0,
-                        completed_message,
-                        artifacts,
+                        &completed_message,
+                        output.artifacts,
                         Vec::new(),
                         Some(stage_started_at),
                     );
@@ -521,8 +555,8 @@ pub fn start_stage(
                         completed_message,
                         "completed",
                         true,
-                        None,
-                        None,
+                        output.registration.map(|summary| summary.registered),
+                        output.registration.map(|summary| summary.total),
                         None,
                         Some(stage_elapsed_ms),
                     );
@@ -2893,6 +2927,7 @@ fn dual_fisheye_registration_totals(root: &Path) -> Result<(u64, u64), String> {
 
 const TEMPORAL_PAIR_MAX_GAP_MS: f64 = 700.0;
 const TEMPORAL_PAIR_MIN_ROTATION_DEG: f64 = 4.0;
+const TEMPORAL_RESCUE_OFFSETS: [usize; 3] = [8, 12, 16];
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3323,6 +3358,37 @@ fn write_rig_and_pairs_with_options(
                 overlap_10,
             );
         }
+        // A local +1..+5 graph can become permanently disconnected when a
+        // short blurry or texture-poor interval prevents any new frame from
+        // acquiring enough 2D-to-3D correspondences.  Add a small, fixed set
+        // of longer same-sensor skip links so a later usable frame can attempt
+        // registration directly against the established model.  The fixed
+        // offsets keep work O(n), stay inside one source recording, and still
+        // pass through COLMAP's geometric verification.
+        for offset in TEMPORAL_RESCUE_OFFSETS {
+            let Some(rescue) = names.get(index + offset) else {
+                continue;
+            };
+            if source_name_from_image(name) != source_name_from_image(rescue) {
+                continue;
+            }
+            pairs.insert(format!("lens0/{name} lens0/{rescue}"));
+            pairs.insert(format!("lens1/{name} lens1/{rescue}"));
+
+            // Long cross-lens links are useful after a large rig rotation, but
+            // only add them when calibrated per-frame view directions confirm
+            // that the two physical fisheyes overlap.
+            if calibrated_pair_overlap(&calibrated_camera_orientations, 0, name, 1, rescue)
+                == Some(true)
+            {
+                pairs.insert(format!("lens0/{name} lens1/{rescue}"));
+            }
+            if calibrated_pair_overlap(&calibrated_camera_orientations, 1, name, 0, rescue)
+                == Some(true)
+            {
+                pairs.insert(format!("lens1/{name} lens0/{rescue}"));
+            }
+        }
     }
     // Temporal neighbors alone only connect adjacent capture filenames.  For
     // multiple OSV files, add a bounded cross-source anchor grid so recordings
@@ -3528,6 +3594,31 @@ fn registered_rig_image_names(images_text: &str, prefixes: &BTreeSet<String>) ->
                 .then_some(name)
         })
         .collect()
+}
+
+fn complete_registered_dual_fisheye_frames(images_text: &str) -> u64 {
+    let prefixes = BTreeSet::from(["lens0/".to_owned(), "lens1/".to_owned()]);
+    let registered = registered_rig_image_names(images_text, &prefixes);
+    let lens0 = registered
+        .iter()
+        .filter_map(|name| name.strip_prefix("lens0/"))
+        .collect::<BTreeSet<_>>();
+    let lens1 = registered
+        .iter()
+        .filter_map(|name| name.strip_prefix("lens1/"))
+        .collect::<BTreeSet<_>>();
+    lens0.intersection(&lens1).count() as u64
+}
+
+fn registration_summary_from_text_model(root: &Path, total: u64) -> Option<RegistrationSummary> {
+    if total == 0 {
+        return None;
+    }
+    let images_text = fs::read_to_string(root.join("metadata/final-model-text/images.txt")).ok()?;
+    Some(RegistrationSummary {
+        registered: complete_registered_dual_fisheye_frames(&images_text).min(total),
+        total,
+    })
 }
 
 /// Verify rig camera coverage and the official precondition for deriving
@@ -5351,7 +5442,7 @@ fn run_align(
     custom_colmap_path: Option<&str>,
     force_rebuild: bool,
     control: &JobControl,
-) -> Result<Vec<String>, String> {
+) -> Result<StageRunOutput, String> {
     let align_started = Instant::now();
     let mut phase_durations_ms = BTreeMap::<String, f64>::new();
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
@@ -5573,11 +5664,14 @@ fn run_align(
             Some("existing sparse model".to_owned()),
             None,
         );
-        return Ok(vec![
-            db.to_string_lossy().into_owned(),
-            root.join("rig_config.json").to_string_lossy().into_owned(),
-            sparse.to_string_lossy().into_owned(),
-        ]);
+        return Ok(StageRunOutput {
+            artifacts: vec![
+                db.to_string_lossy().into_owned(),
+                root.join("rig_config.json").to_string_lossy().into_owned(),
+                sparse.to_string_lossy().into_owned(),
+            ],
+            registration: registration_summary_from_text_model(&root, rig_frame_count),
+        });
     }
     if let Some(error) = &cached_validation_error {
         emit_log(
@@ -6853,12 +6947,23 @@ fn run_align(
         Some("completed".to_owned()),
         None,
     );
-    Ok(vec![
-        db.to_string_lossy().into_owned(),
-        root.join("rig_config.json").to_string_lossy().into_owned(),
-        sparse.to_string_lossy().into_owned(),
-        benchmark_path.to_string_lossy().into_owned(),
-    ])
+    let registration = benchmark
+        .colmap
+        .complete_registered_rig_frame_count
+        .filter(|_| rig_frame_count > 0)
+        .map(|registered| RegistrationSummary {
+            registered: registered.min(rig_frame_count),
+            total: rig_frame_count,
+        });
+    Ok(StageRunOutput {
+        artifacts: vec![
+            db.to_string_lossy().into_owned(),
+            root.join("rig_config.json").to_string_lossy().into_owned(),
+            sparse.to_string_lossy().into_owned(),
+            benchmark_path.to_string_lossy().into_owned(),
+        ],
+        registration,
+    })
 }
 
 #[cfg(test)]
@@ -6867,10 +6972,10 @@ mod tests {
         balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
         can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
-        cleanup_stale_full_res_dirs, colmap_step_progress, create_colmap_database_backup,
-        dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
-        extraction_completed_count, feature_extractor_args, global_mapper_args,
-        global_mapper_prerequisite_error, has_valid_global_mapper_priors,
+        cleanup_stale_full_res_dirs, colmap_step_progress, complete_registered_dual_fisheye_frames,
+        create_colmap_database_backup, dual_fisheye_registration_totals, expected_candidate_frames,
+        extract_frame_settings, extraction_completed_count, feature_extractor_args,
+        global_mapper_args, global_mapper_prerequisite_error, has_valid_global_mapper_priors,
         invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
@@ -6883,9 +6988,10 @@ mod tests {
         validate_rig_bootstrap_registration, validate_rigs_text_sensor_poses, with_hwaccel_auto,
         write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
         ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
-        ProgressEvent, RawFrameMessage, RigBootstrapCamera, RigBootstrapConfig, RigMappingPlan,
-        StageName, StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
-        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
+        RigBootstrapConfig, RigMappingPlan, StageName, StartStageRequest,
+        StreamingCandidateSelector, CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT,
+        CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
     };
     use crate::doctor::ColmapCapabilities;
     use crate::masking::CancelToken;
@@ -7548,6 +7654,25 @@ mod tests {
     }
 
     #[test]
+    fn completed_alignment_reports_complete_rig_frames_and_percentage() {
+        let images = concat!(
+            "# Image list\n",
+            "1 1 0 0 0 0 0 0 1 lens0/frame-a.jpg\n\n",
+            "2 1 0 0 0 0 0 0 2 lens1/frame-a.jpg\n\n",
+            "3 1 0 0 0 0 0 0 1 lens0/frame-b.jpg\n\n",
+        );
+        assert_eq!(complete_registered_dual_fisheye_frames(images), 1);
+        assert_eq!(
+            RegistrationSummary {
+                registered: 149,
+                total: 257,
+            }
+            .completion_message(),
+            "對齊處理完成：已註冊 149 / 257 組相機組影格（58.0%）"
+        );
+    }
+
+    #[test]
     fn colmap_substeps_map_to_monotonic_align_segments() {
         assert!((colmap_step_progress(0, 0.0) - 0.0).abs() < f32::EPSILON);
         assert!((colmap_step_progress(0, 0.5) - 0.1).abs() < f32::EPSILON);
@@ -7707,6 +7832,53 @@ mod tests {
         assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000004.png"));
         assert!(!pairs.contains("lens0/source000_00000001.png lens1/source000_00000004.png"));
         assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000006.png"));
+    }
+
+    #[test]
+    fn temporal_rescue_links_skip_beyond_the_local_matching_window() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=18 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let frames = (1..=18)
+            .map(|sequence| {
+                json!({
+                    "sequence": sequence,
+                    "timestampMs": (sequence - 1) as f64 * 333.0,
+                    "imuRotationFromLastKeptDeg": 0.0,
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            temp.path().join("metadata/source000_frame_motion.json"),
+            serde_json::to_vec(&json!({"schemaVersion": 1, "frames": frames})).unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        for rescue in [9, 13, 17] {
+            assert!(pairs.contains(&format!(
+                "lens0/source000_00000001.png lens0/source000_{rescue:08}.png"
+            )));
+            assert!(pairs.contains(&format!(
+                "lens1/source000_00000001.png lens1/source000_{rescue:08}.png"
+            )));
+        }
+        // Without calibrated per-frame FOV overlap, long rescue edges stay on
+        // the same physical sensor to avoid speculative cross-lens matches.
+        assert!(!pairs.contains("lens0/source000_00000001.png lens1/source000_00000009.png"));
     }
 
     #[test]
