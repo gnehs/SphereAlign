@@ -185,6 +185,7 @@ struct JobControl {
 struct StageRunOutput {
     artifacts: Vec<String>,
     registration: Option<RegistrationSummary>,
+    capability_updates: BTreeMap<String, bool>,
 }
 
 impl StageRunOutput {
@@ -192,6 +193,7 @@ impl StageRunOutput {
         Self {
             artifacts,
             registration: None,
+            capability_updates: BTreeMap::new(),
         }
     }
 }
@@ -557,6 +559,9 @@ pub fn start_stage(
             match result {
                 Ok(output) => {
                     let stage_elapsed_ms = elapsed_ms(stage_started_at);
+                    for (capability, enabled) in output.capability_updates {
+                        manifest.capabilities.insert(capability, enabled);
+                    }
                     let completed_message = if skipped_mask {
                         "未啟用 YOLO 或天空過濾，已略過遮罩階段".to_owned()
                     } else if let Some(registration) = output.registration {
@@ -3297,13 +3302,14 @@ fn calibrated_pair_overlap(
 
 #[cfg(test)]
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
-    write_rig_and_pairs_with_options(root, true, false)
+    write_rig_and_pairs_with_options(root, true, false, true)
 }
 
 fn write_rig_and_pairs_with_options(
     root: &Path,
     use_visual_retrieval: bool,
     use_calibrated_fov: bool,
+    include_cross_source_pairs: bool,
 ) -> Result<u64, String> {
     let rig_config = root.join("rig_config.json");
     let unknown_default = json!([{"cameras":[
@@ -3498,15 +3504,16 @@ fn write_rig_and_pairs_with_options(
             },
         )
         .collect::<Vec<_>>();
-    let retrieval_report = use_visual_retrieval.then(|| {
+    let retrieval_report = (include_cross_source_pairs && use_visual_retrieval).then(|| {
         crate::visual_retrieval::retrieve_cross_source_candidates(
             &retrieval_sources,
             &crate::visual_retrieval::RetrievalConfig::default(),
         )
     });
-    let use_legacy_cross_source = retrieval_report
-        .as_ref()
-        .is_none_or(crate::visual_retrieval::RetrievalReport::requires_fallback);
+    let use_legacy_cross_source = include_cross_source_pairs
+        && retrieval_report
+            .as_ref()
+            .is_none_or(crate::visual_retrieval::RetrievalReport::requires_fallback);
     if use_legacy_cross_source {
         for left_index in 0..groups.len() {
             for right_index in (left_index + 1)..groups.len() {
@@ -3569,20 +3576,34 @@ fn persist_rig_config_from_database(
     root: &Path,
     database: &Path,
 ) -> Result<Vec<RigBootstrapConfig>, String> {
-    let cameras = crate::colmap_priors::read_rig_camera_extrinsics(database)?
-        .into_iter()
-        .map(|camera| RigBootstrapCamera {
-            image_prefix: camera.image_prefix,
-            ref_sensor: camera.ref_sensor,
-            cam_from_rig_rotation: (!camera.ref_sensor)
-                .then(|| camera.cam_from_rig_rotation.to_vec()),
-            cam_from_rig_translation: (!camera.ref_sensor)
-                .then(|| camera.cam_from_rig_translation.to_vec()),
-        })
-        .collect::<Vec<_>>();
-    let configs = vec![RigBootstrapConfig { cameras }];
+    let configs = rig_configs_from_camera_extrinsics(
+        crate::colmap_priors::read_rig_camera_extrinsics(database)?,
+    );
     write_json_atomic(&root.join("rig_config.json"), &configs)?;
     Ok(configs)
+}
+
+fn rig_configs_from_camera_extrinsics(
+    cameras: Vec<crate::colmap_priors::RigCameraExtrinsic>,
+) -> Vec<RigBootstrapConfig> {
+    let mut rigs = BTreeMap::<i64, Vec<RigBootstrapCamera>>::new();
+    for camera in cameras {
+        rigs.entry(camera.rig_id)
+            .or_default()
+            .push(RigBootstrapCamera {
+                image_prefix: camera.image_prefix,
+                ref_sensor: camera.ref_sensor,
+                cam_from_rig_rotation: (!camera.ref_sensor)
+                    .then(|| camera.cam_from_rig_rotation.to_vec()),
+                cam_from_rig_translation: (!camera.ref_sensor)
+                    .then(|| camera.cam_from_rig_translation.to_vec()),
+            });
+    }
+    let configs = rigs
+        .into_values()
+        .map(|cameras| RigBootstrapConfig { cameras })
+        .collect::<Vec<_>>();
+    configs
 }
 
 impl RigBootstrapCamera {
@@ -4478,27 +4499,18 @@ fn select_best_bootstrap_candidate(
         {
             continue;
         }
-        // Both broad reconstruction support and repeated shared-frame pose
-        // samples matter. Weight registered coverage quadratically so a small
-        // component cannot win merely by having a high shared-frame ratio,
-        // while still rewarding enough samples for COLMAP's rig pose average.
-        let candidate_score = (candidate.registered_image_count as u128)
-            .pow(2)
-            .saturating_mul(candidate.shared_frame_count as u128);
         let should_replace = best
             .as_ref()
             .is_none_or(|current: &RigBootstrapModelCandidate| {
-                let current_score = (current.registered_image_count as u128)
-                    .pow(2)
-                    .saturating_mul(current.shared_frame_count as u128);
+                // Rig calibration is only constrained by frames where all
+                // required sensors co-register. Prefer that evidence first;
+                // single-sensor images are useful only as a tie-breaker.
                 (
-                    candidate_score,
-                    candidate.registered_image_count,
                     candidate.shared_frame_count,
+                    candidate.registered_image_count,
                 ) > (
-                    current_score,
-                    current.registered_image_count,
                     current.shared_frame_count,
+                    current.registered_image_count,
                 )
             });
         if should_replace {
@@ -5417,6 +5429,12 @@ fn invert_quaternion(value: [f64; 4]) -> Option<[f64; 4]> {
 }
 
 fn rig_camera_rotations(configs: &[RigBootstrapConfig]) -> Result<[[f64; 4]; 2], String> {
+    if configs.len() != 1 {
+        return Err(format!(
+            "orientation/FOV priors require exactly one rig, found {} distinct rig groups",
+            configs.len()
+        ));
+    }
     let mut rotations = [[1.0, 0.0, 0.0, 0.0]; 2];
     let mut found = [false; 2];
     for camera in configs.iter().flat_map(|config| &config.cameras) {
@@ -5723,12 +5741,14 @@ fn refresh_calibrated_pair_matches(
     let original_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
     let original_hash = sha256_hex(&original_pairs);
     // Retrieval descriptors were already computed for the original graph.
-    // Rebuilding them here made the rig refresh as expensive as the complete
-    // first pair-graph pass. Generate only the newly available temporal/FOV
-    // pairs, then union them with the verified original retrieval pairs.
-    write_rig_and_pairs_with_options(root, false, use_calibrated_fov)?;
+    // Regenerate only source-local temporal/FOV pairs, and preserve only the
+    // original cross-source retrieval edges. Unioning the entire old graph
+    // would resurrect local pairs deliberately removed by calibrated FOV;
+    // letting the generator fall back would also inject a legacy anchor grid.
+    write_rig_and_pairs_with_options(root, false, use_calibrated_fov, false)?;
     let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
-    let calibrated_pairs = merge_pair_lists(&original_pairs, &refreshed_pairs)?;
+    let original_cross_source_pairs = cross_source_pair_lines(&original_pairs)?;
+    let calibrated_pairs = merge_pair_lists(&original_cross_source_pairs, &refreshed_pairs)?;
     fs::write(&pairs_path, &calibrated_pairs).map_err(|error| error.to_string())?;
     if sha256_hex(&calibrated_pairs) == original_hash {
         return Ok(false);
@@ -5772,6 +5792,36 @@ fn merge_pair_lists(first: &[u8], second: &[u8]) -> Result<Vec<u8>, String> {
         merged.push(b'\n');
     }
     Ok(merged)
+}
+
+fn cross_source_pair_lines(input: &[u8]) -> Result<Vec<u8>, String> {
+    let input = std::str::from_utf8(input).map_err(|error| error.to_string())?;
+    let mut output = Vec::new();
+    for line in input.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let mut images = line.split_whitespace();
+        let left = images
+            .next()
+            .ok_or_else(|| format!("invalid pair line: {line}"))?;
+        let right = images
+            .next()
+            .ok_or_else(|| format!("invalid pair line: {line}"))?;
+        if images.next().is_some() {
+            return Err(format!("invalid pair line: {line}"));
+        }
+        let left_name = left
+            .split_once('/')
+            .map(|(_, name)| name)
+            .ok_or_else(|| format!("invalid COLMAP image name in pair: {left}"))?;
+        let right_name = right
+            .split_once('/')
+            .map(|(_, name)| name)
+            .ok_or_else(|| format!("invalid COLMAP image name in pair: {right}"))?;
+        if source_name_from_image(left_name) != source_name_from_image(right_name) {
+            output.extend_from_slice(line.as_bytes());
+            output.push(b'\n');
+        }
+    }
+    Ok(output)
 }
 
 #[allow(clippy::too_many_arguments)] // External solver invocation keeps all validated paths explicit.
@@ -5931,7 +5981,12 @@ fn run_align(
         setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", true);
     let pair_graph_started = Instant::now();
     let rig_frame_count =
-        write_rig_and_pairs_with_options(&root, use_visual_retrieval, use_calibrated_fov_pairs)?;
+        write_rig_and_pairs_with_options(
+            &root,
+            use_visual_retrieval,
+            use_calibrated_fov_pairs,
+            true,
+        )?;
     phase_durations_ms.insert(
         "pairGraph".to_owned(),
         pair_graph_started.elapsed().as_secs_f64() * 1000.0,
@@ -6118,6 +6173,10 @@ fn run_align(
         None
     };
     if reuse_candidate && cached_validation_error.is_none() {
+        let reused_effective_mapper = checkpoint
+            .as_ref()
+            .and_then(|value| value.effective_mapper.as_deref())
+            .unwrap_or(expected_effective_mapper);
         remove_align_artifact(&unconfigured_database_backup)?;
         emit_log(
             app,
@@ -6146,6 +6205,13 @@ fn run_align(
                 sparse.to_string_lossy().into_owned(),
             ],
             registration: registration_summary_from_text_model(&root, rig_frame_count),
+            capability_updates: BTreeMap::from([(
+                "imuApplied".to_owned(),
+                (reused_effective_mapper == "global_mapper"
+                    && use_gravity_prior
+                    && has_valid_global_mapper_priors(&root, true))
+                    || reused_effective_mapper == "external_orientation_ba",
+            )]),
         });
     }
     if let Some(error) = &cached_validation_error {
@@ -7569,6 +7635,9 @@ fn run_align(
             registered: registered.min(rig_frame_count),
             total: rig_frame_count,
         });
+    let gravity_prior_applied = effective_final_mapper_component == "global_mapper"
+        && use_gravity_prior
+        && has_valid_global_mapper_priors(&root, true);
     Ok(StageRunOutput {
         artifacts: vec![
             db.to_string_lossy().into_owned(),
@@ -7577,6 +7646,11 @@ fn run_align(
             benchmark_path.to_string_lossy().into_owned(),
         ],
         registration,
+        capability_updates: BTreeMap::from([(
+            "imuApplied".to_owned(),
+            gravity_prior_applied
+                || effective_final_mapper_component == "external_orientation_ba",
+        )]),
     })
 }
 
@@ -7588,6 +7662,7 @@ mod tests {
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_step_progress,
         complete_registered_dual_fisheye_frames, create_colmap_database_backup,
+        cross_source_pair_lines,
         colmap_quality_profile, ColmapQualityProfile,
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
         extraction_completed_count, feature_extractor_args, global_mapper_args,
@@ -7600,7 +7675,8 @@ mod tests {
         parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
-        restore_colmap_database_backup, rig_bootstrap_shared_frame_count,
+        restore_colmap_database_backup, rig_bootstrap_shared_frame_count, rig_camera_rotations,
+        rig_configs_from_camera_extrinsics,
         rig_config_has_complete_sensor_poses, rig_mapping_plan, select_best_bootstrap_candidate,
         selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
@@ -8037,7 +8113,7 @@ mod tests {
             select_best_bootstrap_candidate(vec![candidate(35, 89), candidate(40, 80)]).unwrap();
         assert_eq!(
             (selected.shared_frame_count, selected.registered_image_count),
-            (35, 89)
+            (40, 80)
         );
 
         let selected =
@@ -8955,16 +9031,48 @@ mod tests {
     }
 
     #[test]
-    fn refreshed_pair_graph_unions_original_retrieval_and_new_rig_pairs() {
+    fn refreshed_pair_graph_preserves_only_old_cross_source_retrieval_pairs() {
+        let original = b"lens0/source000_a.png lens1/source000_b.png\nlens0/source000_c.png lens1/source001_c.png\n";
+        let preserved = cross_source_pair_lines(original).unwrap();
         let merged = merge_pair_lists(
-            b"lens0/a.png lens0/b.png\nlens0/c.png lens1/c.png\n",
-            b"lens0/a.png lens0/b.png\nlens1/d.png lens1/e.png\n",
+            &preserved,
+            b"lens0/source000_a.png lens0/source000_d.png\n",
         )
         .unwrap();
         assert_eq!(
             std::str::from_utf8(&merged).unwrap(),
-            "lens0/a.png lens0/b.png\nlens0/c.png lens1/c.png\nlens1/d.png lens1/e.png\n"
+            "lens0/source000_a.png lens0/source000_d.png\nlens0/source000_c.png lens1/source001_c.png\n"
         );
+    }
+
+    #[test]
+    fn database_rig_groups_remain_separate_in_json_config() {
+        let camera = |rig_id, prefix: &str, reference| {
+            crate::colmap_priors::RigCameraExtrinsic {
+                rig_id,
+                image_prefix: prefix.to_owned(),
+                ref_sensor: reference,
+                cam_from_rig_rotation: [1.0, 0.0, 0.0, 0.0],
+                cam_from_rig_translation: [0.0, 0.0, 0.0],
+            }
+        };
+        let configs = rig_configs_from_camera_extrinsics(vec![
+            camera(2, "rig2/lens1/", false),
+            camera(1, "rig1/lens0/", true),
+            camera(2, "rig2/lens0/", true),
+            camera(1, "rig1/lens1/", false),
+        ]);
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].cameras.len(), 2);
+        assert!(configs[0]
+            .cameras
+            .iter()
+            .all(|camera| camera.image_prefix.starts_with("rig1/")));
+        assert!(configs[1]
+            .cameras
+            .iter()
+            .all(|camera| camera.image_prefix.starts_with("rig2/")));
+        assert!(rig_camera_rotations(&configs).is_err());
     }
 
     #[test]

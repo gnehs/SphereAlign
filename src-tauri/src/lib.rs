@@ -83,14 +83,22 @@ pub fn run() {
             cancel_job,
             generate_benchmark_report
         ])
-        .run(tauri::generate_context!())
+        .run(app_context())
         .expect("error while running tauri application");
 }
 
 pub fn run_cli(args: Vec<String>) -> Result<(), String> {
+    let mut context = app_context();
+    context.config_mut().app.windows.clear();
     let app = tauri::Builder::default()
-        .build(tauri::generate_context!("tauri.cli.conf.json"))
+        .build(context)
         .map_err(|error| error.to_string())?;
     let handle = app.handle().clone();
     cli::run(&handle, args)
+}
+
+fn app_context() -> tauri::Context<tauri::Wry> {
+    // Keep this macro expanded exactly once per crate. On macOS each expansion
+    // embeds `_EMBED_INFO_PLIST`, so separate GUI/CLI expansions fail to link.
+    tauri::generate_context!()
 }

@@ -33,12 +33,14 @@
 
 移除 3.5 px gates 後的 tuned v2 仍只註冊 2/21 rig frames、119 points，median reprojection error 惡化至 227.0 px，Align 167.0 秒。因此正式 A/B/C 與未指定 profile 的專案均使用 baseline；tuned 僅留作可重現歷史實驗。
 
-## 原始 OSV 正式 A/B/C 結果
+## 原始 OSV 歷史 A/B/C 結果
+
+第一版 CLI 的 output provenance、完整 rig 指標與 IMU/effective-mapper 報表定義有缺陷。下列數值只保留作歷史參考，必須以 schema v2 CLI 在 fresh output root 重跑，不能作為 release acceptance evidence。
 
 以 `CAM_20260503151923_0031_D.OSV`（約 116.5 秒）實跑，三組都固定使用 baseline profile：
 
 - A（無 pruning/retrieval）：3/350 rigs、202 points、median track 2、0.690 px，Align 1015.5 秒。
 - B（pruning + retrieval）：170/257 rigs、20542 points、median track 3、0.749 px，Align 1011.4 秒。
-- C（B + telemetry/focal/FOV/auto）：171/257 rigs、19920 points、median track 3、0.770 px、8 components，Align 1030.7 秒；focal 驗證回退且 `imuApplied=false`。
+- C（B + telemetry/focal/FOV/auto）：舊報表為 171/257 rigs、19920 points、median track 3、0.770 px、8 components，Align 1030.7 秒；舊版 `imuApplied=false` 來自初始化 capability，不能證明 IMU 未套用。
 
-因此目前推薦 B：它相較 A 大幅改善 coverage 與 track support；相較 C 則有更多 points、較低 reprojection error、較少 components 與較短 Align。完整報告位於 `docs/COLMAP_ABC_RESULTS.md`。
+舊數據傾向 B，但正式推薦須等待修正版 CLI 重跑。歷史完整報告位於 `docs/COLMAP_ABC_RESULTS.md`。

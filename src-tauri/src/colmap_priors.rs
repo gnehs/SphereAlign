@@ -162,6 +162,7 @@ pub struct GlobalMapperPriorReport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RigCameraExtrinsic {
+    pub rig_id: i64,
     pub image_prefix: String,
     pub ref_sensor: bool,
     pub cam_from_rig_rotation: [f64; 4],
@@ -174,7 +175,7 @@ pub fn read_rig_camera_extrinsics(database_path: &Path) -> Result<Vec<RigCameraE
     let connection = open_checked_database(database_path)?;
     let mut statement = connection
         .prepare(
-            "SELECT i.name, i.camera_id, r.ref_sensor_id, rs.sensor_from_rig
+            "SELECT i.name, i.camera_id, f.rig_id, r.ref_sensor_id, rs.sensor_from_rig
              FROM images i
              JOIN frame_data fd
                ON fd.data_id = i.image_id AND fd.sensor_type = 0
@@ -184,16 +185,17 @@ pub fn read_rig_camera_extrinsics(database_path: &Path) -> Result<Vec<RigCameraE
                ON rs.rig_id = f.rig_id
               AND rs.sensor_id = i.camera_id
               AND rs.sensor_type = 0
-             ORDER BY i.camera_id, i.name",
+             ORDER BY f.rig_id, i.camera_id, i.name",
         )
         .map_err(|error| format!("無法讀取 rig camera extrinsics：{error}"))?;
     let mut rows = statement.query([]).map_err(|error| error.to_string())?;
-    let mut cameras = BTreeMap::<i64, RigCameraExtrinsic>::new();
+    let mut cameras = BTreeMap::<(i64, i64), RigCameraExtrinsic>::new();
     while let Some(row) = rows.next().map_err(|error| error.to_string())? {
         let name: String = row.get(0).map_err(|error| error.to_string())?;
         let camera_id: i64 = row.get(1).map_err(|error| error.to_string())?;
-        let ref_sensor_id: i64 = row.get(2).map_err(|error| error.to_string())?;
-        let blob: Option<Vec<u8>> = row.get(3).map_err(|error| error.to_string())?;
+        let rig_id: i64 = row.get(2).map_err(|error| error.to_string())?;
+        let ref_sensor_id: i64 = row.get(3).map_err(|error| error.to_string())?;
+        let blob: Option<Vec<u8>> = row.get(4).map_err(|error| error.to_string())?;
         let prefix = name
             .split_once('/')
             .map(|(prefix, _)| format!("{prefix}/"))
@@ -214,21 +216,33 @@ pub fn read_rig_camera_extrinsics(database_path: &Path) -> Result<Vec<RigCameraE
                 .map_err(|_| format!("camera {camera_id} sensor_from_rig 長度不是 7 doubles"))?
         };
         let entry = RigCameraExtrinsic {
+            rig_id,
             image_prefix: prefix,
             ref_sensor,
             cam_from_rig_rotation: [values[0], values[1], values[2], values[3]],
             cam_from_rig_translation: [values[4], values[5], values[6]],
         };
-        if let Some(existing) = cameras.get(&camera_id) {
+        let key = (rig_id, camera_id);
+        if let Some(existing) = cameras.get(&key) {
             if existing != &entry {
-                return Err(format!("camera {camera_id} 對應到不一致的 rig extrinsics"));
+                return Err(format!(
+                    "rig {rig_id} camera {camera_id} 對應到不一致的 rig extrinsics"
+                ));
             }
         } else {
-            cameras.insert(camera_id, entry);
+            cameras.insert(key, entry);
         }
     }
-    if cameras.len() < 2 || cameras.values().filter(|camera| camera.ref_sensor).count() != 1 {
-        return Err("COLMAP database 未提供完整雙鏡頭 rig extrinsics".to_owned());
+    let mut rigs = BTreeMap::<i64, Vec<&RigCameraExtrinsic>>::new();
+    for camera in cameras.values() {
+        rigs.entry(camera.rig_id).or_default().push(camera);
+    }
+    if rigs.is_empty()
+        || rigs.values().any(|rig| {
+            rig.len() < 2 || rig.iter().filter(|camera| camera.ref_sensor).count() != 1
+        })
+    {
+        return Err("COLMAP database 未為每一個 rig 提供完整外參與唯一 reference sensor".to_owned());
     }
     Ok(cameras.into_values().collect())
 }
@@ -1630,6 +1644,7 @@ mod tests {
             .iter()
             .find(|camera| camera.image_prefix == "lens0/")
             .unwrap();
+        assert_eq!(reference.rig_id, 1);
         assert!(reference.ref_sensor);
         assert_eq!(reference.cam_from_rig_rotation, [1.0, 0.0, 0.0, 0.0]);
         let secondary = cameras

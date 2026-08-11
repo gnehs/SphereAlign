@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Resumable native-fisheye OSV to COLMAP studio"
 authors = ["GS360 Studio contributors"]
 edition = "2021"
+default-run = "gs360studio"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
