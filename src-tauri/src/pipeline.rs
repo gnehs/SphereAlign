@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 19;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 20;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -7011,7 +7011,6 @@ fn run_align(
     );
     let calibrate_focal_prior =
         setting_bool(&manifest.settings, "/align/calibrateFocalPrior", true);
-    let mut calibrated_focal_inputs = None;
     if calibrate_focal_prior && !has_valid_global_mapper_priors(&root, false) {
         if colmap_capabilities.view_graph_calibrator {
             let calibration_backup = root.join("metadata/.align-focal-calibration.backup");
@@ -7031,12 +7030,6 @@ fn run_align(
                         "view_graph_calibrator",
                     ) {
                         Ok(report) if report.focal_prior_valid => {
-                            calibrated_focal_inputs = Some(
-                                crate::colmap_priors::read_focal_prior_inputs(
-                                    &db,
-                                    "view_graph_calibrator",
-                                )?,
-                            );
                             remove_align_artifact(&calibration_backup)?;
                             emit_log(
                                 app,
@@ -7422,20 +7415,23 @@ fn run_align(
             }
         };
         rig_configs = persist_rig_config_from_database(&root, &db)?;
-        if let Some(focal_inputs) = calibrated_focal_inputs.as_deref() {
-            let report = crate::colmap_priors::mark_focal_priors(&db, focal_inputs)?;
-            if !report.focal_prior_valid {
-                return Err(format!(
-                    "rig configurator 後 focal prior coverage 降為 {:.1}%",
-                    report.focal_coverage_ratio * 100.0
-                ));
-            }
+        let post_rig_focal_report = if calibrate_focal_prior {
+            crate::colmap_priors::read_focal_prior_report(
+                &db,
+                "view_graph_calibrator",
+            )
+            .ok()
+            .filter(|report| report.focal_prior_valid)
+        } else {
+            None
+        };
+        if let Some(report) = post_rig_focal_report {
             emit_log(
                 app,
                 id,
                 "info",
                 format!(
-                    "已在 rig configurator 後交易式還原 {:.1}% verified focal priors",
+                    "rig configurator 後仍保有 {:.1}% verified focal priors",
                     report.focal_coverage_ratio * 100.0
                 ),
             );
