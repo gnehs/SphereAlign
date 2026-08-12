@@ -626,18 +626,6 @@ button:active {
   background: #fcfcfd;
 }
 
-.field-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.field-pair [data-slot="field"] {
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
 .control-line {
   min-height: 27px;
   color: var(--studio-text);

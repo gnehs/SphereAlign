@@ -49,14 +49,6 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress, ProgressValue } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import {
   Sheet,
@@ -95,25 +87,11 @@ interface PipelineSettings {
     baseFps: number;
     denseFps: number;
     skipBlurry: boolean;
-    keyframePruning: boolean;
-    minRotationDeg: number;
-    minGapMs: number;
-    maxGapMs: number;
-    minVisualNovelty: number;
   };
   mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
   align: {
     useGpu: boolean;
     gpuIndex: string;
-    mapperMode: "auto" | "incremental" | "global";
-    useGravityPrior: boolean;
-    autoCalibrateTelemetry: boolean;
-    calibrateFocalPrior: boolean;
-    useVisualRetrieval: boolean;
-    useCalibratedFovPairs: boolean;
-    fixedRotationBa: boolean;
-    exportRollingShutterTrajectory: boolean;
-    orientationPriorExecutable: string;
   };
 }
 
@@ -131,7 +109,7 @@ interface ProjectManifest {
   rootPath: string;
   inputPaths: string[];
   outputPath: string;
-  settings: Record<string, unknown>;
+  settings: PipelineSettings;
   stages: Record<StageKey, StageState>;
   logs: TaskLog[];
   warnings: string[];
@@ -236,25 +214,11 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     baseFps: 3,
     denseFps: 12,
     skipBlurry: true,
-    keyframePruning: true,
-    minRotationDeg: 5,
-    minGapMs: 200,
-    maxGapMs: 600,
-    minVisualNovelty: 0.08,
   },
-  mask: { yoloEnabled: true, classes: ["person", "bicycle", "car", "motorcycle", "bus", "truck"], maskSky: true, confidence: 25, confidenceVersion: 2, modelDir: "" },
+  mask: { yoloEnabled: false, classes: [], maskSky: false, confidence: 25, confidenceVersion: 2, modelDir: "" },
   align: {
     useGpu: true,
     gpuIndex: "-1",
-    mapperMode: "auto",
-    useGravityPrior: true,
-    autoCalibrateTelemetry: true,
-    calibrateFocalPrior: true,
-    useVisualRetrieval: true,
-    useCalibratedFovPairs: true,
-    fixedRotationBa: false,
-    exportRollingShutterTrajectory: false,
-    orientationPriorExecutable: "",
   },
 };
 const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
@@ -269,21 +233,18 @@ function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
   );
 }
 
-function normalisePipelineSettings(value: unknown): Record<string, unknown> {
+function normalisePipelineSettings(value: unknown): PipelineSettings {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const extract = source.extract && typeof source.extract === "object" ? source.extract as Record<string, unknown> : {};
   const finiteNumber = (candidate: unknown, fallback: number, min: number, max: number) => {
     const parsed = typeof candidate === "number" ? candidate : Number.NaN;
     return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
   };
-  const minGapMs = finiteNumber(extract.minGapMs, DEFAULT_SETTINGS.extract.minGapMs, 0, 2_000);
-  const maxGapMs = Math.max(
-    minGapMs,
-    finiteNumber(extract.maxGapMs, DEFAULT_SETTINGS.extract.maxGapMs, 1, 5_000),
-  );
   const mask = source.mask && typeof source.mask === "object" ? source.mask as Record<string, unknown> : {};
-  const classes = Array.isArray(mask.classes) ? mask.classes.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
-  const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : classes.length > 0) && classes.length > 0;
+  const classes = Array.isArray(mask.classes)
+    ? mask.classes.filter((item): item is string => typeof item === "string" && MASK_CLASSES.includes(item))
+    : DEFAULT_SETTINGS.mask.classes;
+  const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : DEFAULT_SETTINGS.mask.yoloEnabled) && classes.length > 0;
   const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
   const rawGpuIndex = align.gpuIndex;
   const gpuIndex = typeof rawGpuIndex === "string"
@@ -291,33 +252,24 @@ function normalisePipelineSettings(value: unknown): Record<string, unknown> {
     : typeof rawGpuIndex === "number" && Number.isFinite(rawGpuIndex)
       ? String(rawGpuIndex)
       : DEFAULT_SETTINGS.align.gpuIndex;
-  const mapperMode = align.mapperMode === "incremental" || align.mapperMode === "global"
-    ? align.mapperMode
-    : DEFAULT_SETTINGS.align.mapperMode;
+  const baseFps = finiteNumber(extract.baseFps, DEFAULT_SETTINGS.extract.baseFps, 1, 30);
   return {
-    ...source,
     extract: {
-      ...extract,
-      keyframePruning: typeof extract.keyframePruning === "boolean" ? extract.keyframePruning : DEFAULT_SETTINGS.extract.keyframePruning,
-      minRotationDeg: finiteNumber(extract.minRotationDeg, DEFAULT_SETTINGS.extract.minRotationDeg, 0.1, 90),
-      minGapMs,
-      maxGapMs,
-      minVisualNovelty: finiteNumber(extract.minVisualNovelty, DEFAULT_SETTINGS.extract.minVisualNovelty, 0, 1),
+      baseFps,
+      denseFps: finiteNumber(extract.denseFps, baseFps * DEFAULT_CANDIDATE_MULTIPLIER, baseFps * MIN_CANDIDATE_MULTIPLIER, baseFps * MAX_CANDIDATE_MULTIPLIER),
+      skipBlurry: typeof extract.skipBlurry === "boolean" ? extract.skipBlurry : DEFAULT_SETTINGS.extract.skipBlurry,
     },
-    mask: { ...mask, classes, yoloEnabled },
+    mask: {
+      yoloEnabled,
+      classes,
+      maskSky: typeof mask.maskSky === "boolean" ? mask.maskSky : DEFAULT_SETTINGS.mask.maskSky,
+      confidence: finiteNumber(mask.confidence, DEFAULT_SETTINGS.mask.confidence, 10, 98),
+      confidenceVersion: finiteNumber(mask.confidenceVersion, DEFAULT_SETTINGS.mask.confidenceVersion, 1, 10),
+      modelDir: typeof mask.modelDir === "string" ? mask.modelDir : DEFAULT_SETTINGS.mask.modelDir,
+    },
     align: {
-      ...align,
       useGpu: typeof align.useGpu === "boolean" ? align.useGpu : DEFAULT_SETTINGS.align.useGpu,
       gpuIndex,
-      mapperMode,
-      useGravityPrior: typeof align.useGravityPrior === "boolean" ? align.useGravityPrior : DEFAULT_SETTINGS.align.useGravityPrior,
-      autoCalibrateTelemetry: typeof align.autoCalibrateTelemetry === "boolean" ? align.autoCalibrateTelemetry : DEFAULT_SETTINGS.align.autoCalibrateTelemetry,
-      calibrateFocalPrior: typeof align.calibrateFocalPrior === "boolean" ? align.calibrateFocalPrior : DEFAULT_SETTINGS.align.calibrateFocalPrior,
-      useVisualRetrieval: typeof align.useVisualRetrieval === "boolean" ? align.useVisualRetrieval : DEFAULT_SETTINGS.align.useVisualRetrieval,
-      useCalibratedFovPairs: typeof align.useCalibratedFovPairs === "boolean" ? align.useCalibratedFovPairs : DEFAULT_SETTINGS.align.useCalibratedFovPairs,
-      fixedRotationBa: typeof align.fixedRotationBa === "boolean" ? align.fixedRotationBa : DEFAULT_SETTINGS.align.fixedRotationBa,
-      exportRollingShutterTrajectory: typeof align.exportRollingShutterTrajectory === "boolean" ? align.exportRollingShutterTrajectory : DEFAULT_SETTINGS.align.exportRollingShutterTrajectory,
-      orientationPriorExecutable: typeof align.orientationPriorExecutable === "string" ? align.orientationPriorExecutable : DEFAULT_SETTINGS.align.orientationPriorExecutable,
     },
   };
 }
@@ -1533,89 +1485,7 @@ function App() {
                   <FieldDescription>以截取影格率的倍率取樣候選，再挑選較清晰的影格。</FieldDescription>
                 </Field>
               )}
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch
-                  id="keyframe-pruning"
-                  size="sm"
-                  checked={settingsDraft.extract.keyframePruning}
-                  onCheckedChange={(checked) => setSettingsDraft((current) => ({
-                    ...current,
-                    extract: { ...current.extract, keyframePruning: checked },
-                  }))}
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor="keyframe-pruning">IMU＋畫面變化動態刪幀</FieldLabel>
-                  <FieldDescription>比較上一張保留影格；旋轉、場景變化或最長間隔任一達標就保留。</FieldDescription>
-                </FieldContent>
-              </Field>
-              {settingsDraft.extract.keyframePruning && (
-                <FieldGroup className="field-pair">
-                  <Field>
-                    <FieldLabel htmlFor="keyframe-min-rotation">最小旋轉角（度）</FieldLabel>
-                    <Input
-                      id="keyframe-min-rotation"
-                      type="number"
-                      min={0.1}
-                      max={90}
-                      step={0.5}
-                      value={settingsDraft.extract.minRotationDeg}
-                      onChange={(event) => {
-                        const minRotationDeg = Math.min(90, Math.max(0.1, Number(event.currentTarget.value) || 0.1));
-                        setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, minRotationDeg } }));
-                      }}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="keyframe-min-gap">最短保留間隔（ms）</FieldLabel>
-                    <Input
-                      id="keyframe-min-gap"
-                      type="number"
-                      min={0}
-                      max={2000}
-                      step={25}
-                      value={settingsDraft.extract.minGapMs}
-                      onChange={(event) => {
-                        const minGapMs = Math.min(2000, Math.max(0, Number(event.currentTarget.value) || 0));
-                        setSettingsDraft((current) => ({
-                          ...current,
-                          extract: { ...current.extract, minGapMs, maxGapMs: Math.max(current.extract.maxGapMs, minGapMs) },
-                        }));
-                      }}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="keyframe-max-gap">最長保留間隔（ms）</FieldLabel>
-                    <Input
-                      id="keyframe-max-gap"
-                      type="number"
-                      min={settingsDraft.extract.minGapMs}
-                      max={5000}
-                      step={50}
-                      value={settingsDraft.extract.maxGapMs}
-                      onChange={(event) => {
-                        const maxGapMs = Math.min(5000, Math.max(settingsDraft.extract.minGapMs, Number(event.currentTarget.value) || settingsDraft.extract.minGapMs));
-                        setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, maxGapMs } }));
-                      }}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="keyframe-visual-novelty">畫面變化門檻（%）</FieldLabel>
-                    <Input
-                      id="keyframe-visual-novelty"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={Math.round(settingsDraft.extract.minVisualNovelty * 100)}
-                      onChange={(event) => {
-                        const minVisualNovelty = Math.min(1, Math.max(0, (Number(event.currentTarget.value) || 0) / 100));
-                        setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, minVisualNovelty } }));
-                      }}
-                    />
-                    <FieldDescription>任一鏡頭的 32×32 梯度變化達標即可保留。</FieldDescription>
-                  </Field>
-                </FieldGroup>
-              )}
+              <div className="rig-note"><ScanLine /><span><strong>智慧抽幀</strong><small>固定使用 IMU 相對旋轉與低解析畫面變化，減少重複影格</small></span></div>
             </FieldContent>
           </Field>
           <Field>
@@ -1688,76 +1558,7 @@ function App() {
           <FieldLabel>對齊</FieldLabel>
           <FieldContent>
             <div className="settings-stack">
-              <Field>
-                <FieldLabel htmlFor="mapper-mode">重建模式</FieldLabel>
-                <Select
-                  value={settingsDraft.align.mapperMode}
-                  onValueChange={(value) => {
-                    if (value !== "auto" && value !== "incremental" && value !== "global") return;
-                    setSettingsDraft((current) => ({
-                      ...current,
-                      align: { ...current.align, mapperMode: value },
-                    }));
-                  }}
-                >
-                  <SelectTrigger id="mapper-mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="auto">自動（建議）</SelectItem>
-                      <SelectItem value="incremental">逐步重建（較穩定）</SelectItem>
-                      <SelectItem value="global">全域重建（較快）</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <FieldDescription>建議使用自動模式。程式會先產生穩定的初步結果，資料通過檢查後再嘗試較快的全域重建。</FieldDescription>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
-                <Switch
-                  id="gravity-prior"
-                  size="sm"
-                  disabled={settingsDraft.align.mapperMode === "incremental"}
-                  checked={settingsDraft.align.useGravityPrior}
-                  onCheckedChange={(checked) => setSettingsDraft((current) => ({
-                    ...current,
-                    align: { ...current.align, useGravityPrior: checked },
-                  }))}
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor="gravity-prior">利用 IMU 的重力方向輔助全域重建</FieldLabel>
-                  <FieldDescription>只有 IMU 與相機資料通過檢查後才會使用，避免錯誤的方向資訊影響重建結果。</FieldDescription>
-                </FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch id="telemetry-calibration" size="sm" checked={settingsDraft.align.autoCalibrateTelemetry} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, autoCalibrateTelemetry: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="telemetry-calibration">自動對準 IMU 與相機資料</FieldLabel><FieldDescription>自動修正兩者的時間差與方向差；資料不足或結果不可靠時不會套用。</FieldDescription></FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch id="focal-calibration" size="sm" checked={settingsDraft.align.calibrateFocalPrior} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, calibrateFocalPrior: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="focal-calibration">自動校正鏡頭焦距</FieldLabel><FieldDescription>畫面配對完成後自動估算焦距；只有校正成功才會使用，不會把預估值當成校正結果。</FieldDescription></FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch id="visual-retrieval" size="sm" checked={settingsDraft.align.useVisualRetrieval} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useVisualRetrieval: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="visual-retrieval">尋找不同檔案中的相同場景</FieldLabel><FieldDescription>依畫面內容找出不同拍攝檔案的重疊位置，讓多段素材能正確接在一起。</FieldDescription></FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch id="fov-pairs" size="sm" checked={settingsDraft.align.useCalibratedFovPairs} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, useCalibratedFovPairs: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="fov-pairs">依鏡頭視野縮減配對</FieldLabel><FieldDescription>鏡頭位置校正可靠時，會減少不太可能重疊的跨鏡頭配對以加快處理；資料不足時仍會使用完整配對。</FieldDescription></FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option" data-disabled={settingsDraft.align.mapperMode === "incremental" || undefined}>
-                <Switch id="fixed-rotation-ba" size="sm" disabled={settingsDraft.align.mapperMode === "incremental"} checked={settingsDraft.align.fixedRotationBa} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, fixedRotationBa: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="fixed-rotation-ba">固定相機旋轉方向（實驗功能）</FieldLabel><FieldDescription>只有方向校正通過檢查後才會略過部分最佳化。可能降低成果品質，通常不建議開啟。</FieldDescription></FieldContent>
-              </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
-                <Switch id="rolling-shutter-trajectory" size="sm" checked={settingsDraft.align.exportRollingShutterTrajectory} onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, exportRollingShutterTrajectory: checked } }))} />
-                <FieldContent><FieldLabel htmlFor="rolling-shutter-trajectory">輸出捲簾快門校正資料</FieldLabel><FieldDescription>輸出每列影像的相機姿態，供其他工具修正果凍效應；不會直接修改原始影像。</FieldDescription></FieldContent>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="orientation-prior-executable">自訂方向最佳化工具（選用）</FieldLabel>
-                <Input id="orientation-prior-executable" value={settingsDraft.align.orientationPriorExecutable} placeholder="通常留白即可" onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, orientationPriorExecutable: value } })); }} />
-                <FieldDescription>只有使用相容的外部工具時才需指定；一般 COLMAP 不支援完整的方向限制。</FieldDescription>
-              </Field>
+              <div className="rig-note"><Workflow /><span><strong>穩定重建</strong><small>固定使用跨檔視覺檢索與 incremental mapper</small></span></div>
               <Field orientation="horizontal" className="extract-filter-option" data-disabled={doctor.gpuAvailable === false || undefined}>
                 <Switch
                   id="use-gpu"

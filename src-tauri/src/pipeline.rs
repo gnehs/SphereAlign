@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 21;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 22;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -467,9 +467,7 @@ pub fn start_stage(
     request: StartStageRequest,
 ) -> Result<StartStageResponse, String> {
     let mut manifest = project::load(&request.project_path)?;
-    if let Some(settings) = request.settings.clone() {
-        merge_json(&mut manifest.settings, settings);
-    }
+    replace_stage_settings(&mut manifest.settings, request.settings.clone());
     reset_capabilities_for_stage_start(&mut manifest, &request.stage);
     project::save_manifest(&manifest)?;
     let id = job_id();
@@ -630,6 +628,12 @@ pub fn start_stage(
     Ok(response)
 }
 
+fn replace_stage_settings(current: &mut Value, incoming: Option<Value>) {
+    if let Some(incoming) = incoming {
+        *current = incoming;
+    }
+}
+
 fn reset_capabilities_for_stage_start(
     manifest: &mut project::ProjectManifest,
     stage: &StageName,
@@ -639,17 +643,6 @@ fn reset_capabilities_for_stage_start(
     // from the effective mapper and validated prior artifacts.
     if *stage == StageName::Align {
         manifest.capabilities.insert("imuApplied".to_owned(), false);
-    }
-}
-
-fn merge_json(target: &mut Value, incoming: Value) {
-    match (target, incoming) {
-        (Value::Object(target), Value::Object(incoming)) => {
-            for (key, value) in incoming {
-                merge_json(target.entry(key).or_insert(Value::Null), value);
-            }
-        }
-        (target, value) => *target = value,
     }
 }
 
@@ -740,7 +733,7 @@ fn mapper_mode(settings: &Value) -> Result<MapperMode, String> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("auto")
+        .unwrap_or("incremental")
         .to_ascii_lowercase()
         .as_str()
     {
@@ -6339,7 +6332,7 @@ fn run_align(
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
     let use_calibrated_fov_pairs =
-        setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", true);
+        setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", false);
     let pair_graph_started = Instant::now();
     let rig_frame_count =
         write_rig_and_pairs_with_options(
@@ -7020,7 +7013,7 @@ fn run_align(
         matching_started.elapsed().as_secs_f64() * 1000.0,
     );
     let calibrate_focal_prior =
-        setting_bool(&manifest.settings, "/align/calibrateFocalPrior", true);
+        setting_bool(&manifest.settings, "/align/calibrateFocalPrior", false);
     if calibrate_focal_before_bootstrap(
         calibrate_focal_prior,
         rig_preconfigured,
@@ -7756,7 +7749,7 @@ fn run_align(
     }
     let rig_extrinsics_ready = rig_config_has_complete_sensor_poses(&rig_configs);
     let auto_calibrate_telemetry =
-        setting_bool(&manifest.settings, "/align/autoCalibrateTelemetry", true);
+        setting_bool(&manifest.settings, "/align/autoCalibrateTelemetry", false);
     if requested_mapper_mode == MapperMode::Auto
         && mapper_mode == MapperMode::Incremental
         && auto_calibrate_telemetry
@@ -8247,7 +8240,7 @@ mod tests {
         parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
-        reset_capabilities_for_stage_start, restore_colmap_database_backup,
+        replace_stage_settings, reset_capabilities_for_stage_start, restore_colmap_database_backup,
         rollback_calibrated_pair_transaction,
         rig_bootstrap_shared_frame_count, rig_camera_rotations,
         rig_configs_from_camera_extrinsics,
@@ -8282,6 +8275,25 @@ mod tests {
         reset_capabilities_for_stage_start(&mut manifest, &StageName::Align);
 
         assert_eq!(manifest.capabilities.get("imuApplied"), Some(&false));
+    }
+
+    #[test]
+    fn stage_settings_replace_removed_experimental_options() {
+        let mut settings = json!({
+            "extract": { "keyframePruning": false },
+            "align": { "mapperMode": "global", "useGravityPrior": true }
+        });
+        let product_settings = json!({
+            "extract": { "baseFps": 3, "denseFps": 12, "skipBlurry": true },
+            "mask": { "classes": [], "maskSky": false },
+            "align": { "useGpu": true, "gpuIndex": "-1" }
+        });
+
+        replace_stage_settings(&mut settings, Some(product_settings.clone()));
+
+        assert_eq!(settings, product_settings);
+        assert!(settings.pointer("/align/mapperMode").is_none());
+        assert!(settings.pointer("/extract/keyframePruning").is_none());
     }
 
     #[test]
@@ -9733,8 +9745,8 @@ mod tests {
     }
 
     #[test]
-    fn mapper_mode_defaults_to_auto_and_rejects_unknown_values() {
-        assert_eq!(mapper_mode(&json!({})).unwrap(), MapperMode::Auto);
+    fn mapper_mode_defaults_to_incremental_and_rejects_unknown_values() {
+        assert_eq!(mapper_mode(&json!({})).unwrap(), MapperMode::Incremental);
         assert_eq!(
             mapper_mode(&json!({"align": {"mapperMode": "GLOBAL"}})).unwrap(),
             MapperMode::Global

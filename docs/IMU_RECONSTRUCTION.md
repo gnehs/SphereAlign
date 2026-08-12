@@ -14,11 +14,13 @@ GS360 Studio 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使�
 
 未知 rig 會先由 incremental bootstrap 估外參，再從 COLMAP database round-trip 回寫 `rig_config.json`，因此同一次執行即可繼續 calibration/global candidate。首次執行為了取得視覺 calibration seed，時間不會比直接 incremental 更短；後續有效 checkpoint 可直接使用 global path。
 
-## 主要設定
+## 產品設定
 
-`project.json` 的 `settings.align` 支援：
+一般 GS360 Studio 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面只保留影格率、清晰度過濾、遮罩及 GPU 選項；不再顯示或保存下列實驗設定。
 
-- `mapperMode`: `auto`、`incremental`、`global`。`global` 是 fail-closed，必須已有有效 marker；一般建議用 `auto`。
+A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
+
+- `mapperMode`: `auto`、`incremental`、`global`。產品預設為 `incremental`；`global` 是 fail-closed，必須已有有效 marker。
 - `useGravityPrior`: global rotation averaging 是否使用 gravity。
 - `autoCalibrateTelemetry`: 是否從 incremental seed 自動估時間與座標轉換。
 - `calibrateFocalPrior`: 是否執行 view graph focal calibration。

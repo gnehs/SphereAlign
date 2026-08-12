@@ -10,9 +10,9 @@
 - Global mapper：global positioning 從 100 小幅提高至 120 iterations；track completion/merge 從預設 15 px 收緊至 8 px，normalized reprojection gate 收緊至 `0.008`。
 - 不再對最終 incremental model 使用 `1.4` BA growth ratio 或 redundant landmark pruning。Bootstrap 仍保留較寬鬆的 COLMAP 預設，以免犧牲初始 rig calibration coverage。
 
-## 建議應用程式設定
+## 應用程式設定
 
-品質測試優先使用：
+產品固定使用已實測的 B 流程：
 
 - Keyframe pruning：開啟
 - min rotation：5°
@@ -20,12 +20,12 @@
 - max gap：600 ms
 - visual novelty：0.08
 - Visual retrieval：開啟
-- Mapper mode：`auto`
-- Gravity prior、Auto calibrate telemetry、Focal calibration、Calibrated FOV pairs：素材有足夠多軸旋轉時開啟
+- Mapper mode：`incremental`
+- Gravity prior、Auto calibrate telemetry、Focal calibration、Calibrated FOV pairs：關閉
 - Fixed rotation BA：先關閉
-- Rolling-shutter trajectory：開啟
+- Rolling-shutter trajectory：關閉
 
-這些參數會增加 Align 時間、database 大小、RAM 和 VRAM 使用量。實際品質仍應以相同 OSV 和相同 3DGS 設定比較 registered frames、3D points、median track length、median reprojection error、floaters、牆面變形和 coverage holes。
+上述實驗選項已從產品介面與一般任務設定移除；A／B／C benchmark CLI 仍可顯式建立隔離的研究專案。實際品質仍應以相同 OSV 和相同 3DGS 設定比較 registered frames、3D points、median track length、median reprojection error、floaters、牆面變形和 coverage holes。
 
 最初曾測試 16384 features、10-image local BA、100 次 global BA 與更嚴格的 3 px gate；在 15 秒 smoke capture 上，tuned final mapper 超過 10 分鐘仍未完成，而 baseline 整個 Align 約 101 秒。第二輪 12288 features、8-image local BA、70 次 global BA 仍在 final mapper 超過 5 分鐘，因此兩組激進設定均已回退，不應作為預設值。
 
