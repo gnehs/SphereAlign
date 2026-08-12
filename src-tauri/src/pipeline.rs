@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 20;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 21;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -671,6 +671,14 @@ enum MapperMode {
     Auto,
     Incremental,
     Global,
+}
+
+fn calibrate_focal_before_bootstrap(
+    requested: bool,
+    rig_preconfigured: bool,
+    has_existing_priors: bool,
+) -> bool {
+    requested && rig_preconfigured && !has_existing_priors
 }
 
 fn effective_mapper_matches_checkpoint(
@@ -7011,7 +7019,11 @@ fn run_align(
     );
     let calibrate_focal_prior =
         setting_bool(&manifest.settings, "/align/calibrateFocalPrior", true);
-    if calibrate_focal_prior && !has_valid_global_mapper_priors(&root, false) {
+    if calibrate_focal_before_bootstrap(
+        calibrate_focal_prior,
+        rig_preconfigured,
+        has_valid_global_mapper_priors(&root, false),
+    ) {
         if colmap_capabilities.view_graph_calibrator {
             let calibration_backup = root.join("metadata/.align-focal-calibration.backup");
             remove_align_artifact(&calibration_backup)?;
@@ -8222,7 +8234,8 @@ mod tests {
         evaluate_global_candidate_quality, extraction_completed_count, feature_extractor_args,
         global_mapper_args,
         global_mapper_prerequisite_error, has_valid_global_mapper_priors,
-        calibrated_pair_refresh_requires_fail_closed, effective_mapper_matches_checkpoint,
+        calibrate_focal_before_bootstrap, calibrated_pair_refresh_requires_fail_closed,
+        effective_mapper_matches_checkpoint,
         invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
@@ -8348,6 +8361,14 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|values| values == ["--default_random_seed", "0"]));
+    }
+
+    #[test]
+    fn unknown_rig_defers_focal_calibration_until_after_bootstrap() {
+        assert!(!calibrate_focal_before_bootstrap(true, false, false));
+        assert!(calibrate_focal_before_bootstrap(true, true, false));
+        assert!(!calibrate_focal_before_bootstrap(true, true, true));
+        assert!(!calibrate_focal_before_bootstrap(false, true, false));
     }
 
     #[test]
