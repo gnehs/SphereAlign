@@ -33,14 +33,14 @@
 
 移除 3.5 px gates 後的 tuned v2 仍只註冊 2/21 rig frames、119 points，median reprojection error 惡化至 227.0 px，Align 167.0 秒。因此正式 A/B/C 與未指定 profile 的專案均使用 baseline；tuned 僅留作可重現歷史實驗。
 
-## 原始 OSV 歷史 A/B/C 結果
+## 原始 OSV schema v2 single-pass A/B/C 結果
 
-第一版 CLI 的 output provenance、完整 rig 指標與 IMU/effective-mapper 報表定義有缺陷。下列數值只保留作歷史參考，必須以 schema v2 CLI 在 fresh output root 重跑，不能作為 release acceptance evidence。
+以 schema v2 CLI、fresh output root 與 single-pass mapper 流程重跑 `CAM_20260503151923_0031_D.OSV`。輸入 SHA-256 為 `35ef6ccb0813dbbb0858fa51650da4f8e2c274935599fee52046a0b20475e092`。
 
-以 `CAM_20260503151923_0031_D.OSV`（約 116.5 秒）實跑，三組都固定使用 baseline profile：
+三組固定使用 baseline profile：
 
-- A（無 pruning/retrieval）：3/350 rigs、202 points、median track 2、0.690 px，Align 1015.5 秒。
-- B（pruning + retrieval）：170/257 rigs、20542 points、median track 3、0.749 px，Align 1011.4 秒。
-- C（B + telemetry/focal/FOV/auto）：舊報表為 171/257 rigs、19920 points、median track 3、0.770 px、8 components，Align 1030.7 秒；舊版 `imuApplied=false` 來自初始化 capability，不能證明 IMU 未套用。
+- A（無 pruning/retrieval）：159/350 complete rigs、31,152 points、median track 3、0.726 px、2 components，Align 1,138.2 秒。
+- B（pruning + retrieval）：114/257 complete rigs、20,129 points、median track 3、0.747 px、1 component，Align 521.5 秒。
+- C（B + telemetry/focal/FOV/auto）：70/257 complete rigs、15,347 points、median track 3、0.682 px、1 component，Align 464.6 秒；此次 gravity prior 未套用、focal round-trip 驗證失敗。
 
-舊數據傾向 B，但正式推薦須等待修正版 CLI 重跑。歷史完整報告位於 `docs/COLMAP_ABC_RESULTS.md`。
+B 的 complete coverage 只比 A 少 1.1 個百分點，模型卻完全連通且 Align 快 54%，因此目前推薦 B 作預設。完整報告與第一版 CLI 歷史數據位於 `docs/COLMAP_ABC_RESULTS.md`。

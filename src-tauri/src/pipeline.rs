@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 12;
+const ALIGN_PIPELINE_REVISION: u32 = 13;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -3639,16 +3639,20 @@ fn rig_config_has_complete_sensor_poses(configs: &[RigBootstrapConfig]) -> bool 
 enum RigMappingPlan {
     /// Configure the known rig before matching, then run exactly one mapper.
     PreconfiguredSinglePass,
-    /// Reconstruct independent cameras, derive the rig, then map again.
-    BootstrapThenFinal,
+    /// Run one mapper with independent cameras, then convert that model to a rig.
+    BootstrapThenConfigure,
 }
 
 fn rig_mapping_plan(configs: &[RigBootstrapConfig]) -> RigMappingPlan {
     if rig_config_has_complete_sensor_poses(configs) {
         RigMappingPlan::PreconfiguredSinglePass
     } else {
-        RigMappingPlan::BootstrapThenFinal
+        RigMappingPlan::BootstrapThenConfigure
     }
+}
+
+fn mapper_still_required_after_rig_setup(plan: RigMappingPlan) -> bool {
+    plan == RigMappingPlan::PreconfiguredSinglePass
 }
 
 /// Extract registered image names from COLMAP's text sparse-model format.
@@ -5088,6 +5092,39 @@ fn matches_importer_args(
     args
 }
 
+fn commit_configured_rig_model(configured_model: &Path, sparse_root: &Path) -> Result<(), String> {
+    let required = ["rigs", "cameras", "frames", "images", "points3D"];
+    if !configured_model.is_dir()
+        || required.iter().any(|name| {
+            !["bin", "txt"].iter().any(|extension| {
+                fs::metadata(configured_model.join(format!("{name}.{extension}")))
+                    .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+            })
+        })
+    {
+        return Err(format!(
+            "COLMAP rig configurator 輸出不完整：{}",
+            configured_model.display()
+        ));
+    }
+
+    remove_align_artifact(sparse_root)?;
+    fs::create_dir_all(sparse_root)
+        .map_err(|error| format!("無法建立最終 sparse 模型資料夾：{error}"))?;
+    let target = sparse_root.join("0");
+    if let Err(error) = fs::rename(configured_model, &target) {
+        let cleanup = remove_align_artifact(sparse_root)
+            .err()
+            .map(|value| format!("；{value}"))
+            .unwrap_or_default();
+        return Err(format!(
+            "無法提交 rig configurator 模型 {}：{error}{cleanup}",
+            target.display()
+        ));
+    }
+    Ok(())
+}
+
 fn mapper_gpu_index(gpu_index: &str) -> &str {
     gpu_index.split(',').next().unwrap_or("-1")
 }
@@ -6306,7 +6343,7 @@ fn run_align(
                 "info",
                 "已還原套用相機組前的 COLMAP 資料庫，可沿用特徵與配對重試",
             );
-        } else if preserve_database && rig_mapping_plan == RigMappingPlan::BootstrapThenFinal {
+        } else if preserve_database && rig_mapping_plan == RigMappingPlan::BootstrapThenConfigure {
             match database_has_nontrivial_rig(&db) {
                 Ok(false) => {}
                 Ok(true) => {
@@ -6758,7 +6795,7 @@ fn run_align(
         );
     }
     let mapping_started = Instant::now();
-    if rig_mapping_plan == RigMappingPlan::BootstrapThenFinal {
+    if rig_mapping_plan == RigMappingPlan::BootstrapThenConfigure {
         emit_progress_detailed(
             app,
             id,
@@ -7028,11 +7065,13 @@ fn run_align(
                 control,
             )
         });
-        let configured_cleanup = remove_align_artifact(&configured_bootstrap);
-        let calibrated_sensor_count = match (configure_result, configured_cleanup) {
-            (Ok(count), Ok(())) => count,
-            (Err(error), cleanup) => {
-                let configured_cleanup_detail = cleanup
+        let calibrated_sensor_count = match configure_result {
+            Ok(count) => {
+                commit_configured_rig_model(&configured_bootstrap, &sparse)?;
+                count
+            }
+            Err(error) => {
+                let configured_cleanup_detail = remove_align_artifact(&configured_bootstrap)
                     .err()
                     .map(|value| format!("；{value}"))
                     .unwrap_or_default();
@@ -7061,7 +7100,6 @@ fn run_align(
                     }
                 }
             }
-            (Ok(_), Err(error)) => return Err(error),
         };
         rig_configs = persist_rig_config_from_database(&root, &db)?;
         if !rig_config_has_complete_sensor_poses(&rig_configs) {
@@ -7073,32 +7111,12 @@ fn run_align(
             "info",
             format!("已驗證 {calibrated_sensor_count} 個 non-reference sensor 的相機組外參"),
         );
-        match refresh_calibrated_pair_matches(
+        emit_log(
             app,
             id,
-            &root,
-            &colmap,
-            &db,
-            &gpu_index,
-            feature_matching_gpu,
-            use_calibrated_fov_pairs,
-            quality_profile,
-            control,
-        ) {
-            Ok(true) => emit_log(
-                app,
-                id,
-                "info",
-                "相機組外參完成後已加入 temporal rescue pairs 並重新 matching",
-            ),
-            Ok(false) => {}
-            Err(error) => emit_log(
-                app,
-                id,
-                "warning",
-                format!("相機組校正後 temporal rescue pair refresh 失敗，沿用原配對：{error}"),
-            ),
-        }
+            "info",
+            "相機組外參完成後直接沿用已驗證模型；不再改寫 matching graph 或啟動第二次 mapper",
+        );
         emit_colmap_step_completed(
             app,
             id,
@@ -7131,7 +7149,9 @@ fn run_align(
             "preconfigured rig",
         );
     }
-    emit_progress_detailed(
+    let mut effective_final_mapper_component = "bootstrap_mapper";
+    if mapper_still_required_after_rig_setup(rig_mapping_plan) {
+        emit_progress_detailed(
         app,
         id,
         &StageName::Align,
@@ -7292,13 +7312,41 @@ fn run_align(
         "info",
         format!("已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"),
     );
-    let mut effective_final_mapper_component = final_mapper_component;
+        effective_final_mapper_component = final_mapper_component;
+    } else {
+        if !sparse_rig_model_exists(&sparse) {
+            return Err(
+                "COLMAP rig configurator 完成但未提交含 rigs/frames 的 sparse model".to_owned(),
+            );
+        }
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Align,
+            "final-mapping",
+            4.0 / 5.0,
+            "沿用第一次 mapper 的 rig 模型",
+            "running",
+            false,
+            None,
+            None,
+            Some("bootstrap_mapper".to_owned()),
+            None,
+        );
+        emit_log(
+            app,
+            id,
+            "info",
+            "已直接提交 rig configurator 轉換後的 bootstrap 模型；不再從零執行第二次 mapper",
+        );
+    }
     let rig_extrinsics_ready = rig_config_has_complete_sensor_poses(&rig_configs);
     let auto_calibrate_telemetry =
         setting_bool(&manifest.settings, "/align/autoCalibrateTelemetry", true);
     if requested_mapper_mode == MapperMode::Auto
         && mapper_mode == MapperMode::Incremental
         && auto_calibrate_telemetry
+        && rig_preconfigured
         && rig_extrinsics_ready
         && colmap_capabilities.global_mapper
         && colmap_capabilities.global_mapper_gravity
@@ -7661,7 +7709,8 @@ mod tests {
         can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_step_progress,
-        complete_registered_dual_fisheye_frames, create_colmap_database_backup,
+        commit_configured_rig_model, complete_registered_dual_fisheye_frames,
+        create_colmap_database_backup,
         cross_source_pair_lines,
         colmap_quality_profile, ColmapQualityProfile,
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
@@ -7670,7 +7719,8 @@ mod tests {
         invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
-        mapper_gpu_index, mapper_mode, mask_classes, mask_confidence, mask_enabled,
+        mapper_gpu_index, mapper_mode, mapper_still_required_after_rig_setup, mask_classes,
+        mask_confidence, mask_enabled,
         matches_importer_args, merge_pair_lists, parse_feature_name, parse_feature_progress,
         parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
@@ -8030,15 +8080,45 @@ mod tests {
         let prefixes = BTreeSet::from(["lens0/".to_owned(), "lens1/".to_owned()]);
         assert_eq!(
             rig_mapping_plan(std::slice::from_ref(&config)),
-            RigMappingPlan::BootstrapThenFinal,
-            "unknown sensor extrinsics require bootstrap and final mapper passes"
+            RigMappingPlan::BootstrapThenConfigure,
+            "unknown sensor extrinsics require one mapper followed by rig conversion"
         );
+        assert!(!mapper_still_required_after_rig_setup(
+            RigMappingPlan::BootstrapThenConfigure
+        ));
+        assert!(mapper_still_required_after_rig_setup(
+            RigMappingPlan::PreconfiguredSinglePass
+        ));
         let registered = registered_rig_image_names(
             "# images\n1 1 0 0 0 0 0 0 1 lens0/frame one.png\n0 0 -1\n2 1 0 0 0 0 0 0 2 lens1/frame one.png\n0 0 -1\n",
             &prefixes,
         );
         let summary = validate_rig_bootstrap_registration(&[config], &registered).unwrap();
         assert!(summary.contains("1 組共同影格"));
+    }
+
+    #[test]
+    fn configured_bootstrap_model_is_committed_without_a_second_mapper() {
+        let temp = TempDir::new().unwrap();
+        let configured = temp.path().join("configured");
+        let sparse = temp.path().join("sparse");
+        fs::create_dir_all(&configured).unwrap();
+        fs::create_dir_all(sparse.join("old")).unwrap();
+        fs::write(sparse.join("old/stale.bin"), b"stale").unwrap();
+        for name in ["rigs", "cameras", "frames", "images", "points3D"] {
+            fs::write(configured.join(format!("{name}.bin")), name.as_bytes()).unwrap();
+        }
+
+        commit_configured_rig_model(&configured, &sparse).unwrap();
+
+        assert!(!configured.exists());
+        assert!(!sparse.join("old").exists());
+        for name in ["rigs", "cameras", "frames", "images", "points3D"] {
+            assert_eq!(
+                fs::read(sparse.join("0").join(format!("{name}.bin"))).unwrap(),
+                name.as_bytes()
+            );
+        }
     }
 
     #[test]
@@ -9275,7 +9355,7 @@ mod tests {
         assert!(!rig_config_has_complete_sensor_poses(&configs));
         assert_eq!(
             rig_mapping_plan(&configs),
-            RigMappingPlan::BootstrapThenFinal,
+            RigMappingPlan::BootstrapThenConfigure,
             "physical lenses without measured extrinsics require calibration"
         );
         assert_eq!(configs[0].cameras[1].cam_from_rig_rotation, None);
@@ -9300,7 +9380,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             rig_mapping_plan(&configs),
-            RigMappingPlan::BootstrapThenFinal
+            RigMappingPlan::BootstrapThenConfigure
         );
         assert!(!configs[0].cameras[1].has_explicit_pose());
     }

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "run": "v3-single-pass-20260812-abc",
+  "input": {
+    "name": "CAM_20260503151923_0031_D.OSV",
+    "size": 2112122969,
+    "modifiedNanos": "1786378947533441200",
+    "sha256": "35ef6ccb0813dbbb0858fa51650da4f8e2c274935599fee52046a0b20475e092"
+  },
+  "colmap": "4.1.1 CUDA/cuDSS Caspar GUI build",
+  "gpuIndex": "0",
+  "qualityProfile": "baseline",
+  "mappingSemantics": "one mapper followed by rig_configurator model conversion",
+  "results": [
+    {
+      "variant": "A",
+      "selectedRigFrames": 350,
+      "anyRegisteredRigFrames": 214,
+      "completeRegisteredRigFrames": 159,
+      "completeRegisteredPercent": 45.42857142857143,
+      "pairCount": 7128,
+      "points3d": 31152,
+      "medianTrackLength": 3.0,
+      "medianReprojectionErrorPx": 0.7256561851017382,
+      "connectedComponents": 2,
+      "largestComponentImages": 323,
+      "extractMs": 399613,
+      "alignMs": 1138187,
+      "effectiveMapper": "bootstrap_mapper",
+      "gravityPriorApplied": false
+    },
+    {
+      "variant": "B",
+      "selectedRigFrames": 257,
+      "anyRegisteredRigFrames": 155,
+      "completeRegisteredRigFrames": 114,
+      "completeRegisteredPercent": 44.3579766536965,
+      "pairCount": 5281,
+      "points3d": 20129,
+      "medianTrackLength": 3.0,
+      "medianReprojectionErrorPx": 0.7471000356318843,
+      "connectedComponents": 1,
+      "largestComponentImages": 269,
+      "extractMs": 396097,
+      "alignMs": 521540,
+      "effectiveMapper": "bootstrap_mapper",
+      "gravityPriorApplied": false
+    },
+    {
+      "variant": "C",
+      "selectedRigFrames": 257,
+      "anyRegisteredRigFrames": 113,
+      "completeRegisteredRigFrames": 70,
+      "completeRegisteredPercent": 27.237354085603112,
+      "pairCount": 5281,
+      "points3d": 15347,
+      "medianTrackLength": 3.0,
+      "medianReprojectionErrorPx": 0.6819461133917765,
+      "connectedComponents": 1,
+      "largestComponentImages": 183,
+      "extractMs": 401132,
+      "alignMs": 464573,
+      "effectiveMapper": "bootstrap_mapper",
+      "gravityPriorApplied": false
+    }
+  ]
+}
