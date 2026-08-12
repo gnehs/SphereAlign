@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "attempted": true,
-  "status": "accepted",
-  "gravityPriorRequested": true,
-  "seedCompleteRegisteredRigFrames": 157,
-  "candidateCompleteRegisteredRigFrames": 363,
-  "effectiveMapper": "global_mapper"
-}

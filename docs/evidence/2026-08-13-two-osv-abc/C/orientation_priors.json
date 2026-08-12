@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "format": "gs360.orientation-prior-index/v1",
+  "calibrationVersion": "imu-hand-eye-v1-a58b0aae2936a5b5",
+  "sourceManifests": [
+    "orientation_priors_source000.json",
+    "orientation_priors_source001.json"
+  ],
+  "validSourceCount": 2
+}

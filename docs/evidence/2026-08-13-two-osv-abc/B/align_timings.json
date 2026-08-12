@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "phaseDurationsMs": {
+    "alignTotal": 1675660.0648,
+    "featureExtraction": 250242.0601,
+    "mapping": 1385435.5458,
+    "matching": 34157.1586,
+    "pairGraph": 3805.4272
+  },
+  "effectiveMapper": "bootstrap_mapper"
+}

@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 1,
+  "calibrationVersion": "imu-hand-eye-v1-a58b0aae2936a5b5",
+  "validSourceCount": 2,
+  "sourceCount": 2,
+  "sources": [
+    {
+      "sourceId": "source000",
+      "visualModel": "bootstrap/0",
+      "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+      "visualSampleCount": 168,
+      "telemetrySampleCount": 100290,
+      "model": {
+        "schemaVersion": 1,
+        "valid": true,
+        "timeOffsetMs": 15.0,
+        "sensorToCameraQuaternion": [
+          -0.007021545455856878,
+          0.0013957211645160565,
+          -0.008623150952925242,
+          -0.9999371935924203
+        ],
+        "residualDeg": 1.2484204337081057,
+        "maxResidualDeg": 14.816020712349193,
+        "correlation": 0.7957246084980779,
+        "coverageStartMs": 250.0,
+        "coverageEndMs": 100667.0,
+        "pairedSampleCount": 167,
+        "visualExcitationDeg": 1244.7820124710013,
+        "telemetryExcitationDeg": 1799.681374240513,
+        "handEyeExcitationDeg": 1234.2544360211052,
+        "axisDiversity": 0.999999996826791,
+        "telemetryOrientationConvention": "inverted",
+        "reason": null
+      },
+      "candidates": [
+        {
+          "visualModel": "selected-seed",
+          "visualSampleCount": 168,
+          "model": {
+            "schemaVersion": 1,
+            "valid": true,
+            "timeOffsetMs": 10.0,
+            "sensorToCameraQuaternion": [
+              0.008445517458552852,
+              0.010687996021074755,
+              0.007176307907767189,
+              0.9998814632648831
+            ],
+            "residualDeg": 2.2497507469646787,
+            "maxResidualDeg": 16.367787644668812,
+            "correlation": 0.73567659032512,
+            "coverageStartMs": 250.0,
+            "coverageEndMs": 100667.0,
+            "pairedSampleCount": 167,
+            "visualExcitationDeg": 1285.455835360499,
+            "telemetryExcitationDeg": 1799.681374240513,
+            "handEyeExcitationDeg": 1232.0869926444514,
+            "axisDiversity": 0.9999999937879595,
+            "telemetryOrientationConvention": "inverted",
+            "reason": null
+          }
+        },
+        {
+          "visualModel": "bootstrap/0",
+          "visualSampleCount": 168,
+          "model": {
+            "schemaVersion": 1,
+            "valid": true,
+            "timeOffsetMs": 15.0,
+            "sensorToCameraQuaternion": [
+              -0.007021545455856878,
+              0.0013957211645160565,
+              -0.008623150952925242,
+              -0.9999371935924203
+            ],
+            "residualDeg": 1.2484204337081057,
+            "maxResidualDeg": 14.816020712349193,
+            "correlation": 0.7957246084980779,
+            "coverageStartMs": 250.0,
+            "coverageEndMs": 100667.0,
+            "pairedSampleCount": 167,
+            "visualExcitationDeg": 1244.7820124710013,
+            "telemetryExcitationDeg": 1799.681374240513,
+            "handEyeExcitationDeg": 1234.2544360211052,
+            "axisDiversity": 0.999999996826791,
+            "telemetryOrientationConvention": "inverted",
+            "reason": null
+          }
+        }
+      ]
+    },
+    {
+      "sourceId": "source001",
+      "visualModel": "bootstrap/1",
+      "telemetrySha256": "a374e1aa4a4c16dc3aca2404ead76d561b36609b4dc9a7168044969958aac7d6",
+      "visualSampleCount": 45,
+      "telemetrySampleCount": 163318,
+      "model": {
+        "schemaVersion": 1,
+        "valid": true,
+        "timeOffsetMs": -10.0,
+        "sensorToCameraQuaternion": [
+          0.0024288464236145676,
+          -0.009416649306647007,
+          -0.0023673853640836934,
+          0.9999499101992181
+        ],
+        "residualDeg": 1.5016833526534332,
+        "maxResidualDeg": 3.01519951549908,
+        "correlation": 0.9053736973253773,
+        "coverageStartMs": 72833.29999999999,
+        "coverageEndMs": 92250.0,
+        "pairedSampleCount": 44,
+        "visualExcitationDeg": 678.1689439872723,
+        "telemetryExcitationDeg": 6789.602540863755,
+        "handEyeExcitationDeg": 676.7039014828558,
+        "axisDiversity": 0.9999999385426099,
+        "telemetryOrientationConvention": "inverted",
+        "reason": null
+      },
+      "candidates": [
+        {
+          "visualModel": "bootstrap/1",
+          "visualSampleCount": 45,
+          "model": {
+            "schemaVersion": 1,
+            "valid": true,
+            "timeOffsetMs": -10.0,
+            "sensorToCameraQuaternion": [
+              0.0024288464236145676,
+              -0.009416649306647007,
+              -0.0023673853640836934,
+              0.9999499101992181
+            ],
+            "residualDeg": 1.5016833526534332,
+            "maxResidualDeg": 3.01519951549908,
+            "correlation": 0.9053736973253773,
+            "coverageStartMs": 72833.29999999999,
+            "coverageEndMs": 92250.0,
+            "pairedSampleCount": 44,
+            "visualExcitationDeg": 678.1689439872723,
+            "telemetryExcitationDeg": 6789.602540863755,
+            "handEyeExcitationDeg": 676.7039014828558,
+            "axisDiversity": 0.9999999385426099,
+            "telemetryOrientationConvention": "inverted",
+            "reason": null
+          }
+        },
+        {
+          "visualModel": "bootstrap/2",
+          "visualSampleCount": 120,
+          "model": {
+            "schemaVersion": 1,
+            "valid": false,
+            "timeOffsetMs": null,
+            "sensorToCameraQuaternion": null,
+            "residualDeg": null,
+            "maxResidualDeg": null,
+            "correlation": null,
+            "coverageStartMs": null,
+            "coverageEndMs": null,
+            "pairedSampleCount": 0,
+            "visualExcitationDeg": null,
+            "telemetryExcitationDeg": null,
+            "handEyeExcitationDeg": null,
+            "axisDiversity": null,
+            "telemetryOrientationConvention": null,
+            "reason": "hand-eye residual is too high: 24.5668° > 8.0000°"
+          }
+        },
+        {
+          "visualModel": "bootstrap/3",
+          "visualSampleCount": 116,
+          "model": {
+            "schemaVersion": 1,
+            "valid": false,
+            "timeOffsetMs": null,
+            "sensorToCameraQuaternion": null,
+            "residualDeg": null,
+            "maxResidualDeg": null,
+            "correlation": null,
+            "coverageStartMs": null,
+            "coverageEndMs": null,
+            "pairedSampleCount": 0,
+            "visualExcitationDeg": null,
+            "telemetryExcitationDeg": null,
+            "handEyeExcitationDeg": null,
+            "axisDiversity": null,
+            "telemetryOrientationConvention": null,
+            "reason": "hand-eye residual is too high: 14.4374° > 8.0000°"
+          }
+        },
+        {
+          "visualModel": "bootstrap/5",
+          "visualSampleCount": 1,
+          "model": {
+            "schemaVersion": 1,
+            "valid": false,
+            "timeOffsetMs": null,
+            "sensorToCameraQuaternion": null,
+            "residualDeg": null,
+            "maxResidualDeg": null,
+            "correlation": null,
+            "coverageStartMs": null,
+            "coverageEndMs": null,
+            "pairedSampleCount": 0,
+            "visualExcitationDeg": null,
+            "telemetryExcitationDeg": null,
+            "handEyeExcitationDeg": null,
+            "axisDiversity": null,
+            "telemetryOrientationConvention": null,
+            "reason": "insufficient calibration samples: 1 < 8"
+          }
+        },
+        {
+          "visualModel": "bootstrap/6",
+          "visualSampleCount": 45,
+          "model": {
+            "schemaVersion": 1,
+            "valid": false,
+            "timeOffsetMs": null,
+            "sensorToCameraQuaternion": null,
+            "residualDeg": null,
+            "maxResidualDeg": null,
+            "correlation": null,
+            "coverageStartMs": null,
+            "coverageEndMs": null,
+            "pairedSampleCount": 0,
+            "visualExcitationDeg": null,
+            "telemetryExcitationDeg": null,
+            "handEyeExcitationDeg": null,
+            "axisDiversity": null,
+            "telemetryOrientationConvention": null,
+            "reason": "hand-eye residual is too high: 17.5319° > 8.0000°"
+          }
+        },
+        {
+          "visualModel": "bootstrap/8",
+          "visualSampleCount": 2,
+          "model": {
+            "schemaVersion": 1,
+            "valid": false,
+            "timeOffsetMs": null,
+            "sensorToCameraQuaternion": null,
+            "residualDeg": null,
+            "maxResidualDeg": null,
+            "correlation": null,
+            "coverageStartMs": null,
+            "coverageEndMs": null,
+            "pairedSampleCount": 0,
+            "visualExcitationDeg": null,
+            "telemetryExcitationDeg": null,
+            "handEyeExcitationDeg": null,
+            "axisDiversity": null,
+            "telemetryOrientationConvention": null,
+            "reason": "insufficient calibration samples: 2 < 8"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+    "schemaVersion":  1,
+    "artifacts":  [
+                      {
+                          "path":  "A/align_timings.json",
+                          "size":  252,
+                          "sha256":  "26bfbdebfd598243b78a0a47bd19a0ef730927761ba5eb35d32f5630773bbb49"
+                      },
+                      {
+                          "path":  "A/benchmark_a_current.json",
+                          "size":  55477,
+                          "sha256":  "436ca78926adb881d6ddc0c8d925102cbdb6b174439a982beb099be2f29dbb6f"
+                      },
+                      {
+                          "path":  "abc-comparison.md",
+                          "size":  1123,
+                          "sha256":  "2eccd0d787a7dd489e0af9a71ee69e790c96c76e51ec0fc269c8c911e94f4266"
+                      },
+                      {
+                          "path":  "abc-summary.json",
+                          "size":  3637,
+                          "sha256":  "ce50a26fd61e3c7b299140181c8e88a9a44e1d1b3296273a706169744640d2d9"
+                      },
+                      {
+                          "path":  "B/align_timings.json",
+                          "size":  248,
+                          "sha256":  "5d3b6fa923e9cd2466b12c640b09d9784d0f599e01bc4baa4d7e877e4a1a3d02"
+                      },
+                      {
+                          "path":  "B/benchmark_b_imu_pruning.json",
+                          "size":  41287,
+                          "sha256":  "cc5c0696d319a337f85a8f791818391a13f787316b690b1a6238bc8aadfaf15d"
+                      },
+                      {
+                          "path":  "B/cross_source_retrieval.json",
+                          "size":  4722,
+                          "sha256":  "96e1137a39fc3ee834222853e110668e3ad6a65d9ccfeb848b8b67af21995ad4"
+                      },
+                      {
+                          "path":  "C/align_timings.json",
+                          "size":  245,
+                          "sha256":  "77fda331fb146025515eea820c9caadfb0623bc9074a5b626572ab11551c33f3"
+                      },
+                      {
+                          "path":  "C/benchmark_b_imu_pruning.json",
+                          "size":  41210,
+                          "sha256":  "aba26c1a6f123e8dd0a1803ce89df78776ee718bea334de367edc1fe66cdf40c"
+                      },
+                      {
+                          "path":  "C/cross_source_retrieval.json",
+                          "size":  4722,
+                          "sha256":  "96e1137a39fc3ee834222853e110668e3ad6a65d9ccfeb848b8b67af21995ad4"
+                      },
+                      {
+                          "path":  "C/global_mapper_candidate.json",
+                          "size":  1259,
+                          "sha256":  "aa2a7c7752f4a81bf45998668c01f8a61390b4920c617277d8d22b8d9741d730"
+                      },
+                      {
+                          "path":  "C/global_mapper_priors.json",
+                          "size":  495,
+                          "sha256":  "7d4c5dde772aff2e10118cee3b6dc4d29ed81f42623309a17dac38fe79c31184"
+                      },
+                      {
+                          "path":  "C/imu_calibration.json",
+                          "size":  9072,
+                          "sha256":  "758d2f3d023a3a169d955bc8eca60e84f4eb8adc2e8d1f3757baa25187916a69"
+                      },
+                      {
+                          "path":  "C/orientation_priors.json",
+                          "size":  266,
+                          "sha256":  "d2fd907c41377f74c6227d335f111fef5591003d611fcf8ce855be5198cdb43f"
+                      },
+                      {
+                          "path":  "C/orientation_priors_source000.json",
+                          "size":  122463,
+                          "sha256":  "efdc36983410f353d71343317c4319da3a465475615b24541ff71dbc68a167f0"
+                      },
+                      {
+                          "path":  "C/orientation_priors_source001.json",
+                          "size":  263209,
+                          "sha256":  "3fb7f388177bde607a46cb9e84a2942df049c718f9ed45eff42d5af560b4df14"
+                      },
+                      {
+                          "path":  "C/rolling_shutter_source000.json",
+                          "size":  667840,
+                          "sha256":  "78230ec74fc63af30289fd6945640fd0a72ed29aae8d8b9eca745c786c55f001"
+                      },
+                      {
+                          "path":  "C/rolling_shutter_source001.json",
+                          "size":  1442521,
+                          "sha256":  "6e21609664e4b33c6816a92fd9159acec3c025e74881ea54b54bd69c7d9fb0ec"
+                      },
+                      {
+                          "path":  "cli-events.jsonl",
+                          "size":  4058369,
+                          "sha256":  "9971e2858b3ba7d583ba1d833d0997e746099f4c8aca1f7f22114f30f1dae683"
+                      },
+                      {
+                          "path":  "README.md",
+                          "size":  3012,
+                          "sha256":  "ae31828ba0fc400495331065eff79a6d59f92bb127b880456421b2abc90df32e"
+                      },
+                      {
+                          "path":  "run-provenance.json",
+                          "size":  1062,
+                          "sha256":  "f1a6910cc40dd0f08f374aeaacfaf23a8a1037acf55413a5ee530f2f13b6d61e"
+                      }
+                  ]
+}

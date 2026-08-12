@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "attempted": true,
+  "status": "rejected",
+  "gravityPriorRequested": true,
+  "seedCompleteRegisteredRigFrames": 166,
+  "qualityGate": {
+    "accepted": false,
+    "seed": {
+      "completeRegisteredRigFrames": 166,
+      "registeredImageCount": 334,
+      "points3dCount": 64043,
+      "medianTrackLength": 4.0,
+      "medianReprojectionErrorPx": 0.708105832995497,
+      "connectedComponentCount": 1,
+      "largestConnectedComponentImageCount": 334,
+      "largestComponentCoverageRatio": 1.0
+    },
+    "candidate": {
+      "completeRegisteredRigFrames": 363,
+      "registeredImageCount": 726,
+      "points3dCount": 52147,
+      "medianTrackLength": 4.0,
+      "medianReprojectionErrorPx": 0.7235489268093112,
+      "connectedComponentCount": 6,
+      "largestConnectedComponentImageCount": 311,
+      "largestComponentCoverageRatio": 0.4283746556473829
+    },
+    "issues": [
+      "largest-component coverage regressed: 0.428 < 1.000 - 0.100",
+      "connected components increased abnormally: 6 > 1 + 2"
+    ]
+  },
+  "effectiveMapper": "bootstrap_mapper",
+  "error": "global candidate quality gate rejected: largest-component coverage regressed: 0.428 < 1.000 - 0.100; connected components increased abnormally: 6 > 1 + 2"
+}

@@ -3546,10 +3546,12 @@ fn write_rig_and_pairs_with_options(
         )
         .collect::<Vec<_>>();
     let retrieval_report = (include_cross_source_pairs && use_visual_retrieval).then(|| {
-        crate::visual_retrieval::retrieve_cross_source_candidates(
+        let mut report = crate::visual_retrieval::retrieve_cross_source_candidates(
             &retrieval_sources,
             &crate::visual_retrieval::RetrievalConfig::default(),
-        )
+        );
+        report.make_paths_relative_to(root);
+        report
     });
     let use_legacy_cross_source = include_cross_source_pairs
         && retrieval_report

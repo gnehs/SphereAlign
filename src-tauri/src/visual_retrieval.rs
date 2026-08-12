@@ -384,6 +384,25 @@ impl RetrievalReport {
             .iter()
             .flat_map(|pair| pair.matches.iter())
     }
+
+    pub fn make_paths_relative_to(&mut self, root: &Path) {
+        fn relative(path: &Path, root: &Path) -> PathBuf {
+            path.strip_prefix(root)
+                .map(Path::to_path_buf)
+                .or_else(|_| path.file_name().map(PathBuf::from).ok_or(()))
+                .unwrap_or_else(|_| PathBuf::from("redacted"))
+        }
+
+        for pair in &mut self.source_pairs {
+            for candidate in &mut pair.matches {
+                candidate.path_a = relative(&candidate.path_a, root);
+                candidate.path_b = relative(&candidate.path_b, root);
+            }
+        }
+        for failure in &mut self.failed_descriptors {
+            failure.path = relative(&failure.path, root);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -896,12 +915,14 @@ mod tests {
 
     #[test]
     fn retrieval_falls_back_when_every_descriptor_fails() {
-        let report = retrieve_cross_source_candidates(
+        let directory = tempdir().unwrap();
+        let absolute = directory.path().join("missing.jpg");
+        let mut report = retrieve_cross_source_candidates(
             &[RetrievalSource {
                 source_id: "bad".to_owned(),
                 anchors: vec![RetrievalAnchor {
                     frame_id: "bad".to_owned(),
-                    path: PathBuf::from("/definitely/missing/image.jpg"),
+                    path: absolute,
                     timestamp_ms: None,
                 }],
             }],
@@ -910,6 +931,8 @@ mod tests {
         assert!(report.fallback_to_legacy);
         assert!(report.source_pairs.is_empty());
         assert_eq!(report.failed_descriptors.len(), 1);
+        report.make_paths_relative_to(directory.path());
+        assert_eq!(report.failed_descriptors[0].path, PathBuf::from("missing.jpg"));
     }
 
     #[test]

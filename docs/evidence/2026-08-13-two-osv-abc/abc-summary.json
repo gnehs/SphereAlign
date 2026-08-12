@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 4,
+  "runId": "abc-1786549692603525700-24056",
+  "inputs": [
+    "CAM_20260224122138_0020_D.OSV",
+    "CAM_20260503151520_0030_D.OSV"
+  ],
+  "inputProvenance": [
+    {
+      "path": "CAM_20260224122138_0020_D.OSV",
+      "size": 1815292926,
+      "modifiedNanos": "1786507827092688600",
+      "sha256": "63b97b1c49da2c635a22db87f18f992dac9f832b18b3ead08f7d93ea49369422"
+    },
+    {
+      "path": "CAM_20260503151520_0030_D.OSV",
+      "size": 2979506083,
+      "modifiedNanos": "1786507895361037700",
+      "sha256": "bc1643d73966d85ffe15a28c30cbf57811f624336ea807e061d7ddf99eb71c3e"
+    }
+  ],
+  "colmap": {
+    "path": "colmap.exe",
+    "size": 146964992,
+    "sha256": "044874e23516a84e2a09510070d1413133394aabd605db02abbb1251fe992a9b"
+  },
+  "sourceRevision": {
+    "gitCommit": "29972618e04527bf8f153622817c161cea8466f2",
+    "gitDirty": false
+  },
+  "alignPipelineRevision": 21,
+  "gpuIndex": "0",
+  "profileOverride": null,
+  "results": [
+    {
+      "variant": "A",
+      "requestedVariant": "A",
+      "effectiveBenchmarkVariant": "a_current",
+      "projectPath": "A",
+      "qualityProfile": "baseline",
+      "elapsedMs": 3960529,
+      "benchmarkPaths": [
+        "A/metadata/benchmark_a_current.json"
+      ],
+      "metrics": {
+        "selectedRigFrames": 796,
+        "anyRegisteredRigFrames": 303,
+        "completeRegisteredRigFrames": 295,
+        "completeRegisteredPercent": 37.06030150753769,
+        "pairCount": 17320,
+        "points3d": 150119,
+        "medianTrackLength": 4.0,
+        "medianReprojectionErrorPx": 0.7447998332801965,
+        "connectedComponents": 1,
+        "largestComponentImages": 598,
+        "extractMs": 829503,
+        "alignMs": 3130926,
+        "effectiveMapper": "bootstrap_mapper",
+        "gravityPriorApplied": false,
+        "gravityCoverageRatio": null
+      }
+    },
+    {
+      "variant": "B",
+      "requestedVariant": "B",
+      "effectiveBenchmarkVariant": "b_imu_pruning",
+      "projectPath": "B",
+      "qualityProfile": "baseline",
+      "elapsedMs": 2511048,
+      "benchmarkPaths": [
+        "B/metadata/benchmark_b_imu_pruning.json"
+      ],
+      "metrics": {
+        "selectedRigFrames": 531,
+        "anyRegisteredRigFrames": 168,
+        "completeRegisteredRigFrames": 164,
+        "completeRegisteredPercent": 30.88512241054614,
+        "pairCount": 10741,
+        "points3d": 58875,
+        "medianTrackLength": 4.0,
+        "medianReprojectionErrorPx": 0.7026709093994999,
+        "connectedComponents": 1,
+        "largestComponentImages": 332,
+        "extractMs": 829431,
+        "alignMs": 1681318,
+        "effectiveMapper": "bootstrap_mapper",
+        "gravityPriorApplied": false,
+        "gravityCoverageRatio": null
+      }
+    },
+    {
+      "variant": "C",
+      "requestedVariant": "C",
+      "effectiveBenchmarkVariant": "b_imu_pruning",
+      "projectPath": "C",
+      "qualityProfile": "baseline",
+      "elapsedMs": 2880447,
+      "benchmarkPaths": [
+        "C/metadata/benchmark_b_imu_pruning.json"
+      ],
+      "metrics": {
+        "selectedRigFrames": 531,
+        "anyRegisteredRigFrames": 168,
+        "completeRegisteredRigFrames": 166,
+        "completeRegisteredPercent": 31.261770244821093,
+        "pairCount": 16825,
+        "points3d": 64043,
+        "medianTrackLength": 4.0,
+        "medianReprojectionErrorPx": 0.708105832995497,
+        "connectedComponents": 1,
+        "largestComponentImages": 334,
+        "extractMs": 813079,
+        "alignMs": 2066503,
+        "effectiveMapper": "bootstrap_mapper",
+        "gravityPriorApplied": false,
+        "gravityCoverageRatio": 1.0
+      }
+    }
+  ]
+}
