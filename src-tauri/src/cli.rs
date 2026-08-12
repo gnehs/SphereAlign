@@ -1,4 +1,5 @@
 use crate::pipeline::{self, JobManager, StartStageRequest};
+use crate::process::silent_command;
 use crate::project::{self, CreateProjectRequest, StageName, StageStatus};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -8,7 +9,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Listener};
 
 #[derive(Debug)]
@@ -159,10 +160,26 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
         .iter()
         .map(|input| input_provenance(Path::new(input)))
         .collect::<Result<Vec<_>, _>>()?;
+    let colmap_provenance = executable_provenance(Path::new(&args.colmap))?;
+    let source_revision = source_revision_provenance();
+    let run_id = format!(
+        "abc-{}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos(),
+        std::process::id()
+    );
     let provenance = serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "runId": &run_id,
         "inputs": &input_provenance,
-        "colmap": &args.colmap,
+        "colmap": &colmap_provenance,
+        "runnerBinary": executable_provenance(
+            &std::env::current_exe().map_err(|error| error.to_string())?
+        )?,
+        "sourceRevision": &source_revision,
+        "alignPipelineRevision": pipeline::ALIGN_PIPELINE_REVISION,
         "gpuIndex": &args.gpu_index,
         "variants": &args.variants,
         "profileOverride": &args.profile_override,
@@ -170,6 +187,7 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     fs::write(args.output_root.join("run-provenance.json"), provenance)
         .map_err(|error| error.to_string())?;
+    let redactions = event_redactions(&args);
     let event_file = Arc::new(Mutex::new(
         OpenOptions::new()
             .create(true)
@@ -179,24 +197,20 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
             .map_err(|error| error.to_string())?,
     ));
     let progress_file = event_file.clone();
+    let progress_redactions = redactions.clone();
     let progress_listener = app.listen("pipeline-progress", move |event| {
         if let Ok(mut file) = progress_file.lock() {
-            let _ = writeln!(
-                file,
-                "{{\"event\":\"progress\",\"payload\":{}}}",
-                event.payload()
-            );
+            let payload = redact_event_payload(event.payload(), &progress_redactions);
+            let _ = writeln!(file, "{}", json!({ "event": "progress", "payload": payload }));
             let _ = file.flush();
         }
     });
     let log_file = event_file.clone();
+    let log_redactions = redactions;
     let log_listener = app.listen("pipeline-log", move |event| {
         if let Ok(mut file) = log_file.lock() {
-            let _ = writeln!(
-                file,
-                "{{\"event\":\"log\",\"payload\":{}}}",
-                event.payload()
-            );
+            let payload = redact_event_payload(event.payload(), &log_redactions);
+            let _ = writeln!(file, "{}", json!({ "event": "log", "payload": payload }));
             let _ = file.flush();
         }
     });
@@ -257,20 +271,27 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
             variant: name.to_owned(),
             requested_variant: name.to_owned(),
             effective_benchmark_variant,
-            project_path: project_path.to_string_lossy().into_owned(),
+            project_path: name.to_owned(),
             quality_profile: profile.to_owned(),
             elapsed_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-            benchmark_paths,
+            benchmark_paths: benchmark_paths
+                .iter()
+                .filter_map(|path| Path::new(path).strip_prefix(&args.output_root).ok())
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .collect(),
             metrics,
         });
     }
     write_comparison_markdown(&args.output_root, &args.inputs, &results)?;
     let summary_path = args.output_root.join("abc-summary.json");
     let bytes = serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 3,
-        "inputs": args.inputs,
+        "schemaVersion": 4,
+        "runId": run_id,
+        "inputs": input_provenance.iter().filter_map(|input| input["path"].as_str()).collect::<Vec<_>>(),
         "inputProvenance": input_provenance,
-        "colmap": args.colmap,
+        "colmap": colmap_provenance,
+        "sourceRevision": source_revision,
+        "alignPipelineRevision": pipeline::ALIGN_PIPELINE_REVISION,
         "gpuIndex": args.gpu_index,
         "profileOverride": args.profile_override,
         "results": results,
@@ -293,6 +314,89 @@ fn load_benchmark_variant(path: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn basename(path: &Path) -> Result<String, String> {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| format!("path has no UTF-8 basename: {}", path.display()))
+}
+
+fn executable_provenance(path: &Path) -> Result<Value, String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    Ok(json!({
+        "path": basename(path)?,
+        "size": metadata.len(),
+        "sha256": file_sha256(path)?,
+    }))
+}
+
+fn source_revision_provenance() -> Value {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let commit = silent_command("git")
+        .current_dir(&repository)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_owned());
+    let dirty = silent_command("git")
+        .current_dir(&repository)
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| !output.stdout.is_empty());
+    json!({
+        "gitCommit": commit,
+        "gitDirty": dirty,
+    })
+}
+
+fn event_redactions(args: &AbcArgs) -> Vec<(String, String)> {
+    let mut redactions = vec![
+        (
+            args.output_root.to_string_lossy().into_owned(),
+            "$OUTPUT_ROOT".to_owned(),
+        ),
+        (args.colmap.clone(), "$COLMAP".to_owned()),
+    ];
+    redactions.extend(args.inputs.iter().enumerate().map(|(index, input)| {
+        (input.clone(), format!("$INPUT_{index}"))
+    }));
+    redactions
+}
+
+fn redact_event_payload(payload: &str, redactions: &[(String, String)]) -> Value {
+    fn redact_value(value: &mut Value, redactions: &[(String, String)]) {
+        match value {
+            Value::String(text) => {
+                for (source, replacement) in redactions {
+                    *text = text.replace(source, replacement);
+                    *text = text.replace(&source.replace('\\', "/"), replacement);
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    redact_value(value, redactions);
+                }
+            }
+            Value::Object(values) => {
+                for value in values.values_mut() {
+                    redact_value(value, redactions);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let Ok(mut value) = serde_json::from_str::<Value>(payload) else {
+        return json!({ "redactionError": "unparseable event payload" });
+    };
+    redact_value(&mut value, redactions);
+    value
+}
+
 fn input_provenance(path: &Path) -> Result<Value, String> {
     let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
     let modified_nanos = metadata
@@ -302,7 +406,7 @@ fn input_provenance(path: &Path) -> Result<Value, String> {
         .map(|duration| duration.as_nanos().to_string());
     let sha256 = file_sha256(path)?;
     Ok(json!({
-        "path": path.to_string_lossy(),
+        "path": basename(path)?,
         "size": metadata.len(),
         "modifiedNanos": modified_nanos,
         "sha256": sha256,
@@ -574,7 +678,11 @@ fn write_comparison_markdown(
     );
     report.push_str("## Inputs\n\n");
     for input in inputs {
-        report.push_str(&format!("- `{input}`\n"));
+        let label = Path::new(input)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("redacted-input");
+        report.push_str(&format!("- `{label}`\n"));
     }
     report.push_str(
         "\n## Metrics\n\n\
@@ -704,6 +812,7 @@ mod tests {
     use super::{
         ensure_empty_output_root, input_provenance, load_benchmark_metrics,
         load_benchmark_variant, write_raw_artifacts_manifest,
+        redact_event_payload,
     };
     use crate::project::{self, CreateProjectRequest};
     use serde_json::json;
@@ -727,11 +836,26 @@ mod tests {
         let input = temp.path().join("capture.osv");
         fs::write(&input, b"abc").unwrap();
         let provenance = input_provenance(&input).unwrap();
+        assert_eq!(provenance["path"], "capture.osv");
         assert_eq!(provenance["size"], 3);
         assert_eq!(
             provenance["sha256"],
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn event_payload_redacts_local_paths_recursively() {
+        let payload = r#"{"project":"D:\\private\\run","items":["D:/private/input.osv"]}"#;
+        let redacted = redact_event_payload(
+            payload,
+            &[
+                ("D:\\private\\run".to_owned(), "$OUTPUT_ROOT".to_owned()),
+                ("D:\\private\\input.osv".to_owned(), "$INPUT_0".to_owned()),
+            ],
+        );
+        assert_eq!(redacted["project"], "$OUTPUT_ROOT");
+        assert_eq!(redacted["items"][0], "$INPUT_0");
     }
 
     #[test]

@@ -245,6 +245,52 @@ pub struct ColmapTextModel {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ColmapModelQualityMetrics {
+    pub registered_image_count: u64,
+    pub points3d_count: u64,
+    pub median_track_length: Option<f64>,
+    pub median_reprojection_error_px: Option<f64>,
+    pub connected_component_count: u64,
+    pub largest_connected_component_image_count: u64,
+    pub largest_component_coverage_ratio: f64,
+}
+
+pub fn colmap_model_quality_metrics(model: &ColmapTextModel) -> ColmapModelQualityMetrics {
+    let registered_image_count = model.images.len() as u64;
+    let median_track_length = median(
+        model
+            .points3d
+            .iter()
+            .map(|point| point.track.len() as f64)
+            .collect(),
+    );
+    let median_reprojection_error_px = median(
+        model
+            .points3d
+            .iter()
+            .map(|point| point.reprojection_error_px)
+            .collect(),
+    );
+    let (connected_component_count, largest) = connected_components(&model.points3d);
+    let largest_connected_component_image_count = largest.unwrap_or(0);
+    let largest_component_coverage_ratio = if registered_image_count == 0 {
+        0.0
+    } else {
+        largest_connected_component_image_count as f64 / registered_image_count as f64
+    };
+    ColmapModelQualityMetrics {
+        registered_image_count,
+        points3d_count: model.points3d.len() as u64,
+        median_track_length,
+        median_reprojection_error_px,
+        connected_component_count,
+        largest_connected_component_image_count,
+        largest_component_coverage_ratio,
+    }
+}
+
 /// Parse all available COLMAP text files in a model directory.
 ///
 /// This partial parser never invents an empty model for an unreadable file;

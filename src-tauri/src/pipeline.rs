@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 18;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 19;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -671,6 +671,26 @@ enum MapperMode {
     Auto,
     Incremental,
     Global,
+}
+
+fn effective_mapper_matches_checkpoint(
+    requested_mode: MapperMode,
+    external_orientation_requested: bool,
+    effective_mapper: Option<&str>,
+) -> bool {
+    let Some(effective_mapper) = effective_mapper else {
+        return requested_mode == MapperMode::Incremental;
+    };
+    if external_orientation_requested {
+        return effective_mapper == "external_orientation_ba";
+    }
+    match requested_mode {
+        MapperMode::Incremental => {
+            matches!(effective_mapper, "final_mapper" | "bootstrap_mapper")
+        }
+        MapperMode::Global => effective_mapper == "global_mapper",
+        MapperMode::Auto => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5958,6 +5978,128 @@ fn refresh_calibrated_pair_matches(
     }
 }
 
+const GLOBAL_CANDIDATE_MIN_POINT_RATIO: f64 = 0.25;
+const GLOBAL_CANDIDATE_MIN_TRACK_RATIO: f64 = 0.60;
+const GLOBAL_CANDIDATE_MAX_REPROJECTION_RATIO: f64 = 1.50;
+const GLOBAL_CANDIDATE_MAX_REPROJECTION_INCREASE_PX: f64 = 0.25;
+const GLOBAL_CANDIDATE_MAX_COMPONENT_COVERAGE_DROP: f64 = 0.10;
+const GLOBAL_CANDIDATE_MAX_ADDITIONAL_COMPONENTS: u64 = 2;
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct GlobalCandidateQualityMetrics {
+    complete_registered_rig_frames: u64,
+    #[serde(flatten)]
+    model: crate::reconstruction_benchmark::ColmapModelQualityMetrics,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct GlobalCandidateQualityGate {
+    accepted: bool,
+    seed: GlobalCandidateQualityMetrics,
+    candidate: GlobalCandidateQualityMetrics,
+    issues: Vec<String>,
+}
+
+fn global_candidate_quality_metrics(
+    text_model_dir: &Path,
+) -> Result<GlobalCandidateQualityMetrics, String> {
+    let model = crate::reconstruction_benchmark::read_colmap_text_model(text_model_dir)?;
+    let images_text = fs::read_to_string(text_model_dir.join("images.txt"))
+        .map_err(|error| error.to_string())?;
+    Ok(GlobalCandidateQualityMetrics {
+        complete_registered_rig_frames: complete_registered_dual_fisheye_frames(&images_text),
+        model: crate::reconstruction_benchmark::colmap_model_quality_metrics(&model),
+    })
+}
+
+fn evaluate_global_candidate_quality(
+    seed: GlobalCandidateQualityMetrics,
+    candidate: GlobalCandidateQualityMetrics,
+) -> GlobalCandidateQualityGate {
+    let mut issues = Vec::new();
+    if candidate.complete_registered_rig_frames < seed.complete_registered_rig_frames {
+        issues.push(format!(
+            "complete-rig coverage regressed: {} < {}",
+            candidate.complete_registered_rig_frames, seed.complete_registered_rig_frames
+        ));
+    }
+    if candidate.model.largest_component_coverage_ratio
+        + GLOBAL_CANDIDATE_MAX_COMPONENT_COVERAGE_DROP
+        < seed.model.largest_component_coverage_ratio
+    {
+        issues.push(format!(
+            "largest-component coverage regressed: {:.3} < {:.3} - {:.3}",
+            candidate.model.largest_component_coverage_ratio,
+            seed.model.largest_component_coverage_ratio,
+            GLOBAL_CANDIDATE_MAX_COMPONENT_COVERAGE_DROP
+        ));
+    }
+    if (candidate.model.points3d_count as f64)
+        < seed.model.points3d_count as f64 * GLOBAL_CANDIDATE_MIN_POINT_RATIO
+    {
+        issues.push(format!(
+            "point support regressed: {} < {} * {:.2}",
+            candidate.model.points3d_count,
+            seed.model.points3d_count,
+            GLOBAL_CANDIDATE_MIN_POINT_RATIO
+        ));
+    }
+    match (
+        seed.model.median_track_length,
+        candidate.model.median_track_length,
+    ) {
+        (Some(seed_track), Some(candidate_track))
+            if candidate_track < seed_track * GLOBAL_CANDIDATE_MIN_TRACK_RATIO =>
+        {
+            issues.push(format!(
+                "median track support regressed: {candidate_track:.3} < {seed_track:.3} * {:.2}",
+                GLOBAL_CANDIDATE_MIN_TRACK_RATIO
+            ));
+        }
+        (Some(_), None) => issues.push("candidate median track support is unavailable".to_owned()),
+        _ => {}
+    }
+    match (
+        seed.model.median_reprojection_error_px,
+        candidate.model.median_reprojection_error_px,
+    ) {
+        (Some(seed_error), Some(candidate_error)) => {
+            let maximum = (seed_error * GLOBAL_CANDIDATE_MAX_REPROJECTION_RATIO)
+                .max(seed_error + GLOBAL_CANDIDATE_MAX_REPROJECTION_INCREASE_PX);
+            if candidate_error > maximum {
+                issues.push(format!(
+                    "median reprojection error regressed: {candidate_error:.3} > {maximum:.3} px"
+                ));
+            }
+        }
+        (Some(_), None) => {
+            issues.push("candidate median reprojection error is unavailable".to_owned())
+        }
+        _ => {}
+    }
+    if candidate.model.connected_component_count
+        > seed
+            .model
+            .connected_component_count
+            .saturating_add(GLOBAL_CANDIDATE_MAX_ADDITIONAL_COMPONENTS)
+    {
+        issues.push(format!(
+            "connected components increased abnormally: {} > {} + {}",
+            candidate.model.connected_component_count,
+            seed.model.connected_component_count,
+            GLOBAL_CANDIDATE_MAX_ADDITIONAL_COMPONENTS
+        ));
+    }
+    GlobalCandidateQualityGate {
+        accepted: issues.is_empty(),
+        seed,
+        candidate,
+        issues,
+    }
+}
+
 fn rollback_calibrated_pair_transaction(
     database: &Path,
     database_backup: &Path,
@@ -5981,6 +6123,10 @@ fn rollback_calibrated_pair_transaction(
             database_backup.display()
         ))
     }
+}
+
+fn calibrated_pair_refresh_requires_fail_closed(error: &str) -> bool {
+    error.contains("calibrated pair transaction rollback failed")
 }
 
 fn merge_pair_lists(first: &[u8], second: &[u8]) -> Result<Vec<u8>, String> {
@@ -6308,12 +6454,11 @@ fn run_align(
     let checkpoint_matches = !force_rebuild
         && checkpoint.as_ref().is_some_and(|value| {
             value.fingerprint == fingerprint
-                && value
-                    .effective_mapper
-                    .as_deref()
-                    .map_or(mapper_mode == MapperMode::Incremental, |mapper| {
-                        mapper == expected_effective_mapper
-                    })
+                && effective_mapper_matches_checkpoint(
+                    mapper_mode,
+                    external_orientation_requested,
+                    value.effective_mapper.as_deref(),
+                )
         });
     let feature_checkpoint_matches = !force_rebuild
         && checkpoint.as_ref().is_some_and(|value| {
@@ -7670,6 +7815,22 @@ fn run_align(
                         "已依 calibrated FOV overlap 更新 pairs 並重新 matching",
                     ),
                     Ok(false) => {}
+                    Err(error) if calibrated_pair_refresh_requires_fail_closed(&error) => {
+                        write_json_atomic(
+                            &candidate_audit,
+                            &json!({
+                                "schemaVersion": 1,
+                                "attempted": false,
+                                "status": "pair_refresh_rollback_failed",
+                                "gravityPriorRequested": use_gravity_prior,
+                                "effectiveMapper": "bootstrap_mapper",
+                                "error": &error,
+                            }),
+                        )?;
+                        return Err(format!(
+                            "calibrated pair graph rollback failed; refusing to run global mapper: {error}"
+                        ));
+                    }
                     Err(error) => emit_log(
                         app,
                         id,
@@ -7709,11 +7870,10 @@ fn run_align(
                     );
                 }
                 let global_candidate = root.join("sparse_global_candidate");
-                let seed_complete_rigs = fs::read_to_string(
-                    root.join("metadata/final-model-text/images.txt"),
-                )
-                .map(|images| complete_registered_dual_fisheye_frames(&images))
-                .unwrap_or(0);
+                let seed_quality = global_candidate_quality_metrics(
+                    &root.join("metadata/final-model-text"),
+                )?;
+                let seed_complete_rigs = seed_quality.complete_registered_rig_frames;
                 write_json_atomic(
                     &candidate_audit,
                     &json!({
@@ -7722,6 +7882,7 @@ fn run_align(
                         "status": "running",
                         "gravityPriorRequested": use_gravity_prior,
                         "seedCompleteRegisteredRigFrames": seed_complete_rigs,
+                        "seedQuality": &seed_quality,
                     }),
                 )?;
                 remove_align_artifact(&global_candidate)?;
@@ -7756,6 +7917,7 @@ fn run_align(
                         quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
                     },
                 );
+                let mut quality_gate_audit = None;
                 let global_result = run_mapper_with_gpu_fallback(
                     app,
                     id,
@@ -7790,20 +7952,26 @@ fn run_align(
                         &candidate_text,
                         control,
                     )?;
-                    let candidate_complete_rigs = fs::read_to_string(
-                        candidate_text.join("images.txt"),
-                    )
-                    .map_err(|error| error.to_string())
-                    .map(|images| complete_registered_dual_fisheye_frames(&images))?;
-                    if candidate_complete_rigs < seed_complete_rigs {
+                    let candidate_quality = global_candidate_quality_metrics(&candidate_text)?;
+                    let quality_gate = evaluate_global_candidate_quality(
+                        seed_quality.clone(),
+                        candidate_quality,
+                    );
+                    let accepted = quality_gate.accepted;
+                    let issues = quality_gate.issues.clone();
+                    quality_gate_audit = Some(quality_gate.clone());
+                    if !accepted {
                         return Err(format!(
-                            "global candidate complete-rig coverage regressed: {candidate_complete_rigs} < {seed_complete_rigs}"
+                            "global candidate quality gate rejected: {}",
+                            issues.join("; ")
                         ));
                     }
-                    Ok(candidate_complete_rigs)
+                    Ok(quality_gate)
                 });
                 match global_result {
-                    Ok(candidate_complete_rigs) => {
+                    Ok(quality_gate) => {
+                        let candidate_complete_rigs =
+                            quality_gate.candidate.complete_registered_rig_frames;
                         let incremental_seed = root.join("sparse_incremental_seed");
                         remove_align_artifact(&incremental_seed)?;
                         fs::rename(&sparse, &incremental_seed)
@@ -7826,6 +7994,7 @@ fn run_align(
                                 "gravityPriorRequested": use_gravity_prior,
                                 "seedCompleteRegisteredRigFrames": seed_complete_rigs,
                                 "candidateCompleteRegisteredRigFrames": candidate_complete_rigs,
+                                "qualityGate": &quality_gate,
                                 "effectiveMapper": "global_mapper",
                             }),
                         )?;
@@ -7847,6 +8016,7 @@ fn run_align(
                                 "status": "rejected",
                                 "gravityPriorRequested": use_gravity_prior,
                                 "seedCompleteRegisteredRigFrames": seed_complete_rigs,
+                                "qualityGate": &quality_gate_audit,
                                 "effectiveMapper": "bootstrap_mapper",
                                 "error": &error,
                             }),
@@ -8053,8 +8223,10 @@ mod tests {
         cross_source_pair_lines,
         colmap_quality_profile, ColmapQualityProfile,
         dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
-        extraction_completed_count, feature_extractor_args, global_mapper_args,
+        evaluate_global_candidate_quality, extraction_completed_count, feature_extractor_args,
+        global_mapper_args,
         global_mapper_prerequisite_error, has_valid_global_mapper_priors,
+        calibrated_pair_refresh_requires_fail_closed, effective_mapper_matches_checkpoint,
         invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
@@ -8073,7 +8245,7 @@ mod tests {
         synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
         view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
-        write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
+        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, GlobalCandidateQualityMetrics,
         ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
         MapperOptions, ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
         RigBootstrapConfig, RigBootstrapModelCandidate, RigMappingPlan, StageName,
@@ -8099,6 +8271,76 @@ mod tests {
         reset_capabilities_for_stage_start(&mut manifest, &StageName::Align);
 
         assert_eq!(manifest.capabilities.get("imuApplied"), Some(&false));
+    }
+
+    #[test]
+    fn incremental_checkpoint_accepts_unknown_rig_bootstrap_mapper() {
+        assert!(effective_mapper_matches_checkpoint(
+            MapperMode::Incremental,
+            false,
+            Some("bootstrap_mapper")
+        ));
+        assert!(effective_mapper_matches_checkpoint(
+            MapperMode::Incremental,
+            false,
+            Some("final_mapper")
+        ));
+        assert!(!effective_mapper_matches_checkpoint(
+            MapperMode::Global,
+            false,
+            Some("bootstrap_mapper")
+        ));
+    }
+
+    #[test]
+    fn pair_rollback_failure_is_a_fail_closed_error() {
+        assert!(calibrated_pair_refresh_requires_fail_closed(
+            "matching failed; calibrated pair transaction rollback failed: database locked"
+        ));
+        assert!(!calibrated_pair_refresh_requires_fail_closed(
+            "matching failed; original graph restored"
+        ));
+    }
+
+    #[test]
+    fn global_candidate_gate_rejects_fragmentation_and_support_regression() {
+        let seed = GlobalCandidateQualityMetrics {
+            complete_registered_rig_frames: 100,
+            model: crate::reconstruction_benchmark::ColmapModelQualityMetrics {
+                registered_image_count: 200,
+                points3d_count: 10_000,
+                median_track_length: Some(4.0),
+                median_reprojection_error_px: Some(0.7),
+                connected_component_count: 1,
+                largest_connected_component_image_count: 200,
+                largest_component_coverage_ratio: 1.0,
+            },
+        };
+        let candidate = GlobalCandidateQualityMetrics {
+            complete_registered_rig_frames: 120,
+            model: crate::reconstruction_benchmark::ColmapModelQualityMetrics {
+                registered_image_count: 240,
+                points3d_count: 2_000,
+                median_track_length: Some(2.0),
+                median_reprojection_error_px: Some(1.2),
+                connected_component_count: 5,
+                largest_connected_component_image_count: 120,
+                largest_component_coverage_ratio: 0.5,
+            },
+        };
+
+        let gate = evaluate_global_candidate_quality(seed, candidate);
+
+        assert!(!gate.accepted);
+        assert!(gate.issues.iter().any(|issue| issue.contains("point support")));
+        assert!(gate
+            .issues
+            .iter()
+            .any(|issue| issue.contains("largest-component")));
+        assert!(gate
+            .issues
+            .iter()
+            .any(|issue| issue.contains("connected components")));
     }
 
     #[test]
