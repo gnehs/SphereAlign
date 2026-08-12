@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 3,
+  "inputs": [
+    "\\\\?\\C:\\Users\\gnehs\\Downloads\\CAM_20260224122138_0020_D.OSV",
+    "\\\\?\\C:\\Users\\gnehs\\Downloads\\CAM_20260503151520_0030_D.OSV"
+  ],
+  "inputProvenance": [
+    {
+      "path": "\\\\?\\C:\\Users\\gnehs\\Downloads\\CAM_20260224122138_0020_D.OSV",
+      "size": 1815292926,
+      "modifiedNanos": "1786507827092688600",
+      "sha256": "63b97b1c49da2c635a22db87f18f992dac9f832b18b3ead08f7d93ea49369422"
+    },
+    {
+      "path": "\\\\?\\C:\\Users\\gnehs\\Downloads\\CAM_20260503151520_0030_D.OSV",
+      "size": 2979506083,
+      "modifiedNanos": "1786507895361037700",
+      "sha256": "bc1643d73966d85ffe15a28c30cbf57811f624336ea807e061d7ddf99eb71c3e"
+    }
+  ],
+  "colmap": "\\\\?\\D:\\COLMAP-4.1.1-windows-2022-CUDA-cuDSS-Caspar-GUI\\bin\\colmap.exe",
+  "gpuIndex": "0",
+  "profileOverride": null,
+  "results": [
+    {
+      "variant": "C",
+      "requestedVariant": "C",
+      "effectiveBenchmarkVariant": "c_global",
+      "projectPath": "D:\\Repos\\gs360studio\\gs360-test-runs\\two-osv-c-candidates-20260812\\C",
+      "qualityProfile": "baseline",
+      "elapsedMs": 3139538,
+      "benchmarkPaths": [
+        "D:\\Repos\\gs360studio\\gs360-test-runs\\two-osv-c-candidates-20260812\\C\\metadata\\benchmark_c_global.json"
+      ],
+      "metrics": {
+        "selectedRigFrames": 531,
+        "anyRegisteredRigFrames": 363,
+        "completeRegisteredRigFrames": 363,
+        "completeRegisteredPercent": 68.36158192090396,
+        "pairCount": 16825,
+        "points3d": 52115,
+        "medianTrackLength": 4.0,
+        "medianReprojectionErrorPx": 0.7045814758752996,
+        "connectedComponents": 3,
+        "largestComponentImages": 686,
+        "extractMs": 858123,
+        "alignMs": 2280465,
+        "effectiveMapper": "global_mapper",
+        "gravityPriorApplied": true,
+        "gravityCoverageRatio": 1.0
+      }
+    }
+  ]
+}

@@ -24,7 +24,10 @@ struct AbcArgs {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VariantResult {
+    /// Backward-compatible alias for requested_variant in schema v2 readers.
     variant: String,
+    requested_variant: String,
+    effective_benchmark_variant: Option<String>,
     project_path: String,
     quality_profile: String,
     elapsed_ms: u64,
@@ -243,12 +246,17 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
             &args.colmap,
         )?;
         let benchmark_paths = find_benchmarks(&project_path);
+        let effective_benchmark_variant = benchmark_paths
+            .first()
+            .and_then(|path| load_benchmark_variant(Path::new(path)));
         let completed_manifest = project::load(&manifest.root_path)?;
         let metrics = benchmark_paths
             .first()
             .and_then(|path| load_benchmark_metrics(Path::new(path), &completed_manifest));
         results.push(VariantResult {
             variant: name.to_owned(),
+            requested_variant: name.to_owned(),
+            effective_benchmark_variant,
             project_path: project_path.to_string_lossy().into_owned(),
             quality_profile: profile.to_owned(),
             elapsed_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
@@ -259,7 +267,7 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
     write_comparison_markdown(&args.output_root, &args.inputs, &results)?;
     let summary_path = args.output_root.join("abc-summary.json");
     let bytes = serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "inputs": args.inputs,
         "inputProvenance": input_provenance,
         "colmap": args.colmap,
@@ -269,10 +277,20 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
     }))
     .map_err(|error| error.to_string())?;
     fs::write(&summary_path, bytes).map_err(|error| error.to_string())?;
-    println!("ABC summary: {}", summary_path.display());
     app.unlisten(progress_listener);
     app.unlisten(log_listener);
+    drop(event_file);
+    write_raw_artifacts_manifest(&args.output_root)?;
+    println!("ABC summary: {}", summary_path.display());
     Ok(())
+}
+
+fn load_benchmark_variant(path: &Path) -> Option<String> {
+    serde_json::from_slice::<Value>(&fs::read(path).ok()?)
+        .ok()?
+        .pointer("/variant")?
+        .as_str()
+        .map(str::to_owned)
 }
 
 fn input_provenance(path: &Path) -> Result<Value, String> {
@@ -282,6 +300,16 @@ fn input_provenance(path: &Path) -> Result<Value, String> {
         .ok()
         .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| duration.as_nanos().to_string());
+    let sha256 = file_sha256(path)?;
+    Ok(json!({
+        "path": path.to_string_lossy(),
+        "size": metadata.len(),
+        "modifiedNanos": modified_nanos,
+        "sha256": sha256,
+    }))
+}
+
+fn file_sha256(path: &Path) -> Result<String, String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 1024 * 1024];
@@ -292,12 +320,54 @@ fn input_provenance(path: &Path) -> Result<Value, String> {
         }
         hasher.update(&buffer[..count]);
     }
-    Ok(json!({
-        "path": path.to_string_lossy(),
-        "size": metadata.len(),
-        "modifiedNanos": modified_nanos,
-        "sha256": format!("{:x}", hasher.finalize()),
-    }))
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn write_raw_artifacts_manifest(output_root: &Path) -> Result<(), String> {
+    let mut pending = vec![output_root.to_path_buf()];
+    let mut paths = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let extension = path.extension().and_then(|value| value.to_str());
+            if matches!(extension, Some("json" | "jsonl" | "md" | "txt"))
+                && path.file_name().and_then(|value| value.to_str())
+                    != Some("raw-artifacts-manifest.json")
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    let artifacts = paths
+        .into_iter()
+        .map(|path| {
+            let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+            let relative = path
+                .strip_prefix(output_root)
+                .map_err(|error| error.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
+            Ok(json!({
+                "path": relative,
+                "size": metadata.len(),
+                "sha256": file_sha256(&path)?,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    fs::write(
+        output_root.join("raw-artifacts-manifest.json"),
+        serde_json::to_vec_pretty(&json!({
+            "schemaVersion": 1,
+            "artifacts": artifacts,
+        }))
+        .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn ensure_empty_output_root(output_root: &Path) -> Result<(), String> {
@@ -508,16 +578,17 @@ fn write_comparison_markdown(
     }
     report.push_str(
         "\n## Metrics\n\n\
-         | Variant | Profile | Complete rigs | Any-sensor rigs | Pairs | 3D points | Median track | Median reprojection | Components | Largest component | Extract | Align | Effective mapper | Gravity applied |\n\
-         |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n",
+         | Requested | Effective benchmark | Profile | Complete rigs | Any-sensor rigs | Pairs | 3D points | Median track | Median reprojection | Components | Largest component | Extract | Align | Effective mapper | Gravity applied |\n\
+         |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n",
     );
     for result in results {
         let Some(metrics) = &result.metrics else {
             continue;
         };
         report.push_str(&format!(
-            "| {} | {} | {}/{} ({:.1}%) | {} | {} | {} | {:.1} | {:.3} px | {} | {} images | {:.1} s | {:.1} s | {} | {} |\n",
-            result.variant,
+            "| {} | {} | {} | {}/{} ({:.1}%) | {} | {} | {} | {:.1} | {:.3} px | {} | {} images | {:.1} s | {:.1} s | {} | {} |\n",
+            result.requested_variant,
+            result.effective_benchmark_variant.as_deref().unwrap_or("unknown"),
             result.quality_profile,
             metrics.complete_registered_rig_frames,
             metrics.selected_rig_frames,
@@ -630,7 +701,10 @@ fn merge(target: &mut Value, incoming: Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_empty_output_root, input_provenance, load_benchmark_metrics};
+    use super::{
+        ensure_empty_output_root, input_provenance, load_benchmark_metrics,
+        load_benchmark_variant, write_raw_artifacts_manifest,
+    };
     use crate::project::{self, CreateProjectRequest};
     use serde_json::json;
     use std::fs;
@@ -657,6 +731,38 @@ mod tests {
         assert_eq!(
             provenance["sha256"],
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn benchmark_variant_reports_the_effective_pipeline_classification() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("benchmark_b_imu_pruning.json");
+        fs::write(&path, br#"{"variant":"b_imu_pruning"}"#).unwrap();
+
+        assert_eq!(
+            load_benchmark_variant(&path).as_deref(),
+            Some("b_imu_pruning")
+        );
+    }
+
+    #[test]
+    fn raw_artifact_manifest_hashes_auditable_text_outputs() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("abc-summary.json"), b"{}\n").unwrap();
+        fs::write(temp.path().join("ignored.bin"), b"binary").unwrap();
+
+        write_raw_artifacts_manifest(temp.path()).unwrap();
+
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &fs::read(temp.path().join("raw-artifacts-manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["artifacts"].as_array().unwrap().len(), 1);
+        assert_eq!(manifest["artifacts"][0]["path"], "abc-summary.json");
+        assert_eq!(
+            manifest["artifacts"][0]["sha256"],
+            "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
         );
     }
 

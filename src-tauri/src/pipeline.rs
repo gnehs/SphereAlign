@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-const ALIGN_PIPELINE_REVISION: u32 = 13;
+const ALIGN_PIPELINE_REVISION: u32 = 18;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -469,8 +469,9 @@ pub fn start_stage(
     let mut manifest = project::load(&request.project_path)?;
     if let Some(settings) = request.settings.clone() {
         merge_json(&mut manifest.settings, settings);
-        project::save_manifest(&manifest)?;
     }
+    reset_capabilities_for_stage_start(&mut manifest, &request.stage);
+    project::save_manifest(&manifest)?;
     let id = job_id();
     let control = JobControl {
         cancelled: Arc::new(AtomicBool::new(false)),
@@ -627,6 +628,18 @@ pub fn start_stage(
         manager.remove(&id);
     });
     Ok(response)
+}
+
+fn reset_capabilities_for_stage_start(
+    manifest: &mut project::ProjectManifest,
+    stage: &StageName,
+) {
+    // A previous successful Align must not remain visible while a retry is
+    // running, cancelled, or failed. Successful output derives the new value
+    // from the effective mapper and validated prior artifacts.
+    if *stage == StageName::Align {
+        manifest.capabilities.insert("imuApplied".to_owned(), false);
+    }
 }
 
 fn merge_json(target: &mut Value, incoming: Value) {
@@ -5285,6 +5298,20 @@ fn view_graph_calibrator_args(database: &Path) -> Vec<String> {
     ]
 }
 
+fn view_graph_calibrator_retry_args(database: &Path) -> Vec<String> {
+    let mut args = view_graph_calibrator_args(database);
+    // This is a bounded recovery for sparse/pruned graphs. The result still
+    // has to pass parameter-shape, non-default focal, flag, and 100% camera
+    // round-trip validation before it can become a global prior.
+    args.extend([
+        "--min_calibrated_pair_ratio".into(),
+        "0.25".into(),
+        "--default_random_seed".into(),
+        "0".into(),
+    ]);
+    args
+}
+
 const MIN_GLOBAL_GRAVITY_COVERAGE_RATIO: f64 = 0.8;
 
 #[derive(Debug, Deserialize)]
@@ -5308,9 +5335,19 @@ struct GlobalMapperPriorMetadata {
 #[serde(rename_all = "camelCase")]
 struct SourceImuCalibration {
     source_id: String,
+    visual_model: String,
     telemetry_sha256: String,
     visual_sample_count: usize,
     telemetry_sample_count: usize,
+    model: crate::imu_calibration::CalibrationModel,
+    candidates: Vec<SourceImuCalibrationCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceImuCalibrationCandidate {
+    visual_model: String,
+    visual_sample_count: usize,
     model: crate::imu_calibration::CalibrationModel,
 }
 
@@ -5402,11 +5439,26 @@ fn visual_samples_by_source(
 
 fn calibrate_imu_sources(
     root: &Path,
-    text_model: &crate::reconstruction_benchmark::ColmapTextModel,
+    text_models: &[(String, crate::reconstruction_benchmark::ColmapTextModel)],
 ) -> Result<ImuCalibrationBundle, String> {
-    let visual = visual_samples_by_source(root, text_model);
+    // Disconnected recordings often become separate bootstrap components.
+    // Evaluate each source against every component independently, then select
+    // the strongest valid calibration without mixing unrelated coordinates or
+    // assuming the component used to derive rig extrinsics contains all sources.
+    let mut visual = BTreeMap::<
+        String,
+        Vec<(String, Vec<crate::imu_calibration::VisualRotationSample>)>,
+    >::new();
+    for (model_name, text_model) in text_models {
+        for (source_id, samples) in visual_samples_by_source(root, text_model) {
+            visual
+                .entry(source_id)
+                .or_default()
+                .push((model_name.clone(), samples));
+        }
+    }
     let mut sources = Vec::new();
-    for (source_id, visual_samples) in visual {
+    for (source_id, visual_candidates) in visual {
         let telemetry_path = root
             .join("metadata")
             .join(format!("{source_id}_telemetry.json"));
@@ -5414,31 +5466,70 @@ fn calibrate_imu_sources(
         let normalized = match telemetry::read_normalized_telemetry(&telemetry_path) {
             Ok(value) => value,
             Err(error) => {
+                let (visual_model, visual_sample_count) = visual_candidates
+                    .iter()
+                    .max_by_key(|(_, samples)| samples.len())
+                    .map(|(name, samples)| (name.clone(), samples.len()))
+                    .unwrap_or_else(|| ("none".to_owned(), 0));
                 sources.push(SourceImuCalibration {
                     source_id,
+                    visual_model,
                     telemetry_sha256,
-                    visual_sample_count: visual_samples.len(),
+                    visual_sample_count,
                     telemetry_sample_count: 0,
                     model: crate::imu_calibration::CalibrationModel::invalid(error),
+                    candidates: Vec::new(),
                 });
                 continue;
             }
         };
         let telemetry_sample_count = normalized.fused_attitude.len();
-        let model = crate::imu_calibration::estimate_calibration(
-            &visual_samples,
-            &normalized.fused_attitude,
-            crate::imu_calibration::CalibrationConfig::default(),
-        )
-        .unwrap_or_else(|error| {
-            crate::imu_calibration::CalibrationModel::invalid(error.to_string())
-        });
+        let candidates = visual_candidates
+            .into_iter()
+            .map(|(visual_model, visual_samples)| {
+                let model = crate::imu_calibration::estimate_calibration(
+                    &visual_samples,
+                    &normalized.fused_attitude,
+                    crate::imu_calibration::CalibrationConfig::default(),
+                )
+                .unwrap_or_else(|error| {
+                    crate::imu_calibration::CalibrationModel::invalid(error.to_string())
+                });
+                SourceImuCalibrationCandidate {
+                    visual_model,
+                    visual_sample_count: visual_samples.len(),
+                    model,
+                }
+            })
+            .collect::<Vec<_>>();
+        let selected = candidates
+            .iter()
+            .filter(|candidate| candidate.model.valid)
+            .max_by(|left, right| {
+                left.model
+                    .paired_sample_count
+                    .cmp(&right.model.paired_sample_count)
+                    .then_with(|| {
+                        right
+                            .model
+                            .residual_deg
+                            .unwrap_or(f64::INFINITY)
+                            .total_cmp(&left.model.residual_deg.unwrap_or(f64::INFINITY))
+                    })
+            })
+            .or_else(|| candidates.iter().max_by_key(|candidate| candidate.visual_sample_count))
+            .ok_or_else(|| format!("{source_id} 沒有 visual calibration candidate"))?;
+        let visual_model = selected.visual_model.clone();
+        let visual_sample_count = selected.visual_sample_count;
+        let model = selected.model.clone();
         sources.push(SourceImuCalibration {
             source_id,
+            visual_model,
             telemetry_sha256,
-            visual_sample_count: visual_samples.len(),
+            visual_sample_count,
             telemetry_sample_count,
             model,
+            candidates,
         });
     }
     let valid_source_count = sources.iter().filter(|source| source.model.valid).count();
@@ -5726,7 +5817,31 @@ fn prepare_global_mapper_priors_from_seed(
     let text_model_dir = root.join("metadata/final-model-text");
     export_colmap_text_model(app, id, colmap, seed_model, &text_model_dir, control)?;
     let text_model = crate::reconstruction_benchmark::read_colmap_text_model(&text_model_dir)?;
-    let bundle = calibrate_imu_sources(root, &text_model)?;
+    let mut calibration_models = vec![("selected-seed".to_owned(), text_model)];
+    let component_text_root = root.join("metadata/imu-bootstrap-components");
+    remove_align_artifact(&component_text_root)?;
+    for component in sparse_model_directories(&root.join("sparse_bootstrap")) {
+        let component_name = component
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown")
+            .to_owned();
+        let output = component_text_root.join(&component_name);
+        match export_colmap_text_model(app, id, colmap, &component, &output, control) {
+            Ok(()) => {
+                let model = crate::reconstruction_benchmark::read_colmap_text_model(&output)?;
+                calibration_models.push((format!("bootstrap/{component_name}"), model));
+            }
+            Err(error) if cancelled_error(&error, control) => return Err(error),
+            Err(error) => emit_log(
+                app,
+                id,
+                "warning",
+                format!("略過無法匯出的 bootstrap component {component_name}：{error}"),
+            ),
+        }
+    }
+    let bundle = calibrate_imu_sources(root, &calibration_models)?;
     if bundle.valid_source_count == 0 {
         return Err("沒有來源通過時間偏移與 rotational hand-eye 校正".to_owned());
     }
@@ -5777,22 +5892,44 @@ fn refresh_calibrated_pair_matches(
     let pairs_path = root.join("metadata/pairs.txt");
     let original_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
     let original_hash = sha256_hex(&original_pairs);
+    let database_backup = root.join("metadata/.align-pre-calibrated-pairs.backup");
+    remove_align_artifact(&database_backup)?;
+    // Create the database rollback point before pairs.txt can change. A
+    // backup failure therefore leaves both halves of the match graph intact.
+    create_colmap_database_backup(database, &database_backup)?;
     // Retrieval descriptors were already computed for the original graph.
     // Regenerate only source-local temporal/FOV pairs, and preserve only the
     // original cross-source retrieval edges. Unioning the entire old graph
     // would resurrect local pairs deliberately removed by calibrated FOV;
     // letting the generator fall back would also inject a legacy anchor grid.
-    write_rig_and_pairs_with_options(root, false, use_calibrated_fov, false)?;
-    let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
-    let original_cross_source_pairs = cross_source_pair_lines(&original_pairs)?;
-    let calibrated_pairs = merge_pair_lists(&original_cross_source_pairs, &refreshed_pairs)?;
-    fs::write(&pairs_path, &calibrated_pairs).map_err(|error| error.to_string())?;
+    let calibrated_pairs = (|| {
+        write_rig_and_pairs_with_options(root, false, use_calibrated_fov, false)?;
+        let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
+        let original_cross_source_pairs = cross_source_pair_lines(&original_pairs)?;
+        let calibrated_pairs = merge_pair_lists(&original_cross_source_pairs, &refreshed_pairs)?;
+        fs::write(&pairs_path, &calibrated_pairs).map_err(|error| error.to_string())?;
+        Ok::<_, String>(calibrated_pairs)
+    })();
+    let calibrated_pairs = match calibrated_pairs {
+        Ok(pairs) => pairs,
+        Err(error) => {
+            return match rollback_calibrated_pair_transaction(
+                database,
+                &database_backup,
+                &pairs_path,
+                &original_pairs,
+            ) {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{error}；calibrated pair transaction rollback failed: {rollback_error}"
+                )),
+            };
+        }
+    };
     if sha256_hex(&calibrated_pairs) == original_hash {
+        remove_align_artifact(&database_backup)?;
         return Ok(false);
     }
-    let database_backup = root.join("metadata/.align-pre-calibrated-pairs.backup");
-    remove_align_artifact(&database_backup)?;
-    create_colmap_database_backup(database, &database_backup)?;
     let result = clear_matching_cache(database)
         .map_err(|error| error.to_string())
         .and_then(|()| {
@@ -5806,12 +5943,43 @@ fn refresh_calibrated_pair_matches(
             Ok(true)
         }
         Err(error) => {
-            restore_colmap_database_backup(database, &database_backup)?;
-            remove_align_artifact(&database_backup)?;
-            fs::write(&pairs_path, original_pairs)
-                .map_err(|write_error| format!("{error}；還原 pairs.txt 失敗：{write_error}"))?;
-            Err(error)
+            match rollback_calibrated_pair_transaction(
+                database,
+                &database_backup,
+                &pairs_path,
+                &original_pairs,
+            ) {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{error}；calibrated pair transaction rollback failed: {rollback_error}"
+                )),
+            }
         }
+    }
+}
+
+fn rollback_calibrated_pair_transaction(
+    database: &Path,
+    database_backup: &Path,
+    pairs_path: &Path,
+    original_pairs: &[u8],
+) -> Result<(), String> {
+    let mut errors = Vec::new();
+    if let Err(error) = restore_colmap_database_backup(database, database_backup) {
+        errors.push(error);
+    }
+    if let Err(error) = fs::write(pairs_path, original_pairs) {
+        errors.push(format!("無法還原 pairs.txt：{error}"));
+    }
+    if errors.is_empty() {
+        remove_align_artifact(database_backup)?;
+        Ok(())
+    } else {
+        Err(format!(
+            "{}；備份保留於 {}",
+            errors.join("；"),
+            database_backup.display()
+        ))
     }
 }
 
@@ -6698,6 +6866,7 @@ fn run_align(
     );
     let calibrate_focal_prior =
         setting_bool(&manifest.settings, "/align/calibrateFocalPrior", true);
+    let mut calibrated_focal_inputs = None;
     if calibrate_focal_prior && !has_valid_global_mapper_priors(&root, false) {
         if colmap_capabilities.view_graph_calibrator {
             let calibration_backup = root.join("metadata/.align-focal-calibration.backup");
@@ -6717,6 +6886,12 @@ fn run_align(
                         "view_graph_calibrator",
                     ) {
                         Ok(report) if report.focal_prior_valid => {
+                            calibrated_focal_inputs = Some(
+                                crate::colmap_priors::read_focal_prior_inputs(
+                                    &db,
+                                    "view_graph_calibrator",
+                                )?,
+                            );
                             remove_align_artifact(&calibration_backup)?;
                             emit_log(
                                 app,
@@ -7102,6 +7277,90 @@ fn run_align(
             }
         };
         rig_configs = persist_rig_config_from_database(&root, &db)?;
+        if let Some(focal_inputs) = calibrated_focal_inputs.as_deref() {
+            let report = crate::colmap_priors::mark_focal_priors(&db, focal_inputs)?;
+            if !report.focal_prior_valid {
+                return Err(format!(
+                    "rig configurator 後 focal prior coverage 降為 {:.1}%",
+                    report.focal_coverage_ratio * 100.0
+                ));
+            }
+            emit_log(
+                app,
+                id,
+                "info",
+                format!(
+                    "已在 rig configurator 後交易式還原 {:.1}% verified focal priors",
+                    report.focal_coverage_ratio * 100.0
+                ),
+            );
+        } else if calibrate_focal_prior && colmap_capabilities.view_graph_calibrator {
+            // Some COLMAP builds can leave an otherwise calibrated database
+            // unmarked before bootstrap. Retry once after rig configuration,
+            // then accept only the same strict DB round-trip validation.
+            let retry_backup = root.join("metadata/.align-post-rig-focal.backup");
+            remove_align_artifact(&retry_backup)?;
+            create_colmap_database_backup(&db, &retry_backup)?;
+            emit_log(
+                app,
+                id,
+                "info",
+                "正在 rig configurator 後有界重試 view graph focal calibration",
+            );
+            let retry_result = run_child(
+                app,
+                id,
+                &colmap,
+                &view_graph_calibrator_retry_args(&db),
+                control,
+            )
+            .and_then(|()| {
+                crate::colmap_priors::read_focal_prior_report(
+                    &db,
+                    "view_graph_calibrator",
+                )
+            });
+            match retry_result {
+                Ok(report) if report.focal_prior_valid => {
+                    remove_align_artifact(&retry_backup)?;
+                    emit_log(
+                        app,
+                        id,
+                        "info",
+                        format!(
+                            "post-rig focal calibration 已驗證（{:.1}% cameras）",
+                            report.focal_coverage_ratio * 100.0
+                        ),
+                    );
+                }
+                Ok(report) => {
+                    restore_colmap_database_backup(&db, &retry_backup)?;
+                    remove_align_artifact(&retry_backup)?;
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!(
+                            "post-rig focal coverage 只有 {:.1}%，已還原資料庫",
+                            report.focal_coverage_ratio * 100.0
+                        ),
+                    );
+                }
+                Err(error) if cancelled_error(&error, control) => return Err(error),
+                Err(error) => {
+                    restore_colmap_database_backup(&db, &retry_backup)?;
+                    remove_align_artifact(&retry_backup)?;
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!(
+                            "post-rig focal round-trip 驗證失敗，已還原資料庫：{error}"
+                        ),
+                    );
+                }
+            }
+        }
         if !rig_config_has_complete_sensor_poses(&rig_configs) {
             return Err("rig_configurator 完成但無法持久化完整 sensor_from_rig 外參".to_owned());
         }
@@ -7346,7 +7605,6 @@ fn run_align(
     if requested_mapper_mode == MapperMode::Auto
         && mapper_mode == MapperMode::Incremental
         && auto_calibrate_telemetry
-        && rig_preconfigured
         && rig_extrinsics_ready
         && colmap_capabilities.global_mapper
         && colmap_capabilities.global_mapper_gravity
@@ -7357,6 +7615,16 @@ fn run_align(
             "info",
             "正在從 incremental 種子模型估計 IMU 時間偏移與 rotational hand-eye calibration",
         );
+        let candidate_audit = root.join("metadata/global_mapper_candidate.json");
+        write_json_atomic(
+            &candidate_audit,
+            &json!({
+                "schemaVersion": 1,
+                "attempted": false,
+                "status": "calibrating_priors",
+                "gravityPriorRequested": use_gravity_prior,
+            }),
+        )?;
         match prepare_global_mapper_priors_from_seed(
             app,
             id,
@@ -7441,6 +7709,21 @@ fn run_align(
                     );
                 }
                 let global_candidate = root.join("sparse_global_candidate");
+                let seed_complete_rigs = fs::read_to_string(
+                    root.join("metadata/final-model-text/images.txt"),
+                )
+                .map(|images| complete_registered_dual_fisheye_frames(&images))
+                .unwrap_or(0);
+                write_json_atomic(
+                    &candidate_audit,
+                    &json!({
+                        "schemaVersion": 1,
+                        "attempted": true,
+                        "status": "running",
+                        "gravityPriorRequested": use_gravity_prior,
+                        "seedCompleteRegisteredRigFrames": seed_complete_rigs,
+                    }),
+                )?;
                 remove_align_artifact(&global_candidate)?;
                 fs::create_dir_all(&global_candidate).map_err(|error| error.to_string())?;
                 let global_gpu = requested_gpu
@@ -7456,7 +7739,7 @@ fn run_align(
                     GlobalMapperOptions {
                         use_gravity_prior,
                         fixed_rotation_ba: enable_fixed_rotation,
-                        disable_sensor_refinement: rig_preconfigured,
+                        disable_sensor_refinement: rig_extrinsics_ready,
                         quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
                     },
                 );
@@ -7469,7 +7752,7 @@ fn run_align(
                     GlobalMapperOptions {
                         use_gravity_prior,
                         fixed_rotation_ba: enable_fixed_rotation,
-                        disable_sensor_refinement: rig_preconfigured,
+                        disable_sensor_refinement: rig_extrinsics_ready,
                         quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
                     },
                 );
@@ -7498,10 +7781,29 @@ fn run_align(
                         &global_candidate.join("0"),
                         control,
                     )?;
-                    Ok(())
+                    let candidate_text = root.join("metadata/global-candidate-text");
+                    export_colmap_text_model(
+                        app,
+                        id,
+                        &colmap,
+                        &global_candidate.join("0"),
+                        &candidate_text,
+                        control,
+                    )?;
+                    let candidate_complete_rigs = fs::read_to_string(
+                        candidate_text.join("images.txt"),
+                    )
+                    .map_err(|error| error.to_string())
+                    .map(|images| complete_registered_dual_fisheye_frames(&images))?;
+                    if candidate_complete_rigs < seed_complete_rigs {
+                        return Err(format!(
+                            "global candidate complete-rig coverage regressed: {candidate_complete_rigs} < {seed_complete_rigs}"
+                        ));
+                    }
+                    Ok(candidate_complete_rigs)
                 });
                 match global_result {
-                    Ok(()) => {
+                    Ok(candidate_complete_rigs) => {
                         let incremental_seed = root.join("sparse_incremental_seed");
                         remove_align_artifact(&incremental_seed)?;
                         fs::rename(&sparse, &incremental_seed)
@@ -7515,6 +7817,18 @@ fn run_align(
                             return Err(format!("global 模型提交失敗：{error}"));
                         }
                         effective_final_mapper_component = "global_mapper";
+                        write_json_atomic(
+                            &candidate_audit,
+                            &json!({
+                                "schemaVersion": 1,
+                                "attempted": true,
+                                "status": "accepted",
+                                "gravityPriorRequested": use_gravity_prior,
+                                "seedCompleteRegisteredRigFrames": seed_complete_rigs,
+                                "candidateCompleteRegisteredRigFrames": candidate_complete_rigs,
+                                "effectiveMapper": "global_mapper",
+                            }),
+                        )?;
                         emit_log(
                             app,
                             id,
@@ -7525,6 +7839,18 @@ fn run_align(
                     Err(error) if cancelled_error(&error, control) => return Err(error),
                     Err(error) => {
                         remove_align_artifact(&global_candidate)?;
+                        write_json_atomic(
+                            &candidate_audit,
+                            &json!({
+                                "schemaVersion": 1,
+                                "attempted": true,
+                                "status": "rejected",
+                                "gravityPriorRequested": use_gravity_prior,
+                                "seedCompleteRegisteredRigFrames": seed_complete_rigs,
+                                "effectiveMapper": "bootstrap_mapper",
+                                "error": &error,
+                            }),
+                        )?;
                         emit_log(
                             app,
                             id,
@@ -7535,12 +7861,25 @@ fn run_align(
                 }
             }
             Err(error) if cancelled_error(&error, control) => return Err(error),
-            Err(error) => emit_log(
-                app,
-                id,
-                "warning",
-                format!("IMU/global 前提未通過，保留 incremental 結果：{error}"),
-            ),
+            Err(error) => {
+                write_json_atomic(
+                    &candidate_audit,
+                    &json!({
+                        "schemaVersion": 1,
+                        "attempted": false,
+                        "status": "prior_validation_failed",
+                        "gravityPriorRequested": use_gravity_prior,
+                        "effectiveMapper": "bootstrap_mapper",
+                        "error": &error,
+                    }),
+                )?;
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!("IMU/global 前提未通過，保留 incremental 結果：{error}"),
+                );
+            }
         }
     }
     if let Some(executable) = manifest
@@ -7725,13 +8064,16 @@ mod tests {
         parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
         probe_duration_seconds, read_raw_frames, registered_rig_image_names,
-        restore_colmap_database_backup, rig_bootstrap_shared_frame_count, rig_camera_rotations,
+        reset_capabilities_for_stage_start, restore_colmap_database_backup,
+        rollback_calibrated_pair_transaction,
+        rig_bootstrap_shared_frame_count, rig_camera_rotations,
         rig_configs_from_camera_extrinsics,
         rig_config_has_complete_sensor_poses, rig_mapping_plan, select_best_bootstrap_candidate,
         selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
-        validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs, with_hwaccel_auto,
-        write_candidate_selection_checkpoint, write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
+        validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
+        view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
+        write_rig_and_pairs, AlignCheckpoint, ColmapFraction,
         ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
         MapperOptions, ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
         RigBootstrapConfig, RigBootstrapModelCandidate, RigMappingPlan, StageName,
@@ -7747,6 +8089,52 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
     use tempfile::TempDir;
+
+    #[test]
+    fn starting_align_clears_stale_imu_capability() {
+        let mut manifest: crate::project::ProjectManifest =
+            serde_json::from_value(json!({})).unwrap();
+        manifest.capabilities.insert("imuApplied".to_owned(), true);
+
+        reset_capabilities_for_stage_start(&mut manifest, &StageName::Align);
+
+        assert_eq!(manifest.capabilities.get("imuApplied"), Some(&false));
+    }
+
+    #[test]
+    fn post_rig_focal_retry_is_bounded_and_deterministic() {
+        let args = view_graph_calibrator_retry_args(Path::new("database.db"));
+        assert!(args
+            .windows(2)
+            .any(|values| values == ["--min_calibrated_pair_ratio", "0.25"]));
+        assert!(args
+            .windows(2)
+            .any(|values| values == ["--default_random_seed", "0"]));
+    }
+
+    #[test]
+    fn calibrated_pair_transaction_rolls_back_database_and_pairs_together() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("database.db");
+        let backup = temp.path().join("database.backup");
+        let pairs = temp.path().join("pairs.txt");
+        fs::write(&database, b"changed database").unwrap();
+        fs::write(&pairs, b"changed pairs\n").unwrap();
+        fs::create_dir(&backup).unwrap();
+        fs::write(backup.join("database.db"), b"original database").unwrap();
+
+        rollback_calibrated_pair_transaction(
+            &database,
+            &backup,
+            &pairs,
+            b"original pairs\n",
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(database).unwrap(), b"original database");
+        assert_eq!(fs::read(pairs).unwrap(), b"original pairs\n");
+        assert!(!backup.exists());
+    }
 
     #[test]
     fn extract_frame_settings_use_three_fps_and_preserve_candidate_multipliers() {

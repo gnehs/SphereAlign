@@ -1,0 +1,3225 @@
+{
+  "schemaVersion": 1,
+  "format": "gs360.orientation-prior/v1",
+  "orientationConvention": "rig_from_world",
+  "quaternionOrder": "wxyz_hamilton",
+  "units": "milliseconds_and_radians",
+  "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+  "timeOffsetMs": 15.0,
+  "telemetryCoverageMs": [
+    -7.302252037425553,
+    100892.80607935824
+  ],
+  "source": {
+    "source": "dji_fused_attitude_calibrated",
+    "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+    "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+    "timestampSource": "ffmpeg_pts_exposure_center",
+    "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+  },
+  "validation": {
+    "valid": true,
+    "expectedFrameCount": 168,
+    "coveredFrameCount": 168,
+    "coverageRatio": 1.0,
+    "maxResidualAngleDeg": 1.1058173048533695,
+    "timeOffsetMs": 15.0,
+    "timestampMonotonic": true,
+    "issues": []
+  },
+  "priors": [
+    {
+      "rigFrameId": "source000_00000004.jpg",
+      "timestampMs": 250.0,
+      "rigQuaternionWxyz": [
+        -0.5715906842403019,
+        -0.5935201051177155,
+        -0.4111831295044746,
+        0.3898030381124113
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000012.jpg",
+      "timestampMs": 916.667,
+      "rigQuaternionWxyz": [
+        -0.5625752483742824,
+        -0.5898086093477252,
+        -0.40887928280171826,
+        0.4104298068506593
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000024.jpg",
+      "timestampMs": 1916.67,
+      "rigQuaternionWxyz": [
+        -0.5316007662338884,
+        -0.5608778156477231,
+        -0.44882322059713314,
+        0.44874761047452805
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000032.jpg",
+      "timestampMs": 2583.33,
+      "rigQuaternionWxyz": [
+        -0.5600916262362551,
+        -0.5658177259630777,
+        -0.42978562409846083,
+        0.4259483402060575
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000037.jpg",
+      "timestampMs": 3000.0,
+      "rigQuaternionWxyz": [
+        -0.6221747893824217,
+        -0.5487972571060344,
+        -0.4335448760386495,
+        0.3517938920880585
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000044.jpg",
+      "timestampMs": 3583.33,
+      "rigQuaternionWxyz": [
+        -0.5985653439881402,
+        -0.6056679375016459,
+        -0.39109385481500386,
+        0.34918687716579855
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000048.jpg",
+      "timestampMs": 3916.67,
+      "rigQuaternionWxyz": [
+        -0.5597855097689567,
+        -0.6372130751780006,
+        -0.39809239201121327,
+        0.34945976491964814
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000053.jpg",
+      "timestampMs": 4333.33,
+      "rigQuaternionWxyz": [
+        -0.598271805261446,
+        -0.6571960744002966,
+        -0.3574663973966398,
+        0.2870225453763484
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000060.jpg",
+      "timestampMs": 4916.67,
+      "rigQuaternionWxyz": [
+        -0.6178219992558267,
+        -0.6220294662339938,
+        -0.35485983999035825,
+        0.32473037174585867
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000066.jpg",
+      "timestampMs": 5416.67,
+      "rigQuaternionWxyz": [
+        -0.6361123448064318,
+        -0.5945495635997033,
+        -0.3443913973739845,
+        0.3510932449123166
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000070.jpg",
+      "timestampMs": 5750.0,
+      "rigQuaternionWxyz": [
+        -0.6106170808403804,
+        -0.5585965315644856,
+        -0.38126280342113084,
+        0.41201379860091986
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000081.jpg",
+      "timestampMs": 6666.67,
+      "rigQuaternionWxyz": [
+        -0.5781516207598933,
+        -0.5513476971652314,
+        -0.4241509630634839,
+        0.42644153265790613
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000089.jpg",
+      "timestampMs": 7333.33,
+      "rigQuaternionWxyz": [
+        -0.6012363285680927,
+        -0.6115893974786666,
+        -0.36870836220313,
+        0.358507224115676
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000094.jpg",
+      "timestampMs": 7750.0,
+      "rigQuaternionWxyz": [
+        -0.5619939428477225,
+        -0.6275231351385638,
+        -0.3853178991052925,
+        0.37670630429742263
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000098.jpg",
+      "timestampMs": 8083.33,
+      "rigQuaternionWxyz": [
+        -0.5780407191844728,
+        -0.6518633484836318,
+        -0.3509547312868762,
+        0.34318199028469043
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000103.jpg",
+      "timestampMs": 8500.0,
+      "rigQuaternionWxyz": [
+        -0.6066580345278404,
+        -0.6377456547903423,
+        -0.34833856775780536,
+        0.32234570130730145
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000109.jpg",
+      "timestampMs": 9000.0,
+      "rigQuaternionWxyz": [
+        -0.6167586861674096,
+        -0.6129975686872753,
+        -0.370002129199223,
+        0.3270185441356216
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000116.jpg",
+      "timestampMs": 9583.33,
+      "rigQuaternionWxyz": [
+        -0.6444589149389841,
+        -0.6122079808622088,
+        -0.3362116538932537,
+        0.3111845415676165
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000124.jpg",
+      "timestampMs": 10250.0,
+      "rigQuaternionWxyz": [
+        -0.6533723210421432,
+        -0.6090202410455449,
+        -0.3202293786497111,
+        0.31567721036281515
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000131.jpg",
+      "timestampMs": 10833.3,
+      "rigQuaternionWxyz": [
+        -0.6143948425445077,
+        -0.6082663800093246,
+        -0.35067925835455155,
+        0.359937558702844
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000144.jpg",
+      "timestampMs": 11916.7,
+      "rigQuaternionWxyz": [
+        -0.5724075877514816,
+        -0.604855426440183,
+        -0.38825501014846364,
+        0.3946612644851414
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000152.jpg",
+      "timestampMs": 12583.3,
+      "rigQuaternionWxyz": [
+        -0.589865432767622,
+        -0.6748399280800397,
+        -0.3361743066853804,
+        0.28920006607778764
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000164.jpg",
+      "timestampMs": 13583.3,
+      "rigQuaternionWxyz": [
+        -0.6410336162790133,
+        -0.6855386042729676,
+        -0.27890641380940895,
+        0.20328289939809768
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000168.jpg",
+      "timestampMs": 13916.7,
+      "rigQuaternionWxyz": [
+        -0.6490255184377683,
+        -0.6562192039617768,
+        -0.3015613008464563,
+        0.23917151711721688
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000176.jpg",
+      "timestampMs": 14583.3,
+      "rigQuaternionWxyz": [
+        -0.6643627006200787,
+        -0.6555543277510286,
+        -0.2846196920608975,
+        0.21877467011254445
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000184.jpg",
+      "timestampMs": 15250.0,
+      "rigQuaternionWxyz": [
+        -0.6369471348540452,
+        -0.6640165254368998,
+        -0.2992230623647725,
+        0.25267758170636656
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000188.jpg",
+      "timestampMs": 15583.3,
+      "rigQuaternionWxyz": [
+        -0.6548221776790517,
+        -0.677326131565127,
+        -0.26055009416321684,
+        0.21107078327002918
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000196.jpg",
+      "timestampMs": 16250.0,
+      "rigQuaternionWxyz": [
+        -0.6479573818344818,
+        -0.6579821570466685,
+        -0.30420019978762086,
+        0.23382247707093648
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000208.jpg",
+      "timestampMs": 17250.0,
+      "rigQuaternionWxyz": [
+        -0.612789979017798,
+        -0.6590590028737248,
+        -0.32234112723378705,
+        0.29364241866615554
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000216.jpg",
+      "timestampMs": 17916.699999999997,
+      "rigQuaternionWxyz": [
+        -0.5992577165009016,
+        -0.6824939964640111,
+        -0.32099761953502537,
+        0.2684262696860251
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000227.jpg",
+      "timestampMs": 18833.300000000003,
+      "rigQuaternionWxyz": [
+        -0.6319286990303339,
+        -0.7162093841856401,
+        -0.23254099753567087,
+        0.18339826010998936
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000236.jpg",
+      "timestampMs": 19583.300000000003,
+      "rigQuaternionWxyz": [
+        -0.6549911567148463,
+        -0.7120027393950223,
+        -0.19289407260081975,
+        0.1638003677492859
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000241.jpg",
+      "timestampMs": 20000.0,
+      "rigQuaternionWxyz": [
+        -0.6774027259515527,
+        -0.726213707239,
+        -0.09678932252874449,
+        0.06611373031390838
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000249.jpg",
+      "timestampMs": 20666.699999999997,
+      "rigQuaternionWxyz": [
+        -0.6946995132336308,
+        -0.7037874284277904,
+        -0.10872705810804154,
+        0.10126336324221603
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000260.jpg",
+      "timestampMs": 21583.300000000003,
+      "rigQuaternionWxyz": [
+        -0.6816101491727259,
+        -0.7120199746195299,
+        -0.09718028831925479,
+        0.13780838816895383
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000268.jpg",
+      "timestampMs": 22250.0,
+      "rigQuaternionWxyz": [
+        -0.6785510447579498,
+        -0.7177652031636607,
+        -0.07933092566621773,
+        0.13449236788109886
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000272.jpg",
+      "timestampMs": 22583.300000000003,
+      "rigQuaternionWxyz": [
+        -0.6815793586235378,
+        -0.7031547390139901,
+        -0.11928906943745506,
+        0.16368600677284667
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000277.jpg",
+      "timestampMs": 23000.0,
+      "rigQuaternionWxyz": [
+        -0.6885309689282116,
+        -0.71230687091961,
+        -0.10211723506888729,
+        0.09008938211230987
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000287.jpg",
+      "timestampMs": 23833.300000000003,
+      "rigQuaternionWxyz": [
+        -0.7107144354605226,
+        -0.6957824793945617,
+        -0.08796701843701613,
+        0.055077547720362836
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000295.jpg",
+      "timestampMs": 24500.0,
+      "rigQuaternionWxyz": [
+        -0.7072661630477631,
+        -0.6999375235278373,
+        -0.09431842674880864,
+        0.031081701064178374
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000301.jpg",
+      "timestampMs": 25000.0,
+      "rigQuaternionWxyz": [
+        -0.7089526930460618,
+        -0.704715308260867,
+        -0.023230394710548292,
+        -0.0149252164848596
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000310.jpg",
+      "timestampMs": 25750.0,
+      "rigQuaternionWxyz": [
+        -0.6969839352893105,
+        -0.7130581257484441,
+        -0.056764942224402884,
+        0.05039091770351798
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000319.jpg",
+      "timestampMs": 26500.0,
+      "rigQuaternionWxyz": [
+        -0.6879401434738359,
+        -0.7137517827789279,
+        -0.09462200449930347,
+        0.09134236608296337
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000328.jpg",
+      "timestampMs": 27250.0,
+      "rigQuaternionWxyz": [
+        -0.665038284972249,
+        -0.7343838459114962,
+        -0.10866008065161048,
+        0.08122458530639089
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000336.jpg",
+      "timestampMs": 27916.699999999997,
+      "rigQuaternionWxyz": [
+        -0.6689066169730432,
+        -0.7327188161872839,
+        -0.10565831828956987,
+        0.06725618150775274
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000340.jpg",
+      "timestampMs": 28250.0,
+      "rigQuaternionWxyz": [
+        -0.6738232682805321,
+        -0.7368160177242772,
+        -0.05508671629224695,
+        -0.005460113260484347
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000346.jpg",
+      "timestampMs": 28750.0,
+      "rigQuaternionWxyz": [
+        -0.6940277326615304,
+        -0.7182105013940686,
+        -0.008864878277680809,
+        -0.049199552000989195
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000351.jpg",
+      "timestampMs": 29166.699999999997,
+      "rigQuaternionWxyz": [
+        -0.6973186058557589,
+        -0.7004333453929757,
+        0.08548818987401145,
+        -0.12582392451775645
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000357.jpg",
+      "timestampMs": 29666.699999999997,
+      "rigQuaternionWxyz": [
+        -0.6669445328587262,
+        -0.6641066066678978,
+        0.21312692808806372,
+        -0.26215323304062266
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000365.jpg",
+      "timestampMs": 30333.300000000003,
+      "rigQuaternionWxyz": [
+        -0.6771289490375197,
+        -0.6386214571280875,
+        0.23962725859802872,
+        -0.2761119298540643
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000376.jpg",
+      "timestampMs": 31250.0,
+      "rigQuaternionWxyz": [
+        -0.6560557888508181,
+        -0.6900597941253265,
+        0.2161455876829625,
+        -0.21607722548253383
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000384.jpg",
+      "timestampMs": 31916.699999999997,
+      "rigQuaternionWxyz": [
+        -0.6662657574291309,
+        -0.6986259588288759,
+        0.1931678527513246,
+        -0.1752081356309208
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000388.jpg",
+      "timestampMs": 32250.0,
+      "rigQuaternionWxyz": [
+        -0.6815524406933677,
+        -0.7028851323956197,
+        0.15176107875448647,
+        -0.13567363862364812
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000397.jpg",
+      "timestampMs": 33000.0,
+      "rigQuaternionWxyz": [
+        -0.6844691493377457,
+        -0.7090191638839298,
+        0.11026979972842693,
+        -0.12897433899054686
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000405.jpg",
+      "timestampMs": 33666.7,
+      "rigQuaternionWxyz": [
+        -0.6800190530404845,
+        -0.6950058556312155,
+        0.11542866908525165,
+        -0.20302012337069542
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000413.jpg",
+      "timestampMs": 34333.3,
+      "rigQuaternionWxyz": [
+        -0.6728299741382687,
+        -0.6893643849591119,
+        0.12860065635646806,
+        -0.23566595391725062
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000420.jpg",
+      "timestampMs": 34916.7,
+      "rigQuaternionWxyz": [
+        -0.6483828747039017,
+        -0.671300290002433,
+        0.21417544854906712,
+        -0.28824372616270444
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000427.jpg",
+      "timestampMs": 35500.0,
+      "rigQuaternionWxyz": [
+        -0.6285190785654597,
+        -0.6639409037728988,
+        0.27989487839302374,
+        -0.29292507783698973
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000436.jpg",
+      "timestampMs": 36250.0,
+      "rigQuaternionWxyz": [
+        -0.6197075594997434,
+        -0.6670369729216427,
+        0.29713959689919495,
+        -0.28763219119039474
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000441.jpg",
+      "timestampMs": 36666.7,
+      "rigQuaternionWxyz": [
+        -0.5988539046944964,
+        -0.6422890848358201,
+        0.3203544110985215,
+        -0.3552629781199264
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000452.jpg",
+      "timestampMs": 37583.3,
+      "rigQuaternionWxyz": [
+        -0.5780059033842515,
+        -0.6248116942847888,
+        0.36348154911687874,
+        -0.3786828300695994
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000460.jpg",
+      "timestampMs": 38250.0,
+      "rigQuaternionWxyz": [
+        -0.5993551258972446,
+        -0.6480896622701248,
+        0.34485277675937426,
+        -0.3191077953930974
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000469.jpg",
+      "timestampMs": 39000.0,
+      "rigQuaternionWxyz": [
+        -0.6167919026422723,
+        -0.6340249174392582,
+        0.35476140323801425,
+        -0.30286052841805383
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000480.jpg",
+      "timestampMs": 39916.7,
+      "rigQuaternionWxyz": [
+        -0.6150917977980588,
+        -0.6166723509009897,
+        0.3377215193653744,
+        -0.3568213380297509
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000488.jpg",
+      "timestampMs": 40583.3,
+      "rigQuaternionWxyz": [
+        -0.5856020738161167,
+        -0.6167447647797837,
+        0.3665616142050168,
+        -0.3772647468958706
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000497.jpg",
+      "timestampMs": 41333.3,
+      "rigQuaternionWxyz": [
+        -0.5946930162011114,
+        -0.5999887720106374,
+        0.37626989443885256,
+        -0.38049264970793717
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000501.jpg",
+      "timestampMs": 41666.7,
+      "rigQuaternionWxyz": [
+        -0.5675050335712561,
+        -0.5736349031069217,
+        0.4221225459809313,
+        -0.4131508090072884
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000512.jpg",
+      "timestampMs": 42583.3,
+      "rigQuaternionWxyz": [
+        -0.5340353771973023,
+        -0.5638276490597609,
+        0.4306494805671972,
+        -0.4598321682360656
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000520.jpg",
+      "timestampMs": 43250.0,
+      "rigQuaternionWxyz": [
+        -0.5508334869271314,
+        -0.5623651633896737,
+        0.41138333299533286,
+        -0.4594471090550627
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000525.jpg",
+      "timestampMs": 43666.7,
+      "rigQuaternionWxyz": [
+        -0.5129679404712882,
+        -0.5305970718371864,
+        0.4654353879780064,
+        -0.48856989164725584
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000533.jpg",
+      "timestampMs": 44333.3,
+      "rigQuaternionWxyz": [
+        -0.5170725445387611,
+        -0.528071539747079,
+        0.4632233393775238,
+        -0.4890813536103127
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000538.jpg",
+      "timestampMs": 44750.0,
+      "rigQuaternionWxyz": [
+        -0.4831441158302472,
+        -0.5055574301857961,
+        0.4787573255118891,
+        -0.5308247087233654
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000549.jpg",
+      "timestampMs": 45666.7,
+      "rigQuaternionWxyz": [
+        -0.4513463002966971,
+        -0.5097889176663958,
+        0.5128496588119409,
+        -0.5228642310289396
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000557.jpg",
+      "timestampMs": 46333.3,
+      "rigQuaternionWxyz": [
+        -0.454914594417706,
+        -0.5370728035917891,
+        0.5025398708061806,
+        -0.502054970773059
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000568.jpg",
+      "timestampMs": 47250.0,
+      "rigQuaternionWxyz": [
+        -0.48813731423276346,
+        -0.5494945153343866,
+        0.4637490935110374,
+        -0.4946862827477059
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000580.jpg",
+      "timestampMs": 48250.0,
+      "rigQuaternionWxyz": [
+        -0.5103733809834115,
+        -0.5235750545569786,
+        0.45735277325325674,
+        -0.5061784418826761
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000588.jpg",
+      "timestampMs": 48916.7,
+      "rigQuaternionWxyz": [
+        -0.4834481683211412,
+        -0.49222112119431133,
+        0.49852020504588174,
+        -0.5248560198360698
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000600.jpg",
+      "timestampMs": 49916.7,
+      "rigQuaternionWxyz": [
+        -0.4159365909681043,
+        -0.44570330437380085,
+        0.557772572325282,
+        -0.5632362508980979
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000609.jpg",
+      "timestampMs": 50666.7,
+      "rigQuaternionWxyz": [
+        -0.35467221112821157,
+        -0.3979119677023682,
+        0.5835788438066114,
+        -0.6126250253409449
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000620.jpg",
+      "timestampMs": 51583.3,
+      "rigQuaternionWxyz": [
+        -0.32229874481414467,
+        -0.340016508629147,
+        0.6372943409620391,
+        -0.6118563687080755
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000624.jpg",
+      "timestampMs": 51916.7,
+      "rigQuaternionWxyz": [
+        -0.2907091949059171,
+        -0.28830071245237365,
+        0.6541107815211589,
+        -0.6360109658601699
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000632.jpg",
+      "timestampMs": 52583.3,
+      "rigQuaternionWxyz": [
+        -0.24746179828059828,
+        -0.273852723503211,
+        0.6528413279492999,
+        -0.661487373079034
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000640.jpg",
+      "timestampMs": 53250.0,
+      "rigQuaternionWxyz": [
+        -0.18013337275193445,
+        -0.22409462266089245,
+        0.6733989400155884,
+        -0.6810781421403619
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000648.jpg",
+      "timestampMs": 53916.7,
+      "rigQuaternionWxyz": [
+        -0.08993631879403431,
+        -0.1365533388250453,
+        0.6916638831506506,
+        -0.7034669267012298
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000657.jpg",
+      "timestampMs": 54666.7,
+      "rigQuaternionWxyz": [
+        -0.10014089396521988,
+        -0.16334286505082835,
+        0.6832520061620047,
+        -0.7045974779038239
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000667.jpg",
+      "timestampMs": 55500.0,
+      "rigQuaternionWxyz": [
+        -0.2407162053112834,
+        -0.2687109561506037,
+        0.6497888073338641,
+        -0.6690475591531584
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000672.jpg",
+      "timestampMs": 55916.7,
+      "rigQuaternionWxyz": [
+        -0.2955321104382897,
+        -0.3058449776812909,
+        0.6184757802604408,
+        -0.6607626885336825
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000676.jpg",
+      "timestampMs": 56250.0,
+      "rigQuaternionWxyz": [
+        -0.34996447369101713,
+        -0.3554712937579829,
+        0.5930987834488635,
+        -0.6319801100823296
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000684.jpg",
+      "timestampMs": 56916.7,
+      "rigQuaternionWxyz": [
+        -0.3488259110320018,
+        -0.36600510114293,
+        0.6198594785059915,
+        -0.6001124699890245
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000696.jpg",
+      "timestampMs": 57916.7,
+      "rigQuaternionWxyz": [
+        -0.26703495962806206,
+        -0.3070211652274611,
+        0.6554432552844626,
+        -0.6362581815119693
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000700.jpg",
+      "timestampMs": 58250.0,
+      "rigQuaternionWxyz": [
+        -0.22572171655094325,
+        -0.2508299716673812,
+        0.6667239178820921,
+        -0.6645398778964207
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000704.jpg",
+      "timestampMs": 58583.3,
+      "rigQuaternionWxyz": [
+        -0.17972760302911253,
+        -0.17077812215446392,
+        0.6753942036421189,
+        -0.6945325704309575
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000709.jpg",
+      "timestampMs": 59000.0,
+      "rigQuaternionWxyz": [
+        -0.03359129604127223,
+        -0.04700437441473852,
+        0.6948046246676782,
+        -0.7168742896467648
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000713.jpg",
+      "timestampMs": 59333.3,
+      "rigQuaternionWxyz": [
+        0.004103712100624239,
+        -0.0004462740298038651,
+        0.692738609936497,
+        -0.721176939932036
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000721.jpg",
+      "timestampMs": 60000.0,
+      "rigQuaternionWxyz": [
+        0.05268088122198818,
+        0.043368662080366646,
+        0.7007103743525916,
+        -0.7101752285018711
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000727.jpg",
+      "timestampMs": 60500.0,
+      "rigQuaternionWxyz": [
+        0.01007486841854065,
+        0.021133576758141467,
+        0.7123480297257305,
+        -0.701435780029524
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000735.jpg",
+      "timestampMs": 61166.7,
+      "rigQuaternionWxyz": [
+        0.047693456342736855,
+        0.04773512690138304,
+        0.7059992527771292,
+        -0.7049906006181414
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000740.jpg",
+      "timestampMs": 61583.3,
+      "rigQuaternionWxyz": [
+        0.008434268658135818,
+        0.00022136584382474386,
+        0.722867848562395,
+        -0.6909347925992293
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000747.jpg",
+      "timestampMs": 62166.7,
+      "rigQuaternionWxyz": [
+        0.005350650690464196,
+        -0.0036881987903419336,
+        0.752850327827439,
+        -0.6581596703057618
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000751.jpg",
+      "timestampMs": 62500.0,
+      "rigQuaternionWxyz": [
+        -0.04188797699066446,
+        -0.027274813975858805,
+        0.7514803779536755,
+        -0.6578591972883049
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000760.jpg",
+      "timestampMs": 63250.0,
+      "rigQuaternionWxyz": [
+        -0.039497209002107334,
+        -0.02032550562061765,
+        0.7181741446840738,
+        -0.6944441966130968
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000769.jpg",
+      "timestampMs": 64000.0,
+      "rigQuaternionWxyz": [
+        -0.02030119568435086,
+        -0.02215187569381463,
+        0.6956368217056152,
+        -0.7177649811354282
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000773.jpg",
+      "timestampMs": 64333.3,
+      "rigQuaternionWxyz": [
+        0.026051901432389512,
+        -0.006546712718364018,
+        0.6845213467521034,
+        -0.7284977452436123
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000781.jpg",
+      "timestampMs": 65000.0,
+      "rigQuaternionWxyz": [
+        0.028776159640806483,
+        0.0014768827407949919,
+        0.6965258521196152,
+        -0.716952919502209
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000787.jpg",
+      "timestampMs": 65500.0,
+      "rigQuaternionWxyz": [
+        0.07209460139769637,
+        0.062272994154023306,
+        0.7214435495675884,
+        -0.6858889468680183
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000800.jpg",
+      "timestampMs": 66583.29999999999,
+      "rigQuaternionWxyz": [
+        0.1490071965235001,
+        0.1504472463055731,
+        0.6938575567237644,
+        -0.6882762326570673
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000812.jpg",
+      "timestampMs": 67583.29999999999,
+      "rigQuaternionWxyz": [
+        0.16301760238313265,
+        0.11270895644449544,
+        0.6882314472675791,
+        -0.6978964303121354
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000816.jpg",
+      "timestampMs": 67916.70000000001,
+      "rigQuaternionWxyz": [
+        0.07611478888352675,
+        0.052587417039500796,
+        0.6862873347447631,
+        -0.7214227586174832
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000820.jpg",
+      "timestampMs": 68250.0,
+      "rigQuaternionWxyz": [
+        0.038035194959172604,
+        0.030930875120357852,
+        0.6929881844848317,
+        -0.7192801825944626
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000832.jpg",
+      "timestampMs": 69250.0,
+      "rigQuaternionWxyz": [
+        0.10463972137255594,
+        0.107102810278694,
+        0.7043019624284066,
+        -0.6939295803328861
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000841.jpg",
+      "timestampMs": 70000.0,
+      "rigQuaternionWxyz": [
+        0.15976290566161463,
+        0.17767250725897363,
+        0.6755972564209644,
+        -0.6974787747704829
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000845.jpg",
+      "timestampMs": 70333.29999999999,
+      "rigQuaternionWxyz": [
+        0.20017313110940207,
+        0.2130110891965286,
+        0.6831468670110695,
+        -0.6692289231302895
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000852.jpg",
+      "timestampMs": 70916.70000000001,
+      "rigQuaternionWxyz": [
+        0.21611278488840588,
+        0.24772678072111493,
+        0.657592216277594,
+        -0.6778636908792596
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000856.jpg",
+      "timestampMs": 71250.0,
+      "rigQuaternionWxyz": [
+        0.24718374846880187,
+        0.27137928317645565,
+        0.6450866113139389,
+        -0.6701617290319138
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000860.jpg",
+      "timestampMs": 71583.29999999999,
+      "rigQuaternionWxyz": [
+        0.2666136115374687,
+        0.2736960208113074,
+        0.6472395482276415,
+        -0.6596124904404728
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000865.jpg",
+      "timestampMs": 72000.0,
+      "rigQuaternionWxyz": [
+        0.24749778265416872,
+        0.2498540790181464,
+        0.6535653220977004,
+        -0.6702015790272303
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000872.jpg",
+      "timestampMs": 72583.29999999999,
+      "rigQuaternionWxyz": [
+        0.24206541282872246,
+        0.25632722972817285,
+        0.6769971224240345,
+        -0.6460461155687863
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000875.jpg",
+      "timestampMs": 72833.29999999999,
+      "rigQuaternionWxyz": [
+        0.18338888533649797,
+        0.2090556420578733,
+        0.6958681782357377,
+        -0.6621417777014851
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000879.jpg",
+      "timestampMs": 73166.70000000001,
+      "rigQuaternionWxyz": [
+        0.14821163959770742,
+        0.1671483046298096,
+        0.6953380068739634,
+        -0.6830811154933825
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000885.jpg",
+      "timestampMs": 73666.70000000001,
+      "rigQuaternionWxyz": [
+        0.13618970076914194,
+        0.11027466544411674,
+        0.7009279040159974,
+        -0.6913696094979448
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000889.jpg",
+      "timestampMs": 74000.0,
+      "rigQuaternionWxyz": [
+        0.06436330660728679,
+        0.06500006012443263,
+        0.69470615723206,
+        -0.7134533706208565
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000897.jpg",
+      "timestampMs": 74666.70000000001,
+      "rigQuaternionWxyz": [
+        -0.032794635677379384,
+        -0.010041513276537142,
+        0.7160947090458631,
+        -0.6971599870606645
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000902.jpg",
+      "timestampMs": 75083.29999999999,
+      "rigQuaternionWxyz": [
+        -0.12440337433571728,
+        -0.11417863282899351,
+        0.7132744056086949,
+        -0.6802401506547172
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000908.jpg",
+      "timestampMs": 75583.29999999999,
+      "rigQuaternionWxyz": [
+        -0.1217947498164392,
+        -0.13636878853106016,
+        0.7255334766381335,
+        -0.6634536658344011
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000912.jpg",
+      "timestampMs": 75916.70000000001,
+      "rigQuaternionWxyz": [
+        -0.15267755711044542,
+        -0.15061479588261953,
+        0.7198493812686437,
+        -0.660167868881222
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000920.jpg",
+      "timestampMs": 76583.29999999999,
+      "rigQuaternionWxyz": [
+        -0.09319476825839337,
+        -0.12082080273654831,
+        0.7135612280305781,
+        -0.6837744091780958
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000925.jpg",
+      "timestampMs": 77000.0,
+      "rigQuaternionWxyz": [
+        -0.10485533170359043,
+        -0.11982333857068388,
+        0.7092041887309235,
+        -0.6867875549495769
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000936.jpg",
+      "timestampMs": 77916.70000000001,
+      "rigQuaternionWxyz": [
+        -0.11513703375457618,
+        -0.11248808451914877,
+        0.7102098625186918,
+        -0.6853406784078933
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000944.jpg",
+      "timestampMs": 78583.29999999999,
+      "rigQuaternionWxyz": [
+        -0.12706902065821063,
+        -0.13908829100206896,
+        0.7092928237001173,
+        -0.6792728476412121
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000952.jpg",
+      "timestampMs": 79250.0,
+      "rigQuaternionWxyz": [
+        -0.13062041889360165,
+        -0.16160769537351993,
+        0.6954113875389631,
+        -0.6879129749068945
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000960.jpg",
+      "timestampMs": 79916.70000000001,
+      "rigQuaternionWxyz": [
+        -0.133525344289131,
+        -0.17106897856672093,
+        0.6895214859846355,
+        -0.6909895132128622
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000968.jpg",
+      "timestampMs": 80583.29999999999,
+      "rigQuaternionWxyz": [
+        -0.08907807035723014,
+        -0.13191863080209792,
+        0.6934165096754343,
+        -0.7027347410924485
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000977.jpg",
+      "timestampMs": 81333.29999999999,
+      "rigQuaternionWxyz": [
+        -0.11082346687917607,
+        -0.11263484091104865,
+        0.6891705907041232,
+        -0.7071601294688162
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000981.jpg",
+      "timestampMs": 81666.70000000001,
+      "rigQuaternionWxyz": [
+        -0.05906419480335645,
+        -0.07407907888656637,
+        0.7109169547162397,
+        -0.6968649757740284
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000992.jpg",
+      "timestampMs": 82583.29999999999,
+      "rigQuaternionWxyz": [
+        0.04049707750881521,
+        0.011206698170739639,
+        0.7059338777258831,
+        -0.7070302376194761
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00000996.jpg",
+      "timestampMs": 82916.70000000001,
+      "rigQuaternionWxyz": [
+        0.09351653912187255,
+        0.048460818463771344,
+        0.6883106696724397,
+        -0.7177287983629794
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001000.jpg",
+      "timestampMs": 83250.0,
+      "rigQuaternionWxyz": [
+        0.1344136603243416,
+        0.09064212069211242,
+        0.6733813068805637,
+        -0.7213006234701819
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001004.jpg",
+      "timestampMs": 83583.29999999999,
+      "rigQuaternionWxyz": [
+        0.19634495796419002,
+        0.1550381780233273,
+        0.6737514879371196,
+        -0.6953206119048716
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001012.jpg",
+      "timestampMs": 84250.0,
+      "rigQuaternionWxyz": [
+        0.1736718826779785,
+        0.12908470587910964,
+        0.6774016681364536,
+        -0.7030662812858687
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001018.jpg",
+      "timestampMs": 84750.0,
+      "rigQuaternionWxyz": [
+        0.22537282214896487,
+        0.15919867430819817,
+        0.6821350594856779,
+        -0.6771666218557986
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001027.jpg",
+      "timestampMs": 85500.0,
+      "rigQuaternionWxyz": [
+        0.2649794577936003,
+        0.22657550158868145,
+        0.651098915420209,
+        -0.6741807112087045
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001036.jpg",
+      "timestampMs": 86250.0,
+      "rigQuaternionWxyz": [
+        0.38791968087933393,
+        0.34890969566020696,
+        0.5956627563219464,
+        -0.6107096087271914
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001040.jpg",
+      "timestampMs": 86583.29999999999,
+      "rigQuaternionWxyz": [
+        0.41123824293451955,
+        0.4042167548992868,
+        0.5692731708118108,
+        -0.5860204600529627
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001045.jpg",
+      "timestampMs": 87000.0,
+      "rigQuaternionWxyz": [
+        0.47173463868572596,
+        0.47330569709200215,
+        0.5400846475604996,
+        -0.5116216582922898
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001053.jpg",
+      "timestampMs": 87666.70000000001,
+      "rigQuaternionWxyz": [
+        0.4932860098423524,
+        0.48505637334433266,
+        0.509915008236481,
+        -0.5112493633707956
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001057.jpg",
+      "timestampMs": 88000.0,
+      "rigQuaternionWxyz": [
+        0.5342000324457777,
+        0.503102462651499,
+        0.48976733065343686,
+        -0.470793159714045
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001064.jpg",
+      "timestampMs": 88583.29999999999,
+      "rigQuaternionWxyz": [
+        0.5520561103398867,
+        0.5359362745850459,
+        0.45885380074775783,
+        -0.4443642089093521
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001069.jpg",
+      "timestampMs": 89000.0,
+      "rigQuaternionWxyz": [
+        0.5935356490755496,
+        0.5791186423620495,
+        0.418658545675556,
+        -0.37021892641791204
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001073.jpg",
+      "timestampMs": 89333.29999999999,
+      "rigQuaternionWxyz": [
+        0.6211053793522358,
+        0.5906728584563515,
+        0.38122051350268354,
+        -0.3464168040200543
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001081.jpg",
+      "timestampMs": 90000.0,
+      "rigQuaternionWxyz": [
+        0.6165640962727958,
+        0.5886360873845262,
+        0.38246390973710875,
+        -0.356479493890675
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001090.jpg",
+      "timestampMs": 90750.0,
+      "rigQuaternionWxyz": [
+        0.6235935529269799,
+        0.5737130909161025,
+        0.3751029962448479,
+        -0.37587512855672656
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001097.jpg",
+      "timestampMs": 91333.3,
+      "rigQuaternionWxyz": [
+        0.6388884894528827,
+        0.5946748747758982,
+        0.3659672935725521,
+        -0.32287959271230676
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001107.jpg",
+      "timestampMs": 92166.7,
+      "rigQuaternionWxyz": [
+        0.6143978303327747,
+        0.6205791987032455,
+        0.359020834278467,
+        -0.3293946034366838
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001120.jpg",
+      "timestampMs": 93250.0,
+      "rigQuaternionWxyz": [
+        0.5918899210764235,
+        0.631608282619868,
+        0.38726537056978744,
+        -0.317431616906022
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001128.jpg",
+      "timestampMs": 93916.7,
+      "rigQuaternionWxyz": [
+        0.5715568792937414,
+        0.6029707006070397,
+        0.4020242837264166,
+        -0.3848708136969041
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001138.jpg",
+      "timestampMs": 94750.0,
+      "rigQuaternionWxyz": [
+        0.5932018834438926,
+        0.5930167178649194,
+        0.40121215070025146,
+        -0.3680645431739056
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001144.jpg",
+      "timestampMs": 95250.0,
+      "rigQuaternionWxyz": [
+        0.61186425333675,
+        0.5927336506050107,
+        0.3856888929809768,
+        -0.35430641083704245
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001156.jpg",
+      "timestampMs": 96250.0,
+      "rigQuaternionWxyz": [
+        0.6002669127382809,
+        0.5936105284576356,
+        0.384574251303483,
+        -0.37337490436592685
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001164.jpg",
+      "timestampMs": 96916.7,
+      "rigQuaternionWxyz": [
+        0.5865524843849864,
+        0.5724889590337113,
+        0.4126161716244022,
+        -0.3974424106211109
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001171.jpg",
+      "timestampMs": 97500.0,
+      "rigQuaternionWxyz": [
+        0.5924158652497169,
+        0.5516250606680333,
+        0.43405164587931705,
+        -0.39541421794476966
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001176.jpg",
+      "timestampMs": 97916.7,
+      "rigQuaternionWxyz": [
+        0.5502672521541477,
+        0.5301434685074564,
+        0.4719577733148528,
+        -0.4397837129922996
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001180.jpg",
+      "timestampMs": 98250.0,
+      "rigQuaternionWxyz": [
+        0.4916348176043578,
+        0.49241219827797866,
+        0.5148051543531398,
+        -0.5008004454447085
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001187.jpg",
+      "timestampMs": 98833.3,
+      "rigQuaternionWxyz": [
+        0.43281919340656744,
+        0.42035434805939403,
+        0.5889051559351668,
+        -0.5377364458537538
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001190.jpg",
+      "timestampMs": 99083.3,
+      "rigQuaternionWxyz": [
+        0.3767112352363768,
+        0.3921983176185835,
+        0.6342806562124119,
+        -0.5495063002901678
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001194.jpg",
+      "timestampMs": 99416.7,
+      "rigQuaternionWxyz": [
+        0.32944868439432207,
+        0.371439032853013,
+        0.6502368827526429,
+        -0.5750553064985965
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001201.jpg",
+      "timestampMs": 100000.0,
+      "rigQuaternionWxyz": [
+        0.3832713530799056,
+        0.41794914403756317,
+        0.6300143727236316,
+        -0.5305690087709757
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001205.jpg",
+      "timestampMs": 100333.0,
+      "rigQuaternionWxyz": [
+        0.41550307888378996,
+        0.39468575841463394,
+        0.6154660216585861,
+        -0.5410932634273958
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    },
+    {
+      "rigFrameId": "source000_00001209.jpg",
+      "timestampMs": 100667.0,
+      "rigQuaternionWxyz": [
+        0.4731205987167031,
+        0.4403598508258077,
+        0.5629298686643319,
+        -0.5151214068704375
+      ],
+      "provenance": {
+        "source": "dji_fused_attitude_calibrated",
+        "telemetrySha256": "645dfb9640f02a0d53fb3676d99cd968fe0c3b69d773e63a1b943e110fefba0d",
+        "parserRevision": "77a3b810a0e0f64688a90546c5aaf24c9dba00bd",
+        "timestampSource": "ffmpeg_pts_exposure_center",
+        "coordinateTransform": "imu-hand-eye-v1-bd5922614fea1c02"
+      },
+      "calibrationVersion": "imu-hand-eye-v1-bd5922614fea1c02",
+      "residualAngleDeg": 1.1058173048533695
+    }
+  ],
+  "stockColmapQuaternionSupported": false
+}
