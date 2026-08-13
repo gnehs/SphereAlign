@@ -641,20 +641,30 @@ button:active {
 .source-thumbnail {
   display: grid;
   overflow: hidden;
-  width: 76px;
-  height: 48px;
+  width: 48px;
+  aspect-ratio: 1;
   flex: 0 0 auto;
   place-items: center;
+  padding: 0;
   border: 1px solid var(--studio-line);
-  border-radius: 6px;
+  border-radius: 100em;
   color: var(--studio-muted);
   background: #eef1f5;
+}
+
+.source-thumbnail--interactive {
+  cursor: zoom-in;
+}
+
+.source-thumbnail--interactive:focus-visible {
+  outline: 2px solid var(--studio-blue);
+  outline-offset: 2px;
 }
 
 .source-thumbnail img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .source-thumbnail svg {
@@ -664,6 +674,23 @@ button:active {
 
 .source-thumbnail:not(.source-thumbnail--failed) svg {
   animation: source-preview-spin 900ms linear infinite;
+}
+
+.source-preview-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  background: #0d1117;
+}
+
+.source-preview-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 64px);
+  margin: auto;
+  border-radius: inherit;
+  object-fit: contain;
 }
 
 @keyframes source-preview-spin {

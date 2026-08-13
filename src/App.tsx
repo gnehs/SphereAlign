@@ -39,6 +39,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Field,
@@ -822,10 +823,29 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
     };
   }, [source.path]);
 
+  const alt = `${source.detail} 第一個鏡頭的第一幀預覽`;
+
+  if (!previewUrl) {
+    return (
+      <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? "無法產生第一幀預覽" : undefined}>
+        {failed ? <Video aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
+      </div>
+    );
+  }
+
   return (
-    <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? "無法產生第一幀預覽" : undefined}>
-      {previewUrl ? <img src={previewUrl} alt={`${source.detail} 第一個鏡頭的第一幀預覽`} /> : failed ? <Video aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
-    </div>
+    <Dialog>
+      <DialogTrigger render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={`放大查看 ${alt}`} />}>
+        <img src={previewUrl} alt={alt} />
+      </DialogTrigger>
+      <DialogContent className="source-preview-dialog">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{source.detail} 預覽</DialogTitle>
+          <DialogDescription>放大的第一個鏡頭第一幀預覽圖。</DialogDescription>
+        </DialogHeader>
+        <img className="source-preview-image" src={previewUrl} alt={alt} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
