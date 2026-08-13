@@ -43,6 +43,7 @@ A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 - `run-provenance.json`: run ID、輸入/COLMAP/CLI binary hash、Git commit、dirty 狀態與 align pipeline revision；路徑只保存 basename。
 - `metadata/rolling_shutter_sourceNNN.json`: 選用的 calibrated row trajectory sidecar。
 - `metadata/align_timings.json`: pair graph、feature extraction、matching、mapping 與總時間。
+- `metadata/intra_source_loop_retrieval.json`: 單一錄影依時間分段後的 bounded visual retrieval 診斷；候選只補強長距離連通性，仍須通過 COLMAP 幾何驗證。
 - `metadata/benchmark_*.json`: A／B／C metrics 與人工 3DGS quality checklist。
 
 上述 calibration、orientation、prior marker、frame motion、pairs、telemetry hash 與設定都會影響 align fingerprint。若實際採用的 mapper 不符合 checkpoint 預期，`auto` 不會錯誤沿用結果。

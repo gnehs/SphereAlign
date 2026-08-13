@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 22;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 23;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -3028,6 +3028,8 @@ fn dual_fisheye_registration_totals(root: &Path) -> Result<(u64, u64), String> {
 const TEMPORAL_PAIR_MAX_GAP_MS: f64 = 700.0;
 const TEMPORAL_PAIR_MIN_ROTATION_DEG: f64 = 4.0;
 const TEMPORAL_RESCUE_OFFSETS: [usize; 3] = [8, 12, 16];
+const LOOP_RETRIEVAL_SEGMENT_FRAMES: usize = 32;
+const LOOP_RETRIEVAL_MAX_ANCHORS_PER_SEGMENT: usize = 20;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3372,10 +3374,6 @@ fn write_rig_and_pairs_with_options(
         )
         .map_err(|e| e.to_string())?;
     }
-    let rig_has_complete_sensor_poses = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
-        &fs::read(&rig_config).map_err(|error| error.to_string())?,
-    )
-    .is_ok_and(|configs| rig_config_has_complete_sensor_poses(&configs));
     let lens1 = root.join("images/lens1");
     let mut names: Vec<String> = fs::read_dir(root.join("images/lens0"))
         .map_err(|e| e.to_string())?
@@ -3463,22 +3461,17 @@ fn write_rig_and_pairs_with_options(
                 overlap_10,
             );
         }
-        // After the physical rig pose is calibrated, a local +1..+5 graph can
-        // become permanently disconnected when a
+        // A local +1..+5 graph can become permanently disconnected when a
         // short blurry or texture-poor interval prevents any new frame from
-        // acquiring enough 2D-to-3D correspondences.  Add a small, fixed set
+        // acquiring enough 2D-to-3D correspondences. Add a small, fixed set
         // of longer same-sensor skip links so a later usable frame can attempt
-        // registration directly against the established model. Keep these
-        // edges out of unknown-rig bootstrap so speculative long links cannot
-        // change the component used to estimate physical extrinsics. The fixed
-        // offsets keep work O(n), stay inside one source recording, and still
-        // pass through COLMAP's geometric verification.
-        for offset in if rig_has_complete_sensor_poses {
-            TEMPORAL_RESCUE_OFFSETS.as_slice()
-        } else {
-            &[]
-        } {
-            let Some(rescue) = names.get(index + *offset) else {
+        // registration directly against the established model. Same-sensor
+        // links do not depend on rig extrinsics, so they are also safe during
+        // the first unknown-rig bootstrap. The fixed offsets keep work O(n),
+        // stay inside one recording, and still pass through COLMAP's geometric
+        // verification.
+        for offset in TEMPORAL_RESCUE_OFFSETS {
+            let Some(rescue) = names.get(index + offset) else {
                 continue;
             };
             if source_name_from_image(name) != source_name_from_image(rescue) {
@@ -3511,10 +3504,13 @@ fn write_rig_and_pairs_with_options(
         sources.entry(source).or_default().push(name);
     }
     let groups: Vec<(&str, Vec<&String>)> = sources
-        .into_iter()
+        .iter()
         .map(|(source, frames)| {
             let step = (frames.len() / 20).max(1);
-            (source, frames.into_iter().step_by(step).take(20).collect())
+            (
+                *source,
+                frames.iter().copied().step_by(step).take(20).collect(),
+            )
         })
         .collect();
     let retrieval_sources = groups
@@ -3578,10 +3574,101 @@ fn write_rig_and_pairs_with_options(
             }
         }
     }
+
+    // A single recording can still split into multiple valid COLMAP models
+    // after a doorway, fast turn, blur burst, or exposure transition. The
+    // cross-source retrieval above intentionally cannot help that case. Split
+    // each recording into bounded temporal segments and retrieve a few
+    // appearance-consistent bridges between segments. Ignore candidates that
+    // are already covered by the local temporal window; every emitted pair is
+    // still subject to COLMAP descriptor matching and geometric verification.
+    let mut loop_source_groups = Vec::new();
+    for (source, frames) in &sources {
+        let mut segments = Vec::new();
+        for (segment_index, segment) in frames.chunks(LOOP_RETRIEVAL_SEGMENT_FRAMES).enumerate() {
+            if segment.len() < 2 {
+                continue;
+            }
+            let step = (segment.len() / LOOP_RETRIEVAL_MAX_ANCHORS_PER_SEGMENT).max(1);
+            segments.push(crate::visual_retrieval::RetrievalSource {
+                source_id: format!("{source}#segment{segment_index:03}"),
+                anchors: segment
+                    .iter()
+                    .step_by(step)
+                    .take(LOOP_RETRIEVAL_MAX_ANCHORS_PER_SEGMENT)
+                    .map(|name| crate::visual_retrieval::RetrievalAnchor {
+                        frame_id: (*name).clone(),
+                        path: root.join("images/lens0").join(name),
+                        timestamp_ms: sequence_from_image_name(name).and_then(|sequence| {
+                            frame_motion
+                                .get(*source)
+                                .and_then(|motion| motion.frames.get(&sequence))
+                                .and_then(|frame| frame.timestamp_ms)
+                        }),
+                    })
+                    .collect(),
+            });
+        }
+        if segments.len() >= 2 {
+            loop_source_groups.push(segments);
+        }
+    }
+    let mut loop_retrieval_report = use_visual_retrieval.then(|| {
+        let mut combined = crate::visual_retrieval::RetrievalReport::default();
+        for segments in &loop_source_groups {
+            let report = crate::visual_retrieval::retrieve_cross_source_candidates(
+                segments,
+                &crate::visual_retrieval::RetrievalConfig::default(),
+            );
+            combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
+            combined.source_pairs.extend(report.source_pairs);
+            combined.failed_descriptors.extend(report.failed_descriptors);
+        }
+        combined.fallback_to_legacy =
+            combined.source_pairs.is_empty() || !combined.failed_descriptors.is_empty();
+        combined.make_paths_relative_to(root);
+        combined
+    });
+    let name_indexes = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    if let Some(report) = &mut loop_retrieval_report {
+        for source_pair in &mut report.source_pairs {
+            source_pair.matches.retain(|candidate| {
+                let Some(left) = name_indexes.get(candidate.frame_a.as_str()) else {
+                    return false;
+                };
+                let Some(right) = name_indexes.get(candidate.frame_b.as_str()) else {
+                    return false;
+                };
+                left.abs_diff(*right) >= TEMPORAL_RESCUE_OFFSETS[0]
+            });
+        }
+        report.source_pairs.retain(|pair| !pair.matches.is_empty());
+        for candidate in report.frame_candidates() {
+            for left_lens in 0..2 {
+                for right_lens in 0..2 {
+                    pairs.insert(format!(
+                        "lens{left_lens}/{} lens{right_lens}/{}",
+                        candidate.frame_a, candidate.frame_b
+                    ));
+                }
+            }
+        }
+    }
     fs::create_dir_all(root.join("metadata")).map_err(|e| e.to_string())?;
     if let Some(report) = &retrieval_report {
         fs::write(
             root.join("metadata/cross_source_retrieval.json"),
+            serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if let Some(report) = &loop_retrieval_report {
+        fs::write(
+            root.join("metadata/intra_source_loop_retrieval.json"),
             serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
@@ -9545,7 +9632,17 @@ mod tests {
         write_rig_and_pairs(temp.path()).unwrap();
         let pairs_path = temp.path().join("metadata/pairs.txt");
         let pairs = fs::read_to_string(&pairs_path).unwrap();
-        assert!(!pairs.contains("lens0/source000_00000001.png lens0/source000_00000009.png"));
+        for rescue in [9, 13, 17] {
+            assert!(pairs.contains(&format!(
+                "lens0/source000_00000001.png lens0/source000_{rescue:08}.png"
+            )));
+            assert!(pairs.contains(&format!(
+                "lens1/source000_00000001.png lens1/source000_{rescue:08}.png"
+            )));
+        }
+        // Unknown physical extrinsics still prohibit speculative long
+        // cross-lens rescue links.
+        assert!(!pairs.contains("lens0/source000_00000001.png lens1/source000_00000009.png"));
 
         fs::write(
             temp.path().join("rig_config.json"),
