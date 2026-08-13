@@ -46,6 +46,8 @@ use crate::fisheye::{
 /// durable writes overlapped without allowing full-resolution buffers to grow
 /// with the host's CPU count.
 const MASK_PIPELINE_WORKERS: usize = 4;
+/// Match the fixed detection gate validated by the original gs360masker pipeline.
+pub(crate) const YOLO_CONFIDENCE_THRESHOLD: f32 = 0.25;
 /// Semantic exclusions do not need source-image precision. Keep all model
 /// preprocessing, mask merging, and valid-region composition bounded, then
 /// expand the final binary mask exactly once for COLMAP/source compatibility.
@@ -181,7 +183,7 @@ impl Default for MaskRequest {
             colmap_masks_dir: PathBuf::new(),
             classes: Vec::new(),
             mask_sky: false,
-            confidence: 0.25,
+            confidence: YOLO_CONFIDENCE_THRESHOLD,
             valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
             optical_occlusions: BTreeMap::new(),
             skip_verified: true,

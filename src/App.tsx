@@ -91,7 +91,7 @@ interface PipelineSettings {
     denseFps: number;
     skipBlurry: boolean;
   };
-  mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; confidence: number; confidenceVersion: number; modelDir: string };
+  mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; modelDir: string };
   align: {
     useGpu: boolean;
     gpuIndex: string;
@@ -221,7 +221,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     denseFps: 12,
     skipBlurry: true,
   },
-  mask: { yoloEnabled: false, classes: [], maskSky: false, confidence: 25, confidenceVersion: 2, modelDir: "" },
+  mask: { yoloEnabled: false, classes: [], maskSky: false, modelDir: "" },
   align: {
     useGpu: true,
     gpuIndex: "-1",
@@ -269,8 +269,6 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
       yoloEnabled,
       classes,
       maskSky: typeof mask.maskSky === "boolean" ? mask.maskSky : DEFAULT_SETTINGS.mask.maskSky,
-      confidence: finiteNumber(mask.confidence, DEFAULT_SETTINGS.mask.confidence, 10, 98),
-      confidenceVersion: finiteNumber(mask.confidenceVersion, DEFAULT_SETTINGS.mask.confidenceVersion, 1, 10),
       modelDir: typeof mask.modelDir === "string" ? mask.modelDir : DEFAULT_SETTINGS.mask.modelDir,
     },
     align: {
@@ -1734,13 +1732,6 @@ function App() {
                       })}
                     </FieldGroup>
                   </FieldSet>
-                  <Field className="mask-confidence-field">
-                    <div className="slider-heading">
-                      <FieldLabel htmlFor="mask-confidence">YOLO 信心度</FieldLabel>
-                      <span className="range-label">{settingsDraft.mask.confidence}%</span>
-                    </div>
-                    <input id="mask-confidence" className="range-input" type="range" min={10} max={98} value={settingsDraft.mask.confidence} onChange={(event) => { const value = Number(event.currentTarget.value); setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, confidence: value } })); }} />
-                  </Field>
                 </FieldGroup>
               )}
               <Field orientation="horizontal" className="mask-feature-option">

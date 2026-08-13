@@ -10,7 +10,7 @@ use crate::extraction::{
     self, ExtractionRequest, ExtractionStage, SelectionMetadata, SelectionRecord,
 };
 use crate::fisheye::DJI_VALID_RADIUS_RATIO;
-use crate::masking::{self, CancelToken, MaskRequest};
+use crate::masking::{self, CancelToken, MaskRequest, YOLO_CONFIDENCE_THRESHOLD};
 use crate::project::{self, ProjectManifest, StageName, StageStatus};
 use crate::telemetry;
 use rusqlite::{Connection, OpenFlags};
@@ -815,19 +815,6 @@ fn parse_gpu_index(settings: &Value) -> Result<String, String> {
         indexes.push(index.to_owned());
     }
     Ok(indexes.join(","))
-}
-
-fn mask_confidence(settings: &Value) -> f64 {
-    let configured = setting_f64(settings, "/mask/confidence", 0.25);
-    let version = setting_f64(settings, "/mask/confidenceVersion", 1.0);
-    // Version 1 shipped 72% as the default and could not be lowered below 40%,
-    // which misses heavily distorted or distant people. Migrate only that exact
-    // legacy default; every explicit non-default value remains untouched.
-    if version < 2.0 && (configured - 72.0).abs() < f64::EPSILON {
-        25.0
-    } else {
-        configured
-    }
 }
 
 fn mask_classes(settings: &Value) -> Vec<String> {
@@ -2880,7 +2867,6 @@ fn run_mask(
     }
     let root = PathBuf::from(&manifest.output_path);
     let classes = mask_classes(&manifest.settings);
-    let confidence = mask_confidence(&manifest.settings);
     let mask_sky = setting_bool(&manifest.settings, "/mask/maskSky", false);
     let mut optical_occlusions = BTreeMap::new();
     for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
@@ -2932,12 +2918,7 @@ fn run_mask(
         colmap_masks_dir: root.join("masks_colmap"),
         classes,
         mask_sky,
-        confidence: if confidence > 1.0 {
-            confidence / 100.0
-        } else {
-            confidence
-        }
-        .clamp(0.01, 0.99) as f32,
+        confidence: YOLO_CONFIDENCE_THRESHOLD,
         valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
         optical_occlusions,
         // Resume partial runs without repeating expensive inference. The mask
@@ -8328,7 +8309,7 @@ mod tests {
         is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
         load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
         mapper_gpu_index, mapper_mode, mapper_still_required_after_rig_setup, mask_classes,
-        mask_confidence, mask_enabled,
+        mask_enabled,
         matches_importer_args, merge_pair_lists, parse_feature_name, parse_feature_progress,
         parse_gpu_index,
         parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
@@ -8548,16 +8529,6 @@ mod tests {
         assert_eq!(thresholds.min_gap_ms, 2000.0);
         assert_eq!(thresholds.max_gap_ms, 2000.0);
         assert_eq!(thresholds.min_visual_novelty, 1.0);
-    }
-
-    #[test]
-    fn migrates_only_the_legacy_default_mask_confidence() {
-        assert_eq!(mask_confidence(&json!({"mask": {"confidence": 72}})), 25.0);
-        assert_eq!(mask_confidence(&json!({"mask": {"confidence": 60}})), 60.0);
-        assert_eq!(
-            mask_confidence(&json!({"mask": {"confidence": 72, "confidenceVersion": 2}})),
-            72.0
-        );
     }
 
     #[test]
