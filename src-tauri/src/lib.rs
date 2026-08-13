@@ -16,7 +16,9 @@ mod telemetry;
 mod visual_retrieval;
 
 use pipeline::{JobManager, StartStageRequest, StartStageResponse};
-use project::{CreateProjectRequest, InspectPathsResponse, ProjectManifest};
+use project::{
+    CreateProjectRequest, InspectPathsResponse, ProjectManifest, UpdateQueuedProjectRequest,
+};
 
 #[tauri::command]
 fn doctor(colmap_path: Option<String>) -> doctor::DoctorReport {
@@ -40,6 +42,11 @@ async fn source_preview(path: String) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 fn create_project(request: CreateProjectRequest) -> Result<ProjectManifest, String> {
     project::create(request)
+}
+
+#[tauri::command]
+fn update_queued_project(request: UpdateQueuedProjectRequest) -> Result<ProjectManifest, String> {
+    project::update_queued(request)
 }
 
 #[tauri::command]
@@ -89,6 +96,7 @@ pub fn run() {
             inspect_paths,
             source_preview,
             create_project,
+            update_queued_project,
             load_project,
             start_stage,
             cancel_job,

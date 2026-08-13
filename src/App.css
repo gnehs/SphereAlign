@@ -215,6 +215,61 @@ button:active {
   box-shadow: 0 1px 2px rgba(31, 39, 50, 0.04), 0 12px 32px rgba(31, 39, 50, 0.055);
 }
 
+.task-groups {
+  display: grid;
+  gap: 28px;
+}
+
+.task-group-heading,
+.task-row-actions,
+.queued-task-summary {
+  display: flex;
+  align-items: center;
+}
+
+.task-group-heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+.task-group-heading h2,
+.task-group-heading p {
+  margin: 0;
+}
+
+.task-group-heading h2 {
+  font-size: var(--studio-font-base);
+  font-weight: 650;
+}
+
+.task-group-heading p {
+  margin-top: 3px;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+}
+
+.task-row-actions {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.task-row[data-queued] {
+  padding-bottom: 20px;
+  background: color-mix(in srgb, var(--studio-blue-soft) 28%, var(--studio-surface));
+}
+
+.queued-task-summary {
+  justify-content: space-between;
+  margin: 15px 0 0 47px;
+  color: var(--studio-muted);
+  font-size: var(--studio-font-sm);
+}
+
+.task-delete-button {
+  color: var(--destructive);
+}
+
 .task-row {
   padding: 21px 22px 24px;
   border-bottom: 1px solid var(--studio-line);
@@ -1371,7 +1426,8 @@ button:active {
   .header-actions [data-slot="button"] { flex: 1; }
   .task-stage { padding: 11px 0; }
   .task-progress-block,
-  .stage-row-list { margin-left: 0; }
+  .stage-row-list,
+  .queued-task-summary { margin-left: 0; }
   .empty-actions { align-items: stretch; flex-direction: column; width: min(280px, 100%); }
   .task-dialog { padding: 20px 16px 16px; }
   .task-dialog > [data-slot="dialog-footer"] { margin-inline: -16px; margin-bottom: -16px; }

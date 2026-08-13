@@ -209,6 +209,16 @@ pub struct CreateProjectRequest {
     pub settings: Option<Value>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateQueuedProjectRequest {
+    pub project_path: String,
+    pub name: String,
+    #[serde(default)]
+    pub input_paths: Vec<String>,
+    pub settings: Value,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceInspection {
@@ -920,6 +930,40 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
     Ok(manifest)
 }
 
+pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManifest, String> {
+    let mut manifest = load(&request.project_path)?;
+    if manifest
+        .stages
+        .values()
+        .any(|stage| {
+            !matches!(stage.status, StageStatus::Pending)
+                || stage.progress > 0.0
+                || stage.started_at_ms.is_some()
+                || stage.finished_at_ms.is_some()
+                || stage.duration_ms.is_some()
+                || !stage.artifacts.is_empty()
+        })
+    {
+        return Err("Only a project that has not started can be edited".to_owned());
+    }
+    if request.input_paths.is_empty() {
+        return Err("At least one input path is required".to_owned());
+    }
+    let name = request.name.trim();
+    if !name.is_empty() {
+        manifest.name = name.to_owned();
+    }
+    manifest.input_paths = request
+        .input_paths
+        .iter()
+        .map(|path| absolute_path(Path::new(path)).to_string_lossy().into_owned())
+        .collect();
+    manifest.settings = request.settings;
+    manifest.updated_at = now_timestamp();
+    save_manifest(&manifest)?;
+    Ok(manifest)
+}
+
 #[allow(dead_code)]
 pub fn update_stage(
     manifest: &mut ProjectManifest,
@@ -985,6 +1029,53 @@ mod tests {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     static TEST_TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn queued_project_can_be_edited_but_started_project_cannot() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.osv");
+        fs::write(&source, b"test").unwrap();
+        let output = root.join("project");
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![source.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("before".to_owned()),
+            settings: Some(json!({"extract": {"baseFps": 3}})),
+        })
+        .unwrap();
+
+        let updated = update_queued(UpdateQueuedProjectRequest {
+            project_path: manifest.root_path.clone(),
+            name: "after".to_owned(),
+            input_paths: manifest.input_paths.clone(),
+            settings: json!({"extract": {"baseFps": 4}}),
+        })
+        .unwrap();
+        assert_eq!(updated.name, "after");
+        assert_eq!(updated.settings.pointer("/extract/baseFps"), Some(&json!(4)));
+
+        let mut started = updated;
+        update_stage(
+            &mut started,
+            &StageName::Extract,
+            StageStatus::Completed,
+            1.0,
+            "done",
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        assert!(update_queued(UpdateQueuedProjectRequest {
+            project_path: started.root_path.clone(),
+            name: "too late".to_owned(),
+            input_paths: started.input_paths.clone(),
+            settings: json!({}),
+        })
+        .is_err());
+
+        let _ = fs::remove_dir_all(root);
+    }
 
     fn temp_dir() -> PathBuf {
         let id = SystemTime::now()

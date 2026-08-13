@@ -540,6 +540,7 @@ pub fn start_stage(
                 Vec::new(),
                 Some(stage_started_at),
             );
+            manager.remove(&id);
             emit_progress_detailed(
                 &app,
                 &id,
@@ -578,6 +579,10 @@ pub fn start_stage(
                         Vec::new(),
                         Some(stage_started_at),
                     );
+                    // A terminal event is the UI scheduler's signal to start
+                    // the next queued stage, so release the single execution
+                    // slot before publishing that event.
+                    manager.remove(&id);
                     emit_progress_detailed(
                         &app,
                         &id,
@@ -606,6 +611,7 @@ pub fn start_stage(
                         vec![error.clone()],
                         Some(stage_started_at),
                     );
+                    manager.remove(&id);
                     emit_progress_detailed(
                         &app,
                         &id,

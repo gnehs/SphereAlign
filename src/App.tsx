@@ -9,6 +9,7 @@ import {
   Info,
   MonitorCog,
   MoreHorizontal,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -16,6 +17,7 @@ import {
   ScanLine,
   Settings2,
   Square,
+  Trash2,
   Upload,
   Video,
   Workflow,
@@ -113,6 +115,7 @@ interface ProjectManifest {
   stages: Record<StageKey, StageState>;
   logs: TaskLog[];
   warnings: string[];
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -187,6 +190,8 @@ interface LogEventPayload {
 interface AutoPipelineRun {
   task: Pick<Task, "rootPath" | "outputPath" | "settings">;
   colmapPath: string;
+  nextStage: StageKey;
+  paused?: boolean;
   stage?: StageKey;
   jobId?: string;
 }
@@ -508,6 +513,18 @@ function taskProgress(task: Task) {
   return Math.round(Object.values(task.stages).reduce((sum, stage) => sum + (stage.status === "completed" ? 100 : stage.progress), 0) / STAGES.length);
 }
 
+function taskHasNotStarted(task: Task) {
+  return STAGES.every(({ key }) => {
+    const stage = task.stages[key];
+    return stage.status === "pending"
+      && stage.progress === 0
+      && stage.startedAtMs === undefined
+      && stage.finishedAtMs === undefined
+      && stage.durationMs === undefined
+      && !stage.jobId;
+  });
+}
+
 function taskProgressSummary(task: Task) {
   const runningIndex = STAGES.findIndex(({ key }) => task.stages[key].status === "running");
   if (runningIndex >= 0) return `第 ${runningIndex + 1} / ${STAGES.length} 階段 · ${STAGES[runningIndex].label}`;
@@ -581,8 +598,16 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
     stages,
     logs: parseTaskLogs(body.logs ?? body.pipelineLogs, stages),
     warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [],
+    createdAt: typeof body.createdAt === "string" ? body.createdAt : undefined,
     updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : undefined,
   };
+}
+
+function taskCreatedAtMs(task: Task) {
+  return timestampMs(task.createdAt)
+    ?? task.logs.reduce<number | undefined>((oldest, log) => oldest === undefined ? log.timestampMs : Math.min(oldest, log.timestampMs), undefined)
+    ?? timestampMs(task.updatedAt)
+    ?? Number.MAX_SAFE_INTEGER;
 }
 
 function readProgress(payload: unknown): ProgressEventPayload {
@@ -932,6 +957,8 @@ function appendMessageLog(logs: TaskLog[], taskId: string, payload: LogEventPayl
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -962,10 +989,19 @@ function App() {
   const doctorRunId = useRef(0);
   const gpuPreferenceTouched = useRef(false);
   const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
+  const pumpAutoPipelineRef = useRef<() => void>(() => undefined);
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
   const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
+  const orderedTasks = useMemo(() => tasks
+    .map((task, index) => ({ task, index }))
+    // New tasks are prepended to state, so reverse the original index for
+    // manifests created within the backend's same timestamp resolution.
+    .sort((left, right) => taskCreatedAtMs(left.task) - taskCreatedAtMs(right.task) || right.index - left.index)
+    .map(({ task }) => task), [tasks]);
+  const queuedTasks = useMemo(() => orderedTasks.filter(taskHasNotStarted), [orderedTasks]);
+  const startedTasks = useMemo(() => orderedTasks.filter((task) => !taskHasNotStarted(task)), [orderedTasks]);
   const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
 
   useEffect(() => {
@@ -1048,13 +1084,16 @@ function App() {
     const actual = paths.filter(Boolean);
     if (!actual.length) return;
     setSourcePaths(actual);
-    setOutputDraft(deriveOutputPath(actual[0]));
-    setNameDraft(actual[0].split(/[\\/]/).filter(Boolean).pop()?.replace(/[-_]+/g, " ") || "新重建任務");
+    if (!editingTaskId) {
+      setOutputDraft(deriveOutputPath(actual[0]));
+      setNameDraft(actual[0].split(/[\\/]/).filter(Boolean).pop()?.replace(/[-_]+/g, " ") || "新重建任務");
+    }
     if (openDialogAfter) setTaskDialogOpen(true);
     void inspectSourcePaths(actual);
-  }, [inspectSourcePaths]);
+  }, [editingTaskId, inspectSourcePaths]);
 
   const openNewTaskDialog = useCallback(() => {
+    setEditingTaskId(null);
     setNameDraft("");
     setSourcePaths([]);
     setOutputDraft("");
@@ -1067,6 +1106,31 @@ function App() {
     setDragOver(false);
     setTaskDialogOpen(true);
   }, [doctor.gpuAvailable]);
+
+  const canChangeQueuedTask = useCallback((task: Task) => {
+    const run = autoPipelineRuns.current[task.projectId];
+    return taskHasNotStarted(task)
+      && !activeJobIds.current[task.projectId]
+      && !pendingStageStarts.current[task.projectId]
+      && (!run || (!run.stage && !run.jobId));
+  }, []);
+
+  const openEditTaskDialog = useCallback((task: Task) => {
+    if (!canChangeQueuedTask(task)) {
+      setToast("任務已開始，無法再修改");
+      return;
+    }
+    const run = autoPipelineRuns.current[task.projectId];
+    if (run) run.paused = true;
+    setEditingTaskId(task.projectId);
+    setNameDraft(task.name);
+    setSourcePaths(task.inputPaths);
+    setOutputDraft(task.outputPath);
+    setSettingsDraft(normalisePipelineSettings(task.settings));
+    setSourceInspection(`${task.inputPaths.length} 個來源`);
+    setDragOver(false);
+    setTaskDialogOpen(true);
+  }, [canChangeQueuedTask]);
 
   const handleBrowserFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -1273,6 +1337,7 @@ function App() {
         delete autoPipelineRuns.current[taskId];
         delete pendingStageStarts.current[taskId];
         setToast("無法自動啟動階段，請查看執行環境訊息");
+        queueMicrotask(() => pumpAutoPipelineRef.current());
       }
       return;
     }
@@ -1297,6 +1362,16 @@ function App() {
       : { status: "running", progress: 0, message: "正在準備工作", jobId: result.jobId, phase: "starting", startedAtMs, finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
   }, [bindJobToTask, updateTaskStage]);
 
+  const pumpAutoPipeline = useCallback(() => {
+    if (Object.keys(activeJobIds.current).length || Object.keys(pendingStageStarts.current).length) return;
+    if (Object.values(autoPipelineRuns.current).some((run) => run.stage || run.jobId)) return;
+    const queued = Object.entries(autoPipelineRuns.current).find(([, run]) => !run.paused && !run.stage && !run.jobId);
+    if (!queued) return;
+    const [taskId, run] = queued;
+    void startAutoStage(taskId, run.nextStage);
+  }, [startAutoStage]);
+  pumpAutoPipelineRef.current = pumpAutoPipeline;
+
   const startAutoPipeline = useCallback((task: Task) => {
     if (!IS_TAURI_RUNTIME || task.previewOnly) return;
     if (autoPipelineRuns.current[task.projectId] || activeJobIds.current[task.projectId]) return;
@@ -1305,9 +1380,10 @@ function App() {
     autoPipelineRuns.current[task.projectId] = {
       task: { rootPath: task.rootPath, outputPath: task.outputPath, settings: normalisePipelineSettings(task.settings) },
       colmapPath: colmapPath.trim(),
+      nextStage: firstStage.key,
     };
-    void startAutoStage(task.projectId, firstStage.key);
-  }, [colmapPath, startAutoStage]);
+    pumpAutoPipelineRef.current();
+  }, [colmapPath]);
 
   const createTask = useCallback(async () => {
     if (!sourcePaths.length) { setToast("請先選擇至少一個 OSV 或雙魚眼來源"); return; }
@@ -1320,7 +1396,7 @@ function App() {
       const logPayload: LogEventPayload = { level: "info", message: `已建立 ${manifest.name}`, timestampMs: Date.now() };
       setTasks((current) => [{ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) }, ...current]);
     } else if (!IS_TAURI_RUNTIME) {
-      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: ["瀏覽器預覽：尚未連接本機執行環境"], previewOnly: true };
+      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: ["瀏覽器預覽：尚未連接本機執行環境"], createdAt: new Date().toISOString(), previewOnly: true };
       createdTask = preview;
       const logPayload: LogEventPayload = { level: "info", message: `預覽任務已加入 ${preview.name}`, timestampMs: Date.now() };
       setTasks((current) => [{ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) }, ...current]);
@@ -1333,6 +1409,66 @@ function App() {
     setSourceInspection("");
     if (createdTask) startAutoPipeline(createdTask);
   }, [nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
+
+  const saveEditedTask = useCallback(async () => {
+    const task = taskSnapshot.current.find((item) => item.projectId === editingTaskId);
+    if (!task || !canChangeQueuedTask(task)) {
+      setToast("任務已開始，無法再修改");
+      return;
+    }
+    if (!sourcePaths.length) { setToast("請保留至少一個來源"); return; }
+    const settings = normalisePipelineSettings(settingsDraft);
+    if (task.previewOnly) {
+      setTasks((current) => current.map((item) => item.projectId === task.projectId
+        ? { ...item, name: nameDraft || item.name, inputPaths: sourcePaths, settings }
+        : item));
+      setTaskDialogOpen(false);
+      setEditingTaskId(null);
+      setToast("已更新預覽任務");
+      return;
+    }
+    const result = await invokeSafely("update_queued_project", {
+      request: { projectPath: task.rootPath || task.outputPath, name: nameDraft || task.name, inputPaths: sourcePaths, settings },
+    });
+    const manifest = manifestFromUnknown(result);
+    if (!manifest) { setToast("儲存任務修改失敗，請查看執行環境訊息"); return; }
+    setTasks((current) => current.map((item) => item.projectId === task.projectId ? { ...manifest, logs: item.logs } : item));
+    const run = autoPipelineRuns.current[task.projectId];
+    if (run) {
+      run.task = { rootPath: manifest.rootPath, outputPath: manifest.outputPath, settings: manifest.settings };
+      run.paused = false;
+    }
+    setTaskDialogOpen(false);
+    setEditingTaskId(null);
+    setToast("已更新排隊中的任務");
+    queueMicrotask(() => pumpAutoPipelineRef.current());
+  }, [canChangeQueuedTask, editingTaskId, nameDraft, settingsDraft, sourcePaths]);
+
+  const deleteQueuedTask = useCallback(() => {
+    const task = taskSnapshot.current.find((item) => item.projectId === deletingTaskId);
+    if (!task || !canChangeQueuedTask(task)) {
+      setDeletingTaskId(null);
+      setToast("任務已開始，無法刪除");
+      return;
+    }
+    delete autoPipelineRuns.current[task.projectId];
+    delete pendingStageStarts.current[task.projectId];
+    delete activeJobIds.current[task.projectId];
+    setTasks((current) => current.filter((item) => item.projectId !== task.projectId));
+    if (selectedTaskId === task.projectId) setSelectedTaskId(null);
+    setDeletingTaskId(null);
+    setToast("已從佇列移除任務；輸出資料夾仍保留");
+    queueMicrotask(() => pumpAutoPipelineRef.current());
+  }, [canChangeQueuedTask, deletingTaskId, selectedTaskId]);
+
+  const enqueueQueuedTask = useCallback((task: Task) => {
+    if (!taskHasNotStarted(task)) {
+      setToast("任務已經開始");
+      return;
+    }
+    startAutoPipeline(task);
+    setToast("已將任務加入執行佇列");
+  }, [startAutoPipeline]);
 
   const startStage = useCallback(async (task: Task, stageKey: StageKey, mode: "start" | "resume" | "retry") => {
     if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會執行後端工作"); return; }
@@ -1354,6 +1490,7 @@ function App() {
     } else {
       delete pendingStageStarts.current[task.projectId];
       setToast("無法啟動階段，請查看執行環境訊息");
+      queueMicrotask(() => pumpAutoPipelineRef.current());
     }
   }, [bindJobToTask, colmapPath, settingsDraft, updateTaskStage]);
 
@@ -1363,13 +1500,17 @@ function App() {
     if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
     delete pendingStageStarts.current[task.projectId];
     const jobId = task.stages[stageKey].jobId || activeJobIds.current[task.projectId];
-    if (!jobId) return;
+    if (!jobId) {
+      queueMicrotask(() => pumpAutoPipelineRef.current());
+      return;
+    }
     const cancelled = await invokeSafely<boolean>("cancel_job", { jobId });
     if (cancelled === true) {
       if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
       const finishedAtMs = Date.now();
       updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續", finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
     }
+    queueMicrotask(() => pumpAutoPipelineRef.current());
   }, [updateTaskStage]);
 
   useEffect(() => {
@@ -1400,15 +1541,20 @@ function App() {
             delete autoPipelineRuns.current[targetProjectId];
             delete pendingStageStarts.current[targetProjectId];
             if (payload.jobId && activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
+            queueMicrotask(() => pumpAutoPipelineRef.current());
           }
           if (!payload.done) return;
           delete pendingStageStarts.current[targetProjectId];
           if (payload.jobId && activeJobIds.current[targetProjectId] === payload.jobId) delete activeJobIds.current[targetProjectId];
           const run = autoPipelineRuns.current[targetProjectId];
-          if (!run || run.stage !== stageKey || (run.jobId && run.jobId !== payload.jobId)) return;
+          if (!run || run.stage !== stageKey || (run.jobId && run.jobId !== payload.jobId)) {
+            queueMicrotask(() => pumpAutoPipelineRef.current());
+            return;
+          }
           run.jobId = undefined;
           if ((payload.status ?? "completed") !== "completed") {
             delete autoPipelineRuns.current[targetProjectId];
+            queueMicrotask(() => pumpAutoPipelineRef.current());
             return;
           }
           const currentIndex = STAGES.findIndex(({ key }) => key === stageKey);
@@ -1416,10 +1562,12 @@ function App() {
           if (!nextStage) {
             delete autoPipelineRuns.current[targetProjectId];
             addTaskMessage(targetProjectId, "自動管線已完成影格擷取、遮罩與對齊");
+            queueMicrotask(() => pumpAutoPipelineRef.current());
             return;
           }
+          run.nextStage = nextStage.key;
           run.stage = undefined;
-          void startAutoStage(targetProjectId, nextStage.key);
+          queueMicrotask(() => pumpAutoPipelineRef.current());
         }),
         listen<unknown>("pipeline-log", (event) => {
           const payload = readLogEvent(event.payload);
@@ -1645,16 +1793,30 @@ function App() {
         ) : (
           <section className="tasks-view">
             <header className="content-header"><div><h1>重建任務</h1><p>新增任務後會依序執行影格擷取、遮罩與對齊；各階段仍可獨立取消或重試。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
-            <div className="task-list">
-              {tasks.map((task) => {
+            <div className="task-groups">
+              {([
+                { key: "queued", title: "排隊中", description: "尚未開始，可修改或移除。", items: queuedTasks },
+                { key: "started", title: "處理中與已結束", description: "已開始的任務會保留處理階段與紀錄。", items: startedTasks },
+              ] as const).filter((group) => group.items.length > 0).map((group) => (
+                <section className="task-group" key={group.key}>
+                  <div className="task-group-heading"><div><h2>{group.title}</h2><p>{group.description}</p></div><Badge variant="outline">{group.items.length}</Badge></div>
+                  <div className="task-list">
+              {group.items.map((task) => {
                 const overall = taskProgress(task);
+                const queued = taskHasNotStarted(task);
+                const editableQueued = queued && canChangeQueuedTask(task);
+                const waitingForEnqueue = queued && !task.previewOnly && !autoPipelineRuns.current[task.projectId];
                 return (
-                  <article className="task-row" key={task.projectId}>
+                  <article className="task-row" data-queued={queued || undefined} key={task.projectId}>
                     <div className="task-row-top">
-                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div>
-                      <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button>
+                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? "等待執行" : "正在準備"}</Badge>}{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div>
+                      <div className="task-row-actions">
+                        {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" />加入佇列</Button>}
+                        {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" />修改</Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" />刪除</Button></>}
+                        <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button>
+                      </div>
                     </div>
-                    <div className="task-progress-block">
+                    {queued ? <div className="queued-task-summary"><span>佇列會依建立順序自動執行</span><small>{task.inputPaths.length} 個來源</small></div> : <><div className="task-progress-block">
                       <div className="task-progress-summary"><span>整體進度</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
                       <Progress value={overall} aria-label={`${task.name} 整體進度`}><ProgressValue /></Progress>
                     </div>
@@ -1683,10 +1845,13 @@ function App() {
                           </div>
                         );
                       })}
-                    </div>
+                    </div></>}
                   </article>
                 );
               })}
+                  </div>
+                </section>
+              ))}
             </div>
           </section>
         )}
@@ -1694,20 +1859,35 @@ function App() {
 
       {toast && <div className="toast" role="status"><Info /><span>{toast}</span><Button variant="ghost" size="icon-xs" onClick={() => setToast(null)} aria-label="關閉通知"><X /></Button></div>}
 
-      <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+      <Dialog open={taskDialogOpen} onOpenChange={(open) => {
+        setTaskDialogOpen(open);
+        if (!open && editingTaskId) {
+          const run = autoPipelineRuns.current[editingTaskId];
+          if (run) run.paused = false;
+          setEditingTaskId(null);
+          queueMicrotask(() => pumpAutoPipelineRef.current());
+        }
+      }}>
         <DialogContent className="task-dialog" showCloseButton>
-          <DialogHeader><DialogTitle>新增重建任務</DialogTitle><DialogDescription>選擇多組 OSV 或雙魚眼素材，所有來源都會保存在同一份專案資訊中。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingTaskId ? "修改排隊任務" : "新增重建任務"}</DialogTitle><DialogDescription>{editingTaskId ? "可在開始前調整任務名稱、來源與處理設定。" : "選擇多組 OSV 或雙魚眼素材，所有來源都會保存在同一份專案資訊中。"}</DialogDescription></DialogHeader>
           <div className="dialog-scroll">
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
                 <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：山區路線／2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
                 <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
-                <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button></div><FieldDescription>建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。</FieldDescription></FieldContent></Field>
+                <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button>}</div><FieldDescription>{editingTaskId ? "專案已建立，為避免移動既有資料，輸出資料夾不能修改。" : "建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。"}</FieldDescription></FieldContent></Field>
               </FieldGroup>
               {renderSettingsFields()}
             </div>
           </div>
-          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button onClick={() => void createTask()} disabled={!sourcePaths.length}><Plus />新增任務</Button></DialogFooter>
+          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? "儲存修改" : "新增任務"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingTaskId)} onOpenChange={(open) => { if (!open) setDeletingTaskId(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader><DialogTitle>從佇列移除任務？</DialogTitle><DialogDescription>只會移除任務與排隊狀態，不會刪除已建立的輸出資料夾。</DialogDescription></DialogHeader>
+          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button variant="destructive" onClick={deleteQueuedTask}><Trash2 />移除任務</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
