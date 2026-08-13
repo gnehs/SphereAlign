@@ -567,7 +567,7 @@ button:active {
 .source-item {
   min-width: 0;
   justify-content: space-between;
-  padding: 8px 9px;
+  padding: 7px 9px 7px 7px;
   gap: 10px;
 }
 
@@ -578,8 +578,41 @@ button:active {
 .source-item > span {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+}
+
+.source-thumbnail {
+  display: grid;
+  overflow: hidden;
+  width: 76px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--studio-line);
+  border-radius: 6px;
+  color: var(--studio-muted);
+  background: #eef1f5;
+}
+
+.source-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.source-thumbnail svg {
+  width: 17px;
+  height: 17px;
+}
+
+.source-thumbnail:not(.source-thumbnail--failed) svg {
+  animation: source-preview-spin 900ms linear infinite;
+}
+
+@keyframes source-preview-spin {
+  to { transform: rotate(360deg); }
 }
 
 .source-item strong {

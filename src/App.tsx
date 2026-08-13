@@ -769,6 +769,41 @@ function sourceFromPath(path: string, index: number): OsvSource {
   return { id: `${index}-${path}`, path, label: `OSV ${String(index + 1).padStart(2, "0")}`, detail: label };
 }
 
+function SourceThumbnail({ source }: { source: OsvSource }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!IS_TAURI_RUNTIME) {
+      setFailed(true);
+      return;
+    }
+    let active = true;
+    let objectUrl: string | null = null;
+    setPreviewUrl(null);
+    setFailed(false);
+    void invoke<ArrayBuffer>("source_preview", { path: source.path })
+      .then((bytes) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+        setPreviewUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [source.path]);
+
+  return (
+    <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? "無法產生第一幀預覽" : undefined}>
+      {previewUrl ? <img src={previewUrl} alt={`${source.detail} 第一個鏡頭的第一幀預覽`} /> : failed ? <Video aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
+    </div>
+  );
+}
+
 function iconForDiagnostic(label: string) {
   if (label.includes("GPU") || label.includes("CUDA")) return Cpu;
   if (label.includes("FFmpeg")) return Video;
@@ -1666,7 +1701,7 @@ function App() {
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
                 <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：山區路線／2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
-                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
+                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
                 <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button></div><FieldDescription>建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。</FieldDescription></FieldContent></Field>
               </FieldGroup>
               {renderSettingsFields()}

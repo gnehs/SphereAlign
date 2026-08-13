@@ -6,6 +6,7 @@ mod extraction;
 mod fisheye;
 mod imu_calibration;
 mod masking;
+mod media_preview;
 mod orientation_constraints;
 mod pipeline;
 mod process;
@@ -25,6 +26,15 @@ fn doctor(colmap_path: Option<String>) -> doctor::DoctorReport {
 #[tauri::command]
 fn inspect_paths(paths: Vec<String>) -> InspectPathsResponse {
     project::inspect(paths)
+}
+
+#[tauri::command]
+async fn source_preview(path: String) -> Result<tauri::ipc::Response, String> {
+    let bytes =
+        tauri::async_runtime::spawn_blocking(move || media_preview::extract_first_frame(path))
+            .await
+            .map_err(|_| "預覽處理程序未完成".to_owned())??;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -77,6 +87,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             doctor,
             inspect_paths,
+            source_preview,
             create_project,
             load_project,
             start_stage,
