@@ -22,6 +22,7 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 - **一個任務處理多段素材**：同一空間拍攝的多個 Osmo 360 檔案可整理進同一個重建專案。
 - **保留原生雙魚眼資料**：直接處理正反兩側魚眼影像，不先轉換為等距柱狀投影，避免多一次不必要的重採樣。
 - **IMU＋畫面變化挑選影格**：以 fused attitude 相對角、低解析 visual novelty 與最大時間間隔挑選 keyframe，再只解碼入選的完整解析度雙鏡配對。
+- **感應器輔助可接近兩倍加速**：在同一組實測素材中，IMU＋畫面變化抽幀讓 Align 從約 52.2 分鐘降至 28.0 分鐘，約快 1.86 倍（節省 46.3%）；實際效果會依素材的運動、紋理與來源是否存在視覺重疊而變動，這不是固定保證值。
 - **減少動態干擾**：可遮除人、腳踏車、汽車、機車、公車、卡車與天空，讓重建更聚焦於穩定場景。
 - **針對 360 rig 對齊**：來源內使用 IMU-aware temporal graph，跨來源使用 bounded 視覺 retrieval；校正完成後可依魚眼 FOV overlap 再縮減配對。
 - **安全使用拍攝中繼資料**：先以視覺模型估時間偏移與 rotational hand-eye；通過 residual、coverage、rig 與 focal gate 後才寫入每鏡頭 gravity prior。完整 DJI quaternion 永遠不會直接冒充 COLMAP qvec。
@@ -36,3 +37,5 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 影格擷取、遮罩與對齊都能分開執行、取消、重試或重跑。已完成的產物會保留在專案中；再次開啟任務時，GS360 Studio 會檢查既有結果，盡可能從可安全沿用的進度繼續，而不是每次全部重來。
 
 IMU／global mapper 的校正 gate、產物與 benchmark 方法請參閱 [IMU 重建流程](docs/IMU_RECONSTRUCTION.md)。開發環境、建置方式、架構、完整輸出結構與實作界線請參閱 [開發文件](docs/DEVELOPMENT.md)。
+
+上述效能數字來自 [2026-08-13 A/B/C benchmark](docs/evidence/2026-08-13-two-osv-abc/README.md)，比較的是相同輸入下的 Align 階段；兩個來源若不是同一場景或沒有視覺重疊，註冊率不應直接用來判斷 IMU 抽幀的加速效果。
