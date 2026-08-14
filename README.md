@@ -26,6 +26,7 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 - **減少動態干擾**：可遮除人、腳踏車、汽車、機車、公車、卡車與天空，讓重建更聚焦於穩定場景。
 - **針對 360 rig 對齊**：來源內使用 IMU-aware temporal graph，跨來源使用 bounded 視覺 retrieval；校正完成後可依魚眼 FOV overlap 再縮減配對。
 - **安全使用拍攝中繼資料**：先以視覺模型估時間偏移與 rotational hand-eye；通過 residual、coverage、rig 與 focal gate 後才寫入每鏡頭 gravity prior。完整 DJI quaternion 永遠不會直接冒充 COLMAP qvec。
+- **自動扶正訓練座標**：Align 完成後以校正過的 per-image gravity 旋轉整個 sparse model，使 LichtFeld 的 `+Y` 固定朝上；不估地面高度、不額外指定 yaw，也不依賴 Global Mapper 候選成功。
 - **Incremental／Global 自動切換**：首次可用 incremental 建立校正種子；COLMAP 4.1.1 前提通過後，以候選 global model 驗證成功才取代原結果。
 - **本機優先**：影片、影格、遮罩與重建結果都在本機處理；首次使用遮罩功能時可能需要下載對應模型。
 - **環境能力檢查**：集中顯示 FFmpeg、COLMAP、硬體加速與儲存空間等執行條件。

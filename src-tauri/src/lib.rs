@@ -4,6 +4,7 @@ mod colmap_priors;
 mod doctor;
 mod extraction;
 mod fisheye;
+mod gravity_alignment;
 mod imu_calibration;
 mod masking;
 mod media_preview;

@@ -11,12 +11,15 @@ GS360 Studio 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使�
 5. 通過的來源會輸出 calibrated rig orientation manifest。gravity 由世界 down 經各鏡頭 `camera_from_world` 轉換後，寫入 COLMAP 4.1.1 `pose_priors`；位置與 covariance 缺值使用 NaN，既有有效位置 prior 會保留。
 6. 若 gravity coverage 至少 80%、rig 外參完整、focal prior 有效且 CLI options 可用，`auto` 會建立 global candidate。候選模型包含 rigs/frames、驗證成功，而且 complete-rig coverage、最大 component coverage、points/track support、reprojection error 與 component count 都通過相對 seed 的防退步閘才提交；失敗或退步時保留 seed。calibrated pair refresh 若無法完整 rollback database 與 `pairs.txt`，流程會 fail-closed，不會在不一致的 matching graph 上執行 global mapper。
 7. 實驗性的 fixed-rotation BA 只在上述 gate 與對應 COLMAP option 都通過時啟用。完整 SO(3) constraint 只會交給完成 capability handshake 的外部 orientation-aware BA executable，stock COLMAP 不會收到 quaternion prior。
+8. 不論最後採用 incremental、global 或外部 BA，Align 都會從已註冊影像的 `camera_from_world` 與校正後 per-image gravity 反推重建世界的 down 軸。至少 8 個樣本、已註冊影像 gravity coverage 至少 80%，且方向 residual 與 inlier gate 通過後，使用 shortest-arc rotation 將 down 對齊 LichtFeld `-Y`（`+Y up`），再以 COLMAP `model_transformer` 同步旋轉 rigs、frames、images 與 points。這一步只扶正 roll/pitch，不估地面高度、不增加 yaw twist；正好上下顛倒而無法唯一保留 yaw 時會 fail-closed 並保留原模型。
 
 未知 rig 會先由 incremental bootstrap 估外參，再從 COLMAP database round-trip 回寫 `rig_config.json`，因此同一次執行即可繼續 calibration/global candidate。首次執行為了取得視覺 calibration seed，時間不會比直接 incremental 更短；後續有效 checkpoint 可直接使用 global path。
 
 ## 產品設定
 
 一般 GS360 Studio 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面只保留影格率、清晰度過濾、遮罩及 GPU 選項；不再顯示或保存下列實驗設定。
+
+一般任務預設開啟 Align 後 gravity 扶正。它與下列 Global Mapper 實驗設定分離，因此 incremental fallback 仍可輸出地面朝下的訓練資料集；缺少或未通過校正的 telemetry 只會產生明確的 skipped 診斷，不會破壞已驗證的視覺模型。
 
 A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 
@@ -29,6 +32,7 @@ A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 - `fixedRotationBa`: 略過 joint rotation optimization 的實驗模式。
 - `exportRollingShutterTrajectory`: 輸出逐列 SLERP sidecar；`pixelsModified` 固定為 `false`，目前不修改影像。
 - `orientationPriorExecutable`: 選用的外部完整 quaternion BA 工具。工具必須宣告 `gs360.orientation-ba/v1` capability；不可填 stock `colmap`。
+- `autoAlignGravity`: 是否在最終模型提交後自動扶正；產品預設為 `true`，benchmark／除錯可明確關閉。
 
 ## 校正與診斷產物
 
@@ -40,6 +44,8 @@ A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 - `metadata/orientation_priors.json`: 單來源時是可供外部 BA 使用的 manifest；多來源時是 index，保留各來源不同 offset。
 - `metadata/global_mapper_priors.json`: database injection、focal/gravity coverage、calibration version 與代表性 offset marker。
 - `metadata/global_mapper_candidate.json`: requested/attempted 狀態、seed 與 candidate complete-rig 數，以及最後實際 mapper。
+- `metadata/gravity_alignment.json`: 最終扶正狀態、向下向量語意、LichtFeld `+Y up` 目標、coverage、inliers、residual 與套用角度。
+- `metadata/gravity_alignment.sim3.txt`: 交給 COLMAP `model_transformer` 的 `scale qw qx qy qz tx ty tz` 旋轉；scale 固定 1、translation 固定 0。
 - `run-provenance.json`: run ID、輸入/COLMAP/CLI binary hash、Git commit、dirty 狀態與 align pipeline revision；路徑只保存 basename。
 - `metadata/rolling_shutter_sourceNNN.json`: 選用的 calibrated row trajectory sidecar。
 - `metadata/align_timings.json`: pair graph、feature extraction、matching、mapping 與總時間。

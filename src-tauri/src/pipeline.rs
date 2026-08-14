@@ -45,7 +45,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 23;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 24;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -93,9 +93,12 @@ struct AlignFingerprintPayload {
     rig_config_sha256: String,
     pairs_sha256: String,
     frame_motion_sha256: String,
+    telemetry_sha256: String,
     imu_calibration_sha256: String,
     orientation_priors_sha256: String,
     global_mapper_priors_sha256: String,
+    gravity_alignment_sha256: String,
+    gravity_transform_sha256: String,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -4119,6 +4122,14 @@ fn optional_file_sha256(path: &Path) -> Result<String, String> {
 }
 
 fn frame_motion_metadata_sha256(root: &Path) -> Result<String, String> {
+    metadata_files_sha256(root, "_frame_motion.json", "影格運動 metadata")
+}
+
+fn telemetry_metadata_sha256(root: &Path) -> Result<String, String> {
+    metadata_files_sha256(root, "_telemetry.json", "telemetry metadata")
+}
+
+fn metadata_files_sha256(root: &Path, suffix: &str, label: &str) -> Result<String, String> {
     let metadata = root.join("metadata");
     let Ok(entries) = fs::read_dir(&metadata) else {
         return Ok(sha256_hex(&[]));
@@ -4131,7 +4142,7 @@ fn frame_motion_metadata_sha256(root: &Path) -> Result<String, String> {
                 && path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("_frame_motion.json"))
+                    .is_some_and(|name| name.ends_with(suffix))
         })
         .collect::<Vec<_>>();
     paths.sort();
@@ -4140,7 +4151,7 @@ fn frame_motion_metadata_sha256(root: &Path) -> Result<String, String> {
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| format!("影格運動 metadata 檔名無效：{}", path.display()))?;
+            .ok_or_else(|| format!("{label} 檔名無效：{}", path.display()))?;
         bytes.extend_from_slice(name.as_bytes());
         bytes.push(0);
         bytes.extend_from_slice(
@@ -4211,12 +4222,19 @@ fn build_align_fingerprint(
         rig_config_sha256: file_sha256(&root.join("rig_config.json"))?,
         pairs_sha256: file_sha256(&root.join("metadata/pairs.txt"))?,
         frame_motion_sha256: frame_motion_metadata_sha256(root)?,
+        telemetry_sha256: telemetry_metadata_sha256(root)?,
         imu_calibration_sha256: optional_file_sha256(&root.join("metadata/imu_calibration.json"))?,
         orientation_priors_sha256: optional_file_sha256(
             &root.join("metadata/orientation_priors.json"),
         )?,
         global_mapper_priors_sha256: optional_file_sha256(
             &root.join("metadata/global_mapper_priors.json"),
+        )?,
+        gravity_alignment_sha256: optional_file_sha256(
+            &root.join("metadata/gravity_alignment.json"),
+        )?,
+        gravity_transform_sha256: optional_file_sha256(
+            &root.join("metadata/gravity_alignment.sim3.txt"),
         )?,
         files,
     };
@@ -4395,6 +4413,8 @@ fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), S
         root.join("sparse"),
         root.join("sparse_bootstrap"),
         root.join("sparse_bootstrap_retry"),
+        root.join("sparse_gravity_candidate"),
+        root.join("sparse_pre_gravity_alignment"),
         root.join("metadata/.align-bootstrap-text"),
         root.join("metadata/.align-configured-rig"),
         root.join("metadata/.align-configured-rig-text"),
@@ -4424,6 +4444,9 @@ fn invalidate_calibrated_prior_artifacts(root: &Path) -> Result<(), String> {
         metadata.join("global_mapper_priors.json"),
         metadata.join("imu_calibration.json"),
         metadata.join("orientation_priors.json"),
+        metadata.join("gravity_alignment.json"),
+        metadata.join("gravity_alignment.sim3.txt"),
+        metadata.join(".gravity-candidate-text"),
     ];
     if let Ok(entries) = fs::read_dir(&metadata) {
         for entry in entries.flatten() {
@@ -5628,21 +5651,29 @@ fn calibrate_imu_sources(
     let valid_source_count = sources.iter().filter(|source| source.model.valid).count();
     // Orientation manifests are rig-frame values, so the calibration identity
     // must change when either telemetry/hand-eye results or rig extrinsics do.
-    let version_payload = serde_json::to_vec(&json!({
-        "sources": &sources,
-        "rigConfigSha256": file_sha256(&root.join("rig_config.json"))?,
-    }))
-    .map_err(|error| error.to_string())?;
-    let digest = sha256_hex(&version_payload);
+    let calibration_version = imu_calibration_version(root, &sources)?;
     let bundle = ImuCalibrationBundle {
         schema_version: crate::imu_calibration::IMU_CALIBRATION_SCHEMA_VERSION,
-        calibration_version: format!("imu-hand-eye-v1-{}", &digest[..16]),
+        calibration_version,
         valid_source_count,
         source_count: sources.len(),
         sources,
     };
     write_json_atomic(&root.join("metadata/imu_calibration.json"), &bundle)?;
     Ok(bundle)
+}
+
+fn imu_calibration_version(
+    root: &Path,
+    sources: &[SourceImuCalibration],
+) -> Result<String, String> {
+    let version_payload = serde_json::to_vec(&json!({
+        "sources": sources,
+        "rigConfigSha256": file_sha256(&root.join("rig_config.json"))?,
+    }))
+    .map_err(|error| error.to_string())?;
+    let digest = sha256_hex(&version_payload);
+    Ok(format!("imu-hand-eye-v1-{}", &digest[..16]))
 }
 
 fn invert_quaternion(value: [f64; 4]) -> Option<[f64; 4]> {
@@ -5967,6 +5998,341 @@ fn prepare_global_mapper_priors_from_seed(
         &report,
     )?;
     Ok(report)
+}
+
+fn load_or_calibrate_imu_bundle_for_alignment(
+    root: &Path,
+    model: &crate::reconstruction_benchmark::ColmapTextModel,
+) -> Result<ImuCalibrationBundle, String> {
+    let bundle_path = root.join("metadata/imu_calibration.json");
+    if let Ok(bytes) = fs::read(&bundle_path) {
+        if let Ok(bundle) = serde_json::from_slice::<ImuCalibrationBundle>(&bytes) {
+            let identity_matches = imu_calibration_version(root, &bundle.sources)
+                .is_ok_and(|version| version == bundle.calibration_version);
+            let telemetry_matches = bundle.sources.iter().all(|source| {
+                optional_file_sha256(
+                    &root
+                        .join("metadata")
+                        .join(format!("{}_telemetry.json", source.source_id)),
+                )
+                .is_ok_and(|hash| hash == source.telemetry_sha256)
+            });
+            if bundle.valid_source_count > 0 && identity_matches && telemetry_matches {
+                return Ok(bundle);
+            }
+        }
+    }
+    calibrate_imu_sources(root, &[("accepted-model".to_owned(), model.clone())])
+}
+
+fn sparse_model_identity_sha256(model: &Path) -> Result<String, String> {
+    let extension = if ["cameras", "images", "points3D"]
+        .iter()
+        .all(|name| model.join(format!("{name}.bin")).is_file())
+    {
+        "bin"
+    } else {
+        "txt"
+    };
+    let mut files = Vec::new();
+    for name in ["rigs", "cameras", "frames", "images", "points3D"] {
+        let path = model.join(format!("{name}.{extension}"));
+        let metadata = fs::metadata(&path)
+            .map_err(|error| format!("無法讀取重力扶正模型身分 {}：{error}", path.display()))?;
+        files.push(json!({
+            "name": format!("{name}.{extension}"),
+            "size": metadata.len(),
+            "sha256": file_sha256(&path)?,
+        }));
+    }
+    serde_json::to_vec(&files)
+        .map(|bytes| sha256_hex(&bytes))
+        .map_err(|error| error.to_string())
+}
+
+fn gravity_alignment_audit(root: &Path) -> Option<Value> {
+    serde_json::from_slice::<Value>(
+        &fs::read(root.join("metadata/gravity_alignment.json")).ok()?,
+    )
+    .ok()
+}
+
+fn gravity_alignment_claims_applied(root: &Path) -> bool {
+    gravity_alignment_audit(root)
+        .and_then(|value| value.get("status").and_then(Value::as_str).map(str::to_owned))
+        .is_some_and(|status| matches!(status.as_str(), "applied" | "already_aligned"))
+}
+
+fn gravity_alignment_was_applied(root: &Path) -> bool {
+    let Some(audit) = gravity_alignment_audit(root) else {
+        return false;
+    };
+    let expected_identity = audit.get("sparseModelSha256").and_then(Value::as_str);
+    gravity_alignment_claims_applied(root)
+        && expected_identity.is_some_and(|expected| {
+            sparse_model_identity_sha256(&root.join("sparse/0"))
+                .is_ok_and(|actual| actual == expected)
+        })
+}
+
+fn recover_gravity_alignment_transaction(root: &Path) -> Result<(), String> {
+    let sparse = root.join("sparse");
+    let backup = root.join("sparse_pre_gravity_alignment");
+    let candidate = root.join("sparse_gravity_candidate");
+    if !backup.exists() {
+        return Ok(());
+    }
+    if sparse.exists() && gravity_alignment_was_applied(root) {
+        remove_align_artifact(&backup)?;
+        remove_align_artifact(&candidate)?;
+        return Ok(());
+    }
+    let audit = gravity_alignment_audit(root);
+    let pending_input_identity = audit.as_ref().and_then(|value| {
+        (value.get("status").and_then(Value::as_str) == Some("pending"))
+            .then(|| value.get("inputModelSha256").and_then(Value::as_str))
+            .flatten()
+    });
+    let pending_candidate_identity = audit.as_ref().and_then(|value| {
+        (value.get("status").and_then(Value::as_str) == Some("pending"))
+            .then(|| value.get("candidateModelSha256").and_then(Value::as_str))
+            .flatten()
+    });
+    let backup_identity = sparse_model_identity_sha256(&backup.join("0"))?;
+    if pending_input_identity != Some(backup_identity.as_str()) {
+        return Err("重力扶正交易備份與 pending audit 身分不一致，為避免覆寫模型已停止自動復原".to_owned());
+    }
+    if sparse.exists() {
+        let sparse_identity = sparse_model_identity_sha256(&sparse.join("0"))?;
+        if pending_candidate_identity != Some(sparse_identity.as_str()) {
+            return Err("重力扶正交易中的 sparse model 已被替換，為避免覆寫外部變更已停止自動復原".to_owned());
+        }
+        remove_align_artifact(&sparse)?;
+    }
+    fs::rename(&backup, &sparse)
+        .map_err(|error| format!("無法還原中斷前的重力扶正模型：{error}"))?;
+    remove_align_artifact(&candidate)?;
+    remove_align_artifact(&root.join("metadata/.gravity-candidate-text"))?;
+    remove_align_artifact(&root.join("metadata/gravity_alignment.json"))?;
+    remove_align_artifact(&root.join("metadata/gravity_alignment.sim3.txt"))?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn align_sparse_model_to_gravity(
+    app: &AppHandle,
+    id: &str,
+    root: &Path,
+    colmap: &Path,
+    sparse: &Path,
+    rig_configs: &[RigBootstrapConfig],
+    effective_mapper: &str,
+    control: &JobControl,
+) -> Result<bool, String> {
+    let text_model_dir = root.join("metadata/final-model-text");
+    export_colmap_text_model(
+        app,
+        id,
+        colmap,
+        &sparse.join("0"),
+        &text_model_dir,
+        control,
+    )?;
+    let model = crate::reconstruction_benchmark::read_colmap_text_model(&text_model_dir)?;
+    let bundle = load_or_calibrate_imu_bundle_for_alignment(root, &model)?;
+    if bundle.valid_source_count == 0 {
+        return Err("沒有來源通過時間偏移與 rotational hand-eye 校正".to_owned());
+    }
+    let gravity = build_orientation_and_gravity_priors(root, &bundle, rig_configs, false)?;
+    let estimate = crate::gravity_alignment::estimate_gravity_alignment(&model, &gravity)?;
+    let input_model_identity = sparse_model_identity_sha256(&sparse.join("0"))?;
+    let audit_path = root.join("metadata/gravity_alignment.json");
+    let transform_path = root.join("metadata/gravity_alignment.sim3.txt");
+    extraction::write_bytes_atomic(
+        &transform_path,
+        crate::gravity_alignment::sim3_file_contents(estimate.rotation_wxyz)?.as_bytes(),
+    )
+    .map_err(|error| error.to_string())?;
+
+    if estimate.already_aligned {
+        write_json_atomic(
+            &audit_path,
+            &json!({
+                "schemaVersion": 1,
+                "status": "already_aligned",
+                "directionSemantics": "gravity_down",
+                "targetCoordinateSystem": "lichtfeld_y_up",
+                "rotationMethod": "shortest_arc_no_yaw_twist",
+                "calibrationVersion": bundle.calibration_version,
+                "effectiveMapper": effective_mapper,
+                "transformPath": "metadata/gravity_alignment.sim3.txt",
+                "sparseModelSha256": input_model_identity,
+                "estimate": estimate,
+            }),
+        )?;
+        return Ok(true);
+    }
+
+    let candidate = root.join("sparse_gravity_candidate");
+    let candidate_text = root.join("metadata/.gravity-candidate-text");
+    let backup = root.join("sparse_pre_gravity_alignment");
+    remove_align_artifact(&candidate)?;
+    remove_align_artifact(&candidate_text)?;
+    remove_align_artifact(&backup)?;
+    fs::create_dir_all(candidate.join("0")).map_err(|error| error.to_string())?;
+    run_child(
+        app,
+        id,
+        colmap,
+        &[
+            "model_transformer".into(),
+            "--input_path".into(),
+            sparse.join("0").to_string_lossy().into_owned(),
+            "--output_path".into(),
+            candidate.join("0").to_string_lossy().into_owned(),
+            "--transform_path".into(),
+            transform_path.to_string_lossy().into_owned(),
+        ],
+        control,
+    )?;
+    validate_colmap_configured_rig_model(
+        app,
+        id,
+        colmap,
+        root,
+        &candidate.join("0"),
+        control,
+    )?;
+    export_colmap_text_model(
+        app,
+        id,
+        colmap,
+        &candidate.join("0"),
+        &candidate_text,
+        control,
+    )?;
+    let transformed = crate::reconstruction_benchmark::read_colmap_text_model(&candidate_text)?;
+    let candidate_model_identity = sparse_model_identity_sha256(&candidate.join("0"))?;
+    let before_shape = (
+        model.cameras.len(),
+        model.images.len(),
+        model.frames.len(),
+        model.points3d.len(),
+    );
+    let after_shape = (
+        transformed.cameras.len(),
+        transformed.images.len(),
+        transformed.frames.len(),
+        transformed.points3d.len(),
+    );
+    if before_shape != after_shape {
+        remove_align_artifact(&candidate)?;
+        remove_align_artifact(&candidate_text)?;
+        return Err(format!(
+            "重力扶正候選改變模型元素數量：{before_shape:?} -> {after_shape:?}"
+        ));
+    }
+    let topology_preserved = model.cameras == transformed.cameras
+        && model.images.iter().zip(&transformed.images).all(|(before, after)| {
+            before.image_id == after.image_id
+                && before.name == after.name
+                && before.camera_id == after.camera_id
+                && before.observed_point_count == after.observed_point_count
+                && before.frame_id == after.frame_id
+        })
+        && model.frames.iter().zip(&transformed.frames).all(|(before, after)| {
+            before.frame_id == after.frame_id
+                && before.rig_id == after.rig_id
+                && before.data == after.data
+        })
+        && model.points3d.iter().zip(&transformed.points3d).all(|(before, after)| {
+            before.point3d_id == after.point3d_id
+                && before.rgb == after.rgb
+                && before.reprojection_error_px == after.reprojection_error_px
+                && before.track == after.track
+        });
+    if !topology_preserved {
+        remove_align_artifact(&candidate)?;
+        remove_align_artifact(&candidate_text)?;
+        return Err("重力扶正候選改變相機內參、影像身分、rig frame 或 point tracks".to_owned());
+    }
+    let verification = crate::gravity_alignment::estimate_gravity_alignment(&transformed, &gravity)?;
+    if !verification.already_aligned {
+        remove_align_artifact(&candidate)?;
+        remove_align_artifact(&candidate_text)?;
+        return Err(format!(
+            "重力扶正候選驗證仍偏離目標 {:.3}°",
+            verification.rotation_angle_deg
+        ));
+    }
+
+    write_json_atomic(
+        &audit_path,
+        &json!({
+            "schemaVersion": 1,
+            "status": "pending",
+            "directionSemantics": "gravity_down",
+            "targetCoordinateSystem": "lichtfeld_y_up",
+            "rotationMethod": "shortest_arc_no_yaw_twist",
+            "calibrationVersion": bundle.calibration_version,
+            "effectiveMapper": effective_mapper,
+            "transformPath": "metadata/gravity_alignment.sim3.txt",
+            "inputModelSha256": input_model_identity,
+            "candidateModelSha256": candidate_model_identity,
+        }),
+    )?;
+    fs::rename(sparse, &backup)
+        .map_err(|error| format!("無法建立重力扶正前模型備份：{error}"))?;
+    if let Err(error) = fs::rename(&candidate, sparse) {
+        fs::rename(&backup, sparse).map_err(|restore_error| {
+            format!(
+                "重力扶正模型提交失敗：{error}；原模型還原也失敗：{restore_error}"
+            )
+        })?;
+        return Err(format!("重力扶正模型提交失敗：{error}"));
+    }
+    let cleanup_warnings = remove_align_artifact(&candidate_text)
+        .err()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Err(error) = write_json_atomic(
+        &audit_path,
+        &json!({
+            "schemaVersion": 1,
+            "status": "applied",
+            "directionSemantics": "gravity_down",
+            "targetCoordinateSystem": "lichtfeld_y_up",
+            "rotationMethod": "shortest_arc_no_yaw_twist",
+            "calibrationVersion": bundle.calibration_version,
+            "effectiveMapper": effective_mapper,
+            "transformPath": "metadata/gravity_alignment.sim3.txt",
+            "sparseModelSha256": candidate_model_identity,
+            "modelElementCounts": {
+                "cameras": after_shape.0,
+                "images": after_shape.1,
+                "frames": after_shape.2,
+                "points3D": after_shape.3,
+            },
+            "cleanupWarnings": cleanup_warnings,
+            "estimate": estimate,
+            "verification": verification,
+        }),
+    ) {
+        remove_align_artifact(sparse).map_err(|cleanup_error| {
+            format!(
+                "重力扶正 audit 寫入失敗：{error}；候選模型移除也失敗：{cleanup_error}"
+            )
+        })?;
+        fs::rename(&backup, sparse).map_err(|restore_error| {
+            format!("重力扶正 audit 寫入失敗：{error}；原模型還原也失敗：{restore_error}")
+        })?;
+        return Err(format!("重力扶正 audit 寫入失敗，已還原原模型：{error}"));
+    }
+    // The applied audit already binds the current sparse model by hash. If
+    // cleanup fails, the next run can safely remove this backup after checking
+    // that identity instead of risking an overwrite here.
+    let _ = remove_align_artifact(&backup);
+    Ok(true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6394,6 +6760,7 @@ fn run_align(
     let mut phase_durations_ms = BTreeMap::<String, f64>::new();
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
+    recover_gravity_alignment_transaction(&root)?;
     let gpu_index = parse_gpu_index(&manifest.settings)?;
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
@@ -6579,6 +6946,12 @@ fn run_align(
             &sparse.join("0"),
             control,
         ) {
+            Ok(_) if setting_bool(&manifest.settings, "/align/autoAlignGravity", true)
+                && gravity_alignment_claims_applied(&root)
+                && !gravity_alignment_was_applied(&root) =>
+            {
+                Some("重力扶正 audit 與目前 sparse model 身分不一致".to_owned())
+            }
             Ok(calibrated_sensor_count) => {
                 emit_log(
                     app,
@@ -6621,19 +6994,29 @@ fn run_align(
             Some("existing sparse model".to_owned()),
             None,
         );
-        return Ok(StageRunOutput {
-            artifacts: vec![
+        let mut artifacts = vec![
                 db.to_string_lossy().into_owned(),
                 root.join("rig_config.json").to_string_lossy().into_owned(),
                 sparse.to_string_lossy().into_owned(),
-            ],
+            ];
+        for path in [
+            root.join("metadata/gravity_alignment.json"),
+            root.join("metadata/gravity_alignment.sim3.txt"),
+        ] {
+            if path.is_file() {
+                artifacts.push(path.to_string_lossy().into_owned());
+            }
+        }
+        return Ok(StageRunOutput {
+            artifacts,
             registration: registration_summary_from_text_model(&root, rig_frame_count),
             capability_updates: BTreeMap::from([(
                 "imuApplied".to_owned(),
                 (reused_effective_mapper == "global_mapper"
                     && use_gravity_prior
                     && has_valid_global_mapper_priors(&root, true))
-                    || reused_effective_mapper == "external_orientation_ba",
+                    || reused_effective_mapper == "external_orientation_ba"
+                    || gravity_alignment_was_applied(&root),
             )]),
         });
     }
@@ -8165,6 +8548,80 @@ fn run_align(
             }
         }
     }
+    let gravity_alignment_started = Instant::now();
+    let auto_align_gravity = setting_bool(&manifest.settings, "/align/autoAlignGravity", true);
+    let gravity_alignment_applied = if auto_align_gravity {
+        emit_log(
+            app,
+            id,
+            "info",
+            "正在以校正後的 IMU gravity 扶正最終模型（LichtFeld +Y up）",
+        );
+        match align_sparse_model_to_gravity(
+            app,
+            id,
+            &root,
+            &colmap,
+            &sparse,
+            &rig_configs,
+            effective_final_mapper_component,
+            control,
+        ) {
+            Ok(true) => {
+                emit_log(app, id, "info", "最終模型已自動扶正，地面方向固定向下");
+                true
+            }
+            Ok(false) => false,
+            Err(error) if cancelled_error(&error, control) => return Err(error),
+            Err(error) => {
+                if root.join("sparse_pre_gravity_alignment").exists() {
+                    return Err(format!(
+                        "重力扶正交易未能完整還原，已停止 Align 以保留備份：{error}"
+                    ));
+                }
+                remove_align_artifact(&root.join("sparse_gravity_candidate"))?;
+                remove_align_artifact(&root.join("metadata/.gravity-candidate-text"))?;
+                remove_align_artifact(&root.join("metadata/gravity_alignment.sim3.txt"))?;
+                write_json_atomic(
+                    &root.join("metadata/gravity_alignment.json"),
+                    &json!({
+                        "schemaVersion": 1,
+                        "status": "skipped",
+                        "directionSemantics": "gravity_down",
+                        "targetCoordinateSystem": "lichtfeld_y_up",
+                        "rotationMethod": "shortest_arc_no_yaw_twist",
+                        "effectiveMapper": effective_final_mapper_component,
+                        "error": &error,
+                    }),
+                )?;
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!("IMU 重力扶正未套用，保留已驗證模型：{error}"),
+                );
+                false
+            }
+        }
+    } else {
+        remove_align_artifact(&root.join("metadata/gravity_alignment.sim3.txt"))?;
+        write_json_atomic(
+            &root.join("metadata/gravity_alignment.json"),
+            &json!({
+                "schemaVersion": 1,
+                "status": "disabled",
+                "directionSemantics": "gravity_down",
+                "targetCoordinateSystem": "lichtfeld_y_up",
+                "rotationMethod": "shortest_arc_no_yaw_twist",
+                "effectiveMapper": effective_final_mapper_component,
+            }),
+        )?;
+        false
+    };
+    phase_durations_ms.insert(
+        "gravityAlignment".to_owned(),
+        gravity_alignment_started.elapsed().as_secs_f64() * 1000.0,
+    );
     phase_durations_ms.insert(
         "mapping".to_owned(),
         mapping_started.elapsed().as_secs_f64() * 1000.0,
@@ -8268,18 +8725,28 @@ fn run_align(
     let gravity_prior_applied = effective_final_mapper_component == "global_mapper"
         && use_gravity_prior
         && has_valid_global_mapper_priors(&root, true);
-    Ok(StageRunOutput {
-        artifacts: vec![
+    let mut artifacts = vec![
             db.to_string_lossy().into_owned(),
             root.join("rig_config.json").to_string_lossy().into_owned(),
             sparse.to_string_lossy().into_owned(),
             benchmark_path.to_string_lossy().into_owned(),
-        ],
+        ];
+    for path in [
+        root.join("metadata/gravity_alignment.json"),
+        root.join("metadata/gravity_alignment.sim3.txt"),
+    ] {
+        if path.is_file() {
+            artifacts.push(path.to_string_lossy().into_owned());
+        }
+    }
+    Ok(StageRunOutput {
+        artifacts,
         registration,
         capability_updates: BTreeMap::from([(
             "imuApplied".to_owned(),
             gravity_prior_applied
-                || effective_final_mapper_component == "external_orientation_ba",
+                || effective_final_mapper_component == "external_orientation_ba"
+                || gravity_alignment_applied,
         )]),
     })
 }
@@ -8335,6 +8802,102 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
     use tempfile::TempDir;
+
+    fn write_sparse_identity_fixture(model: &Path, marker: &str) {
+        fs::create_dir_all(model).unwrap();
+        for name in ["rigs", "cameras", "frames", "images", "points3D"] {
+            fs::write(model.join(format!("{name}.txt")), format!("{marker}-{name}"))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn gravity_audit_is_bound_to_the_exact_sparse_model() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let model = root.join("sparse/0");
+        write_sparse_identity_fixture(&model, "aligned");
+        fs::create_dir_all(root.join("metadata")).unwrap();
+        let identity = super::sparse_model_identity_sha256(&model).unwrap();
+        fs::write(
+            root.join("metadata/gravity_alignment.json"),
+            serde_json::to_vec(&json!({
+                "status": "applied",
+                "sparseModelSha256": identity,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(super::gravity_alignment_was_applied(root));
+
+        fs::write(model.join("points3D.txt"), b"replacement").unwrap();
+        assert!(!super::gravity_alignment_was_applied(root));
+    }
+
+    #[test]
+    fn interrupted_gravity_commit_restores_the_unaligned_backup() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_sparse_identity_fixture(&root.join("sparse/0"), "partial-candidate");
+        write_sparse_identity_fixture(&root.join("sparse_pre_gravity_alignment/0"), "original");
+        write_sparse_identity_fixture(&root.join("sparse_gravity_candidate/0"), "candidate");
+        fs::create_dir_all(root.join("metadata")).unwrap();
+        let input_identity =
+            super::sparse_model_identity_sha256(&root.join("sparse_pre_gravity_alignment/0"))
+                .unwrap();
+        let candidate_identity =
+            super::sparse_model_identity_sha256(&root.join("sparse/0")).unwrap();
+        fs::write(
+            root.join("metadata/gravity_alignment.json"),
+            serde_json::to_vec(&json!({
+                "status": "pending",
+                "inputModelSha256": input_identity,
+                "candidateModelSha256": candidate_identity,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        super::recover_gravity_alignment_transaction(root).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(root.join("sparse/0/points3D.txt")).unwrap(),
+            "original-points3D"
+        );
+        assert!(!root.join("sparse_pre_gravity_alignment").exists());
+        assert!(!root.join("sparse_gravity_candidate").exists());
+    }
+
+    #[test]
+    fn interrupted_gravity_commit_does_not_overwrite_an_external_sparse_replacement() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_sparse_identity_fixture(&root.join("sparse/0"), "external-replacement");
+        write_sparse_identity_fixture(&root.join("sparse_pre_gravity_alignment/0"), "original");
+        fs::create_dir_all(root.join("metadata")).unwrap();
+        let input_identity =
+            super::sparse_model_identity_sha256(&root.join("sparse_pre_gravity_alignment/0"))
+                .unwrap();
+        fs::write(
+            root.join("metadata/gravity_alignment.json"),
+            serde_json::to_vec(&json!({
+                "status": "pending",
+                "inputModelSha256": input_identity,
+                "candidateModelSha256": "different-candidate",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let error = super::recover_gravity_alignment_transaction(root).unwrap_err();
+
+        assert!(error.contains("已被替換"));
+        assert_eq!(
+            fs::read_to_string(root.join("sparse/0/points3D.txt")).unwrap(),
+            "external-replacement-points3D"
+        );
+        assert!(root.join("sparse_pre_gravity_alignment").exists());
+    }
 
     #[test]
     fn starting_align_clears_stale_imu_capability() {
@@ -9084,6 +9647,15 @@ mod tests {
             build_align_fingerprint(temp.path(), &changed_settings, "COLMAP 4.1.1", false).unwrap()
         );
 
+        fs::write(
+            temp.path().join("metadata/source000_telemetry.json"),
+            br#"{"schemaVersion":1,"fusedAttitude":[]}"#,
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
+        );
         fs::write(
             temp.path().join("metadata/source000_frame_motion.json"),
             br#"{"schemaVersion":1,"frames":[{"sequence":1,"timestampMs":0}]}"#,

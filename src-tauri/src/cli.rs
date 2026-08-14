@@ -735,6 +735,7 @@ fn common_settings(gpu_index: &str, profile: &str) -> Value {
             "useGpu": true,
             "gpuIndex": gpu_index,
             "colmapQualityProfile": profile,
+            "autoAlignGravity": true,
             "fixedRotationBa": false,
             "orientationPriorExecutable": ""
         }
