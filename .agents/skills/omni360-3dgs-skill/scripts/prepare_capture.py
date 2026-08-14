@@ -337,7 +337,23 @@ class TorchvisionMasker:
         return cv2.dilate(ignore, k)
 
 
-def build_masks(images: dict[str, dict[int, Path]], out_masks: Path, out_colmap_masks: Path,
+def write_mask_png(path: Path, mask: np.ndarray) -> None:
+    """Write one canonical 8-bit grayscale (L8) training/SfM mask.
+
+    The mask contract is independent of the source image suffix: callers map
+    ``images/lens0/frame.jpg`` to ``masks/lens0/frame.png``. ``0`` excludes a
+    pixel and ``255`` keeps it.
+    """
+    if mask.dtype != np.uint8 or mask.ndim != 2:
+        raise ValueError("mask must be a two-dimensional uint8 array")
+    if not np.isin(mask, (0, 255)).all():
+        raise ValueError("mask pixels must be black (0) or white (255)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(path), mask, [cv2.IMWRITE_PNG_COMPRESSION, 2]):
+        raise RuntimeError(f"Failed to write mask {path}")
+
+
+def build_masks(images: dict[str, dict[int, Path]], out_masks: Path,
                 cfg: dict[str, Any], radius_ratio: float):
     mask_cfg = cfg["mask"]
     masker = None
@@ -358,15 +374,12 @@ def build_masks(images: dict[str, dict[int, Path]], out_masks: Path, out_colmap_
                 dyn = masker.dynamic_ignore(img)
                 keep[dyn > 0] = 0
 
-            # LichtFeld-friendly mask tree: same relative image filename.
-            dst = out_masks / lens_id / path.name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(dst), keep)
-
-            # COLMAP feature mask contract adds .png to the full image filename.
-            c_dst = out_colmap_masks / lens_id / f"{path.name}.png"
-            c_dst.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(c_dst), keep)
+            # Canonical mask tree: preserve the image's relative stem and
+            # always replace its suffix with .png (e.g. frame.jpg -> frame.png).
+            # The same file is consumed by training and COLMAP; do not emit a
+            # second compatibility tree or a double-extension variant.
+            dst = out_masks / lens_id / f"{path.stem}.png"
+            write_mask_png(dst, keep)
 
 
 def generate_pairs(images: dict[str, dict[int, Path]], cfg: dict[str, Any], out_path: Path) -> int:
@@ -430,7 +443,7 @@ def run_colmap(out: Path, cfg: dict[str, Any], lens_ids: list[str]):
     if db.exists():
         db.unlink()
     images = out / "images"
-    masks = out / "masks_colmap"
+    masks = out / "masks"
     model = cfg["fisheye"].get("model", "OPENCV_FISHEYE")
 
     run([
@@ -560,7 +573,7 @@ def main():
             inp, lens, selected, out / "images" / lens.lens_id)
         print(f"{lens.lens_id}: wrote {len(images[lens.lens_id])} frames")
 
-    build_masks(images, out / "masks", out / "masks_colmap", cfg,
+    build_masks(images, out / "masks", cfg,
                 float(cfg["fisheye"].get("valid_radius_ratio", 0.497)))
 
     pair_count = generate_pairs(images, cfg, meta / "pairs.txt")

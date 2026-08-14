@@ -108,8 +108,9 @@ pnpm version:check
 - 物件、天空、魚眼圓外，以及 DJI metadata 標記的固定光學遮擋區為黑色；其餘區域為白色。
 - 推論工作解析度的最長邊限制為 640，再以 nearest-neighbor 放回來源尺寸；不要宣稱模型直接以原始 8K 解析度推論。
 - 原生鏡頭超過 180° 的重疊區仍保留。optical mask 只表示無法成像或固定遮擋，不把邊緣畫質下降當成硬裁切。
-- 每張 mask 先寫 partial file 再原子替換。既有的一般 mask 與 COLMAP mask 都能解碼、且尺寸與來源一致時才會略過。
-- Mask 輸出包含 `masks/` 與 `masks_colmap/`；後者採用 COLMAP 所需的 `image-name.ext.png` 命名。
+- 每張 mask 先寫 partial file 再原子替換；既有 canonical mask 能解碼、且尺寸與來源一致時才會略過。
+- Mask 只有一份 canonical 輸出：`masks/<relative-stem>.png`。保留 `images/` 下的相對目錄，並將來源副檔名替換成 `.png`（例如 `images/lens0/frame.jpg` → `masks/lens0/frame.png`）。
+- Mask 固定為與來源同尺寸的 8-bit 單通道 L8 PNG；黑色（0）排除，白色（255）保留。這一份檔案同時供 COLMAP feature extraction 與 3DGS training 使用，只保留 canonical 檔案，不產生第二份相容檔或雙副檔名檔案。
 
 模型尋找順序：
 
@@ -159,7 +160,6 @@ colmap-{filename}/
 │   ├── lens0/
 │   └── lens1/
 ├── masks/
-├── masks_colmap/
 ├── rig_config.json
 ├── database.db
 ├── sparse/

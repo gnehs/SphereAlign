@@ -457,16 +457,9 @@ fn infer_partial_project(path: &Path) -> Option<ProjectInspection> {
     if !path.is_dir() {
         return None;
     }
-    let evidence = [
-        "images",
-        "capture",
-        "metadata",
-        "masks",
-        "masks_colmap",
-        "rig_config.json",
-    ]
-    .iter()
-    .any(|name| path.join(name).exists());
+    let evidence = ["images", "capture", "metadata", "masks", "rig_config.json"]
+        .iter()
+        .any(|name| path.join(name).exists());
     evidence.then(|| ProjectInspection {
         path: path.to_string_lossy().into_owned(),
         manifest_path: None,
@@ -512,14 +505,10 @@ fn masks_cover_images(root: &Path) -> bool {
         return false;
     }
     images.into_iter().all(|relative| {
-        let regular = root.join("masks").join(&relative);
-        let file_name = match relative.file_name() {
-            Some(name) => name.to_string_lossy().into_owned(),
-            None => return false,
-        };
-        let mut colmap_relative = relative;
-        colmap_relative.set_file_name(format!("{file_name}.png"));
-        regular.is_file() && root.join("masks_colmap").join(colmap_relative).is_file()
+        // Regular masks are canonical PNGs keyed by the image stem. Project
+        // recovery only needs this canonical mask for each source image.
+        let regular = root.join("masks").join(relative.with_extension("png"));
+        regular.is_file()
     })
 }
 
@@ -607,18 +596,10 @@ fn infer_stage_checkpoints(root: &Path) -> BTreeMap<String, StageCheckpoint> {
         );
     }
     let masks = root.join("masks");
-    let colmap_masks = root.join("masks_colmap");
     if masks_cover_images(root) {
         stages.insert(
             "mask".to_owned(),
-            completed_checkpoint(
-                "已找到現有遮罩",
-                [masks, colmap_masks]
-                    .into_iter()
-                    .filter(|path| path.exists())
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .collect(),
-            ),
+            completed_checkpoint("已找到現有遮罩", vec![masks.to_string_lossy().into_owned()]),
         );
     }
     let sparse = root.join("sparse");
@@ -878,7 +859,6 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
         "images/lens0",
         "images/lens1",
         "masks",
-        "masks_colmap",
         "metadata",
         "sparse",
     ] {
@@ -1200,6 +1180,7 @@ mod tests {
             root.join("colmap-capture").to_string_lossy()
         );
         assert!(Path::new(&manifest.root_path).join(MANIFEST_FILE).is_file());
+        assert!(!Path::new(&manifest.root_path).join("masks_colmap").exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1222,16 +1203,13 @@ mod tests {
         fs::create_dir_all(root.join("images/lens1")).unwrap();
         fs::create_dir_all(root.join("masks/lens0")).unwrap();
         fs::create_dir_all(root.join("masks/lens1")).unwrap();
-        fs::create_dir_all(root.join("masks_colmap/lens0")).unwrap();
-        fs::create_dir_all(root.join("masks_colmap/lens1")).unwrap();
         for lens in ["lens0", "lens1"] {
-            for frame in ["frame1.png", "frame2.png"] {
+            for frame in ["frame1.jpg", "frame2.jpg"] {
                 fs::write(root.join("images").join(lens).join(frame), b"frame").unwrap();
-                fs::write(root.join("masks").join(lens).join(frame), b"mask").unwrap();
                 fs::write(
-                    root.join("masks_colmap")
+                    root.join("masks")
                         .join(lens)
-                        .join(format!("{frame}.png")),
+                        .join(Path::new(frame).with_extension("png")),
                     b"mask",
                 )
                 .unwrap();
@@ -1269,6 +1247,10 @@ mod tests {
             partial.stages["mask"].status,
             StageStatus::Completed
         ));
+        assert_eq!(
+            partial.stages["mask"].artifacts,
+            vec![root.join("masks").to_string_lossy().into_owned()]
+        );
         assert!(matches!(
             partial.stages["align"].status,
             StageStatus::Completed

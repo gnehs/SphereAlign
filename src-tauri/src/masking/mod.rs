@@ -2,12 +2,11 @@
 //!
 //! The module treats every image below `images_dir` (including `lens0/`,
 //! `lens1/`, and future `lens*` directories) as an independent camera frame.
-//! `masks/` keeps the exact relative filename and uses white for pixels retained
-//! by SfM/training and black for excluded pixels.  `masks_colmap/` keeps the same
-//! relative hierarchy but appends `.png` to the complete image filename (for
-//! example `lens0/frame.jpg.png`), matching COLMAP's `ImageReader.mask_path`
-//! contract. Pixels outside the full fisheye circle and, when present, below
-//! DJI's calibrated fixed optical-occlusion curve are black. Scene content such
+//! `masks/` mirrors the source hierarchy, replaces the image extension with
+//! `.png`, and uses white for pixels retained by SfM/training and black for
+//! excluded pixels (for example `images/lens0/frame.jpg` maps to
+//! `masks/lens0/frame.png`). Pixels outside the full fisheye circle and, when
+//! present, below DJI's calibrated fixed optical-occlusion curve are black. Scene content such
 //! as hands and selfie sticks is left to the separate semantic mask stage.
 //!
 //! Model loading is lazy and explicit: [`process_mask_batch`] discovers YOLO11
@@ -153,7 +152,6 @@ impl CancelToken {
 pub struct MaskRequest {
     pub images_dir: PathBuf,
     pub masks_dir: PathBuf,
-    pub colmap_masks_dir: PathBuf,
     pub classes: Vec<String>,
     pub mask_sky: bool,
     pub confidence: f32,
@@ -161,7 +159,7 @@ pub struct MaskRequest {
     pub valid_radius_ratio: f32,
     /// DJI optical calibration keyed by extraction filename prefix.
     pub optical_occlusions: BTreeMap<String, LensOpticalOcclusions>,
-    /// Skip only when both output files decode and match the source dimensions.
+    /// Skip only when the output decodes and matches the source dimensions.
     pub skip_verified: bool,
     /// Optional user-supplied model root. See [`ModelPaths::resolve`].
     pub model_dir: Option<PathBuf>,
@@ -180,7 +178,6 @@ impl Default for MaskRequest {
         Self {
             images_dir: PathBuf::new(),
             masks_dir: PathBuf::new(),
-            colmap_masks_dir: PathBuf::new(),
             classes: Vec::new(),
             mask_sky: false,
             confidence: YOLO_CONFIDENCE_THRESHOLD,
@@ -206,7 +203,6 @@ pub struct MaskProgress {
     pub completed: usize,
     pub input: PathBuf,
     pub mask_path: PathBuf,
-    pub colmap_mask_path: PathBuf,
     pub stage: MaskStage,
     pub fraction: f32,
     pub message: String,
@@ -403,7 +399,6 @@ pub fn process_mask_batch(
         completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
-        colmap_mask_path: request.colmap_masks_dir.clone(),
         stage: MaskStage::Discovering,
         fraction: 0.0,
         message: "正在掃描原生雙魚眼影像".to_string(),
@@ -414,7 +409,6 @@ pub fn process_mask_batch(
         completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
-        colmap_mask_path: request.colmap_masks_dir.clone(),
         stage: MaskStage::LoadingModel,
         fraction: 0.0,
         message: "正在載入 YOLO11／SkySeg 模型".to_string(),
@@ -431,7 +425,6 @@ pub fn process_mask_batch(
             completed: 0,
             input: request.images_dir.clone(),
             mask_path: request.masks_dir.clone(),
-            colmap_mask_path: request.colmap_masks_dir.clone(),
             stage: MaskStage::LoadingModel,
             fraction: 0.0,
             message: format!("首次使用，正在下載 {} 模型（{}%）", event.label, percent),
@@ -443,7 +436,6 @@ pub fn process_mask_batch(
         completed: 0,
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
-        colmap_mask_path: request.colmap_masks_dir.clone(),
         stage: MaskStage::LoadingModel,
         fraction: 0.0,
         message: format!(
@@ -454,7 +446,7 @@ pub fn process_mask_batch(
     process_with_engine(request, cancel, &engine, on_progress)
 }
 
-/// Return a completed summary before model discovery when every output pair is
+/// Return a completed summary before model discovery when every output is
 /// already usable. No progress is emitted until the full batch is verified, so
 /// a partial batch still follows the normal inference path.
 fn skip_fully_verified_batch(
@@ -481,16 +473,16 @@ fn skip_fully_verified_batch(
         if cancel.is_cancelled() {
             return Ok(Some(summary(0, true)));
         }
-        let Ok((mask_path, colmap_path)) = output_paths(request, input) else {
+        let Ok(mask_path) = output_path(request, input) else {
             return Ok(None);
         };
-        if !mask_path.is_file() || !colmap_path.is_file() {
+        if !mask_path.is_file() {
             return Ok(None);
         }
-        outputs.push((input, mask_path, colmap_path));
+        outputs.push((input, mask_path));
     }
 
-    for (input, mask_path, colmap_path) in &outputs {
+    for (input, mask_path) in &outputs {
         if cancel.is_cancelled() {
             return Ok(Some(summary(0, true)));
         }
@@ -502,14 +494,12 @@ fn skip_fully_verified_batch(
             Err(_) => return Ok(None),
         };
         let (width, height) = image.dimensions();
-        if !is_valid_mask_file(&mask_path, width, height)
-            || !is_valid_mask_file(&colmap_path, width, height)
-        {
+        if !is_valid_mask_file(mask_path, width, height) {
             return Ok(None);
         }
     }
 
-    for (index, (input, mask_path, colmap_path)) in outputs.iter().enumerate() {
+    for (index, (input, mask_path)) in outputs.iter().enumerate() {
         if cancel.is_cancelled() {
             return Ok(Some(summary(index, true)));
         }
@@ -520,7 +510,6 @@ fn skip_fully_verified_batch(
             index + 1,
             input,
             mask_path,
-            colmap_path,
             MaskStage::Skipped,
             (index + 1) as f32 / total as f32,
             "已確認遮罩存在，已略過",
@@ -666,8 +655,8 @@ fn process_one_image<E>(
 where
     E: MaskEngine + ?Sized,
 {
-    let (mask_path, colmap_path) = match output_paths(request, input) {
-        Ok(paths) => paths,
+    let mask_path = match output_path(request, input) {
+        Ok(path) => path,
         Err(error) => {
             let completed_hint = completed.fetch_add(1, Ordering::AcqRel) + 1;
             let _guard = progress_lock
@@ -684,7 +673,6 @@ where
                 completed_count,
                 input,
                 &request.masks_dir,
-                &request.colmap_masks_dir,
                 MaskStage::Failed,
                 completed_count as f32 / total as f32,
                 &error.to_string(),
@@ -708,7 +696,6 @@ where
             completed_count,
             input,
             &mask_path,
-            &colmap_path,
             stage,
             fraction.max(completed_fraction),
             message,
@@ -727,15 +714,13 @@ where
     // A partially resumed batch reaches this per-file path even when some
     // outputs are already complete. Read only the source header before deciding
     // to skip so completed high-resolution frames are not decoded in full.
-    if request.skip_verified && mask_path.is_file() && colmap_path.is_file() {
+    if request.skip_verified && mask_path.is_file() {
         let source_dimensions = ImageReader::open(input)
             .and_then(|reader| reader.with_guessed_format())
             .ok()
             .and_then(|reader| reader.into_dimensions().ok());
         if let Some((width, height)) = source_dimensions {
-            if is_valid_mask_file(&mask_path, width, height)
-                && is_valid_mask_file(&colmap_path, width, height)
-            {
+            if is_valid_mask_file(&mask_path, width, height) {
                 let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
                 report(
                     MaskStage::Skipped,
@@ -860,9 +845,7 @@ where
         completed.load(Ordering::Acquire),
         "正在寫入遮罩檔案",
     );
-    if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep, false)
-        .and_then(|_| write_mask_atomic(&colmap_path, width, height, &keep, true))
-    {
+    if let Err(error) = write_mask_atomic(&mask_path, width, height, &keep) {
         let message = error.to_string();
         let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
         report(
@@ -891,9 +874,9 @@ fn validate_request(request: &MaskRequest) -> MaskResult<()> {
             request.images_dir.display()
         )));
     }
-    if request.masks_dir.as_os_str().is_empty() || request.colmap_masks_dir.as_os_str().is_empty() {
+    if request.masks_dir.as_os_str().is_empty() {
         return Err(MaskError::invalid_input(
-            "mask output directories are required",
+            "mask output directory is required",
         ));
     }
     if !request.confidence.is_finite() || !(0.0..=1.0).contains(&request.confidence) {
@@ -935,6 +918,19 @@ fn collect_images(root: &Path) -> MaskResult<Vec<PathBuf>> {
             .to_string_lossy()
             .to_ascii_lowercase()
     });
+    let mut output_sources = BTreeMap::new();
+    for path in &files {
+        let mut relative = path.strip_prefix(root).unwrap_or(path).to_path_buf();
+        relative.set_extension("png");
+        if let Some(previous) = output_sources.insert(relative.clone(), path) {
+            return Err(MaskError::invalid_input(format!(
+                "images {} and {} map to the same mask {}",
+                previous.display(),
+                path.display(),
+                relative.display()
+            )));
+        }
+    }
     Ok(files)
 }
 
@@ -968,8 +964,8 @@ fn is_image_path(path: &Path) -> bool {
     )
 }
 
-fn output_paths(request: &MaskRequest, input: &Path) -> MaskResult<(PathBuf, PathBuf)> {
-    let relative = if request.images_dir.is_file() {
+fn output_path(request: &MaskRequest, input: &Path) -> MaskResult<PathBuf> {
+    let mut relative = if request.images_dir.is_file() {
         PathBuf::from(
             input
                 .file_name()
@@ -986,13 +982,8 @@ fn output_paths(request: &MaskRequest, input: &Path) -> MaskResult<(PathBuf, Pat
             })?
             .to_path_buf()
     };
-    let mask_path = request.masks_dir.join(&relative);
-    let mut colmap_path = request.colmap_masks_dir.join(&relative);
-    let file_name = relative
-        .file_name()
-        .ok_or_else(|| MaskError::invalid_input("input image has no filename"))?;
-    colmap_path.set_file_name(format!("{}.png", file_name.to_string_lossy()));
-    Ok((mask_path, colmap_path))
+    relative.set_extension("png");
+    Ok(request.masks_dir.join(relative))
 }
 
 fn optical_occlusion_for_input<'a>(
@@ -1076,13 +1067,7 @@ fn resize_binary_mask(
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn write_mask_atomic(
-    path: &Path,
-    width: u32,
-    height: u32,
-    data: &[u8],
-    force_png: bool,
-) -> MaskResult<()> {
+fn write_mask_atomic(path: &Path, width: u32, height: u32, data: &[u8]) -> MaskResult<()> {
     let expected = (width as usize)
         .checked_mul(height as usize)
         .ok_or_else(|| MaskError::invalid_input("mask dimensions overflow"))?;
@@ -1104,28 +1089,15 @@ fn write_mask_atomic(
         std::process::id(),
         counter
     ));
-    let format = if force_png {
-        ImageFormat::Png
-    } else {
-        match path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .map(|extension| extension.to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("jpg") | Some("jpeg") => ImageFormat::Jpeg,
-            Some("webp") => ImageFormat::WebP,
-            Some("bmp") => ImageFormat::Bmp,
-            Some("tif") | Some("tiff") => ImageFormat::Tiff,
-            _ => ImageFormat::Png,
-        }
-    };
-    // Encode directly from the shared mask slice. Constructing an owned
-    // ImageBuffer here used to clone the full-resolution mask once for each of
-    // the two output files, adding two avoidable allocations and memory copies
-    // per source image.
-    let write_result =
-        image::save_buffer_with_format(&temporary, data, width, height, ColorType::L8, format);
+    // Encode directly from the shared mask slice as lossless 8-bit grayscale PNG.
+    let write_result = image::save_buffer_with_format(
+        &temporary,
+        data,
+        width,
+        height,
+        ColorType::L8,
+        ImageFormat::Png,
+    );
     if let Err(error) = write_result {
         let _ = fs::remove_file(&temporary);
         return Err(MaskError::from(error));
@@ -1192,10 +1164,13 @@ fn is_valid_mask_file(path: &Path, width: u32, height: u32) -> bool {
     let Ok(reader) = reader.with_guessed_format() else {
         return false;
     };
+    if reader.format() != Some(ImageFormat::Png) {
+        return false;
+    }
     let Ok(image) = reader.decode() else {
         return false;
     };
-    image.dimensions() == (width, height)
+    image.dimensions() == (width, height) && image.color() == ColorType::L8
 }
 
 fn emit_progress(
@@ -1205,7 +1180,6 @@ fn emit_progress(
     completed: usize,
     input: &Path,
     mask_path: &Path,
-    colmap_path: &Path,
     stage: MaskStage,
     fraction: f32,
     message: &str,
@@ -1216,7 +1190,6 @@ fn emit_progress(
         completed: completed.min(total),
         input: input.to_path_buf(),
         mask_path: mask_path.to_path_buf(),
-        colmap_mask_path: colmap_path.to_path_buf(),
         stage,
         fraction: fraction.clamp(0.0, 1.0),
         message: message.to_string(),
@@ -1305,17 +1278,16 @@ mod tests {
         MaskRequest {
             images_dir: dir.path().join("images"),
             masks_dir: dir.path().join("masks"),
-            colmap_masks_dir: dir.path().join("masks_colmap"),
             ..MaskRequest::default()
         }
     }
 
     #[test]
-    fn writes_same_name_and_colmap_suffix_with_circle_black() -> MaskResult<()> {
+    fn writes_lossless_png_by_stem_with_circle_black() -> MaskResult<()> {
         let dir = TempDir::new()?;
         let mut request = request(&dir);
         fs::create_dir_all(request.images_dir.join("lens0"))?;
-        let source = request.images_dir.join("lens0/frame.png");
+        let source = request.images_dir.join("lens0/frame.jpg");
         ImageBuffer::<Rgb<u8>, _>::from_pixel(5, 5, Rgb([100, 100, 100])).save(&source)?;
         request.valid_radius_ratio = 0.4;
         let engine = FakeEngine {
@@ -1328,11 +1300,35 @@ mod tests {
         let mask = ImageReader::open(request.masks_dir.join("lens0/frame.png"))?
             .decode()?
             .to_luma8();
-        let colmap = request.colmap_masks_dir.join("lens0/frame.png.png");
-        assert!(colmap.is_file());
         assert_eq!(mask.get_pixel(0, 0)[0], 0);
         assert_eq!(mask.get_pixel(2, 2)[0], 255);
-        assert!(!request.masks_dir.join("lens0/.frame.png.png.part").exists());
+        assert!(!request.masks_dir.join("lens0/.frame.png.part").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_sources_that_map_to_the_same_png_mask() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let request = request(&dir);
+        fs::create_dir_all(request.images_dir.join("lens0"))?;
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100]))
+            .save(request.images_dir.join("lens0/frame.jpg"))?;
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100]))
+            .save(request.images_dir.join("lens0/frame.png"))?;
+        let engine = FakeEngine {
+            calls: AtomicUsize::new(0),
+            exclusion: 0,
+        };
+
+        let error = process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("map to the same mask lens0/frame.png")
+        );
+        assert_eq!(engine.calls.load(Ordering::Relaxed), 0);
         Ok(())
     }
 
@@ -1433,11 +1429,11 @@ mod tests {
     }
 
     #[test]
-    fn skips_only_when_both_masks_are_valid() -> MaskResult<()> {
+    fn skips_only_when_the_png_mask_is_valid() -> MaskResult<()> {
         let dir = TempDir::new()?;
         let request = request(&dir);
         fs::create_dir_all(request.images_dir.join("lens0"))?;
-        let source = request.images_dir.join("lens0/frame.png");
+        let source = request.images_dir.join("lens0/frame.jpg");
         ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100])).save(&source)?;
         let engine = FakeEngine {
             calls: AtomicUsize::new(0),
@@ -1446,16 +1442,13 @@ mod tests {
         process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         let first_calls = engine.calls.load(Ordering::Relaxed);
         let mask_path = request.masks_dir.join("lens0/frame.png");
-        let colmap_mask_path = request.colmap_masks_dir.join("lens0/frame.png.png");
         let mask_before = fs::read(&mask_path)?;
-        let colmap_mask_before = fs::read(&colmap_mask_path)?;
         let summary =
             process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         assert_eq!(summary.skipped, 1);
         assert_eq!(engine.calls.load(Ordering::Relaxed), first_calls);
         assert_eq!(fs::read(&mask_path)?, mask_before);
-        assert_eq!(fs::read(&colmap_mask_path)?, colmap_mask_before);
-        fs::write(&colmap_mask_path, b"broken")?;
+        fs::write(&mask_path, b"broken")?;
         let summary =
             process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
         assert_eq!(summary.succeeded, 1);
@@ -1472,14 +1465,11 @@ mod tests {
         request.yolo_model = Some(dir.path().join("missing-yolo.onnx"));
         fs::create_dir_all(request.images_dir.join("lens0"))?;
         fs::create_dir_all(request.masks_dir.join("lens0"))?;
-        fs::create_dir_all(request.colmap_masks_dir.join("lens0"))?;
 
         ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100]))
-            .save(request.images_dir.join("lens0/frame.png"))?;
+            .save(request.images_dir.join("lens0/frame.jpg"))?;
         ImageBuffer::<Luma<u8>, _>::from_pixel(2, 2, Luma([255]))
             .save(request.masks_dir.join("lens0/frame.png"))?;
-        ImageBuffer::<Luma<u8>, _>::from_pixel(2, 2, Luma([255]))
-            .save(request.colmap_masks_dir.join("lens0/frame.png.png"))?;
 
         // The explicit model path is missing. Reaching model discovery would
         // fail, so success proves the verified outputs are handled first.
@@ -1608,10 +1598,10 @@ mod tests {
         assert_eq!(summary.failed, 0);
         assert!(!summary.cancelled);
         if frame_count > 1 {
-            let first = ImageReader::open(request.masks_dir.join("frame-0.jpg"))?
+            let first = ImageReader::open(request.masks_dir.join("frame-0.png"))?
                 .decode()?
                 .to_luma8();
-            let second = ImageReader::open(request.masks_dir.join("frame-1.jpg"))?
+            let second = ImageReader::open(request.masks_dir.join("frame-1.png"))?
                 .decode()?
                 .to_luma8();
             assert_eq!(first, second);

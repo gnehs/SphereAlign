@@ -2915,7 +2915,6 @@ fn run_mask(
     let request = MaskRequest {
         images_dir: root.join("images"),
         masks_dir: root.join("masks"),
-        colmap_masks_dir: root.join("masks_colmap"),
         classes,
         mask_sky,
         confidence: YOLO_CONFIDENCE_THRESHOLD,
@@ -2963,10 +2962,7 @@ fn run_mask(
     if summary.failed > 0 {
         return Err(format!("{} 個遮罩處理失敗，請查看處理紀錄", summary.failed));
     }
-    Ok(vec![
-        root.join("masks").to_string_lossy().into_owned(),
-        root.join("masks_colmap").to_string_lossy().into_owned(),
-    ])
+    Ok(vec![root.join("masks").to_string_lossy().into_owned()])
 }
 
 fn is_supported_colmap_image(path: &Path) -> bool {
@@ -4203,7 +4199,7 @@ fn build_align_fingerprint(
     let mut files = Vec::new();
     collect_align_file_identities(&root.join("images"), root, &mut files)?;
     if include_masks {
-        collect_align_file_identities(&root.join("masks_colmap"), root, &mut files)?;
+        collect_align_file_identities(&root.join("masks"), root, &mut files)?;
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     let payload = AlignFingerprintPayload {
@@ -4237,7 +4233,7 @@ fn build_feature_fingerprint(
     let mut files = Vec::new();
     collect_align_file_identities(&root.join("images"), root, &mut files)?;
     if include_masks {
-        collect_align_file_identities(&root.join("masks_colmap"), root, &mut files)?;
+        collect_align_file_identities(&root.join("masks"), root, &mut files)?;
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     let payload = FeatureFingerprintPayload {
@@ -5155,7 +5151,7 @@ fn feature_extractor_args(
     }
     if use_masks {
         args.push("--ImageReader.mask_path".into());
-        args.push(root.join("masks_colmap").to_string_lossy().into_owned());
+        args.push(root.join("masks").to_string_lossy().into_owned());
     }
     args
 }
@@ -8630,6 +8626,10 @@ mod tests {
             .windows(2)
             .any(|args| { args == ["--ImageReader.camera_model", "OPENCV_FISHEYE"] }));
         assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
+        let expected_mask_path = root.join("masks").to_string_lossy().into_owned();
+        assert!(feature.windows(2).any(|args| {
+            args == ["--ImageReader.mask_path", expected_mask_path.as_str()]
+        }));
 
         let baseline_feature = feature_extractor_args(
             root,
@@ -9119,8 +9119,8 @@ mod tests {
             build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.1", false).unwrap()
         );
 
-        fs::create_dir_all(temp.path().join("masks_colmap")).unwrap();
-        fs::write(temp.path().join("masks_colmap/frame0001.png"), b"mask").unwrap();
+        fs::create_dir_all(temp.path().join("masks")).unwrap();
+        fs::write(temp.path().join("masks/frame0001.png"), b"mask").unwrap();
         assert_ne!(
             baseline,
             build_align_fingerprint(temp.path(), &settings, "COLMAP 4.1.0", true).unwrap()
@@ -9165,12 +9165,8 @@ mod tests {
             )
             .unwrap()
         );
-        fs::create_dir_all(temp.path().join("masks_colmap/lens0")).unwrap();
-        fs::write(
-            temp.path().join("masks_colmap/lens0/frame0001.png"),
-            b"mask",
-        )
-        .unwrap();
+        fs::create_dir_all(temp.path().join("masks/lens0")).unwrap();
+        fs::write(temp.path().join("masks/lens0/frame0001.png"), b"mask").unwrap();
         assert_ne!(
             baseline,
             build_feature_fingerprint(

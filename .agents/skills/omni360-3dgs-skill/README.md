@@ -68,12 +68,9 @@ scene/
   images/
     lens0/*.png
     lens1/*.png
-  masks/                 # LichtFeld / training masks: same relative filename
+  masks/                 # one canonical mask tree: same relative stem, .png
     lens0/*.png
     lens1/*.png
-  masks_colmap/          # COLMAP feature masks: image filename + .png
-    lens0/*.png.png
-    lens1/*.png.png
   metadata/
     capture.json
     keyframes.csv
@@ -86,6 +83,14 @@ scene/
   sparse/
     0/...
 ```
+
+Mask contract: preserve the image's relative path under `images/`, replace
+its suffix with `.png`, and write an 8-bit single-channel L8 PNG. For example,
+`images/lens0/frame.jpg` maps to `masks/lens0/frame.png`. Pixel value `0`
+means exclude and `255` means keep. The same canonical file is used by
+COLMAP feature extraction and downstream 3DGS training; only this canonical
+file is generated, with no second compatibility tree or `image.ext.png`
+double-extension file.
 
 ## IMU 現況
 

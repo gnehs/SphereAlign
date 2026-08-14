@@ -16,7 +16,10 @@
 
 LichtFeld Studio 可讀 COLMAP fisheye camera model，並有自己的 undistortion load path，因此 skill 不需要先 stitch panorama。
 
-mask 放在與 `images/` 相同 relative hierarchy 的 `masks/`。
+mask 放在與 `images/` 相同 relative hierarchy 的 `masks/`，但將來源副檔名
+統一替換成 `.png`：`images/lens0/frame.jpg` → `masks/lens0/frame.png`。
+Mask 固定為與來源同尺寸的 8-bit 單通道 L8 PNG；黑色（0）排除，白色（255）保留。
+同一份 `masks/` 檔案供 COLMAP feature extraction 與 training 使用。
 
 ## pinhole_tiles
 

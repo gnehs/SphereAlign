@@ -1,6 +1,6 @@
 ---
 name: omni360-3dgs
-summary: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3DGS 使用的資料集。保留原生雙魚眼、IMU、rig、mask 與自適應 keyframe，並以可插拔 CameraAdapter 支援 DJI Osmo 360、未來 Insta360 / GoPro MAX 等相機。
+description: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3DGS 使用的資料集。保留原生雙魚眼、IMU、rig、mask 與自適應 keyframe，並以可插拔 CameraAdapter 支援 DJI Osmo 360、未來 Insta360 / GoPro MAX 等相機。
 ---
 
 # Omni360 -> 3DGS Skill
@@ -100,9 +100,6 @@ OUTPUT/
     lens0/
     lens1/
   masks/
-    lens0/
-    lens1/
-  masks_colmap/
     lens0/
     lens1/
   metadata/
