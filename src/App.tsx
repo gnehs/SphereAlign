@@ -2140,7 +2140,7 @@ function App() {
         }
       }}>
         <DialogContent className="task-dialog" showCloseButton>
-          <DialogHeader><DialogTitle>{editingTaskId ? "修改排隊任務" : "新增重建任務"}</DialogTitle><DialogDescription>{editingTaskId ? "可在開始前調整任務名稱、來源與處理設定。" : "選擇多組 OSV 或雙魚眼素材，所有來源都會保存在同一份專案資訊中。"}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingTaskId ? "修改排隊任務" : "新增重建任務"}</DialogTitle><DialogDescription>{editingTaskId ? "可在開始前調整任務名稱、來源與處理設定。" : "請只加入同一場景拍攝的 OSV 或雙魚眼素材；同一場景可包含多個來源。若來源屬於不同場景，請分別建立重建任務。"}</DialogDescription></DialogHeader>
           <div className="dialog-scroll">
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
