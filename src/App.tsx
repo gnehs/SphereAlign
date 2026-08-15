@@ -3,20 +3,27 @@ import {
   CircleDashed,
   Clock3,
   Cpu,
+  Film,
+  FileVideoCamera,
   FileStack,
+  Folder,
   FolderOpen,
-  HardDrive,
+  Gpu,
   Info,
   MonitorCog,
-  MoreHorizontal,
   Pencil,
   Play,
   Plus,
   RefreshCw,
   RotateCcw,
   ScanLine,
+  ScanSearch,
   Settings2,
   Square,
+  Gauge,
+  MemoryStick,
+  CheckCircle2,
+  Copy,
   Trash2,
   Upload,
   Video,
@@ -29,8 +36,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   Dialog,
   DialogClose,
@@ -128,7 +138,16 @@ interface DiagnosticItem {
   label: string;
   value: string;
   detail: string;
+  details?: string[];
   status: DiagnosticStatus;
+}
+
+interface SystemInfo {
+  osName: string;
+  osVersion: string;
+  architecture: string;
+  processors: string[];
+  graphicsAdapters: string[];
 }
 
 type TaskLogKind = "progress" | "message" | "summary";
@@ -153,6 +172,7 @@ interface TaskLog {
 
 interface DoctorReport {
   platform: string;
+  systemInfo: SystemInfo;
   summary: string;
   checkedAt: string;
   items: DiagnosticItem[];
@@ -280,13 +300,20 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
 
 const EMPTY_DOCTOR: DoctorReport = {
   platform: "尚未檢查平台",
+  systemInfo: {
+    osName: "尚未檢查",
+    osVersion: "尚未檢查",
+    architecture: "尚未檢查",
+    processors: [],
+    graphicsAdapters: [],
+  },
   summary: "執行環境診斷以確認可用能力",
   checkedAt: "尚未檢查",
   items: [
-    { label: "COLMAP CUDA", value: "尚未檢查", detail: "檢查 COLMAP 與 NVIDIA GPU 是否可用", status: "unknown" },
+    { label: "COLMAP", value: "尚未檢查", detail: "檢查 COLMAP 執行檔與版本", status: "unknown" },
+    { label: "GPU 加速", value: "尚未檢查", detail: "檢查 COLMAP 與 NVIDIA GPU 是否可用", status: "unknown" },
     { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
-    { label: "執行環境", value: "尚未檢查", detail: "確認作業系統與執行環境", status: "unknown" },
-    { label: "儲存空間", value: "尚未檢查", detail: "確認輸出磁碟可用空間", status: "unknown" },
+    { label: "硬體加速", value: "尚未檢查", detail: "確認 FFmpeg 硬體解碼能力", status: "unknown" },
   ],
   warnings: [],
 };
@@ -425,13 +452,6 @@ function formatTimestamp(value?: number, includeDate = false) {
     : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function formatUpdatedAt(value?: string) {
-  if (!value) return "尚無更新時間";
-  const parsed = timestampMs(value);
-  if (!parsed) return value;
-  return new Date(parsed).toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
-}
-
 function stageLogStatus(status: StageStatus) {
   if (status === "completed") return "已完成";
   if (status === "cancelled") return "已取消";
@@ -531,6 +551,40 @@ function taskProgressSummary(task: Task) {
   if (interruptedIndex >= 0) return `停在第 ${interruptedIndex + 1} / ${STAGES.length} 階段 · ${STAGES[interruptedIndex].label}`;
   const nextIndex = STAGES.findIndex(({ key }) => task.stages[key].status !== "completed");
   return nextIndex >= 0 ? `等待第 ${nextIndex + 1} / ${STAGES.length} 階段 · ${STAGES[nextIndex].label}` : `${STAGES.length} / ${STAGES.length} 階段完成`;
+}
+
+function taskCurrentStage(task: Task) {
+  const running = STAGES.find(({ key }) => task.stages[key].status === "running");
+  if (running) return running;
+  const interrupted = STAGES.find(({ key }) => ["failed", "cancelled"].includes(task.stages[key].status));
+  if (interrupted) return interrupted;
+  const next = STAGES.find(({ key }) => task.stages[key].status !== "completed");
+  return next ?? STAGES[STAGES.length - 1];
+}
+
+function stagePrerequisiteLabel(task: Task, stageKey: StageKey) {
+  const stageIndex = STAGES.findIndex(({ key }) => key === stageKey);
+  if (stageIndex <= 0) return undefined;
+  const prerequisite = STAGES.slice(0, stageIndex).find(({ key }) => task.stages[key].status !== "completed");
+  return prerequisite?.label;
+}
+
+function taskHasRunningStage(task: Task, except?: StageKey) {
+  return STAGES.some(({ key }) => key !== except && task.stages[key].status === "running");
+}
+
+function stageActionState(task: Task, stageKey: StageKey, globallyRunning: boolean) {
+  const current = task.stages[stageKey];
+  const prerequisite = stagePrerequisiteLabel(task, stageKey);
+  const blocked = Boolean(prerequisite) || taskHasRunningStage(task, stageKey) || (globallyRunning && current.status !== "running");
+  const label = current.status === "running"
+    ? `停止${STAGES.find((stage) => stage.key === stageKey)?.label ?? "階段"}`
+    : prerequisite
+      ? `等待${prerequisite}完成`
+      : blocked
+        ? "等待目前階段完成"
+        : stageAction(current.status);
+  return { blocked, label, prerequisite };
 }
 
 function normaliseStageStatus(value: unknown): StageStatus {
@@ -677,6 +731,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const entryPath = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).path === "string" ? String((entry as Record<string, unknown>).path) : "";
   const entryNote = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).note === "string" ? localiseUserMessage(String((entry as Record<string, unknown>).note)) : "";
   const ffmpeg = tools.find((entry) => entryName(entry).toLowerCase() === "ffmpeg");
+  const ffprobe = tools.find((entry) => entryName(entry).toLowerCase() === "ffprobe");
   const colmap = tools.find((entry) => entryName(entry).toLowerCase() === "colmap");
   const ffmpegAccelerators = accelerators.filter((entry) => {
     if (!ffmpeg) return false;
@@ -729,7 +784,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     ? body.gpuAvailable
     : colmapCuda.known ? colmapCuda.available : undefined;
   const colmapCudaAccelerator = accelerators.find((entry) => /colmap\s+cuda/i.test(`${entryName(entry)} ${entryKind(entry)}`));
-  const colmapCudaDetail = hasColmapCapabilities
+  const colmapCudaDetails = hasColmapCapabilities
     ? [
       colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) : "",
       `CUDA build：${colmapCuda.text}`,
@@ -737,30 +792,79 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
       `SIFT 配對：${featureMatchingGpu.text}`,
       `Ceres BA：${mapperBaGpu.known ? mapperBaGpu.available ? "可嘗試（執行期確認 CUDA／cuDSS）" : "僅 CPU" : "未回報"}`,
       globalMapper.known ? `Global Mapper：${globalMapper.text}` : "",
-    ].filter(Boolean).join(" · ")
-    : "舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA";
+    ].filter(Boolean)
+    : ["舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA"];
   const colmapCudaStatus: DiagnosticStatus = hasColmapCapabilities && colmapCuda.known
     ? gpuAvailable && gpuStagesKnown && gpuStagesAvailable ? "ready" : "warning"
     : "unknown";
   const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
     ? gpuAvailable
-      ? gpuStagesKnown && gpuStagesAvailable ? "完整支援" : "部分支援"
+      ? gpuStagesKnown && gpuStagesAvailable ? "GPU 加速可用" : "GPU 加速部分可用"
       : "未偵測到可用 GPU"
-    : "未確認";
+    : "GPU 狀態未確認";
   const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
-  const capabilityValue = body.capabilities && typeof body.capabilities === "object" ? Object.entries(body.capabilities as Record<string, unknown>).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
+  const pipelineCapabilities = body.capabilities && typeof body.capabilities === "object" ? body.capabilities as Record<string, unknown> : undefined;
+  const capabilityValue = pipelineCapabilities ? Object.entries(pipelineCapabilities).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
+  const alignCapability = capabilityState(pipelineCapabilities?.align);
   const platform = platformLabel(typeof body.platform === "string" ? body.platform : typeof body.os === "string" ? body.os : fallback.platform);
+  const rawSystemInfo = body.systemInfo && typeof body.systemInfo === "object"
+    ? body.systemInfo as Record<string, unknown>
+    : {};
+  const stringList = (value: unknown) => Array.isArray(value)
+    ? Array.from(new Set(value.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim())).map((entry) => entry.trim())))
+    : [];
+  const systemInfo: SystemInfo = {
+    osName: typeof rawSystemInfo.osName === "string" && rawSystemInfo.osName.trim() ? rawSystemInfo.osName.trim() : platform,
+    osVersion: typeof rawSystemInfo.osVersion === "string" && rawSystemInfo.osVersion.trim() ? rawSystemInfo.osVersion.trim() : "未偵測到",
+    architecture: typeof rawSystemInfo.architecture === "string" && rawSystemInfo.architecture.trim()
+      ? rawSystemInfo.architecture.trim()
+      : typeof body.arch === "string" && body.arch.trim() ? body.arch.trim() : "未偵測到",
+    processors: stringList(rawSystemInfo.processors),
+    graphicsAdapters: stringList(rawSystemInfo.graphicsAdapters),
+  };
   const ffmpegAccelerationValue = ffmpegAccelerators
-    .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "可用" : "未支援"}`)
+    .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "build 已啟用" : "未支援"}`)
     .join(" · ");
+  const colmapReady = Boolean(colmap && available(colmap));
+  const colmapWorkflowReady = colmapReady && alignCapability.known && alignCapability.available;
+  const ffmpegReady = Boolean(ffmpeg && available(ffmpeg) && ffprobe && available(ffprobe));
+  const hardwareAccelerationReady = ffmpegAccelerators.some((entry) => available(entry));
   const items: DiagnosticItem[] = [
-    { label: "COLMAP CUDA", value: colmapCudaValue, detail: colmapCudaDetail, status: colmapCudaStatus },
-    { label: "FFmpeg", value: ffmpeg && available(ffmpeg) ? itemText(ffmpeg) : "未偵測到", detail: ffmpeg && available(ffmpeg) ? ["系統 PATH 可用", ffmpegAccelerationValue ? `FFmpeg／VideoToolbox：${ffmpegAccelerationValue}` : ""].filter(Boolean).join(" · ") : "請安裝或加入 PATH", status: ffmpeg && available(ffmpeg) ? "ready" : "warning" },
-    { label: "COLMAP", value: colmap && available(colmap) ? itemText(colmap) : "未偵測到", detail: colmap && available(colmap) ? entryPath(colmap) || "可執行原生雙魚眼相機組對齊" : entryNote(colmap) || "對齊階段會維持待執行", status: colmap && available(colmap) ? "ready" : "warning" },
-    { label: "執行環境", value: platform, detail: typeof body.arch === "string" ? body.arch : "Tauri 執行環境", status: "ready" },
+    {
+      label: "COLMAP",
+      value: colmapWorkflowReady ? itemText(colmap) : colmapReady ? "COLMAP 對齊能力未確認" : "未偵測到 COLMAP",
+      detail: colmapWorkflowReady ? entryPath(colmap) || "原生雙魚眼相機組對齊流程可用" : colmapReady ? "已找到執行檔，但診斷未確認完整對齊流程" : entryNote(colmap) || "對齊階段會維持待執行",
+      details: colmapReady ? [entryPath(colmap) ? `執行檔：${entryPath(colmap)}` : "執行檔：系統 PATH", `對齊流程：${alignCapability.text}`] : undefined,
+      status: colmapWorkflowReady ? "ready" : "warning",
+    },
+    {
+      label: "GPU 加速",
+      value: colmapCudaValue,
+      detail: colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) || "COLMAP GPU 能力已完成檢查" : "COLMAP 的 GPU 能力檢查結果",
+      details: colmapCudaDetails,
+      status: colmapCudaStatus,
+    },
+    {
+      label: "FFmpeg",
+      value: ffmpegReady ? itemText(ffmpeg) : "FFmpeg 工具不完整",
+      detail: ffmpegReady ? entryPath(ffmpeg) || "FFmpeg 與 ffprobe 皆可用" : "影格擷取需要 FFmpeg 與 ffprobe",
+      details: [
+        `FFmpeg：${ffmpeg && available(ffmpeg) ? entryPath(ffmpeg) || itemText(ffmpeg) || "可用" : "未偵測到"}`,
+        `ffprobe：${ffprobe && available(ffprobe) ? entryPath(ffprobe) || itemText(ffprobe) || "可用" : "未偵測到"}`,
+      ],
+      status: ffmpegReady ? "ready" : "warning",
+    },
+    {
+      label: "硬體加速",
+      value: ffmpegAccelerators.length ? hardwareAccelerationReady ? "FFmpeg 支援硬體加速" : "FFmpeg 未啟用硬體加速" : "硬體解碼狀態未回報",
+      detail: ffmpegAccelerationValue || `${platform} · FFmpeg 未回報硬體解碼能力`,
+      details: ffmpegAccelerators.map((entry) => entryNote(entry) || `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "build 已啟用" : "未支援"}`),
+      status: ffmpegAccelerators.length ? hardwareAccelerationReady ? "ready" : "warning" : "unknown",
+    },
   ];
   return {
     platform,
+    systemInfo,
     summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary,
     checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),
     items,
@@ -848,10 +952,66 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
 }
 
 function iconForDiagnostic(label: string) {
-  if (label.includes("GPU") || label.includes("CUDA")) return Cpu;
-  if (label.includes("FFmpeg")) return Video;
-  if (label.includes("儲存空間")) return HardDrive;
+  if (label.includes("GPU") || label.includes("CUDA") || label.includes("硬體加速")) return Gpu;
+  if (label.includes("COLMAP")) return ScanSearch;
+  if (label.includes("FFmpeg")) return FileVideoCamera;
   return MonitorCog;
+}
+
+function warningAffectsProcessingSpeed(warning: string) {
+  return /(CUDA|GPU|CPU|硬體|加速|VideoToolbox|解碼|特徵擷取|配對|Ceres|cuDSS)/i.test(warning);
+}
+
+function diagnosticStatusLabel(status: DiagnosticStatus) {
+  if (status === "ready") return "可用";
+  if (status === "warning") return "需檢查";
+  return "未檢查";
+}
+
+function redactDiagnosticText(value: string) {
+  return value
+    .replace(/\/Users\/[^/\\\r\n]+/gi, "/Users/<user>")
+    .replace(/\/home\/[^/\\\r\n]+/gi, "/home/<user>")
+    .replace(/([A-Z]:\\Users\\)[^\\\r\n]+/gi, "$1<user>");
+}
+
+function safeDiagnosticDetail(value: string) {
+  const trimmed = value.trim();
+  const absolutePath = /^(?:\/|[A-Z]:[\\/]|\\\\)/i;
+  if (absolutePath.test(trimmed)) return "已偵測到執行檔（完整路徑已隱藏）";
+  return trimmed.replace(
+    /^(執行檔|FFmpeg|ffprobe)：\s*(?:\/|[A-Z]:[\\/]|\\\\).+$/i,
+    "$1：已偵測（完整路徑已隱藏）",
+  );
+}
+
+function doctorReportText(doctor: DoctorReport) {
+  const lines = [
+    "GS360 Studio 診斷資訊",
+    `平台：${doctor.platform}`,
+    `最後檢查：${doctor.checkedAt}`,
+    `摘要：${doctor.summary}`,
+    "",
+    "系統資訊",
+    `- 作業系統：${doctor.systemInfo.osName} ${doctor.systemInfo.osVersion}`,
+    `- 架構：${doctor.systemInfo.architecture}`,
+    "- 處理器：",
+    ...(doctor.systemInfo.processors.length > 0 ? doctor.systemInfo.processors.map((processor) => `  - ${processor}`) : ["  - 未偵測到"]),
+    "- 顯示卡：",
+    ...(doctor.systemInfo.graphicsAdapters.length > 0 ? doctor.systemInfo.graphicsAdapters.map((adapter) => `  - ${adapter}`) : ["  - 未偵測到"]),
+    "",
+    "環境項目",
+  ];
+  doctor.items.forEach((item) => {
+    lines.push(`- ${item.label} [${diagnosticStatusLabel(item.status)}]`);
+    lines.push(`  結果：${item.value}`);
+    lines.push(`  說明：${safeDiagnosticDetail(item.detail)}`);
+    item.details?.forEach((detail) => lines.push(`  - ${safeDiagnosticDetail(detail)}`));
+  });
+  lines.push("", "警告");
+  if (doctor.warnings.length > 0) doctor.warnings.forEach((warning) => lines.push(`- ${warning}`));
+  else lines.push("- 無");
+  return redactDiagnosticText(lines.join("\n"));
 }
 
 function stageAction(status: StageStatus) {
@@ -895,6 +1055,14 @@ function formatEta(value?: number) {
   if (value < 60_000) return `約 ${formatDuration(value)}`;
   const minutes = Math.max(1, Math.round(value / 60_000));
   return `約 ${minutes} 分鐘`;
+}
+
+function processingRateLabel(completed: number | undefined, startedAtMs: number | undefined, nowMs: number) {
+  if (completed === undefined || completed <= 0 || startedAtMs === undefined) return "估算中";
+  const elapsed = Math.max(0, nowMs - startedAtMs);
+  if (elapsed < 1000) return "估算中";
+  const rate = completed / (elapsed / 1000);
+  return `${rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)} 項目/秒`;
 }
 
 function logLevelForStatus(status?: StageStatus): TaskLogLevel {
@@ -1000,6 +1168,7 @@ function App() {
   const activeJobIds = useRef<Record<string, string>>({});
   const jobTaskIds = useRef<Record<string, string>>({});
   const terminalJobIds = useRef<Set<string>>(new Set());
+  const ignoredJobIds = useRef<Set<string>>(new Set());
   const pendingStageStarts = useRef<Record<string, StageKey>>({});
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
   const taskSnapshot = useRef<Task[]>([]);
@@ -1012,6 +1181,25 @@ function App() {
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
   const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
+  const selectedStageDefinition = selectedTask ? taskCurrentStage(selectedTask) : undefined;
+  const selectedStage = selectedTask && selectedStageDefinition ? selectedTask.stages[selectedStageDefinition.key] : undefined;
+  const selectedRunningStageDefinition = selectedTask ? STAGES.find(({ key }) => selectedTask.stages[key].status === "running") : undefined;
+  const selectedActiveProgressLog = selectedStageDefinition ? selectedTaskLogs.find((log) => log.kind === "progress" && log.stage === selectedStageDefinition.key && log.finishedAtMs === undefined) : undefined;
+  const isWindowsPlatform = doctor.platform === "Windows";
+  const doctorEssentialReady = ["COLMAP", "FFmpeg"].every((label) => doctor.items.find((item) => item.label === label)?.status === "ready");
+  const uniqueDoctorWarnings = Array.from(new Set(doctor.warnings));
+  const performanceWarnings = uniqueDoctorWarnings.filter(warningAffectsProcessingSpeed);
+  const generalDoctorWarnings = uniqueDoctorWarnings.filter((warning) => !warningAffectsProcessingSpeed(warning));
+  const gpuDiagnostic = doctor.items.find((item) => item.label === "GPU 加速");
+  const hardwareDiagnostic = doctor.items.find((item) => item.label === "硬體加速");
+  const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
+    || hardwareDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
+    || "部分 GPU 或硬體加速能力不可用，相關階段將改用 CPU。";
+  const performanceStatus: DiagnosticStatus = performanceWarnings.length > 0 || gpuDiagnostic?.status === "warning" || hardwareDiagnostic?.status === "warning"
+    ? "warning"
+    : gpuDiagnostic?.status === "unknown" || hardwareDiagnostic?.status === "unknown"
+      ? "unknown"
+      : "ready";
   const orderedTasks = useMemo(() => tasks
     .map((task, index) => ({ task, index }))
     // New tasks are prepended to state, so reverse the original index for
@@ -1227,6 +1415,19 @@ function App() {
     setDoctorLoading(false);
   }, []);
 
+  const copyDoctorReport = useCallback(async () => {
+    const report = doctorReportText(doctor);
+    try {
+      if (IS_TAURI_RUNTIME) await writeClipboardText(report);
+      else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
+      else throw new Error("clipboard unavailable");
+      setToast("診斷資訊已複製，可直接貼到除錯回報");
+    } catch (error) {
+      console.info("[GS360] copy diagnostics", error);
+      setToast("無法複製診斷資訊，請檢查剪貼簿權限");
+    }
+  }, [doctor]);
+
   const initialColmapPath = useRef(colmapPath);
   useEffect(() => { void runDoctor(initialColmapPath.current); }, [runDoctor]);
 
@@ -1298,6 +1499,8 @@ function App() {
     setTasks((current) => current.map((task) => {
       if (task.projectId !== taskId) return task;
       const previous = task.stages[stageKey];
+      const replacingPendingJob = pendingStageStarts.current[taskId] === stageKey;
+      if (payload.jobId && previous.jobId && payload.jobId !== previous.jobId && !replacingPendingJob) return task;
       const status: StageStatus = payload.done
         ? payload.status ?? "completed"
         : payload.status ?? "running";
@@ -1524,9 +1727,11 @@ function App() {
     }
     const cancelled = await invokeSafely<boolean>("cancel_job", { jobId });
     if (cancelled === true) {
+      ignoredJobIds.current.add(jobId);
+      delete jobTaskIds.current[jobId];
       if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
       const finishedAtMs = Date.now();
-      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續", finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
+      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續", jobId: undefined, finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
     }
     queueMicrotask(() => pumpAutoPipelineRef.current());
   }, [updateTaskStage]);
@@ -1541,6 +1746,7 @@ function App() {
           const payload = readProgress(event.payload);
           const stageKey = payload.stage;
           if (!stageKey) return;
+          if (payload.jobId && (ignoredJobIds.current.has(payload.jobId) || terminalJobIds.current.has(payload.jobId))) return;
           if (
             payload.jobId
             && (payload.done || payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled")
@@ -1612,8 +1818,20 @@ function App() {
 
   const handleStageAction = useCallback((task: Task, stageKey: StageKey) => {
     const status = task.stages[stageKey].status;
-    if (status === "running") void cancelStage(task, stageKey);
-    else void startStage(task, stageKey, status === "cancelled" ? "resume" : status === "failed" || status === "completed" ? "retry" : "start");
+    if (status === "running") {
+      void cancelStage(task, stageKey);
+      return;
+    }
+    const prerequisite = stagePrerequisiteLabel(task, stageKey);
+    if (prerequisite) {
+      setToast(`請先完成${prerequisite}`);
+      return;
+    }
+    if (Object.keys(activeJobIds.current).length || Object.keys(pendingStageStarts.current).length) {
+      setToast("目前已有處理階段執行中，請稍候");
+      return;
+    }
+    void startStage(task, stageKey, status === "cancelled" ? "resume" : status === "failed" || status === "completed" ? "retry" : "start");
   }, [cancelStage, startStage]);
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -1799,7 +2017,13 @@ function App() {
             <h1>尚無任務</h1>
             <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以先建立新的重建任務。</p>
             <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload />選擇檔案</Button><Button size="lg" variant="outline" onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div>
-            <p className="drop-hint">支援同一空間的多個檔案 · 雙魚眼素材 · 專案資料夾</p>
+            <section className="supported-formats" aria-labelledby="supported-formats-title">
+              <h2 id="supported-formats-title">目前支援</h2>
+              <div className="supported-format-list">
+                <article className="supported-format-card"><Film aria-hidden="true" /><span><strong>Osmo 360 原始檔案</strong><small>OSV</small></span></article>
+                <article className="supported-format-card"><Folder aria-hidden="true" /><span><strong>專案資料夾</strong><small>繼續未完成的重建任務</small></span></article>
+              </div>
+            </section>
           </section>
         ) : (
           <section className="tasks-view">
@@ -1817,6 +2041,11 @@ function App() {
                 const queued = taskHasNotStarted(task);
                 const editableQueued = queued && canChangeQueuedTask(task);
                 const waitingForEnqueue = queued && !task.previewOnly && !autoPipelineRuns.current[task.projectId];
+                const currentStageDefinition = taskCurrentStage(task);
+                const currentStage = task.stages[currentStageDefinition.key];
+                const currentElapsed = taskStageDuration(currentStage, clockMs);
+                const currentEta = estimatedRemainingMs(currentStage, clockMs);
+                const currentCount = logCountLabel(currentStage.completed, currentStage.total);
                 return (
                   <article className="task-row" data-queued={queued || undefined} key={task.projectId}>
                     <div className="task-row-top">
@@ -1824,25 +2053,35 @@ function App() {
                       <div className="task-row-actions">
                         {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" />加入佇列</Button>}
                         {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" />修改</Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" />刪除</Button></>}
-                        <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><MoreHorizontal /></Button>
+                        <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><Info /></Button>
                       </div>
                     </div>
                     {queued ? <div className="queued-task-summary"><span>佇列會依建立順序自動執行</span><small>{task.inputPaths.length} 個來源</small></div> : <><div className="task-progress-block">
-                      <div className="task-progress-summary"><span>整體進度</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                      <div className="task-progress-summary"><span title="三個處理階段採等權平均">總進度（階段平均）</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
                       <Progress value={overall} aria-label={`${task.name} 整體進度`}><ProgressValue /></Progress>
+                      <div className="task-live-summary">
+                        <span><strong>目前階段：{currentStageDefinition.label}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
+                        <dl>
+                          <div><dt>處理量</dt><dd>{currentCount || "尚未回報"}</dd></div>
+                          <div><dt>已執行</dt><dd>{currentElapsed !== undefined ? formatDuration(currentElapsed) : "尚未開始"}</dd></div>
+                          <div><dt>預估剩餘</dt><dd>{currentStage.status === "running" ? formatEta(currentEta) : "—"}</dd></div>
+                        </dl>
+                      </div>
                     </div>
-                    <div className="stage-row-list">
-                      {STAGES.map((stage) => {
+                    <div className="stage-row-list" role="list" aria-label="重建處理流程">
+                      {STAGES.map((stage, stageIndex) => {
                         const current = task.stages[stage.key];
                         const stageProgress = Math.round(current.progress);
                         const Icon = stage.icon;
+                        const action = stageActionState(task, stage.key, hasRunningStage);
                         return (
-                          <div className="task-stage" data-status={current.status} key={stage.key}>
+                          <div className="task-stage" data-status={current.status} key={stage.key} role="listitem" aria-label={`第 ${stageIndex + 1} / ${STAGES.length} 階段：${stage.label}`}>
+                            <span className="task-stage-step" aria-hidden="true"><span>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span></span>
                             <div className="task-stage-label">
                               <Icon />
                               <div className="task-stage-copy">
                                 <strong>{stage.label}</strong>
-                                <small>{current.message || stage.description}</small>
+                                <small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.message || stage.description}</small>
                                 {current.status === "running" && (
                                   <div className={`task-stage-progress${stageProgress <= 0 ? " is-waiting" : ""}`}>
                                     <Progress value={stageProgress} aria-label={`${stage.label}進度`}><ProgressValue /></Progress>
@@ -1851,8 +2090,8 @@ function App() {
                                 )}
                               </div>
                             </div>
-                            <Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge>
-                            <Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                            <Badge data-status={current.status} variant={current.status === "failed" ? "destructive" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge>
+                            <Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
                           </div>
                         );
                       })}
@@ -1907,34 +2146,51 @@ function App() {
           <SheetContent className="task-detail-sheet" side="right">
             <SheetHeader>
               <SheetTitle>{selectedTask.name}</SheetTitle>
-              <SheetDescription>查看整體進度、各階段狀態、耗時與處理紀錄。</SheetDescription>
+              <SheetDescription>查看目前工作、處理指標與完整處理紀錄；效能監測尚未接通時會明確標示。</SheetDescription>
             </SheetHeader>
             <div className="task-detail-scroll">
-              <section className="task-detail-overview">
-                <div className="task-detail-heading"><span>整體進度</span><strong>{taskProgress(selectedTask)}%</strong></div>
-                <Progress value={taskProgress(selectedTask)} aria-label={`${selectedTask.name} 整體進度`}><ProgressValue /></Progress>
-                <dl className="task-detail-meta">
-                  <div><dt>輸出資料夾</dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || "尚未指定"}</dd></div>
-                  <div><dt>來源數量</dt><dd>{selectedTask.inputPaths.length} 個</dd></div>
-                  <div><dt>最後更新</dt><dd>{formatUpdatedAt(selectedTask.updatedAt)}</dd></div>
+              {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
+                <div className="task-detail-current-heading">
+                  <span><small>目前工作</small><strong>{selectedStageDefinition.label}</strong></span>
+                  <Badge data-status={selectedStage.status} variant={selectedStage.status === "failed" ? "destructive" : "outline"}><span className={`status-dot status-dot--${selectedStage.status}`} />{stageStatusLabel(selectedStage.status)}</Badge>
+                </div>
+                <div className="task-detail-current-message">
+                  <strong>{phaseLabel(selectedStage.phase)}</strong>
+                  <p>{selectedStage.message || selectedStageDefinition.description}</p>
+                  {selectedStage.currentItem && <small>目前項目：{selectedStage.currentItem}</small>}
+                </div>
+                {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="task-detail-current-progress">
+                  <div><span>{selectedStageDefinition.label}進度</span><strong>{Math.round(selectedStage.progress)}%</strong></div>
+                  <Progress value={selectedStage.progress} aria-label={`${selectedStageDefinition.label}進度`}><ProgressValue /></Progress>
+                </div>}
+                <dl className="task-detail-metrics">
+                  <div><dt>處理量</dt><dd>{logCountLabel(selectedStage.completed, selectedStage.total) || "尚未回報"}</dd></div>
+                  <div><dt>已執行</dt><dd>{formatDuration(taskStageDuration(selectedStage, clockMs))}</dd></div>
+                  <div><dt>預估剩餘</dt><dd>{selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"}</dd></div>
+                  <div><dt>速度（估算）</dt><dd>{selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"}</dd></div>
+                  <div><dt><Cpu />CPU</dt><dd>尚未回報</dd></div>
+                  <div><dt><Gauge />GPU</dt><dd>尚未回報</dd></div>
+                  <div><dt><MemoryStick />記憶體</dt><dd>尚未回報</dd></div>
+                  <div className="task-detail-metric-output"><dt>輸出</dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || "尚未指定"}</dd></div>
                 </dl>
-              </section>
+              </section>}
 
-              <section className="task-detail-section">
-                <div className="task-detail-section-title"><h2>處理階段</h2><span>{STAGES.length} 個階段</span></div>
-                <div className="task-detail-stages">
-                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const elapsed = taskStageDuration(current, clockMs); const eta = estimatedRemainingMs(current, clockMs); const showProgress = current.status === "running" || (["cancelled", "failed"].includes(current.status) && current.progress > 0); const count = logCountLabel(current.completed, current.total); return (
+              <Accordion>
+                <AccordionItem className="task-detail-stage-details" value="pipeline-details">
+                  <AccordionTrigger>查看 Pipeline 詳細資訊</AccordionTrigger>
+                  <AccordionContent><div className="task-detail-stages">
+                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const action = stageActionState(selectedTask, stage.key, hasRunningStage); return (
                     <div className="task-detail-stage" key={stage.key}>
-                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{current.phase ? `${phaseLabel(current.phase)} · ` : ""}{current.message || stage.description}{current.currentItem ? ` · ${current.currentItem}` : ""}</small></span><Badge variant={current.status === "completed" ? "secondary" : current.status === "failed" ? "destructive" : current.status === "running" ? "default" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
-                      {showProgress && <div className="task-detail-stage-progress"><Progress value={current.progress} aria-label={`${stage.label}進度`}><ProgressValue /></Progress><span>{count ? `${count} · ` : ""}{current.progress}%</span></div>}
+                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.phase ? phaseLabel(current.phase) : current.message || stage.description}</small></span><Badge data-status={current.status} variant={current.status === "failed" ? "destructive" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
                       <div className="task-detail-stage-footer">
-                        <div className="task-detail-stage-time"><span><Clock3 />{current.status === "running" ? `經過 ${formatDuration(elapsed)}` : elapsed !== undefined ? `耗時 ${formatDuration(elapsed)}` : "尚未開始"}</span>{current.status === "running" ? <span>剩餘 {formatEta(eta)}</span> : current.finishedAtMs ? <small>結束 {formatTimestamp(current.finishedAtMs, true)}</small> : current.startedAtMs ? <small>開始 {formatTimestamp(current.startedAtMs, true)}</small> : null}</div>
-                        <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{stageAction(current.status)}</Button>
+                        <div className="task-detail-stage-time"><span><Clock3 />{taskStageDuration(current, clockMs) !== undefined ? `耗時 ${formatDuration(taskStageDuration(current, clockMs))}` : "尚未開始"}</span></div>
+                        <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
                       </div>
                     </div>
                   ); })}
-                </div>
-              </section>
+                  </div></AccordionContent>
+                </AccordionItem>
+              </Accordion>
 
               <section className="task-detail-section">
                 <div className="task-detail-section-title"><h2>處理紀錄</h2><span>{selectedTaskLogs.length} 筆</span></div>
@@ -1959,18 +2215,49 @@ function App() {
                 </section>
               )}
             </div>
-            <SheetFooter><Button variant="outline" onClick={() => setSelectedTaskId(null)}>完成</Button></SheetFooter>
+            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" />取消整個任務</Button>}<Button variant="outline" onClick={() => setSelectedTaskId(null)}>關閉</Button></SheetFooter>
           </SheetContent>
         </Sheet>
       )}
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>會依本機環境自動選擇可用的加速功能，實際狀態請參考下方檢查結果。</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>檢查 COLMAP、GPU、FFmpeg 與硬體加速是否可供重建流程使用。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
-            <section className="settings-section"><div className="settings-section-heading"><h2>執行環境</h2><Button variant="ghost" size="icon-sm" className={doctorLoading ? "is-spinning" : ""} onClick={() => void runDoctor(colmapPath)} aria-label="重新檢查環境"><RefreshCw /></Button></div><Field><FieldLabel htmlFor="colmap-path">COLMAP 執行檔</FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder="留白時從 PATH 自動偵測" onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>選擇</Button></div><FieldDescription>Windows 官方免安裝版請選根目錄的 COLMAP.bat；也可指定自行編譯的 colmap.exe。</FieldDescription></FieldContent></Field><div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary} · {doctor.checkedAt}</small></span></div><div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <div className="doctor-row" key={item.label}><Icon /><span><strong>{item.value}</strong><small>{item.label} · {item.detail}</small></span><Badge variant={item.status === "ready" ? "secondary" : item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div>; })}</div>{doctor.warnings.length > 0 && <div className="warning-list"><AlertTriangle />{doctor.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}</section>
+            <section className="settings-section">
+              <div className="settings-section-heading">
+                <div><h2>執行環境</h2><span>最後檢查：{doctor.checkedAt}</span></div>
+                <div className="settings-section-actions">
+                  <Button variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "尚未檢查"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" />複製診斷資訊</Button>
+                  <Button variant="outline" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? "正在檢查" : "重新檢查環境"}</Button>
+                </div>
+              </div>
+              <div className="environment-alert-stack">
+                <Alert data-status={doctorEssentialReady ? "ready" : "warning"} role={doctorEssentialReady ? "status" : "alert"}>
+                  {doctorEssentialReady ? <CheckCircle2 /> : <AlertTriangle />}
+                  <AlertTitle>{doctorEssentialReady ? "所有必要功能皆可使用" : "有必要功能需要處理"}</AlertTitle>
+                  <AlertDescription>{doctorEssentialReady ? "基本重建流程可以執行。GPU 與硬體加速屬於選用能力；不可用時仍能處理，但會降低影格擷取、特徵配對與重建速度。" : "缺少必要工具會阻止部分處理階段，請先處理下方標示為「需檢查」的項目。"}</AlertDescription>
+                </Alert>
+                {performanceStatus !== "ready" && <Alert data-status={performanceStatus === "warning" ? "performance-warning" : "unknown"} role={performanceStatus === "warning" ? "alert" : "status"}>
+                  <Gauge />
+                  <AlertTitle>{performanceStatus === "warning" ? "效能會受到影響" : "尚未確認加速能力"}</AlertTitle>
+                  <AlertDescription>
+                    {performanceWarnings.length > 0
+                      ? performanceWarnings.map((warning) => <p key={warning}>{warning}</p>)
+                      : performanceStatus === "warning"
+                        ? <p>{performanceFallback}</p>
+                        : <p>完成環境檢查後，才能確認目前會使用 GPU、硬體解碼或 CPU。</p>}
+                    {performanceStatus === "warning" && <p>改用 CPU 的階段仍可執行，但處理時間可能明顯增加。</p>}
+                  </AlertDescription>
+                </Alert>}
+              </div>
+              {isWindowsPlatform && <Field><FieldLabel htmlFor="colmap-path">COLMAP 執行檔</FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder="留白時從 PATH 自動偵測" onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>變更路徑</Button></div><FieldDescription>Windows 官方免安裝版請選根目錄的 COLMAP.bat；也可指定自行編譯的 colmap.exe。</FieldDescription></FieldContent></Field>}
+              <div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary}</small></span></div>
+              <div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <article className="doctor-row" key={item.label} data-status={item.status}><Icon /><div className="doctor-row-content"><div className="doctor-row-heading"><span><small>{item.label}</small><strong>{item.value}</strong></span><Badge variant={item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div><p>{item.detail}</p>{item.details && item.details.length > 0 && <Accordion className="doctor-details"><AccordionItem value={`${item.label}-details`}><AccordionTrigger>查看詳細資料</AccordionTrigger><AccordionContent><ul>{item.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></AccordionContent></AccordionItem></Accordion>}</div></article>; })}</div>
+              {generalDoctorWarnings.length > 0 && <Alert variant="destructive"><AlertTriangle /><AlertTitle>需要處理</AlertTitle><AlertDescription>{generalDoctorWarnings.map((warning) => <p key={warning}>{warning}</p>)}</AlertDescription></Alert>}
+            </section>
           </div>
-          <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>完成</Button></SheetFooter>
+          <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>關閉</Button></SheetFooter>
         </SheetContent>
       </Sheet>
     </div>

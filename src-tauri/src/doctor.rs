@@ -42,6 +42,20 @@ pub struct DoctorCapabilities {
     pub align: bool,
 }
 
+/// Non-identifying host information included in copied diagnostic reports.
+///
+/// The probes intentionally collect model/version fields only.  They do not
+/// query serial numbers, UUIDs, host names, user names, or filesystem paths.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub os_name: String,
+    pub os_version: String,
+    pub architecture: String,
+    pub processors: Vec<String>,
+    pub graphics_adapters: Vec<String>,
+}
+
 /// Capabilities reported by the selected COLMAP executable itself.
 ///
 /// These values deliberately describe build/CLI capabilities, not whether a
@@ -90,6 +104,7 @@ pub struct ColmapCapabilities {
 pub struct DoctorReport {
     pub platform: String,
     pub arch: String,
+    pub system_info: SystemInfo,
     pub tools: Vec<ToolInfo>,
     pub accelerators: Vec<AcceleratorInfo>,
     pub capabilities: DoctorCapabilities,
@@ -583,6 +598,460 @@ fn nvidia_gpu_names() -> Vec<String> {
     parse_nvidia_gpu_names(&String::from_utf8_lossy(&output.stdout))
 }
 
+const UNKNOWN_SYSTEM_VALUE: &str = "未偵測到";
+
+/// Run a fixed, read-only system probe and return stdout only.  All callers in
+/// this module pass static program arguments; no user-provided path or text is
+/// interpolated into a shell command.
+fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let output = silent_command(program).args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn first_output_line(output: &str) -> Option<String> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .next()
+}
+
+fn unique_info_lines<I>(values: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut unique = Vec::new();
+    for value in values {
+        let value = value.trim();
+        if value.is_empty()
+            || value.eq_ignore_ascii_case("name")
+            || value.eq_ignore_ascii_case("unknown")
+        {
+            continue;
+        }
+        let value = value.to_owned();
+        if !unique
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(&value))
+        {
+            unique.push(value);
+        }
+    }
+    unique
+}
+
+#[cfg(target_os = "linux")]
+fn linux_os_release() -> Option<String> {
+    std::fs::read_to_string("/etc/os-release")
+        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+        .ok()
+}
+
+#[cfg(target_os = "linux")]
+fn os_release_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let (name, value) = line.split_once('=')?;
+        if name.trim() != key {
+            return None;
+        }
+        let value = value.trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .or_else(|| {
+                value
+                    .strip_prefix('\'')
+                    .and_then(|value| value.strip_suffix('\''))
+            })
+            .unwrap_or(value)
+            .trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn powershell_lines(script: &str) -> Vec<String> {
+    // PowerShell is invoked with a constant script and no user-controlled
+    // interpolation. `pwsh.exe` is a fallback for systems without Windows
+    // PowerShell but with PowerShell 7 installed.
+    for executable in ["powershell.exe", "pwsh.exe"] {
+        let Some(output) = command_stdout(
+            executable,
+            &["-NoProfile", "-NonInteractive", "-Command", script],
+        ) else {
+            continue;
+        };
+        let lines = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if !lines.is_empty() {
+            return lines;
+        }
+    }
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+fn parse_wmic_property(output: &str, property: &str) -> Vec<String> {
+    unique_info_lines(output.lines().filter_map(|line| {
+        let (name, value) = line.split_once('=')?;
+        name.trim()
+            .eq_ignore_ascii_case(property)
+            .then(|| value.trim().to_owned())
+    }))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_wmic_property(args: &[&str], property: &str) -> Vec<String> {
+    command_stdout("wmic.exe", args)
+        .map(|output| parse_wmic_property(&output, property))
+        .unwrap_or_default()
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn parse_windows_version(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        line.split(|character: char| !character.is_ascii_digit() && character != '.')
+            .find(|token| token.contains('.') && token.chars().any(|c| c.is_ascii_digit()))
+            .map(str::to_owned)
+    })
+}
+
+fn uname_value(args: &[&str]) -> Option<String> {
+    command_stdout("uname", args).and_then(|output| first_output_line(&output))
+}
+
+fn detected_os_name() -> String {
+    #[cfg(target_os = "linux")]
+    if let Some(contents) = linux_os_release() {
+        if let Some(name) = os_release_value(&contents, "NAME") {
+            return name;
+        }
+    }
+
+    match env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other if !other.is_empty() => other,
+        _ => UNKNOWN_SYSTEM_VALUE,
+    }
+    .to_owned()
+}
+
+fn detected_os_version() -> String {
+    #[cfg(target_os = "macos")]
+    if let Some(version) = command_stdout("sw_vers", &["-productVersion"])
+        .and_then(|output| first_output_line(&output))
+    {
+        return version;
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(version) =
+        command_stdout("cmd.exe", &["/C", "ver"]).and_then(|output| parse_windows_version(&output))
+    {
+        return version;
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Some(contents) = linux_os_release() {
+        if let Some(version) = os_release_value(&contents, "VERSION_ID")
+            .or_else(|| os_release_value(&contents, "VERSION"))
+        {
+            return version;
+        }
+    }
+
+    uname_value(&["-r"]).unwrap_or_else(|| UNKNOWN_SYSTEM_VALUE.to_owned())
+}
+
+#[cfg(target_os = "linux")]
+fn linux_processor_names() -> Vec<String> {
+    let Ok(contents) = std::fs::read_to_string("/proc/cpuinfo") else {
+        return Vec::new();
+    };
+    unique_info_lines(contents.lines().filter_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        let supported_key = matches!(key.as_str(), "model name" | "hardware" | "processor");
+        let is_numeric_processor_index = value.chars().all(|character| character.is_ascii_digit());
+        (supported_key && !value.is_empty() && !is_numeric_processor_index)
+            .then(|| value.to_owned())
+    }))
+}
+
+fn detected_processors() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut processors = unique_info_lines(powershell_lines(
+            "Get-CimInstance -ClassName Win32_Processor | Select-Object -ExpandProperty Name",
+        ));
+        if processors.is_empty() {
+            processors = windows_wmic_property(&["cpu", "get", "Name", "/value"], "Name");
+        }
+        if !processors.is_empty() {
+            return processors;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut processors = command_stdout("sysctl", &["-n", "machdep.cpu.brand_string"])
+            .and_then(|output| first_output_line(&output))
+            .map(|processor| vec![processor])
+            .unwrap_or_default();
+        if processors.is_empty() {
+            if let Some(output) =
+                command_stdout("system_profiler", &["-json", "SPHardwareDataType"])
+            {
+                processors = parse_system_profiler_processors_json(&output);
+            }
+        }
+        if processors.is_empty() {
+            if let Some(output) = command_stdout("system_profiler", &["SPHardwareDataType"]) {
+                processors = parse_system_profiler_processors(&output);
+            }
+        }
+        if !processors.is_empty() {
+            return processors;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let processors = linux_processor_names();
+        if !processors.is_empty() {
+            return processors;
+        }
+    }
+
+    uname_value(&["-p"])
+        .filter(|value| !value.eq_ignore_ascii_case("unknown"))
+        .map(|processor| vec![processor])
+        .unwrap_or_default()
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_lspci_graphics(output: &str) -> Vec<String> {
+    let adapters = output.lines().filter_map(|line| {
+        let normalized = line.to_ascii_lowercase();
+        let is_graphics = normalized.contains("vga compatible controller")
+            || normalized.contains("3d controller")
+            || normalized.contains("display controller");
+        if !is_graphics {
+            return None;
+        }
+        let marker = "controller:";
+        let marker_start = normalized.find(marker)?;
+        let value = line[marker_start + marker.len()..]
+            .split(" (rev")
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+        Some(value.to_owned())
+    });
+    unique_info_lines(adapters)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_system_profiler_graphics(output: &str) -> Vec<String> {
+    let adapters = output.lines().filter_map(|line| {
+        let trimmed = line.trim();
+        let normalized = trimmed.to_ascii_lowercase();
+        let marker = "chipset model:";
+        let marker_start = normalized.find(marker)?;
+        let value = trimmed[marker_start + marker.len()..].trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    });
+    unique_info_lines(adapters)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_system_profiler_processors(output: &str) -> Vec<String> {
+    let processors = output.lines().filter_map(|line| {
+        let trimmed = line.trim();
+        let normalized = trimmed.to_ascii_lowercase();
+        ["chip:", "processor name:", "cpu type:"]
+            .iter()
+            .find_map(|marker| {
+                let marker_start = normalized.find(marker)?;
+                let value = trimmed[marker_start + marker.len()..].trim();
+                (!value.is_empty()).then(|| value.to_owned())
+            })
+    });
+    unique_info_lines(processors)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn collect_system_profiler_json_strings(
+    value: &serde_json::Value,
+    keys: &[&str],
+    output: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(entries) => {
+            for (key, value) in entries {
+                let normalized_key = key.to_ascii_lowercase();
+                if keys.iter().any(|candidate| normalized_key == *candidate) {
+                    if let serde_json::Value::String(value) = value {
+                        output.push(value.to_owned());
+                    }
+                }
+                collect_system_profiler_json_strings(value, keys, output);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_system_profiler_json_strings(value, keys, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_system_profiler_graphics_json(output: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(output) else {
+        return Vec::new();
+    };
+    let mut adapters = Vec::new();
+    collect_system_profiler_json_strings(&value, &["sppci_model", "chipset model"], &mut adapters);
+    unique_info_lines(adapters)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_system_profiler_processors_json(output: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(output) else {
+        return Vec::new();
+    };
+    let mut processors = Vec::new();
+    collect_system_profiler_json_strings(
+        &value,
+        &["chip", "processor name", "processor_name", "cpu type"],
+        &mut processors,
+    );
+    unique_info_lines(processors)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_drm_graphics_adapters() -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir("/sys/class/drm") else {
+        return Vec::new();
+    };
+    let mut adapters = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.strip_prefix("card").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|char| char.is_ascii_digit())
+        }) {
+            continue;
+        }
+        let device_path = entry.path().join("device");
+        let vendor_id = std::fs::read_to_string(device_path.join("vendor"))
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase());
+        let device_id = std::fs::read_to_string(device_path.join("device"))
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase());
+        let vendor = match vendor_id.as_deref() {
+            Some("0x8086") => "Intel",
+            Some("0x10de") => "NVIDIA",
+            Some("0x1002") | Some("0x1022") => "AMD",
+            Some("0x13b5") => "Arm",
+            Some("0x17cb") => "Qualcomm",
+            Some(_) | None => "PCI",
+        };
+        let driver = std::fs::read_link(device_path.join("driver"))
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            });
+        let metadata = [driver, device_id]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        adapters.push(if metadata.is_empty() {
+            format!("{vendor} 顯示卡")
+        } else {
+            format!("{vendor} 顯示卡 ({metadata})")
+        });
+    }
+    unique_info_lines(adapters)
+}
+
+fn detected_graphics_adapters() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut adapters = unique_info_lines(powershell_lines(
+            "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name",
+        ));
+        if adapters.is_empty() {
+            adapters = windows_wmic_property(
+                &["path", "Win32_VideoController", "get", "Name", "/value"],
+                "Name",
+            );
+        }
+        if !adapters.is_empty() {
+            return adapters;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(output) = command_stdout("system_profiler", &["-json", "SPDisplaysDataType"]) {
+            let adapters = parse_system_profiler_graphics_json(&output);
+            if !adapters.is_empty() {
+                return adapters;
+            }
+        }
+        if let Some(output) = command_stdout("system_profiler", &["SPDisplaysDataType"]) {
+            let adapters = parse_system_profiler_graphics(&output);
+            if !adapters.is_empty() {
+                return adapters;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(output) = command_stdout("lspci", &["-nn"]) {
+            let adapters = parse_lspci_graphics(&output);
+            if !adapters.is_empty() {
+                return adapters;
+            }
+        }
+        let adapters = linux_drm_graphics_adapters();
+        if !adapters.is_empty() {
+            return adapters;
+        }
+    }
+
+    // NVIDIA-SMI is a useful fallback when the platform inventory command is
+    // missing or unavailable inside a minimal environment/container.
+    nvidia_gpu_names()
+}
+
+fn system_info() -> SystemInfo {
+    SystemInfo {
+        os_name: detected_os_name(),
+        os_version: detected_os_version(),
+        architecture: env::consts::ARCH.to_owned(),
+        processors: detected_processors(),
+        graphics_adapters: detected_graphics_adapters(),
+    }
+}
+
 fn cuda_accelerator(
     colmap: &ToolInfo,
     capabilities: &ColmapCapabilities,
@@ -617,17 +1086,42 @@ fn cuda_accelerator(
     }
 }
 
-fn videotoolbox_accelerator(ffmpeg: &ToolInfo) -> AcceleratorInfo {
-    let hw = ffmpeg_hwaccels(ffmpeg).to_ascii_lowercase();
-    let available = cfg!(target_os = "macos") && hw.contains("videotoolbox");
+fn parse_ffmpeg_hwaccels(output: &str) -> Vec<String> {
+    const KNOWN: &[&str] = &[
+        "videotoolbox",
+        "d3d11va",
+        "dxva2",
+        "vaapi",
+        "vdpau",
+        "cuda",
+        "qsv",
+        "vulkan",
+        "drm",
+        "opencl",
+    ];
+    unique_info_lines(
+        output
+            .lines()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .filter(|line| KNOWN.contains(&line.as_str())),
+    )
+}
+
+fn ffmpeg_hardware_accelerator(ffmpeg: &ToolInfo) -> AcceleratorInfo {
+    let methods = parse_ffmpeg_hwaccels(&ffmpeg_hwaccels(ffmpeg));
+    let available = !methods.is_empty();
     AcceleratorInfo {
-        kind: "videoToolbox".to_owned(),
-        name: "Apple VideoToolbox".to_owned(),
+        kind: "ffmpeg".to_owned(),
+        name: "FFmpeg 硬體加速".to_owned(),
         available,
-        note: if cfg!(target_os = "macos") {
-            Some("FFmpeg VideoToolbox support is used for decode/encode only; COLMAP alignment remains CPU unless a compatible CUDA build is installed".to_owned())
+        note: if available {
+            Some(format!(
+                "此 FFmpeg build 已啟用 {}；實際可用性仍取決於顯示卡、驅動程式與影片格式",
+                methods.join("、")
+            ))
         } else {
-            Some("VideoToolbox is only available on macOS".to_owned())
+            Some("此 FFmpeg build 未回報硬體加速元件；影格擷取將使用 CPU 解碼".to_owned())
         },
     }
 }
@@ -666,7 +1160,7 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
     let tools = vec![ffmpeg.clone(), ffprobe.clone(), colmap.clone()];
     let accelerators = vec![
         cuda_accelerator(&colmap, &colmap_capabilities, &nvidia_gpus),
-        videotoolbox_accelerator(&ffmpeg),
+        ffmpeg_hardware_accelerator(&ffmpeg),
     ];
 
     let mut warnings = Vec::new();
@@ -761,13 +1255,14 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
             );
         }
     }
-    if cfg!(target_os = "macos") && !accelerators[1].available {
-        warnings.push("FFmpeg 不支援 VideoToolbox；影格擷取將使用 CPU 解碼".to_owned());
+    if ffmpeg.available && !accelerators[1].available {
+        warnings.push("FFmpeg 未回報硬體加速元件；影格擷取將使用 CPU 解碼".to_owned());
     }
 
     DoctorReport {
         platform: env::consts::OS.to_owned(),
         arch: env::consts::ARCH.to_owned(),
+        system_info: system_info(),
         capabilities: DoctorCapabilities {
             extract: ffmpeg.available && ffprobe.available,
             // The built-in validity mask is always available.  Neural masks
@@ -799,6 +1294,23 @@ mod tests {
         assert!(value.get("colmapCapabilities").is_some());
         assert!(value.get("gpuAvailable").is_some());
         assert!(value.get("accelerators").is_some());
+        let system_info = value
+            .get("systemInfo")
+            .expect("system information should be included");
+        for field in [
+            "osName",
+            "osVersion",
+            "architecture",
+            "processors",
+            "graphicsAdapters",
+        ] {
+            assert!(
+                system_info.get(field).is_some(),
+                "missing systemInfo.{field}"
+            );
+        }
+        assert!(system_info["processors"].is_array());
+        assert!(system_info["graphicsAdapters"].is_array());
     }
 
     #[test]
@@ -812,6 +1324,101 @@ mod tests {
             "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.\n"
         )
         .is_empty());
+    }
+
+    #[test]
+    fn parses_only_known_ffmpeg_hardware_accelerators() {
+        assert_eq!(
+            parse_ffmpeg_hwaccels(
+                "Hardware acceleration methods:\nvaapi\nCUDA\nd3d11va\nunknown-method\n"
+            ),
+            vec!["vaapi", "cuda", "d3d11va"]
+        );
+    }
+
+    #[test]
+    fn parses_windows_version_without_retaining_banner_text() {
+        assert_eq!(
+            parse_windows_version("Microsoft Windows [Version 10.0.26100.1]\r\n"),
+            Some("10.0.26100.1".to_owned())
+        );
+        assert_eq!(parse_windows_version("Microsoft Windows\r\n"), None);
+    }
+
+    #[test]
+    fn parses_all_graphics_controllers_from_lspci() {
+        assert_eq!(
+            parse_lspci_graphics(
+                "00:02.0 VGA compatible controller: Intel Corporation UHD Graphics (rev 0c)\n\
+01:00.0 3D controller: NVIDIA Corporation AD104 [GeForce RTX 4070] (rev a1)\n\
+02:00.0 Ethernet controller: Intel Corporation Ethernet (rev 01)\n"
+            ),
+            vec![
+                "Intel Corporation UHD Graphics".to_owned(),
+                "NVIDIA Corporation AD104 [GeForce RTX 4070]".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_all_graphics_controllers_from_system_profiler() {
+        assert_eq!(
+            parse_system_profiler_graphics(
+                "Graphics/Displays:\n    Chipset Model: Apple M3 Pro\n    Chipset Model: Apple M3 Pro\n"
+            ),
+            vec!["Apple M3 Pro".to_owned()]
+        );
+    }
+
+    #[test]
+    fn parses_localized_safe_system_profiler_json_fields() {
+        let displays = r#"{
+            "SPDisplaysDataType": [
+                {"sppci_model": "Apple M3 Pro"},
+                {"sppci_model": "Apple M3 Pro"},
+                {"sppci_model": "External GPU"}
+            ]
+        }"#;
+        assert_eq!(
+            parse_system_profiler_graphics_json(displays),
+            vec!["Apple M3 Pro".to_owned(), "External GPU".to_owned()]
+        );
+
+        let hardware = r#"{
+            "SPHardwareDataType": [
+                {"chip": "Apple M3 Pro", "serial_number": "must not be read"}
+            ]
+        }"#;
+        assert_eq!(
+            parse_system_profiler_processors_json(hardware),
+            vec!["Apple M3 Pro".to_owned()]
+        );
+    }
+
+    #[test]
+    fn parses_processor_name_from_system_profiler_text() {
+        assert_eq!(
+            parse_system_profiler_processors(
+                "Hardware Overview:\n    Chip: Apple M5 Pro\n    Memory: 48 GB\n"
+            ),
+            vec!["Apple M5 Pro".to_owned()]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_os_release_name_and_version_without_extra_fields() {
+        let contents =
+            "NAME=\"Ubuntu\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_ID=\"24.04\"\n";
+        assert_eq!(
+            os_release_value(contents, "NAME"),
+            Some("Ubuntu".to_owned())
+        );
+        assert_eq!(
+            os_release_value(contents, "VERSION_ID"),
+            Some("24.04".to_owned())
+        );
+        assert_eq!(os_release_value(contents, "HOME"), None);
     }
 
     #[test]

@@ -42,6 +42,7 @@ rayon = "1.11"
 ndarray = "0.17"
 prost = "0.14"
 telemetry-parser = { git = "https://github.com/AdrianEddy/telemetry-parser.git", rev = "77a3b810a0e0f64688a90546c5aaf24c9dba00bd" }
+tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ort = { version = "=2.0.0-rc.13", features = ["download-binaries", "coreml"] }
