@@ -1,5 +1,5 @@
-import { i18n } from "@lingui/core";
-import type { Messages } from "@lingui/core";
+import { i18n, setupI18n } from "@lingui/core";
+import type { I18n, Messages } from "@lingui/core";
 
 export const locales = {
   en: "English",
@@ -25,6 +25,7 @@ const catalogLoaders = import.meta.glob<CatalogModule>(
 );
 
 let activationRequest = 0;
+let englishI18nPromise: Promise<I18n> | undefined;
 
 function normalizeLocale(locale: string | null | undefined): Locale | undefined {
   if (!locale) {
@@ -124,6 +125,18 @@ async function loadCatalog(locale: Locale): Promise<Messages> {
 
   const catalog = await loader();
   return catalog.messages;
+}
+
+/**
+ * Return an isolated English translator for locale-independent exported text.
+ * It must never replace the app-wide i18n instance used by the visible UI.
+ */
+export function getEnglishI18n(): Promise<I18n> {
+  englishI18nPromise ??= loadCatalog(defaultLocale).then((messages) => setupI18n({
+    locale: defaultLocale,
+    messages: { [defaultLocale]: messages },
+  }));
+  return englishI18nPromise;
 }
 
 /**

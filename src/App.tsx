@@ -33,7 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { i18n, type MessageDescriptor } from "@lingui/core";
+import { i18n, type I18n, type MessageDescriptor } from "@lingui/core";
 import { msg, plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
@@ -81,7 +81,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme, type Theme } from "@/components/theme-provider";
-import { getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
+import { getEnglishI18n, getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
 import "./App.css";
 
 type StageKey = "extract" | "mask" | "align";
@@ -1374,7 +1374,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     {
       label: "COLMAP",
       value: colmapWorkflowReady ? itemText(colmap) : colmapReady ? "COLMAP alignment capability not confirmed" : "COLMAP not detected",
-      detail: colmapWorkflowReady ? entryPath(colmap) || "Native dual-fisheye camera-rig alignment is available" : colmapReady ? "The executable was found, but the complete alignment workflow was not confirmed" : entryNote(colmap) || "The alignment stage will remain pending",
+      detail: colmapWorkflowReady ? "Native dual-fisheye camera-rig alignment is available" : colmapReady ? "The executable was found, but the complete alignment workflow was not confirmed" : entryNote(colmap) || "The alignment stage will remain pending",
       details: colmapReady ? [entryPath(colmap) ? `Executable: ${entryPath(colmap)}` : "Executable: system PATH", `Alignment workflow: ${alignCapability.text}`] : undefined,
       status: colmapWorkflowReady ? "ready" : "warning",
     },
@@ -1388,7 +1388,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     {
       label: "FFmpeg",
       value: ffmpegReady ? itemText(ffmpeg) : "FFmpeg tools incomplete",
-      detail: ffmpegReady ? entryPath(ffmpeg) || "FFmpeg and ffprobe are both available" : "Frame extraction requires FFmpeg and ffprobe",
+      detail: ffmpegReady ? "FFmpeg and ffprobe are both available" : "Frame extraction requires FFmpeg and ffprobe",
       details: [
         `FFmpeg: ${ffmpeg && available(ffmpeg) ? entryPath(ffmpeg) || itemText(ffmpeg) || "Available" : "Not detected"}`,
         `ffprobe: ${ffprobe && available(ffprobe) ? entryPath(ffprobe) || itemText(ffprobe) || "Available" : "Not detected"}`,
@@ -1578,42 +1578,70 @@ function containsDiagnosticPath(value: string) {
   return DIAGNOSTIC_PATH_DETECTION_PATTERN.test(value);
 }
 
-function safeDiagnosticDetail(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  // A structured path (for example doctor.tools[].path) and a path embedded
-  // in a localized note are handled identically. Never key this decision off
-  // a translated prefix.
-  if (containsDiagnosticPath(trimmed)) return t`Executable detected (full path hidden)`;
-  return trimmed;
+function englishDiagnosticMessage(value: string, englishI18n: I18n): string {
+  const exact = USER_MESSAGE_TRANSLATIONS[value]
+    ?? STAGE_SUMMARY_TRANSLATIONS[value]
+    ?? APP_MESSAGE_TRANSLATIONS[value];
+  if (exact) return englishI18n._(exact);
+
+  const translated = value
+    .replace(/^未偵測到$/g, "Not detected")
+    .replace(/^(.+) 顯示卡(?: \((.+)\))?$/g, (_match, vendor: string, metadata?: string) => `${vendor} graphics adapter${metadata ? ` (${metadata})` : ""}`)
+    .replace(/FFmpeg 硬體加速/g, "FFmpeg hardware acceleration")
+    .replace(/指定的 COLMAP 未在 version\/help banner 標示 CUDA；將使用 CPU 特徵擷取與配對/g, "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used")
+    .replace(/未偵測到可供 COLMAP 使用的 NVIDIA GPU；將使用 CPU/g, "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used")
+    .replace(/指定的 COLMAP 建置支援 CUDA，但未確認 Ceres GPU 求解器；Bundle Adjustment 會使用 CPU/g, "The selected COLMAP build supports CUDA, but the Ceres GPU solver was not confirmed; Bundle Adjustment will use the CPU")
+    .replace(/^已偵測到 (.+)；COLMAP 可請求 Ceres GPU，實際 CUDA\/cuDSS 支援會在執行時確認$/g, (_match, devices: string) => `Detected ${devices.replace(/、/g, ", ")}; COLMAP can request Ceres GPU, and actual CUDA/cuDSS support will be confirmed at runtime`)
+    .replace(/^此 FFmpeg build 已啟用 (.+)；實際可用性仍取決於顯示卡、驅動程式與影片格式$/g, (_match, methods: string) => `This FFmpeg build enables ${methods.replace(/、/g, ", ")}; actual availability still depends on the graphics adapter, driver, and video format`);
+
+  // Backend diagnostics have a bounded English mapping. If a future backend
+  // message is added without one, never leak untranslated UI text into the
+  // portable report.
+  return containsCjk(translated) ? "An untranslated diagnostic message was omitted" : translated;
 }
 
-function doctorReportText(doctor: DoctorReport) {
+function englishDiagnosticDetail(value: string, englishI18n: I18n): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (containsDiagnosticPath(trimmed)) return "Executable detected (full path hidden)";
+  return englishDiagnosticMessage(trimmed, englishI18n);
+}
+
+function formatEnglishDoctorCheckedAt(value: string) {
+  if (value === "Not checked yet") return value;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(parsed);
+}
+
+async function doctorReportText(doctor: DoctorReport) {
+  const englishI18n = await getEnglishI18n();
   const lines = [
-    t`SphereAlign diagnostics`,
-    t`Platform: ${localiseUserMessage(doctor.platform)}`,
-    t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`,
-    t`Summary: ${localiseUserMessage(doctor.summary)}`,
+    "SphereAlign diagnostics",
+    `Platform: ${englishDiagnosticMessage(doctor.platform, englishI18n)}`,
+    `Last checked: ${formatEnglishDoctorCheckedAt(doctor.checkedAt)}`,
+    `Summary: ${englishDiagnosticMessage(doctor.summary, englishI18n)}`,
     "",
-    t`System information`,
-    t`- Operating system: ${localiseUserMessage(doctor.systemInfo.osName)} ${localiseUserMessage(doctor.systemInfo.osVersion)}`,
-    t`- Architecture: ${localiseUserMessage(doctor.systemInfo.architecture)}`,
-    t`- Processors:`,
-    ...(doctor.systemInfo.processors.length > 0 ? doctor.systemInfo.processors.map((processor) => t`  - ${processor}`) : [t`  - Not detected`]),
-    t`- Graphics adapters:`,
-    ...(doctor.systemInfo.graphicsAdapters.length > 0 ? doctor.systemInfo.graphicsAdapters.map((adapter) => t`  - ${adapter}`) : [t`  - Not detected`]),
+    "System information",
+    `- Operating system: ${englishDiagnosticMessage(doctor.systemInfo.osName, englishI18n)} ${englishDiagnosticMessage(doctor.systemInfo.osVersion, englishI18n)}`,
+    `- Architecture: ${englishDiagnosticMessage(doctor.systemInfo.architecture, englishI18n)}`,
+    "- Processors:",
+    ...(doctor.systemInfo.processors.length > 0 ? doctor.systemInfo.processors.map((processor) => `  - ${englishDiagnosticMessage(processor, englishI18n)}`) : ["  - Not detected"]),
+    "- Graphics adapters:",
+    ...(doctor.systemInfo.graphicsAdapters.length > 0 ? doctor.systemInfo.graphicsAdapters.map((adapter) => `  - ${englishDiagnosticMessage(adapter, englishI18n)}`) : ["  - Not detected"]),
     "",
-    t`Environment checks`,
+    "Environment checks",
   ];
   doctor.items.forEach((item) => {
-    lines.push(`- ${diagnosticItemLabel(item.label)} [${diagnosticStatusLabel(item.status)}]`);
-    lines.push(t`  Result: ${localiseUserMessage(item.value)}`);
-    lines.push(t`  Details: ${safeDiagnosticDetail(item.detail)}`);
-    item.details?.forEach((detail) => lines.push(t`  - ${safeDiagnosticDetail(detail)}`));
+    const status = item.status === "ready" ? "Available" : item.status === "warning" ? "Needs attention" : "Not checked";
+    lines.push(`- ${item.label} [${status}]`);
+    lines.push(`  Result: ${englishDiagnosticMessage(item.value, englishI18n)}`);
+    lines.push(`  Details: ${englishDiagnosticDetail(item.detail, englishI18n)}`);
+    item.details?.forEach((detail) => lines.push(`  - ${englishDiagnosticDetail(detail, englishI18n)}`));
   });
-  lines.push("", t`Warnings`);
-  if (doctor.warnings.length > 0) doctor.warnings.forEach((warning) => lines.push(`- ${localiseUserMessage(warning)}`));
-  else lines.push(t`- None`);
+  lines.push("", "Warnings");
+  if (doctor.warnings.length > 0) doctor.warnings.forEach((warning) => lines.push(`- ${englishDiagnosticMessage(warning, englishI18n)}`));
+  else lines.push("- None");
   return redactDiagnosticText(lines.join("\n"));
 }
 
@@ -2067,8 +2095,8 @@ function App() {
   }, []);
 
   const copyDoctorReport = useCallback(async () => {
-    const report = doctorReportText(doctor);
     try {
+      const report = await doctorReportText(doctor);
       if (IS_TAURI_RUNTIME) await writeClipboardText(report);
       else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
       else throw new Error("clipboard unavailable");
