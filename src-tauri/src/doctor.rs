@@ -101,6 +101,13 @@ pub struct ColmapCapabilities {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GpuDevice {
+    pub index: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DoctorReport {
     pub platform: String,
     pub arch: String,
@@ -112,6 +119,7 @@ pub struct DoctorReport {
     /// Whether the selected COLMAP build and at least one NVIDIA device can
     /// actually participate in the alignment stages.
     pub gpu_available: bool,
+    pub gpu_devices: Vec<GpuDevice>,
     pub warnings: Vec<String>,
 }
 
@@ -569,25 +577,28 @@ fn ffmpeg_hwaccels(ffmpeg: &ToolInfo) -> String {
     )
 }
 
-fn parse_nvidia_gpu_names(output: &str) -> Vec<String> {
+fn parse_nvidia_gpu_devices(output: &str) -> Vec<GpuDevice> {
     output
         .lines()
         .map(str::trim)
-        .filter(|line| {
-            !line.is_empty()
-                && !line.eq_ignore_ascii_case("no devices were found")
-                && !line.to_ascii_lowercase().contains("nvidia-smi has failed")
+        .filter_map(|line| {
+            let (index, name) = line.split_once(',')?;
+            let index = index.trim().parse().ok()?;
+            let name = name.trim().trim_matches('"').trim();
+            (!name.is_empty()).then(|| GpuDevice {
+                index,
+                name: name.to_owned(),
+            })
         })
-        .map(str::to_owned)
         .collect()
 }
 
-fn nvidia_gpu_names() -> Vec<String> {
+fn nvidia_gpu_devices() -> Vec<GpuDevice> {
     let Some(path) = find_executable("nvidia-smi") else {
         return Vec::new();
     };
     let Ok(output) = silent_command(path)
-        .args(["--query-gpu=name", "--format=csv,noheader"])
+        .args(["--query-gpu=index,name", "--format=csv,noheader,nounits"])
         .output()
     else {
         return Vec::new();
@@ -595,7 +606,7 @@ fn nvidia_gpu_names() -> Vec<String> {
     if !output.status.success() {
         return Vec::new();
     }
-    parse_nvidia_gpu_names(&String::from_utf8_lossy(&output.stdout))
+    parse_nvidia_gpu_devices(&String::from_utf8_lossy(&output.stdout))
 }
 
 const UNKNOWN_SYSTEM_VALUE: &str = "未偵測到";
@@ -1039,7 +1050,10 @@ fn detected_graphics_adapters() -> Vec<String> {
 
     // NVIDIA-SMI is a useful fallback when the platform inventory command is
     // missing or unavailable inside a minimal environment/container.
-    nvidia_gpu_names()
+    nvidia_gpu_devices()
+        .into_iter()
+        .map(|device| device.name)
+        .collect()
 }
 
 fn system_info() -> SystemInfo {
@@ -1149,7 +1163,11 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
         && colmap_capabilities.model_converter
         && colmap_capabilities.rig_configurator
         && colmap_capabilities.matches_importer;
-    let nvidia_gpus = nvidia_gpu_names();
+    let gpu_devices = nvidia_gpu_devices();
+    let nvidia_gpus = gpu_devices
+        .iter()
+        .map(|device| device.name.clone())
+        .collect::<Vec<_>>();
     let gpu_available = colmap_capabilities.cuda_build
         && !nvidia_gpus.is_empty()
         && (colmap_capabilities.feature_extraction_gpu
@@ -1272,6 +1290,7 @@ pub fn report(custom_colmap_path: Option<&str>) -> DoctorReport {
         },
         colmap_capabilities,
         gpu_available,
+        gpu_devices,
         tools,
         accelerators,
         warnings,
@@ -1293,6 +1312,9 @@ mod tests {
             .is_some());
         assert!(value.get("colmapCapabilities").is_some());
         assert!(value.get("gpuAvailable").is_some());
+        assert!(value
+            .get("gpuDevices")
+            .is_some_and(|devices| devices.is_array()));
         assert!(value.get("accelerators").is_some());
         let system_info = value
             .get("systemInfo")
@@ -1314,13 +1336,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_nvidia_smi_device_names_conservatively() {
+    fn parses_nvidia_smi_devices_conservatively() {
         assert_eq!(
-            parse_nvidia_gpu_names("NVIDIA GeForce RTX 4090\nNVIDIA RTX 6000 Ada\n"),
-            vec!["NVIDIA GeForce RTX 4090", "NVIDIA RTX 6000 Ada"]
+            parse_nvidia_gpu_devices("0, NVIDIA GeForce RTX 4090\n2, NVIDIA RTX 6000 Ada\n")
+                .into_iter()
+                .map(|device| (device.index, device.name))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, "NVIDIA GeForce RTX 4090".to_owned()),
+                (2, "NVIDIA RTX 6000 Ada".to_owned()),
+            ]
         );
-        assert!(parse_nvidia_gpu_names("No devices were found\n").is_empty());
-        assert!(parse_nvidia_gpu_names(
+        assert!(parse_nvidia_gpu_devices("No devices were found\n").is_empty());
+        assert!(parse_nvidia_gpu_devices(
             "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver.\n"
         )
         .is_empty());

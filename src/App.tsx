@@ -64,6 +64,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -182,6 +183,7 @@ interface DoctorReport {
   warnings: string[];
   colmapCapabilities?: Record<string, unknown>;
   gpuAvailable?: boolean;
+  gpuDevices: Array<{ index: number; name: string }>;
 }
 
 interface ProgressEventPayload {
@@ -301,6 +303,22 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
   };
 }
 
+function selectAvailableGpu(settings: PipelineSettings, devices: DoctorReport["gpuDevices"]): PipelineSettings {
+  if (devices.length === 0) return settings;
+  const requestedIndex = settings.align.gpuIndex.split(",")[0]?.trim();
+  const gpuIndex = devices.some((device) => String(device.index) === requestedIndex)
+    ? requestedIndex
+    : String(devices[0].index);
+  if (gpuIndex === settings.align.gpuIndex) return settings;
+  return { ...settings, align: { ...settings.align, gpuIndex } };
+}
+
+function gpuDeviceLabel(device: DoctorReport["gpuDevices"][number], devices: DoctorReport["gpuDevices"]): string {
+  const matchingDevices = devices.filter((candidate) => candidate.name === device.name);
+  if (matchingDevices.length === 1) return device.name;
+  return `${device.name}（第 ${matchingDevices.findIndex((candidate) => candidate.index === device.index) + 1} 張）`;
+}
+
 const COLMAP_CUDA_DIAGNOSTIC_LABEL = "CUDA 加速";
 
 const EMPTY_DOCTOR: DoctorReport = {
@@ -321,6 +339,7 @@ const EMPTY_DOCTOR: DoctorReport = {
     { label: "硬體加速", value: "尚未檢查", detail: "確認 FFmpeg 硬體解碼能力", status: "unknown" },
   ],
   warnings: [],
+  gpuDevices: [],
 };
 
 const IS_TAURI_RUNTIME = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
@@ -827,6 +846,15 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     processors: stringList(rawSystemInfo.processors),
     graphicsAdapters: stringList(rawSystemInfo.graphicsAdapters),
   };
+  const gpuDevices = Array.isArray(body.gpuDevices)
+    ? body.gpuDevices.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const device = entry as Record<string, unknown>;
+      if (typeof device.index !== "number" || !Number.isInteger(device.index) || device.index < 0) return [];
+      if (typeof device.name !== "string" || !device.name.trim()) return [];
+      return [{ index: device.index, name: device.name.trim() }];
+    })
+    : [];
   const ffmpegAccelerationValue = ffmpegAccelerators
     .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "build 已啟用" : "未支援"}`)
     .join(" · ");
@@ -876,6 +904,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     warnings,
     colmapCapabilities,
     gpuAvailable,
+    gpuDevices,
   };
 }
 
@@ -1326,13 +1355,13 @@ function App() {
     setOutputDraft("");
     setSourceInspection("");
     gpuPreferenceTouched.current = false;
-    setSettingsDraft({
+    setSettingsDraft(selectAvailableGpu({
       ...DEFAULT_SETTINGS,
       align: { ...DEFAULT_SETTINGS.align, useGpu: doctor.gpuAvailable !== false },
-    });
+    }, doctor.gpuDevices));
     setDragOver(false);
     setTaskDialogOpen(true);
-  }, [doctor.gpuAvailable]);
+  }, [doctor.gpuAvailable, doctor.gpuDevices]);
 
   const canChangeQueuedTask = useCallback((task: Task) => {
     const run = autoPipelineRuns.current[task.projectId];
@@ -1353,11 +1382,11 @@ function App() {
     setNameDraft(task.name);
     setSourcePaths(task.inputPaths);
     setOutputDraft(task.outputPath);
-    setSettingsDraft(normalisePipelineSettings(task.settings));
+    setSettingsDraft(selectAvailableGpu(normalisePipelineSettings(task.settings), doctor.gpuDevices));
     setSourceInspection(`${task.inputPaths.length} 個來源`);
     setDragOver(false);
     setTaskDialogOpen(true);
-  }, [canChangeQueuedTask]);
+  }, [canChangeQueuedTask, doctor.gpuDevices]);
 
   const handleBrowserFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -1425,12 +1454,14 @@ function App() {
     if (result) {
       const parsed = parseDoctor(result, EMPTY_DOCTOR);
       setDoctor(parsed);
-      if (parsed.gpuAvailable === false || (parsed.gpuAvailable === true && !gpuPreferenceTouched.current)) {
-        setSettingsDraft((current) => ({
-          ...current,
-          align: { ...current.align, useGpu: parsed.gpuAvailable === true },
-        }));
-      }
+      setSettingsDraft((current) => {
+        const selected = selectAvailableGpu(current, parsed.gpuDevices);
+        const shouldFollowDetection = parsed.gpuAvailable === false
+          || (parsed.gpuAvailable === true && !gpuPreferenceTouched.current);
+        return shouldFollowDetection
+          ? { ...selected, align: { ...selected.align, useGpu: parsed.gpuAvailable === true } }
+          : selected;
+      });
     }
     else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機執行環境" });
     setDoctorLoading(false);
@@ -2013,11 +2044,22 @@ function App() {
                   <FieldDescription>{doctor.gpuAvailable === false ? "目前未偵測到可用的 COLMAP CUDA 加速，因此會使用 CPU。" : "偵測到支援 CUDA 的 NVIDIA GPU 時預設開啟；若執行失敗會自動改用 CPU。"}</FieldDescription>
                 </FieldContent>
               </Field>
-              <Field data-disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu || undefined}>
-                <FieldLabel htmlFor="gpu-index">選擇 GPU（進階）</FieldLabel>
-                <Input id="gpu-index" className="w-20" type="text" inputMode="numeric" disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu} value={settingsDraft.align.gpuIndex ?? DEFAULT_SETTINGS.align.gpuIndex} onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: value } })); }} />
-                <FieldDescription>保持 -1 會自動選擇。多張 GPU 可輸入 0,1；部分處理只會使用清單中的第一張。</FieldDescription>
-              </Field>
+              {doctor.gpuAvailable === true && doctor.gpuDevices.length > 1 && (
+                <Field data-disabled={!settingsDraft.align.useGpu || undefined}>
+                  <FieldLabel htmlFor="gpu-index">選擇 GPU</FieldLabel>
+                  <Select
+                    items={doctor.gpuDevices.map((device) => ({ value: String(device.index), label: gpuDeviceLabel(device, doctor.gpuDevices) }))}
+                    value={settingsDraft.align.gpuIndex}
+                    onValueChange={(gpuIndex) => setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: gpuIndex ?? String(doctor.gpuDevices[0].index) } }))}
+                    disabled={!settingsDraft.align.useGpu}
+                  >
+                    <SelectTrigger id="gpu-index" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {doctor.gpuDevices.map((device) => <SelectItem key={device.index} value={String(device.index)}>{gpuDeviceLabel(device, doctor.gpuDevices)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
             </div>
           </FieldContent>
         </Field>
