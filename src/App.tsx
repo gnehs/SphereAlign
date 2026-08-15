@@ -228,6 +228,16 @@ const STAGES: Array<{ key: StageKey; label: string; description: string; icon: L
   { key: "align", label: "對齊", description: "多組 OSV／相機組對齊", icon: Workflow },
 ];
 
+// Aggregate durations from three completed runs. Keeping the raw
+// observations makes the overall progress weighting auditable and easy to tune.
+const STAGE_OBSERVED_DURATION_MS: Record<StageKey, number> = {
+  extract: 1_498_380,
+  mask: 287_773,
+  align: 4_941_579,
+};
+const TOTAL_OBSERVED_DURATION_MS = Object.values(STAGE_OBSERVED_DURATION_MS)
+  .reduce((total, duration) => total + duration, 0);
+
 const MASK_CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
 const MASK_CLASS_LABELS: Record<string, string> = {
   person: "人員",
@@ -553,7 +563,14 @@ function logCountLabel(completed?: number, total?: number) {
 }
 
 function taskProgress(task: Task) {
-  return Math.round(Object.values(task.stages).reduce((sum, stage) => sum + (stage.status === "completed" ? 100 : stage.progress), 0) / STAGES.length);
+  const completedDuration = STAGES.reduce((total, { key }) => {
+    const stage = task.stages[key];
+    const completion = stage.status === "completed"
+      ? 1
+      : Math.max(0, Math.min(100, stage.progress)) / 100;
+    return total + STAGE_OBSERVED_DURATION_MS[key] * completion;
+  }, 0);
+  return Math.round(completedDuration / TOTAL_OBSERVED_DURATION_MS * 100);
 }
 
 function taskHasNotStarted(task: Task) {
@@ -2124,8 +2141,8 @@ function App() {
                       </div>
                     </div>
                     {queued ? <div className="queued-task-summary"><span>佇列會依建立順序自動執行</span><small>{task.inputPaths.length} 個來源</small></div> : <><div className="task-progress-block">
-                      <div className="task-progress-summary"><span title="三個處理階段採等權平均">總進度（階段平均）</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
-                      <Progress value={overall} aria-label={`${task.name} 整體進度`}><ProgressValue /></Progress>
+                      <div className="task-progress-summary"><span title="依三次實際執行耗時加權：約影格擷取 22%、遮罩 4%、對齊 74%">總進度（時間權重）</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                      <Progress value={overall} aria-label={`${task.name} 整體時間進度`}><ProgressValue /></Progress>
                       <div className="task-live-summary">
                         <span><strong>目前階段：{currentStageDefinition.label}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
                         <dl>
