@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Gpu,
   Info,
+  LoaderCircle,
   MonitorCog,
   Pencil,
   Play,
@@ -73,6 +74,8 @@ import {
 } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useTheme, type Theme } from "@/components/theme-provider";
 import "./App.css";
 
 type StageKey = "extract" | "mask" | "align";
@@ -298,6 +301,8 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
   };
 }
 
+const COLMAP_CUDA_DIAGNOSTIC_LABEL = "CUDA 加速";
+
 const EMPTY_DOCTOR: DoctorReport = {
   platform: "尚未檢查平台",
   systemInfo: {
@@ -311,7 +316,7 @@ const EMPTY_DOCTOR: DoctorReport = {
   checkedAt: "尚未檢查",
   items: [
     { label: "COLMAP", value: "尚未檢查", detail: "檢查 COLMAP 執行檔與版本", status: "unknown" },
-    { label: "GPU 加速", value: "尚未檢查", detail: "檢查 COLMAP 與 NVIDIA GPU 是否可用", status: "unknown" },
+    { label: COLMAP_CUDA_DIAGNOSTIC_LABEL, value: "尚未檢查", detail: "檢查 COLMAP 的 CUDA 建置與 NVIDIA GPU 是否可用", status: "unknown" },
     { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
     { label: "硬體加速", value: "尚未檢查", detail: "確認 FFmpeg 硬體解碼能力", status: "unknown" },
   ],
@@ -799,9 +804,9 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     : "unknown";
   const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
     ? gpuAvailable
-      ? gpuStagesKnown && gpuStagesAvailable ? "GPU 加速可用" : "GPU 加速部分可用"
-      : "未偵測到可用 GPU"
-    : "GPU 狀態未確認";
+      ? gpuStagesKnown && gpuStagesAvailable ? "CUDA 加速可用" : "CUDA 加速部分可用"
+      : "未偵測到可用的 CUDA GPU"
+    : "CUDA 狀態未確認";
   const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
   const pipelineCapabilities = body.capabilities && typeof body.capabilities === "object" ? body.capabilities as Record<string, unknown> : undefined;
   const capabilityValue = pipelineCapabilities ? Object.entries(pipelineCapabilities).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
@@ -838,9 +843,9 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
       status: colmapWorkflowReady ? "ready" : "warning",
     },
     {
-      label: "GPU 加速",
+      label: COLMAP_CUDA_DIAGNOSTIC_LABEL,
       value: colmapCudaValue,
-      detail: colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) || "COLMAP GPU 能力已完成檢查" : "COLMAP 的 GPU 能力檢查結果",
+      detail: colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) || "COLMAP CUDA 能力已完成檢查" : "COLMAP 的 CUDA 能力檢查結果",
       details: colmapCudaDetails,
       status: colmapCudaStatus,
     },
@@ -1030,6 +1035,17 @@ function stageStatusLabel(status: StageStatus) {
   return "待執行";
 }
 
+function StageStatusBadge({ status }: { status: StageStatus }) {
+  return (
+    <Badge data-status={status} variant={status === "failed" ? "destructive" : "outline"}>
+      {status === "running"
+        ? <LoaderCircle data-icon="inline-start" aria-hidden="true" />
+        : <span className={`status-dot status-dot--${status}`} />}
+      {stageStatusLabel(status)}
+    </Badge>
+  );
+}
+
 function taskStageDuration(stage: StageState, nowMs: number) {
   if (stage.status === "running" && stage.startedAtMs !== undefined) return Math.max(0, nowMs - stage.startedAtMs);
   if (stage.durationMs !== undefined) return stage.durationMs;
@@ -1141,6 +1157,7 @@ function appendMessageLog(logs: TaskLog[], taskId: string, payload: LogEventPayl
 }
 
 function App() {
+  const { theme, setTheme } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -1190,11 +1207,11 @@ function App() {
   const uniqueDoctorWarnings = Array.from(new Set(doctor.warnings));
   const performanceWarnings = uniqueDoctorWarnings.filter(warningAffectsProcessingSpeed);
   const generalDoctorWarnings = uniqueDoctorWarnings.filter((warning) => !warningAffectsProcessingSpeed(warning));
-  const gpuDiagnostic = doctor.items.find((item) => item.label === "GPU 加速");
+  const gpuDiagnostic = doctor.items.find((item) => item.label === COLMAP_CUDA_DIAGNOSTIC_LABEL);
   const hardwareDiagnostic = doctor.items.find((item) => item.label === "硬體加速");
   const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
     || hardwareDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
-    || "部分 GPU 或硬體加速能力不可用，相關階段將改用 CPU。";
+    || "部分 CUDA 或硬體加速能力不可用，相關階段將改用 CPU。";
   const performanceStatus: DiagnosticStatus = performanceWarnings.length > 0 || gpuDiagnostic?.status === "warning" || hardwareDiagnostic?.status === "warning"
     ? "warning"
     : gpuDiagnostic?.status === "unknown" || hardwareDiagnostic?.status === "unknown"
@@ -1985,8 +2002,8 @@ function App() {
                   }}
                 />
                 <FieldContent>
-                  <FieldLabel htmlFor="use-gpu">對齊使用 GPU 加速</FieldLabel>
-                  <FieldDescription>{doctor.gpuAvailable === false ? "目前未偵測到可用的 COLMAP GPU 加速，因此會使用 CPU。" : "偵測到相容的 NVIDIA GPU 時預設開啟；若執行失敗會自動改用 CPU。"}</FieldDescription>
+                  <FieldLabel htmlFor="use-gpu">對齊使用 CUDA 加速</FieldLabel>
+                  <FieldDescription>{doctor.gpuAvailable === false ? "目前未偵測到可用的 COLMAP CUDA 加速，因此會使用 CPU。" : "偵測到支援 CUDA 的 NVIDIA GPU 時預設開啟；若執行失敗會自動改用 CPU。"}</FieldDescription>
                 </FieldContent>
               </Field>
               <Field data-disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu || undefined}>
@@ -2092,7 +2109,7 @@ function App() {
                                 )}
                               </div>
                             </div>
-                            <Badge data-status={current.status} variant={current.status === "failed" ? "destructive" : "outline"}><span className={`status-dot status-dot--${current.status}`} />{stageStatusLabel(current.status)}</Badge>
+                            <StageStatusBadge status={current.status} />
                             <Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(task, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
                           </div>
                         );
@@ -2154,7 +2171,7 @@ function App() {
               {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
                 <div className="task-detail-current-heading">
                   <span><small>目前工作</small><strong>{selectedStageDefinition.label}</strong></span>
-                  <Badge data-status={selectedStage.status} variant={selectedStage.status === "failed" ? "destructive" : "outline"}><span className={`status-dot status-dot--${selectedStage.status}`} />{stageStatusLabel(selectedStage.status)}</Badge>
+                  <StageStatusBadge status={selectedStage.status} />
                 </div>
                 <div className="task-detail-current-message">
                   <strong>{phaseLabel(selectedStage.phase)}</strong>
@@ -2183,7 +2200,7 @@ function App() {
                   <AccordionContent><div className="task-detail-stages">
                   {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const action = stageActionState(selectedTask, stage.key, hasRunningStage); return (
                     <div className="task-detail-stage" key={stage.key}>
-                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.phase ? phaseLabel(current.phase) : current.message || stage.description}</small></span><Badge data-status={current.status} variant={current.status === "failed" ? "destructive" : "outline"}>{stageStatusLabel(current.status)}</Badge></div>
+                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.phase ? phaseLabel(current.phase) : current.message || stage.description}</small></span><StageStatusBadge status={current.status} /></div>
                       <div className="task-detail-stage-footer">
                         <div className="task-detail-stage-time"><span><Clock3 />{taskStageDuration(current, clockMs) !== undefined ? `耗時 ${formatDuration(taskStageDuration(current, clockMs))}` : "尚未開始"}</span></div>
                         <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
@@ -2224,21 +2241,43 @@ function App() {
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>檢查 COLMAP、GPU、FFmpeg 與硬體加速是否可供重建流程使用。</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>調整介面主題，並檢查 COLMAP、CUDA、FFmpeg 與硬體加速能力。</SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
             <section className="settings-section">
+              <FieldSet className="appearance-fieldset">
+                <FieldLegend variant="label">介面主題</FieldLegend>
+                <FieldDescription>選擇亮色、暗色，或自動跟隨系統外觀。</FieldDescription>
+                <ToggleGroup
+                  className="theme-toggle-group"
+                  variant="outline"
+                  size="sm"
+                  spacing={0}
+                  value={[theme]}
+                  onValueChange={(values) => {
+                    const nextTheme = values[0] as Theme | undefined;
+                    if (nextTheme) setTheme(nextTheme);
+                  }}
+                  aria-label="介面主題"
+                >
+                  <ToggleGroupItem value="system">跟隨系統</ToggleGroupItem>
+                  <ToggleGroupItem value="light">亮色</ToggleGroupItem>
+                  <ToggleGroupItem value="dark">暗色</ToggleGroupItem>
+                </ToggleGroup>
+              </FieldSet>
+            </section>
+            <section className="settings-section">
               <div className="settings-section-heading">
-                <div><h2>執行環境</h2><span>最後檢查：{doctor.checkedAt}</span></div>
-                <div className="settings-section-actions">
-                  <Button variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "尚未檢查"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" />複製診斷資訊</Button>
-                  <Button variant="outline" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? "正在檢查" : "重新檢查環境"}</Button>
+                <div className="settings-section-title"><h2>執行環境</h2><span>最後檢查：{doctor.checkedAt}</span></div>
+                <div className="settings-section-actions" role="group" aria-label="診斷操作">
+                  <Button type="button" variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "尚未檢查"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" />複製診斷資訊</Button>
+                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? "正在檢查" : "重新檢查環境"}</Button>
                 </div>
               </div>
               <div className="environment-alert-stack">
                 <Alert data-status={doctorEssentialReady ? "ready" : "warning"} role={doctorEssentialReady ? "status" : "alert"}>
                   {doctorEssentialReady ? <CheckCircle2 /> : <AlertTriangle />}
                   <AlertTitle>{doctorEssentialReady ? "所有必要功能皆可使用" : "有必要功能需要處理"}</AlertTitle>
-                  <AlertDescription>{doctorEssentialReady ? "基本重建流程可以執行。GPU 與硬體加速屬於選用能力；不可用時仍能處理，但會降低影格擷取、特徵配對與重建速度。" : "缺少必要工具會阻止部分處理階段，請先處理下方標示為「需檢查」的項目。"}</AlertDescription>
+                  <AlertDescription>{doctorEssentialReady ? "基本重建流程可以執行。CUDA 與硬體加速屬於選用能力；不可用時仍能處理，但會降低影格擷取、特徵配對與重建速度。" : "缺少必要工具會阻止部分處理階段，請先處理下方標示為「需檢查」的項目。"}</AlertDescription>
                 </Alert>
                 {performanceStatus !== "ready" && <Alert data-status={performanceStatus === "warning" ? "performance-warning" : "unknown"} role={performanceStatus === "warning" ? "alert" : "status"}>
                   <Gauge />
@@ -2248,7 +2287,7 @@ function App() {
                       ? performanceWarnings.map((warning) => <p key={warning}>{warning}</p>)
                       : performanceStatus === "warning"
                         ? <p>{performanceFallback}</p>
-                        : <p>完成環境檢查後，才能確認目前會使用 GPU、硬體解碼或 CPU。</p>}
+                        : <p>完成環境檢查後，才能確認目前會使用 CUDA、硬體解碼或 CPU。</p>}
                     {performanceStatus === "warning" && <p>改用 CPU 的階段仍可執行，但處理時間可能明顯增加。</p>}
                   </AlertDescription>
                 </Alert>}
