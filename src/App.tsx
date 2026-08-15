@@ -1259,7 +1259,7 @@ function App() {
 
   const inspectSourcePaths = useCallback(async (paths: string[]) => {
     if (!paths.length) return;
-    const result = await invokeSafely<{ kind?: string; sources?: Array<{ name?: string; duration?: number; fps?: number; warnings?: string[] }>; project?: { path?: string; status?: string; hasManifest?: boolean }; suggestedOutputPath?: string }>("inspect_paths", { paths });
+    const result = await invokeSafely<{ kind?: string; sources?: Array<{ path?: string; name?: string; duration?: number; fps?: number; warnings?: string[] }>; project?: { path?: string; status?: string; hasManifest?: boolean }; suggestedOutputPath?: string }>("inspect_paths", { paths });
     if (IS_TAURI_RUNTIME && result?.project && (result.kind === "project" || result.project.status === "partial" || result.project.hasManifest)) {
       const projectPath = result.project.path || paths[0];
       const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: projectPath }));
@@ -1274,6 +1274,8 @@ function App() {
       }
     }
     if (result?.sources?.length) {
+      const inspectedPaths = result.sources.flatMap((source) => source.path ? [source.path] : []);
+      if (inspectedPaths.length) setSourcePaths(inspectedPaths);
       const valid = result.sources.filter((source) => !source.warnings?.length).length;
       setSourceInspection(`${result.sources.length} 個來源 · ${valid} 個通過檢查`);
     } else if (result?.suggestedOutputPath) {
@@ -2015,8 +2017,8 @@ function App() {
           <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
             <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
             <h1>尚無任務</h1>
-            <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以先建立新的重建任務。</p>
-            <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload />選擇檔案</Button><Button size="lg" variant="outline" onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div>
+            <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以從下方選擇檔案或資料夾。</p>
+            <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload data-icon="inline-start" />選擇檔案</Button><Button size="lg" variant="outline" onClick={() => void openSourcePicker("directories")}><FolderOpen data-icon="inline-start" />選擇資料夾</Button></div>
             <section className="supported-formats" aria-labelledby="supported-formats-title">
               <h2 id="supported-formats-title">目前支援</h2>
               <div className="supported-format-list">
