@@ -33,6 +33,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { i18n, type MessageDescriptor } from "@lingui/core";
+import { msg, plural, t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
+import { Plural, Trans } from "@lingui/react/macro";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -77,12 +81,24 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme, type Theme } from "@/components/theme-provider";
+import { getLocale, setLocale } from "@/i18n";
 import "./App.css";
 
 type StageKey = "extract" | "mask" | "align";
 type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
 type ExtractColorMode = "auto" | "dlogMRec709" | "native";
+
+function translate(descriptor: MessageDescriptor) {
+  return i18n._(descriptor);
+}
+
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: msg({ message: "English", context: "language option", comment: "Language selector option." }) },
+  { value: "zh-CN", label: msg({ message: "Simplified Chinese", context: "language option", comment: "Language selector option for Simplified Chinese; translated labels may use the native name 简体中文." }) },
+  { value: "zh-TW", label: msg({ message: "Traditional Chinese", context: "language option", comment: "Language selector option for Traditional Chinese; translated labels may use the native name 繁體中文." }) },
+  { value: "ja", label: msg({ message: "Japanese", context: "language option", comment: "Language selector option for Japanese; translated labels may use the native name 日本語." }) },
+] as const;
 
 interface ColorInspection {
   shouldApply?: boolean;
@@ -234,11 +250,36 @@ interface AutoPipelineRun {
   jobId?: string;
 }
 
-const STAGES: Array<{ key: StageKey; label: string; description: string; icon: LucideIcon }> = [
-  { key: "extract", label: "影格擷取", description: "雙魚眼影格、內參與 IMU", icon: ScanLine },
-  { key: "mask", label: "遮罩", description: "動態物件與天空遮罩", icon: CircleDashed },
-  { key: "align", label: "對齊", description: "多組 OSV／相機組對齊", icon: Workflow },
+type StageDefinition = { key: StageKey; label: MessageDescriptor; description: MessageDescriptor; icon: LucideIcon };
+
+const STAGES: StageDefinition[] = [
+  {
+    key: "extract",
+    label: msg({ message: "Frame extraction", context: "pipeline stage label", comment: "The stage that extracts selected frames from source media." }),
+    description: msg({ message: "Dual-fisheye frames, intrinsics, and IMU", context: "pipeline stage description", comment: "Technical description of the frame extraction stage; keep IMU as the acronym." }),
+    icon: ScanLine,
+  },
+  {
+    key: "mask",
+    label: msg({ message: "Masking", context: "pipeline stage label", comment: "The stage that creates masks for dynamic objects and sky." }),
+    description: msg({ message: "Dynamic-object and sky masks", context: "pipeline stage description", comment: "Technical description of the masking stage." }),
+    icon: CircleDashed,
+  },
+  {
+    key: "align",
+    label: msg({ message: "Alignment", context: "pipeline stage label", comment: "The stage that aligns multiple OSV sources and camera rigs." }),
+    description: msg({ message: "Multi-source OSV and camera-rig alignment", context: "pipeline stage description", comment: "Technical description of the alignment stage; keep OSV as the product format acronym." }),
+    icon: Workflow,
+  },
 ];
+
+function stageLabel(stage?: StageDefinition) {
+  return stage ? translate(stage.label) : translate(msg({ message: "Stage", context: "pipeline stage fallback", comment: "Generic pipeline stage label." }));
+}
+
+function stageDescription(stage: StageDefinition) {
+  return translate(stage.description);
+}
 
 // Aggregate durations from three completed runs. Keeping the raw
 // observations makes the overall progress weighting auditable and easy to tune.
@@ -251,13 +292,13 @@ const TOTAL_OBSERVED_DURATION_MS = Object.values(STAGE_OBSERVED_DURATION_MS)
   .reduce((total, duration) => total + duration, 0);
 
 const MASK_CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
-const MASK_CLASS_LABELS: Record<string, string> = {
-  person: "人員",
-  bicycle: "腳踏車",
-  car: "汽車",
-  motorcycle: "機車",
-  bus: "公車",
-  truck: "卡車",
+const MASK_CLASS_LABELS: Record<string, MessageDescriptor> = {
+  person: msg({ message: "Person", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
+  bicycle: msg({ message: "Bicycle", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
+  car: msg({ message: "Car", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
+  motorcycle: msg({ message: "Motorcycle", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
+  bus: msg({ message: "Bus", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
+  truck: msg({ message: "Truck", context: "mask class", comment: "Object class that can be excluded from reconstruction masks." }),
 };
 const MIN_CANDIDATE_MULTIPLIER = 2;
 const MAX_CANDIDATE_MULTIPLIER = 10;
@@ -356,84 +397,482 @@ function selectAvailableGpu(settings: PipelineSettings, devices: DoctorReport["g
 function gpuDeviceLabel(device: DoctorReport["gpuDevices"][number], devices: DoctorReport["gpuDevices"]): string {
   const matchingDevices = devices.filter((candidate) => candidate.name === device.name);
   if (matchingDevices.length === 1) return device.name;
-  return `${device.name}（第 ${matchingDevices.findIndex((candidate) => candidate.index === device.index) + 1} 張）`;
+  const ordinal = matchingDevices.findIndex((candidate) => candidate.index === device.index) + 1;
+  return t`${device.name} (GPU ${ordinal})`;
 }
 
-const COLMAP_CUDA_DIAGNOSTIC_LABEL = "CUDA 加速";
+const COLMAP_CUDA_DIAGNOSTIC_LABEL = "CUDA acceleration";
+const HARDWARE_ACCELERATION_LABEL = "Hardware acceleration";
 
-const EMPTY_DOCTOR: DoctorReport = {
-  platform: "尚未檢查平台",
-  systemInfo: {
-    osName: "尚未檢查",
-    osVersion: "尚未檢查",
-    architecture: "尚未檢查",
-    processors: [],
-    graphicsAdapters: [],
-  },
-  summary: "執行環境診斷以確認可用能力",
-  checkedAt: "尚未檢查",
-  items: [
-    { label: "COLMAP", value: "尚未檢查", detail: "檢查 COLMAP 執行檔與版本", status: "unknown" },
-    { label: COLMAP_CUDA_DIAGNOSTIC_LABEL, value: "尚未檢查", detail: "檢查 COLMAP 的 CUDA 建置與 NVIDIA GPU 是否可用", status: "unknown" },
-    { label: "FFmpeg", value: "尚未檢查", detail: "確認系統 PATH 中的 FFmpeg", status: "unknown" },
-    { label: "硬體加速", value: "尚未檢查", detail: "確認 FFmpeg 硬體解碼能力", status: "unknown" },
-  ],
-  warnings: [],
-  gpuDevices: [],
-};
+function emptyDoctor(): DoctorReport {
+  return {
+    platform: "Platform not checked yet",
+    systemInfo: {
+      osName: "Not checked yet",
+      osVersion: "Not checked yet",
+      architecture: "Not checked yet",
+      processors: [],
+      graphicsAdapters: [],
+    },
+    summary: "Run an environment check to confirm available capabilities",
+    checkedAt: "Not checked yet",
+    items: [
+      { label: "COLMAP", value: "Not checked yet", detail: "Check the COLMAP executable and version", status: "unknown" },
+      { label: COLMAP_CUDA_DIAGNOSTIC_LABEL, value: "Not checked yet", detail: "Check the COLMAP CUDA build and whether an NVIDIA GPU is available", status: "unknown" },
+      { label: "FFmpeg", value: "Not checked yet", detail: "Confirm FFmpeg is available on the system PATH", status: "unknown" },
+      { label: HARDWARE_ACCELERATION_LABEL, value: "Not checked yet", detail: "Confirm FFmpeg hardware decoding capabilities", status: "unknown" },
+    ],
+    warnings: [],
+    gpuDevices: [],
+  };
+}
+
+function diagnosticItemLabel(label: string) {
+  if (label === COLMAP_CUDA_DIAGNOSTIC_LABEL) return t`CUDA acceleration`;
+  if (label === HARDWARE_ACCELERATION_LABEL) return t`Hardware acceleration`;
+  return label;
+}
 
 const IS_TAURI_RUNTIME = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 
-const USER_MESSAGE_TRANSLATIONS: Record<string, string> = {
-  "scanning paired fisheye candidates": "正在掃描雙魚眼配對候選影格",
-  "cancelled before interval": "已在處理下一個區間前取消",
-  "cancelled while scoring candidates": "已在評分候選影格時取消",
-  "selected pair already exists; skipped": "選定的配對影格已存在，已略過",
-  "cancelled before output commit": "已在寫入輸出前取消",
-  "copying selected pair": "正在複製選定的配對影格",
-  "selected pair committed": "已寫入選定的配對影格",
-  "extraction cancelled": "影格擷取已取消",
-  "scanning native fisheye images": "正在掃描原生雙魚眼影像",
-  "loading YOLO11/skyseg models": "正在載入 YOLO11／SkySeg 模型",
-  "masking cancelled": "遮罩處理已取消",
-  "verified mask exists; skipped": "已確認遮罩存在，已略過",
-  "running YOLO11/skyseg": "正在執行 YOLO11／SkySeg 推論",
-  "masking cancelled before output commit": "已在寫入遮罩前取消",
-  "committing mask files": "正在寫入遮罩檔案",
-  "mask completed": "遮罩處理完成",
-  "Stage started": "處理階段已開始",
-  "Stage cancelled; committed artifacts are resumable": "處理階段已取消，已寫入的結果可繼續使用",
-  "Stage completed": "處理階段已完成",
-  "Existing dual-fisheye frames were discovered": "已找到現有的雙魚眼影格",
-  "Existing masks were discovered": "已找到現有遮罩",
-  "Existing COLMAP reconstruction was discovered": "已找到現有的 COLMAP 重建結果",
-  "Previous run was interrupted; this stage can be resumed": "上次處理中斷，此階段可繼續執行",
-  "This project manifest was recovered from existing artifacts": "已依現有處理結果復原專案資訊",
-  "Extract requires both system ffmpeg and ffprobe": "影格擷取需要系統已安裝 FFmpeg 與 ffprobe",
-  "COLMAP is unavailable; alignment will remain in a resumable pending state": "找不到 COLMAP；對齊階段會維持可繼續的待執行狀態",
-  "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder": "FFmpeg 不支援 VideoToolbox；影格擷取將使用 CPU 解碼",
+const PREPARING_WORK_SOURCE = "Preparing work";
+const BROWSER_PREVIEW_TASK_SOURCE = "Browser preview task";
+const BROWSER_PREVIEW_NOT_CONNECTED_SOURCE = "Browser preview: not connected to the local runtime";
+
+const UNKNOWN_BACKEND_ERROR = msg({
+  message: "The local runtime returned an unexpected error. See diagnostics for details.",
+  context: "backend error fallback",
+  comment: "Shown when a backend or Tauri error has no localized mapping. Do not include the raw error text here.",
+});
+
+const HIDDEN_TECHNICAL_ERROR_DETAILS = msg({
+  message: "Technical details are available in diagnostics.",
+  context: "backend error details",
+  comment: "Shown when technical details contain an untranslated message in a non-Traditional-Chinese locale.",
+});
+
+const HIDDEN_BACKEND_STATUS = msg({
+  message: "A backend status message is unavailable in this language.",
+  context: "backend status fallback",
+  comment: "Shown when an untranslated backend progress or status message contains CJK and has no localized mapping; hide the original to avoid misleading users.",
+});
+
+function containsCjk(value: string): boolean {
+  return /[\u3400-\u9fff]/.test(value);
+}
+
+function localiseTechnicalErrorDetail(value: string): string {
+  const detail = value.trim();
+  if (!detail) return "";
+  // Traditional Chinese is the backend's source locale. English technical
+  // output remains useful in every locale, but untranslated CJK diagnostics
+  // must not leak into Simplified Chinese or Japanese UI.
+  if (getLocale() === "zh-TW" || !containsCjk(detail)) return detail;
+  return translate(HIDDEN_TECHNICAL_ERROR_DETAILS);
+}
+
+function isLikelyBackendError(value: string): boolean {
+  return /(error|failed|failure|unable|cannot|could not|not found|unsupported|missing|unavailable|錯誤|失敗|找不到|無法|不能|不支援|缺少|未能|不符|未提供|不成立|不提供)/i.test(value);
+}
+
+const USER_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
+  "scanning paired fisheye candidates": msg({ message: "Scanning dual-fisheye frame candidates", comment: "Backend progress message: scanning candidate frame pairs." }),
+  "cancelled before interval": msg({ message: "Cancelled before processing the next interval", comment: "Backend progress message; interval is a processing window, not a time duration." }),
+  "cancelled while scoring candidates": msg({ message: "Cancelled while scoring frame candidates", comment: "Backend progress message: scoring candidate frames for selection." }),
+  "selected pair already exists; skipped": msg({ message: "Selected frame pair already exists; skipped", comment: "Backend message: an output pair was already present, so no duplicate was written." }),
+  "cancelled before output commit": msg({ message: "Cancelled before committing output", comment: "Backend progress message: output files were not committed." }),
+  "copying selected pair": msg({ message: "Copying selected frame pair", comment: "Backend progress message: copying selected source frames." }),
+  "selected pair committed": msg({ message: "Selected frame pair committed", comment: "Backend progress message: selected source frames were written to output." }),
+  "extraction cancelled": msg({ message: "Frame extraction cancelled", context: "backend stage status", comment: "The frame-extraction stage was cancelled." }),
+  "scanning native fisheye images": msg({ message: "Scanning native dual-fisheye images", comment: "Backend progress message: native fisheye images are being inspected." }),
+  "loading YOLO11/skyseg models": msg({ message: "Loading YOLO11/SkySeg models", comment: "Keep YOLO11 and SkySeg as model names." }),
+  "masking cancelled": msg({ message: "Masking cancelled", context: "backend stage status", comment: "The masking stage was cancelled." }),
+  "verified mask exists; skipped": msg({ message: "Verified that the mask exists; skipped", comment: "Backend message: an existing mask file was reused." }),
+  "running YOLO11/skyseg": msg({ message: "Running YOLO11/SkySeg inference", comment: "Keep YOLO11 and SkySeg as model names." }),
+  "masking cancelled before output commit": msg({ message: "Masking cancelled before committing output", comment: "Backend progress message: mask output files were not committed." }),
+  "committing mask files": msg({ message: "Committing mask files", comment: "Backend progress message: mask files are being written." }),
+  "mask completed": msg({ message: "Masking completed", context: "backend stage status", comment: "The masking stage completed successfully." }),
+  "Stage started": msg({ message: "Stage started", context: "backend stage status", comment: "Generic backend stage status message." }),
+  "Stage cancelled; committed artifacts are resumable": msg({ message: "Stage cancelled; committed artifacts can be resumed", comment: "Committed artifacts remain valid and can be reused by a later run." }),
+  "Stage completed": msg({ message: "Stage completed", context: "backend stage status", comment: "Generic backend stage status message." }),
+  "Existing dual-fisheye frames were discovered": msg({ message: "Existing dual-fisheye frames were discovered", comment: "A resumable project already contains extracted dual-fisheye frames." }),
+  "Existing masks were discovered": msg({ message: "Existing masks were discovered", comment: "A resumable project already contains mask files." }),
+  "Existing COLMAP reconstruction was discovered": msg({ message: "Existing COLMAP reconstruction was discovered", comment: "A resumable project already contains COLMAP reconstruction output." }),
+  "Previous run was interrupted; this stage can be resumed": msg({ message: "The previous run was interrupted; this stage can be resumed", comment: "A resumable project was recovered after an interrupted run." }),
+  "This project manifest was recovered from existing artifacts": msg({ message: "This project manifest was recovered from existing artifacts", comment: "Project metadata was reconstructed from files already on disk." }),
+  "Extract requires both system ffmpeg and ffprobe": msg({ message: "Frame extraction requires both system FFmpeg and ffprobe", comment: "Keep FFmpeg and ffprobe as command-line tool names." }),
+  "COLMAP is unavailable; alignment will remain in a resumable pending state": msg({ message: "COLMAP is unavailable; alignment will remain pending and resumable", comment: "The alignment stage cannot start without COLMAP, but the project remains resumable." }),
+  "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder": msg({ message: "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder", comment: "Keep FFmpeg, VideoToolbox, and CPU as technical names." }),
+
+  // Rust emits these messages in Traditional Chinese. Keep the source text as
+  // the lookup key so persisted manifests and event payloads remain locale
+  // independent; the descriptor is resolved only when the UI renders it.
+  "正在掃描雙魚眼配對候選影格": msg({ message: "Scanning dual-fisheye frame candidates", comment: "Backend progress message: scanning candidate frame pairs." }),
+  "已在評分候選影格時取消": msg({ message: "Cancelled while scoring frame candidates", comment: "Backend progress message: scoring candidate frames for selection." }),
+  "已在選定結果前取消": msg({ message: "Cancelled before committing the selected result", comment: "Backend progress message: selection was cancelled before the selected result was committed." }),
+  "已選定配對影格（未複製輸出）": msg({ message: "Selected frame pair (output copy disabled)", comment: "Backend progress message: a frame pair was selected without copying output files." }),
+  "選定的配對影格已存在，已略過": msg({ message: "Selected frame pair already exists; skipped", comment: "Backend message: an output pair was already present, so no duplicate was written." }),
+  "已在寫入輸出前取消": msg({ message: "Cancelled before committing output", comment: "Backend progress message: output files were not committed." }),
+  "正在複製選定的配對影格": msg({ message: "Copying selected frame pair", comment: "Backend progress message: copying selected source frames." }),
+  "已寫入選定的配對影格": msg({ message: "Selected frame pair committed", comment: "Backend progress message: selected source frames were written to output." }),
+  "影格擷取已取消": msg({ message: "Frame extraction cancelled", context: "backend stage status", comment: "The frame-extraction stage was cancelled." }),
+  "正在掃描原生雙魚眼影像": msg({ message: "Scanning native dual-fisheye images", comment: "Backend progress message: native fisheye images are being inspected." }),
+  "正在載入 YOLO11／SkySeg 模型": msg({ message: "Loading YOLO11/SkySeg models", comment: "Keep YOLO11 and SkySeg as model names." }),
+  "已確認遮罩存在，已略過": msg({ message: "Verified that the mask exists; skipped", comment: "Backend message: an existing mask file was reused." }),
+  "正在執行 YOLO11／SkySeg 推論": msg({ message: "Running YOLO11/SkySeg inference", comment: "Keep YOLO11 and SkySeg as model names." }),
+  "遮罩處理已取消": msg({ message: "Mask operation cancelled", context: "backend stage status", comment: "The masking operation was cancelled." }),
+  "已在寫入遮罩前取消": msg({ message: "Masking cancelled before committing output", comment: "Backend progress message: mask output files were not committed." }),
+  "正在寫入遮罩檔案": msg({ message: "Writing mask files", comment: "Backend progress message: mask files are being written." }),
+  "未啟用遮罩，正在略過": msg({ message: "Masking is disabled; skipping", comment: "Backend stage status when no object or sky mask is enabled." }),
+  "處理階段已開始": msg({ message: "Stage started", context: "backend stage status", comment: "Generic backend stage status message." }),
+  "處理階段已取消，已寫入的結果可繼續使用": msg({ message: "Stage cancelled; committed artifacts can be resumed", comment: "Committed artifacts remain valid and can be reused by a later run." }),
+  "工作已取消，可稍後續作": msg({ message: "Cancelled; you can resume later", comment: "A cancelled stage can be resumed later." }),
+  "未啟用 YOLO 或天空過濾，已略過遮罩階段": msg({ message: "YOLO and sky filtering are disabled; masking was skipped", comment: "Backend stage summary when no mask filters are enabled." }),
+  "處理階段已完成": msg({ message: "Stage completed", context: "backend stage status", comment: "Generic backend stage status message." }),
+  "遮罩處理完成": msg({ message: "Masking completed", context: "backend stage status", comment: "Backend completion message from the masking stage; this is not a request to start masking." }),
+  "找不到來源檔案": msg({ message: "Source file was not found", comment: "Media preview error when the requested source file does not exist." }),
+  "不支援此來源格式": msg({ message: "This source format is not supported", comment: "Media preview error for an unsupported source format." }),
+  "無法讀取影片第一幀": msg({ message: "Unable to read the first video frame", comment: "Media preview error when the first frame cannot be decoded." }),
+  "尚未安裝 FFmpeg": msg({ message: "FFmpeg is not installed", comment: "Media preview error when FFmpeg is unavailable." }),
+  "無法啟動 FFmpeg": msg({ message: "Unable to start FFmpeg", comment: "Media preview error when FFmpeg cannot be launched." }),
+  "已找到現有遮罩": msg({ message: "Existing masks were discovered", comment: "A resumable project already contains mask files." }),
+  "已找到現有的 COLMAP 重建結果": msg({ message: "Existing COLMAP reconstruction was discovered", comment: "A resumable project already contains COLMAP reconstruction output." }),
+  "上次處理中斷，此階段可繼續執行": msg({ message: "The previous run was interrupted; this stage can be resumed", comment: "A resumable project was recovered after an interrupted run." }),
+  "已依現有處理結果復原專案資訊": msg({ message: "This project manifest was recovered from existing artifacts", comment: "Project metadata was reconstructed from files already on disk." }),
+  "來源不能位於輸出資料夾內，請先將來源移到其他位置": msg({ message: "Sources cannot be inside the output folder; move them elsewhere first", comment: "Project validation error: source media cannot be nested under reconstruction output." }),
+  "專案操作鎖暫時無法使用": msg({ message: "The project operation lock is temporarily unavailable", comment: "Project operation error while another mutation is in progress." }),
+  "找不到可修改的專案資訊": msg({ message: "No editable project information was found", context: "project edit error", comment: "Shown when the selected folder does not contain a project manifest that can be edited." }),
+  "無法確認專案根目錄": msg({ message: "Unable to determine the project root", context: "project edit error", comment: "Project root means the folder containing the loaded project manifest." }),
+  "任務名稱不能是空白": msg({ message: "Task name cannot be blank", context: "project edit validation", comment: "Validation error shown when a queued task name contains only whitespace." }),
+  "專案資訊中的根目錄與實際位置不一致，已取消重新命名": msg({ message: "The project root in the manifest does not match its actual location; rename cancelled", context: "project edit error", comment: "The rename is cancelled to avoid changing a project whose manifest path is inconsistent." }),
+  "輸出資料夾沒有可用的父目錄": msg({ message: "The output folder has no usable parent directory", context: "project edit error", comment: "Shown when the output folder cannot be renamed because its parent directory is unavailable." }),
+  "復原專案資訊": msg({ message: "Recovering project information", comment: "Project recovery status shown while reconstructing a manifest from existing artifacts." }),
+  "可繼續執行": msg({ message: "Can be resumed", comment: "Short project recovery status indicating that processing can continue." }),
+  "預覽服務暫時無法使用": msg({ message: "The preview service is temporarily unavailable", comment: "Media preview error when the preview service cannot be used." }),
+  "在系統 PATH 中找不到 FFmpeg": msg({ message: "FFmpeg was not found on the system PATH", comment: "Backend tool error: FFmpeg is missing from PATH." }),
+  "在系統 PATH 中找不到 ffprobe": msg({ message: "ffprobe was not found on the system PATH", comment: "Backend tool error: ffprobe is missing from PATH." }),
+  "影像配對完成": msg({ message: "Image matching completed", comment: "Backend alignment progress message after image matching." }),
+  "正在匯入受限影像配對": msg({ message: "Importing constrained image matches", comment: "Backend alignment progress message while importing constrained matches." }),
+  "正在擷取影像特徵": msg({ message: "Extracting image features", comment: "Backend alignment progress message while extracting image features." }),
+  "影像特徵擷取完成": msg({ message: "Image feature extraction completed", comment: "Backend alignment progress message after feature extraction." }),
+  "相機組已提供完整外參": msg({ message: "The camera rig already provides complete extrinsics", comment: "Backend alignment message when a rig configuration supplies all extrinsics." }),
+  "至少需要兩組同名的 lens0/lens1 影格才能對齊": msg({ message: "At least two matching lens0/lens1 frame pairs are required for alignment", comment: "Alignment validation error for dual-fisheye frame pairs." }),
+  "COLMAP 初始建模未產生任何 sparse 子模型": msg({ message: "COLMAP bootstrap produced no sparse submodel", comment: "Alignment error when COLMAP bootstrap produces no sparse model." }),
+  "此資料夾沒有原始影片；可直接執行現有影格適用的遮罩或對齊階段": msg({ message: "This folder has no source video; masking or alignment can run directly on existing frames", comment: "Backend project message when an existing frame dataset has no source video." }),
+  "影格擷取需要系統已安裝 FFmpeg 與 ffprobe": msg({ message: "Frame extraction requires both system FFmpeg and ffprobe", comment: "Backend diagnostic warning: both command-line tools are required." }),
+  "指定的 COLMAP 支援 CUDA，但未確認 Ceres GPU 求解器；Bundle Adjustment 會使用 CPU": msg({ message: "The selected COLMAP supports CUDA, but the Ceres GPU solver was not confirmed; Bundle Adjustment will use the CPU", comment: "Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability." }),
+  "指定的 COLMAP 未確認 CUDA 建置；特徵擷取與配對會使用 CPU，且無法啟用 Ceres GPU 求解器": msg({ message: "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled", comment: "Diagnostic warning for a COLMAP build without confirmed CUDA support." }),
+  "尚未選取可執行的 COLMAP；無法判定 COLMAP CUDA 建置能力": msg({ message: "No usable COLMAP executable is selected; COLMAP CUDA build capability cannot be determined", comment: "Diagnostic note when no COLMAP executable is available." }),
+  "無法讀取指定 COLMAP 的 version banner；能力判定採保守的未知/不可用": msg({ message: "Unable to read the selected COLMAP version banner; capabilities are conservatively treated as unknown or unavailable", comment: "Diagnostic warning when COLMAP capability probing cannot read the version banner." }),
+  "目前流程需要 COLMAP 4.1.1 或更新版本；較舊版本不支援完整的 rig 與全域對齊流程": msg({ message: "This workflow requires COLMAP 4.1.1 or newer; older versions do not support the complete rig and global alignment workflow", comment: "Diagnostic warning for an unsupported COLMAP version." }),
+  "此 FFmpeg build 未回報硬體加速元件；影格擷取將使用 CPU 解碼": msg({ message: "This FFmpeg build reported no hardware acceleration components; frame extraction will use CPU decoding", comment: "Diagnostic note when FFmpeg hardware decoding is unavailable." }),
+  "指定的 COLMAP 未同時提供 FeatureExtraction/FeatureMatching GPU 選項；特徵階段會使用 CPU": msg({ message: "The selected COLMAP does not provide both FeatureExtraction and FeatureMatching GPU options; feature stages will use the CPU", context: "backend diagnostic warning", comment: "FeatureExtraction and FeatureMatching are COLMAP command-line options; keep these names unchanged." }),
+  "指定的 COLMAP 不提供 global_mapper；只能使用增量對齊": msg({ message: "The selected COLMAP does not provide global_mapper; only incremental alignment can be used", context: "backend diagnostic warning", comment: "global_mapper is the COLMAP command name; incremental alignment is the fallback workflow." }),
+  "指定的 global_mapper 未提供 gravity rotation averaging 選項；global gravity 模式不可用": msg({ message: "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable", context: "backend diagnostic warning", comment: "Keep global_mapper and gravity rotation averaging as COLMAP technical terms." }),
+  "指定的 global_mapper 未提供 GPU global positioning 選項；global positioning 會使用 CPU": msg({ message: "The selected global_mapper does not provide GPU global positioning; global positioning will use the CPU", context: "backend diagnostic warning", comment: "Keep global_mapper and global positioning as COLMAP technical terms." }),
+  "指定的 global_mapper 未提供 GPU Ceres BA 選項；global Bundle Adjustment 會使用 CPU": msg({ message: "The selected global_mapper does not provide GPU Ceres BA; global Bundle Adjustment will use the CPU", context: "backend diagnostic warning", comment: "BA means Bundle Adjustment; keep global_mapper, Ceres, and Bundle Adjustment as technical terms." }),
+  "指定的 global_mapper 未提供 fixed-rotation/joint BA stage 選項；無法使用固定旋轉實驗模式": msg({ message: "The selected global_mapper does not provide the fixed-rotation/joint BA stage option; fixed-rotation experimental mode is unavailable", context: "backend diagnostic warning", comment: "Keep global_mapper and fixed-rotation/joint BA stage as COLMAP technical terms." }),
+  "指定的 COLMAP 不提供 view_graph_calibrator；global mapper 的 focal prior 必須由外部校正提供": msg({ message: "The selected COLMAP does not provide view_graph_calibrator; the global mapper's focal prior must be supplied by external calibration", context: "backend diagnostic warning", comment: "Keep view_graph_calibrator, global mapper, and focal prior as COLMAP technical terms." }),
+  "指定的 COLMAP 缺少 feature_extractor、matches_importer、mapper、model_converter 或 rig_configurator；雙鏡頭對齊流程無法完成": msg({ message: "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete", context: "backend diagnostic warning", comment: "Keep the five COLMAP command names unchanged; dual-camera alignment refers to the dual-fisheye rig workflow." }),
+  "FFmpeg 未回報硬體加速元件；影格擷取將使用 CPU 解碼": msg({ message: "FFmpeg reported no hardware acceleration components; frame extraction will use CPU decoding", context: "backend diagnostic warning", comment: "Diagnostic note when FFmpeg reports no hardware acceleration components." }),
 };
 
-function localiseUserMessage(value: string) {
+const STAGE_SUMMARY_TRANSLATIONS: Record<string, MessageDescriptor> = {
+  "Frame extraction: pending": msg({ message: "Frame extraction: Pending", comment: "Synthesized pipeline log summary for the frame-extraction stage." }),
+  "Frame extraction: running": msg({ message: "Frame extraction: Running", comment: "Synthesized pipeline log summary for the frame-extraction stage." }),
+  "Frame extraction: completed": msg({ message: "Frame extraction: Completed", comment: "Synthesized pipeline log summary for the frame-extraction stage." }),
+  "Frame extraction: cancelled": msg({ message: "Frame extraction: Cancelled", comment: "Synthesized pipeline log summary for the frame-extraction stage." }),
+  "Frame extraction: failed": msg({ message: "Frame extraction: Failed", comment: "Synthesized pipeline log summary for the frame-extraction stage." }),
+  "Masking: pending": msg({ message: "Masking: Pending", comment: "Synthesized pipeline log summary for the masking stage." }),
+  "Masking: running": msg({ message: "Masking: Running", comment: "Synthesized pipeline log summary for the masking stage." }),
+  "Masking: completed": msg({ message: "Masking: Completed", comment: "Synthesized pipeline log summary for the masking stage." }),
+  "Masking: cancelled": msg({ message: "Masking: Cancelled", comment: "Synthesized pipeline log summary for the masking stage." }),
+  "Masking: failed": msg({ message: "Masking: Failed", comment: "Synthesized pipeline log summary for the masking stage." }),
+  "Alignment: pending": msg({ message: "Alignment: Pending", comment: "Synthesized pipeline log summary for the alignment stage." }),
+  "Alignment: running": msg({ message: "Alignment: Running", comment: "Synthesized pipeline log summary for the alignment stage." }),
+  "Alignment: completed": msg({ message: "Alignment: Completed", comment: "Synthesized pipeline log summary for the alignment stage." }),
+  "Alignment: cancelled": msg({ message: "Alignment: Cancelled", comment: "Synthesized pipeline log summary for the alignment stage." }),
+  "Alignment: failed": msg({ message: "Alignment: Failed", comment: "Synthesized pipeline log summary for the alignment stage." }),
+};
+
+// Frontend-generated dynamic values use the same source strings as the `t`
+// calls in the view. Keeping descriptors here lets state store those source
+// strings without freezing the active locale into a task, toast, or doctor
+// report.
+const APP_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
+  "Platform not checked yet": msg({ message: "Platform not checked yet" }),
+  "Not checked yet": msg({ message: "Not checked yet" }),
+  "Run an environment check to confirm available capabilities": msg({ message: "Run an environment check to confirm available capabilities" }),
+  "Check the COLMAP executable and version": msg({ message: "Check the COLMAP executable and version" }),
+  "Check the COLMAP CUDA build and whether an NVIDIA GPU is available": msg({ message: "Check the COLMAP CUDA build and whether an NVIDIA GPU is available" }),
+  "Confirm FFmpeg is available on the system PATH": msg({ message: "Confirm FFmpeg is available on the system PATH" }),
+  "Confirm FFmpeg hardware decoding capabilities": msg({ message: "Confirm FFmpeg hardware decoding capabilities" }),
+  "Detected": msg({ message: "Detected" }),
+  "Supported": msg({ message: "Supported" }),
+  "Unsupported": msg({ message: "Unsupported" }),
+  "Not reported": msg({ message: "Not reported" }),
+  "Processing": msg({ message: "Processing" }),
+  "Pipeline log": msg({ message: "Pipeline log" }),
+  "Not run yet": msg({ message: "Not run yet" }),
+  "Unnamed reconstruction": msg({ message: "Unnamed reconstruction" }),
+  "Frame extraction": msg({ message: "Frame extraction" }),
+  "Masking": msg({ message: "Masking" }),
+  "Alignment": msg({ message: "Alignment" }),
+  "Not detected": msg({ message: "Not detected" }),
+  "CUDA build: Supported": msg({ message: "CUDA build: Supported" }),
+  "CUDA build: Unsupported": msg({ message: "CUDA build: Unsupported" }),
+  "SIFT extraction: Supported": msg({ message: "SIFT extraction: Supported" }),
+  "SIFT extraction: Unsupported": msg({ message: "SIFT extraction: Unsupported" }),
+  "SIFT matching: Supported": msg({ message: "SIFT matching: Supported" }),
+  "SIFT matching: Unsupported": msg({ message: "SIFT matching: Unsupported" }),
+  "Ceres BA: May be available (runtime CUDA/cuDSS check required)": msg({ message: "Ceres BA: May be available (runtime CUDA/cuDSS check required)" }),
+  "Ceres BA: CPU only": msg({ message: "Ceres BA: CPU only" }),
+  "Ceres BA: Not reported": msg({ message: "Ceres BA: Not reported" }),
+  "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA": msg({ message: "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA" }),
+  "CUDA acceleration available": msg({ message: "CUDA acceleration available" }),
+  "CUDA acceleration partially available": msg({ message: "CUDA acceleration partially available" }),
+  "No usable CUDA GPU detected": msg({ message: "No usable CUDA GPU detected" }),
+  "CUDA status not confirmed": msg({ message: "CUDA status not confirmed" }),
+  "Native dual-fisheye camera-rig alignment is available": msg({ message: "Native dual-fisheye camera-rig alignment is available" }),
+  "The executable was found, but the complete alignment workflow was not confirmed": msg({ message: "The executable was found, but the complete alignment workflow was not confirmed" }),
+  "The alignment stage will remain pending": msg({ message: "The alignment stage will remain pending" }),
+  "COLMAP alignment capability not confirmed": msg({ message: "COLMAP alignment capability not confirmed" }),
+  "COLMAP not detected": msg({ message: "COLMAP not detected" }),
+  "Executable: system PATH": msg({ message: "Executable: system PATH" }),
+  "COLMAP CUDA capabilities were checked": msg({ message: "COLMAP CUDA capabilities were checked" }),
+  "COLMAP CUDA capability check result": msg({ message: "COLMAP CUDA capability check result" }),
+  "FFmpeg tools incomplete": msg({ message: "FFmpeg tools incomplete" }),
+  "FFmpeg and ffprobe are both available": msg({ message: "FFmpeg and ffprobe are both available" }),
+  "Frame extraction requires FFmpeg and ffprobe": msg({ message: "Frame extraction requires FFmpeg and ffprobe" }),
+  "FFmpeg hardware acceleration supported": msg({ message: "FFmpeg hardware acceleration supported" }),
+  "FFmpeg hardware acceleration not enabled": msg({ message: "FFmpeg hardware acceleration not enabled" }),
+  "Hardware decoding status not reported": msg({ message: "Hardware decoding status not reported" }),
+  "Available": msg({ message: "Available" }),
+  "FFmpeg: Available": msg({ message: "FFmpeg: Available" }),
+  "FFmpeg: Not detected": msg({ message: "FFmpeg: Not detected" }),
+  "ffprobe: Available": msg({ message: "ffprobe: Available" }),
+  "ffprobe: Not detected": msg({ message: "ffprobe: Not detected" }),
+  "Unable to generate a first-frame preview": msg({ message: "Unable to generate a first-frame preview" }),
+  "Executable detected (full path hidden)": msg({ message: "Executable detected (full path hidden)" }),
+  "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU.": msg({ message: "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU." }),
+  [PREPARING_WORK_SOURCE]: msg({ message: "Preparing work", context: "pipeline stage status", comment: "Initial status stored while a backend stage is being prepared; keep this source value locale-independent in task state." }),
+  [BROWSER_PREVIEW_TASK_SOURCE]: msg({ message: "Browser preview task", context: "browser preview task", comment: "Fallback task name used when the app runs without the local Tauri runtime." }),
+  [BROWSER_PREVIEW_NOT_CONNECTED_SOURCE]: msg({ message: "Browser preview: not connected to the local runtime", context: "browser preview task warning", comment: "Warning stored on a browser-only preview task because it is not connected to the local Tauri runtime." }),
+  "Sources found; you can create a new reconstruction task": msg({ message: "Sources found; you can create a new reconstruction task" }),
+  "Source inspection results are not available yet": msg({ message: "Source inspection results are not available yet" }),
+  "New reconstruction task": msg({ message: "New reconstruction task" }),
+  "This task has started and can no longer be edited": msg({ message: "This task has started and can no longer be edited" }),
+  "Browser preview keeps the custom output path": msg({ message: "Browser preview keeps the custom output path" }),
+  "Browser preview does not read local project information": msg({ message: "Browser preview does not read local project information" }),
+  "No loadable project information was found": msg({ message: "No loadable project information was found" }),
+  "Failed to open project": msg({ message: "Failed to open project" }),
+  "Browser preview is not connected to the local runtime": msg({ message: "Browser preview is not connected to the local runtime" }),
+  "Diagnostics copied; you can paste them into a bug report": msg({ message: "Diagnostics copied; you can paste them into a bug report" }),
+  "Unable to copy diagnostics; check clipboard permissions": msg({ message: "Unable to copy diagnostics; check clipboard permissions" }),
+  "The COLMAP path is used by the local Windows runtime": msg({ message: "The COLMAP path is used by the local Windows runtime" }),
+  "Browser preview does not read local LUT files; paste a .cube path directly": msg({ message: "Browser preview does not read local LUT files; paste a .cube path directly" }),
+  "Unable to start the stage automatically; check the runtime message": msg({ message: "Unable to start the stage automatically; check the runtime message" }),
+  "Select at least one OSV or dual-fisheye source first": msg({ message: "Select at least one OSV or dual-fisheye source first" }),
+  "The custom LUT must be a .cube file": msg({ message: "The custom LUT must be a .cube file" }),
+  "Failed to create the task; check the runtime message": msg({ message: "Failed to create the task; check the runtime message" }),
+  "Keep at least one source": msg({ message: "Keep at least one source" }),
+  "Preview task updated": msg({ message: "Preview task updated" }),
+  "Failed to save task changes; check the runtime message": msg({ message: "Failed to save task changes; check the runtime message" }),
+  "Queued task updated": msg({ message: "Queued task updated" }),
+  "This task has started and cannot be removed": msg({ message: "This task has started and cannot be removed" }),
+  "Task removed from the queue; the output folder is kept": msg({ message: "Task removed from the queue; the output folder is kept" }),
+  "This task has already started": msg({ message: "This task has already started" }),
+  "Task added to the run queue": msg({ message: "Task added to the run queue" }),
+  "Browser preview does not run backend work": msg({ message: "Browser preview does not run backend work" }),
+  "A processing stage is already running for this task; please wait": msg({ message: "A processing stage is already running for this task; please wait" }),
+  "Unable to start the stage; check the runtime message": msg({ message: "Unable to start the stage; check the runtime message" }),
+  "Browser preview does not cancel backend work": msg({ message: "Browser preview does not cancel backend work" }),
+  "Cancelled; you can resume later": msg({ message: "Cancelled; you can resume later" }),
+  "Automatic pipeline completed frame extraction, masking, and alignment": msg({ message: "Automatic pipeline completed frame extraction, masking, and alignment" }),
+  "A processing stage is already running; please wait": msg({ message: "A processing stage is already running; please wait" }),
+};
+
+function localiseUserMessage(value: string): string {
   const exact = USER_MESSAGE_TRANSLATIONS[value];
-  if (exact) return exact;
-  return value
-    .replace(/cancelled before interval (\d+)/g, "已在第 $1 個區間前取消")
-    .replace(/scoring (\d+) paired candidates/g, "正在評分 $1 組配對候選影格")
-    .replace(/(\d+) masks failed; see pipeline log/g, "$1 個遮罩處理失敗，請查看處理紀錄")
-    .replace(/System ffmpeg was not found on PATH/g, "在系統 PATH 中找不到 FFmpeg")
-    .replace(/System ffprobe was not found on PATH/g, "在系統 PATH 中找不到 ffprobe")
-    .replace(/COLMAP was not found on PATH/g, "在系統 PATH 中找不到 COLMAP")
-    .replace(/COLMAP bootstrap did not produce sparse\/0/g, "COLMAP 初始建模未產生 sparse/0")
-    .replace(/^invalid extraction input: /, "影格擷取輸入無效：")
-    .replace(/^extraction image error: /, "影格擷取影像錯誤：")
-    .replace(/^extraction I\/O error: /, "影格擷取檔案錯誤：")
-    .replace(/^invalid mask input: /, "遮罩輸入無效：")
-    .replace(/^mask model error: /, "遮罩模型錯誤：")
-    .replace(/^mask inference error: /, "遮罩推論錯誤：")
-    .replace(/^mask image error: /, "遮罩影像錯誤：")
-    .replace(/^mask I\/O error: /, "遮罩檔案錯誤：")
-    .replace(/^mask operation cancelled$/, "遮罩處理已取消");
+  if (exact) return translate(exact);
+  const stageSummary = STAGE_SUMMARY_TRANSLATIONS[value];
+  if (stageSummary) return translate(stageSummary);
+  const appMessage = APP_MESSAGE_TRANSLATIONS[value];
+  if (appMessage) return translate(appMessage);
+  const translated = value
+    .replace(/cancelled before interval (\d+)/g, (_match, interval) => t`Cancelled before interval ${interval}`)
+    .replace(/scoring (\d+) paired candidates/g, (_match, count) => t`Scoring ${count} paired candidates`)
+    .replace(/FFmpeg 有 (\d+) 張候選影格未回報 PTS，已使用 candidate FPS 時間估算/g, (_match, count) => t({
+      message: `FFmpeg had ${count} candidate frames without PTS; estimated timing using candidate FPS`,
+      context: "backend progress message",
+      comment: "PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.",
+    }))
+    .replace(/FFmpeg 記憶體候選硬體與軟體解碼皆失敗：硬體錯誤：(.+?)；軟體錯誤：(.+)$/g, (_match, hardwareError, softwareError) => t({
+      message: `Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: ${localiseTechnicalErrorDetail(hardwareError)}; software error: ${localiseTechnicalErrorDetail(softwareError)}`,
+      context: "backend error",
+      comment: "The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.",
+    }))
+    .replace(/FFmpeg 硬體解碼失敗後，無法準備軟體解碼回退：(.+)$/g, (_match, error) => t({
+      message: `After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: ${localiseTechnicalErrorDetail(error)}`,
+      context: "backend error",
+      comment: "Fallback means retrying the same operation with software decoding after hardware decoding fails.",
+    }))
+    .replace(/FFmpeg 候選影格硬體與軟體解碼皆失敗：硬體錯誤：(.+?)；軟體錯誤：(.+)$/g, (_match, hardwareError, softwareError) => {
+      const cleanup = /^(.*)；且無法清理不完整輸出：(.+)$/.exec(softwareError);
+      if (cleanup) {
+        return t({
+          message: `Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: ${localiseTechnicalErrorDetail(hardwareError)}; software error: ${localiseTechnicalErrorDetail(cleanup[1])}; cleanup also failed for incomplete output: ${localiseTechnicalErrorDetail(cleanup[2])}`,
+          context: "backend error",
+          comment: "The candidate-frame decoder failed on both paths and could not clean up its incomplete output.",
+        });
+      }
+      return t({
+        message: `Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: ${localiseTechnicalErrorDetail(hardwareError)}; software error: ${localiseTechnicalErrorDetail(softwareError)}`,
+        context: "backend error",
+        comment: "The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.",
+      });
+    })
+    .replace(/^(.+) 未包含兩路可辨識的雙魚眼 video stream$/g, (_match, source) => t({
+      message: `${source} does not contain two recognizable dual-fisheye video streams`,
+      context: "source validation error",
+      comment: "A source must expose two recognizable video streams for the dual-fisheye workflow.",
+    }))
+    .replace(/^無法讀回來源 (\d+) 的標準化 telemetry，IMU keyframe term 已停用：(.+)$/g, (_match, source, error) => t({
+      message: `Unable to read normalized telemetry for source ${source}; the IMU keyframe term was disabled: ${localiseTechnicalErrorDetail(error)}`,
+      context: "backend diagnostic warning",
+      comment: "Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.",
+    }))
+    .replace(/^無法解析來源 (\d+) 的標準化 telemetry；改用 visual novelty＋max gap：(.+)$/g, (_match, source, error) => t({
+      message: `Unable to parse normalized telemetry for source ${source}; using visual novelty and the maximum-gap fallback: ${localiseTechnicalErrorDetail(error)}`,
+      context: "backend diagnostic warning",
+      comment: "Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.",
+    }))
+    .replace(/已在第\s*(\d+)\s*個區間前取消/g, (_match, interval) => t`Cancelled before processing interval ${interval}`)
+    .replace(/正在評分\s*(\d+)\s*組配對候選影格/g, (_match, count) => t`Scoring ${count} paired candidates`)
+    .replace(/首次使用，正在下載\s*(.+?)\s*模型（(\d+)%）/g, (_match, model, percent) => t`First use: downloading the ${model} model (${percent}%)`)
+    .replace(/模型已載入\s*(.+?)，CPU 推論回退已停用/g, (_match, provider) => t`Model loaded with ${provider}; CPU inference fallback is disabled`)
+    .replace(/正在同步解碼並評分來源\s*(\d+)（已處理\s*(\d+)\s*組候選影格）/g, (_match, source, count) => t`Decoding and scoring source ${source} (${count} candidate pairs processed)`)
+    .replace(/已完成配對區塊\s*(\d+)\s*\/\s*(\d+)/g, (_match, current, total) => t`Pairing block ${current} / ${total} completed`)
+    .replace(/正在處理配對區塊\s*(\d+)\s*\/\s*(\d+)/g, (_match, current, total) => t`Processing pairing block ${current} / ${total}`)
+    .replace(/對齊處理完成：已註冊\s*(\d+)\s*\/\s*(\d+)\s*組相機組影格（([\d.]+)%）/g, (_match, registered, total, percentage) => t`Alignment completed: ${registered} / ${total} camera-rig frames registered (${percentage}%)`)
+    .replace(/無法讀取來源影格\s*(.+?)：(.+)$/g, (_match, frame, error) => t`Unable to read source frame ${frame}: ${error}`)
+    .replace(/無法建立暫存影格\s*(.+?)：(.+)$/g, (_match, frame, error) => t`Unable to create temporary frame ${frame}: ${error}`)
+    .replace(/無法複製影格\s*(.+?) 至 (.+?)：(.+)$/g, (_match, source, destination, error) => t`Unable to copy frame ${source} to ${destination}: ${error}`)
+    .replace(/無法同步暫存影格\s*(.+?)：(.+)$/g, (_match, frame, error) => t`Unable to sync temporary frame ${frame}: ${error}`)
+    .replace(/無法建立暫存 metadata\s*(.+?)：(.+)$/g, (_match, path, error) => t`Unable to create temporary metadata ${path}: ${error}`)
+    .replace(/無法寫入暫存 metadata\s*(.+?)：(.+)$/g, (_match, path, error) => t`Unable to write temporary metadata ${path}: ${error}`)
+    .replace(/無法同步暫存 metadata\s*(.+?)：(.+)$/g, (_match, path, error) => t`Unable to sync temporary metadata ${path}: ${error}`)
+    .replace(/COLMAP (.+?) GPU 執行失敗，(?:移除不完整輸出並)?改用 CPU 重試：(.+)$/g, (_match, component, error) => t`COLMAP ${component} GPU execution failed; retrying with CPU: ${error}`)
+    .replace(/COLMAP (.+?) 的 Ceres GPU 不可用，已由 Ceres 改用 CPU：(.+)$/g, (_match, component, error) => t`COLMAP ${component} Ceres GPU is unavailable; Ceres switched to CPU: ${error}`)
+    .replace(/FFmpeg 未產生任何記憶體候選影格/g, () => t`FFmpeg did not produce any in-memory candidate frames`)
+    .replace(/FFmpeg rawvideo 在 frame 中途結束：收到 (\d+)\/(\d+) bytes/g, (_match, received, expected) => t`FFmpeg rawvideo ended mid-frame: received ${received}/${expected} bytes`)
+    .replace(/讀取 FFmpeg rawvideo 失敗：(.+)$/g, (_match, error) => t`Failed to read FFmpeg rawvideo: ${error}`)
+    .replace(/FFmpeg 硬體解碼(?:記憶體候選|候選影格)失敗，(?:將)?改用 CPU(?: 軟體解碼)?重試：(.+)$/g, (_match, error) => t`FFmpeg hardware decoding failed; retrying with CPU software decoding: ${error}`)
+    .replace(/FFmpeg 候選影格已安全回退至 CPU 軟體解碼/g, () => t`FFmpeg candidate frames fell back safely to CPU software decoding`)
+    .replace(/FFmpeg 產生 (\d+) 張同步影格，但預期選定 (\d+) 張/g, (_match, actual, expected) => t`FFmpeg produced ${actual} synchronized frames, but ${expected} were expected`)
+    .replace(/來源 (\d+) 色彩處理：(.+)$/g, (_match, source, warning) => t`Source ${source} color processing: ${warning}`)
+    .replace(/來源 (\d+) 已沿用記憶體評分 checkpoint/g, (_match, source) => t`Source ${source} reused the in-memory scoring checkpoint`)
+    .replace(/正在記憶體中同步解碼並評分來源 (\d+) 的雙魚眼候選影格/g, (_match, source) => t`Decoding and scoring source ${source} dual-fisheye candidates in memory`)
+    .replace(/來源 (\d+) 已完成 (\d+) 組候選影格評分/g, (_match, source, count) => t`Source ${source} completed scoring ${count} candidate pairs`)
+    .replace(/來源 (\d+) 的動態 keyframe 剪枝保留 (\d+) \/ (\d+) 組 base-FPS 候選（移除 (\d+) 組）/g, (_match, source, kept, total, removed) => t`Source ${source} dynamic keyframe pruning kept ${kept} / ${total} base-FPS candidates (${removed} removed)`)
+    .replace(/已完成\s*(\d+)\s*個來源/g, (_match, count) => t`${count} sources completed`)
+    .replace(/已處理\s*(\d+)\s*組候選影格/g, (_match, count) => t`${count} candidate pairs processed`)
+    .replace(/已寫入\s*(\d+)\s*個遮罩/g, (_match, count) => t`${count} masks written`)
+    .replace(/(\d+)\s*個遮罩處理失敗，請查看處理紀錄/g, (_match, count) => t`${count} masks failed; see the pipeline log`)
+    .replace(/(\d+) masks failed; see pipeline log/g, (_match, count) => t`${count} masks failed; see the pipeline log`)
+    .replace(/^(\d+) sources · (\d+) passed inspection$/g, (_match, total, valid) => t`${total} sources · ${valid} passed inspection`)
+    .replace(/^(\d+) sources · browser preview$/g, (_match, count) => t`${count} sources · browser preview`)
+    .replace(/^(\d+) sources$/g, (_match, count) => t`${count} sources`)
+    .replace(/^Loaded resumable project (.+)$/g, (_match, name) => t`Loaded resumable project ${name}`)
+    .replace(/^Loaded unfinished project with (\d+) warnings$/g, (_match, count) => t`Loaded unfinished project with ${count} warnings`)
+    .replace(/^Loaded unfinished project: (.+)$/g, (_match, name) => t`Loaded unfinished project: ${name}`)
+    .replace(/^Opened (.+)$/g, (_match, name) => t`Opened ${name}`)
+    .replace(/^Created (.+)$/g, (_match, name) => t`Created ${name}`)
+    .replace(/^Preview task added: (.+)$/g, (_match, name) => t`Preview task added: ${name}`)
+    .replace(/^((?:CUDA build|SIFT extraction|SIFT matching|Alignment workflow)): (Supported|Unsupported|Not reported)$/g, (_match, label, status) => t`${label}: ${localiseUserMessage(status)}`)
+    .replace(/^Ceres BA: (May be available \(runtime CUDA\/cuDSS check required\)|CPU only|Not reported)$/g, (_match, status) => t`Ceres BA: ${localiseUserMessage(status)}`)
+    .replace(/^(FFmpeg|ffprobe): (Available|Not detected)$/g, (_match, tool, status) => t`${tool}: ${localiseUserMessage(status)}`)
+    .replace(/^(.+) · FFmpeg hardware decoding capability not reported$/g, (_match, platform) => t`${platform} · FFmpeg hardware decoding capability not reported`)
+    .replace(/^(.+): (enabled in build|Unsupported)$/g, (_match, label, status) => t`${label}: ${localiseUserMessage(status)}`)
+    .replace(/^Complete prerequisite: (extract|mask|align)$/g, (_match, stageKey: StageKey) => t({
+      message: `Complete ${stageLabel(STAGES.find((stage) => stage.key === stageKey))} first`,
+      comment: "Shown when a pipeline stage is blocked by an incomplete prerequisite stage.",
+    }))
+    .replace(/影格擷取需要系統已安裝 FFmpeg 與 ffprobe/g, () => t`Frame extraction requires both system FFmpeg and ffprobe`)
+    .replace(/找不到 COLMAP；對齊階段會維持可繼續的待執行狀態/g, () => t`COLMAP was not found; alignment will remain pending and resumable`)
+    .replace(/FFmpeg 候選影格已安全回退至 CPU 軟體解碼/g, () => t`FFmpeg candidate frames fell back safely to CPU software decoding`)
+    .replace(/指定的 COLMAP 路徑不存在或不是檔案/g, () => t`The selected COLMAP path does not exist or is not a file`)
+    .replace(/指定的 COLMAP 未在 version\/help banner 標示 CUDA；將使用 CPU 特徵擷取與配對/g, () => t`The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used`)
+    .replace(/未偵測到可供 COLMAP 使用的 NVIDIA GPU；將使用 CPU/g, () => t`No NVIDIA GPU usable by COLMAP was detected; the CPU will be used`)
+    .replace(/影格擷取將使用 CPU 解碼/g, () => t`Frame extraction will use CPU decoding`)
+    .replace(/System ffmpeg was not found on PATH/g, () => t`System FFmpeg was not found on PATH`)
+    .replace(/System ffprobe was not found on PATH/g, () => t`System ffprobe was not found on PATH`)
+    .replace(/COLMAP was not found on PATH/g, () => t`COLMAP was not found on PATH`)
+    .replace(/COLMAP bootstrap did not produce sparse\/0/g, () => t`COLMAP bootstrap did not produce sparse/0`)
+    .replace(/^invalid extraction input: /, () => t`Invalid extraction input: `)
+    .replace(/^extraction image error: /, () => t`Extraction image error: `)
+    .replace(/^extraction I\/O error: /, () => t`Extraction I/O error: `)
+    .replace(/^invalid mask input: /, () => t`Invalid mask input: `)
+    .replace(/^mask model error: /, () => t`Mask model error: `)
+    .replace(/^mask inference error: /, () => t`Mask inference error: `)
+    .replace(/^mask image error: /, () => t`Mask image error: `)
+    .replace(/^mask I\/O error: /, () => t`Mask I/O error: `)
+    .replace(/^mask operation cancelled$/, () => t`Mask operation cancelled`)
+    .replace(/^無效的擷取輸入：\s*/g, () => t`Invalid extraction input: `)
+    .replace(/^擷取影像錯誤：\s*/g, () => t`Extraction image error: `)
+    .replace(/^擷取 I\/O 錯誤：\s*/g, () => t`Extraction I/O error: `)
+    .replace(/^無效的遮罩輸入：\s*/g, () => t`Invalid mask input: `)
+    .replace(/^遮罩模型錯誤：\s*/g, () => t`Mask model error: `)
+    .replace(/^遮罩推論錯誤：\s*/g, () => t`Mask inference error: `)
+    .replace(/^遮罩影像錯誤：\s*/g, () => t`Mask image error: `)
+    .replace(/^遮罩 I\/O 錯誤：\s*/g, () => t`Mask I/O error: `)
+    .replace(/^遮罩操作已取消$/g, () => t`Mask operation cancelled`)
+    .replace(/^無法檢查專案根目錄：(.+)$/g, (_match, error) => t({
+      message: `Unable to inspect the project root: ${localiseTechnicalErrorDetail(error)}`,
+      context: "project edit error",
+      comment: "Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.",
+    }))
+    .replace(/^儲存任務修改失敗，輸出資料夾已復原：(.+)$/g, (_match, error) => t({
+      message: `Saving task changes failed; the output folder was restored: ${localiseTechnicalErrorDetail(error)}`,
+      context: "project edit error",
+      comment: "The rename/save operation failed, but the output folder was rolled back successfully.",
+    }))
+    .replace(/^儲存任務修改失敗，且輸出資料夾無法復原：(.+)；(.+)$/g, (_match, error, rollbackError) => t({
+      message: `Saving task changes failed, and the output folder could not be restored: ${localiseTechnicalErrorDetail(error)}; rollback error: ${localiseTechnicalErrorDetail(rollbackError)}`,
+      context: "project edit error",
+      comment: "Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.",
+    }));
+  if (translated !== value) {
+    // Exact and parameterized mappings may legitimately translate to CJK in
+    // Simplified Chinese or Japanese. Keep every successful translation.
+    return translated;
+  }
+  // Only an unchanged CJK source is an unmatched backend message. This keeps
+  // legitimate CJK translations from being mistaken for untranslated raw
+  // backend output.
+  if (getLocale() !== "zh-TW" && containsCjk(value)) {
+    return translate(isLikelyBackendError(value) ? UNKNOWN_BACKEND_ERROR : HIDDEN_BACKEND_STATUS);
+  }
+  if (getLocale() !== "en" && getLocale() !== "zh-TW" && isLikelyBackendError(value)) {
+    return translate(UNKNOWN_BACKEND_ERROR);
+  }
+  return translated;
+}
+
+function backendErrorMessage(error: unknown): string {
+  const raw = typeof error === "string"
+    ? error.trim()
+    : error instanceof Error
+      ? error.message.trim()
+      : "";
+  if (!raw) return translate(UNKNOWN_BACKEND_ERROR);
+  const translated = localiseUserMessage(raw);
+  if (translated !== raw) return translated;
+  // English may retain raw technical diagnostics, while Traditional Chinese
+  // is the backend source locale. Other locales use the generic message so a
+  // Tauri/Rust error cannot leak untranslated Chinese into a toast.
+  if (getLocale() === "en" || getLocale() === "zh-TW") return raw;
+  return translate(UNKNOWN_BACKEND_ERROR);
 }
 
 function platformLabel(value: string) {
@@ -471,57 +910,57 @@ function normaliseLogLevel(value: unknown): TaskLogLevel {
   return "info";
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  starting: "準備",
-  scanning: "掃描",
-  scoring: "評分候選",
-  "selecting-in-memory": "記憶體候選評分",
-  "decoding-full-resolution": "原始解析度解碼",
-  committing: "寫入輸出",
-  masking: "遮罩推論",
-  matching: "影像配對",
-  "feature-extraction": "特徵擷取",
-  bootstrap: "初始建模",
-  "final-mapping": "最終重建",
-  rig: "相機組估計",
-  completed: "完成",
-  cancelled: "已取消",
-  failed: "失敗",
-  summary: "階段摘要",
+const PHASE_LABELS: Record<string, MessageDescriptor> = {
+  starting: msg({ message: "Preparing", context: "pipeline phase", comment: "Short label for the preparation phase." }),
+  scanning: msg({ message: "Scanning", context: "pipeline phase", comment: "Short label for a scan phase." }),
+  scoring: msg({ message: "Scoring candidates", context: "pipeline phase", comment: "Short label for scoring candidate frames." }),
+  "selecting-in-memory": msg({ message: "Scoring in-memory candidates", context: "pipeline phase", comment: "Short label for candidate scoring in memory." }),
+  "decoding-full-resolution": msg({ message: "Decoding full resolution", context: "pipeline phase", comment: "Short label for full-resolution decoding." }),
+  committing: msg({ message: "Committing output", context: "pipeline phase", comment: "Short label for writing output files." }),
+  masking: msg({ message: "Mask inference", context: "pipeline phase", comment: "Short label for running mask inference." }),
+  matching: msg({ message: "Image matching", context: "pipeline phase", comment: "Short label for matching images." }),
+  "feature-extraction": msg({ message: "Feature extraction", context: "pipeline phase", comment: "Short label for extracting image features." }),
+  bootstrap: msg({ message: "Bootstrap reconstruction", context: "pipeline phase", comment: "Short label for the initial reconstruction bootstrap." }),
+  "final-mapping": msg({ message: "Final reconstruction", context: "pipeline phase", comment: "Short label for the final mapping/reconstruction pass." }),
+  rig: msg({ message: "Camera-rig estimation", context: "pipeline phase", comment: "Short label for estimating the camera rig." }),
+  completed: msg({ message: "Completed", context: "pipeline phase status", comment: "Short completed status label." }),
+  cancelled: msg({ message: "Cancelled", context: "pipeline phase status", comment: "Short cancelled status label." }),
+  failed: msg({ message: "Failed", context: "pipeline phase status", comment: "Short failed status label." }),
+  summary: msg({ message: "Stage summary", context: "pipeline phase", comment: "Short label for a stage summary." }),
 };
 
 function phaseLabel(value?: string) {
-  if (!value) return "處理中";
-  return PHASE_LABELS[value] ?? value.replace(/[-_]+/g, " ");
+  if (!value) return t`Processing`;
+  const label = PHASE_LABELS[value];
+  return label ? translate(label) : value.replace(/[-_]+/g, " ");
 }
 
 function formatDuration(value?: number) {
-  if (!Number.isFinite(value) || value === undefined || value < 0) return "尚未計時";
+  if (!Number.isFinite(value) || value === undefined || value < 0) return t`Not timed yet`;
   const totalSeconds = Math.max(0, Math.floor(value / 1000));
-  if (totalSeconds < 1) return "不到 1 秒";
+  if (totalSeconds < 1) return t`Less than 1 second`;
   const seconds = totalSeconds % 60;
   const minutes = Math.floor(totalSeconds / 60) % 60;
   const hours = Math.floor(totalSeconds / 3600);
-  if (hours > 0) return `${hours} 小時 ${String(minutes).padStart(2, "0")} 分`;
-  if (minutes > 0) return `${minutes} 分 ${String(seconds).padStart(2, "0")} 秒`;
-  return `${seconds} 秒`;
+  if (hours > 0) return t`${hours} hr ${String(minutes).padStart(2, "0")} min`;
+  if (minutes > 0) return t`${minutes} min ${String(seconds).padStart(2, "0")} sec`;
+  return t`${seconds} sec`;
 }
 
 function formatTimestamp(value?: number, includeDate = false) {
-  if (!value) return "尚未記錄";
+  if (!value) return t`Not recorded yet`;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "尚未記錄";
-  return date.toLocaleString("zh-TW", includeDate
+  if (Number.isNaN(date.getTime())) return t`Not recorded yet`;
+  return date.toLocaleString(getLocale(), includeDate
     ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }
     : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function stageLogStatus(status: StageStatus) {
-  if (status === "completed") return "已完成";
-  if (status === "cancelled") return "已取消";
-  if (status === "failed") return "失敗";
-  if (status === "running") return "執行中";
-  return "待執行";
+function formatDoctorCheckedAt(value: string) {
+  if (value === "Not checked yet") return localiseUserMessage(value);
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  return new Date(parsed).toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 function stageSummaryLogs(stages: Record<StageKey, StageState>): TaskLog[] {
@@ -536,7 +975,9 @@ function stageSummaryLogs(stages: Record<StageKey, StageState>): TaskLog[] {
       stage: key,
       phase: "summary",
       level: stage.status === "failed" ? "error" as const : stage.status === "cancelled" ? "warning" as const : "info" as const,
-      message: `${label}：${stageLogStatus(stage.status)}`,
+      // Keep this synthesized log locale independent too. The stage/status
+      // pair is translated by localiseUserMessage when the row is rendered.
+      message: `${label.message ?? key}: ${stage.status}`,
       timestampMs: timestamp ?? Date.now(),
       startedAtMs: stage.startedAtMs,
       finishedAtMs: stage.finishedAtMs,
@@ -549,7 +990,9 @@ function parseTaskLog(value: unknown, index: number): TaskLog | null {
   if (!value || typeof value !== "object") return null;
   const body = value as Record<string, unknown>;
   const time = timestampMs(body.timestampMs ?? body.timestamp ?? body.updatedAt) ?? Date.now();
-  const message = typeof body.message === "string" && body.message ? localiseUserMessage(body.message) : "處理紀錄";
+  // Persist the backend's raw message. Translating while parsing would make
+  // old logs stick to whichever locale was active when the project loaded.
+  const message = typeof body.message === "string" && body.message ? body.message : "Pipeline log";
   const stage = normaliseStage(body.stage);
   const kind: TaskLogKind = body.kind === "summary" || body.kind === "message" ? body.kind : "progress";
   const completed = nonNegativeInteger(body.completed);
@@ -580,15 +1023,21 @@ function parseTaskLogs(value: unknown, stages: Record<StageKey, StageState>): Ta
 }
 
 function taskStageLabel(stage?: StageKey) {
-  return STAGES.find((item) => item.key === stage)?.label ?? "系統";
+  return stageLabel(STAGES.find((item) => item.key === stage));
 }
 
 function logCountLabel(completed?: number, total?: number) {
   const hasCompleted = completed !== undefined && completed > 0;
   const hasTotal = total !== undefined && total > 0;
-  if (completed !== undefined && hasTotal) return `${completed.toLocaleString("zh-TW")} / ${total.toLocaleString("zh-TW")}`;
-  if (hasTotal) return `總計 ${total.toLocaleString("zh-TW")}`;
-  if (hasCompleted) return `已處理 ${completed.toLocaleString("zh-TW")}`;
+  if (completed !== undefined && hasTotal) return t`${completed.toLocaleString(getLocale())} / ${total.toLocaleString(getLocale())}`;
+  if (hasTotal) return t({
+    message: plural(total, { one: "Total #", other: "Total #" }),
+    comment: "Count of all items reported by a pipeline stage.",
+  });
+  if (hasCompleted) return t({
+    message: plural(completed, { one: "Processed #", other: "Processed #" }),
+    comment: "Count of items already processed by a pipeline stage.",
+  });
   return undefined;
 }
 
@@ -617,11 +1066,21 @@ function taskHasNotStarted(task: Task) {
 
 function taskProgressSummary(task: Task) {
   const runningIndex = STAGES.findIndex(({ key }) => task.stages[key].status === "running");
-  if (runningIndex >= 0) return `第 ${runningIndex + 1} / ${STAGES.length} 階段 · ${STAGES[runningIndex].label}`;
+  if (runningIndex >= 0) {
+    const label = stageLabel(STAGES[runningIndex]);
+    return t`Stage ${runningIndex + 1} of ${STAGES.length} · ${label}`;
+  }
   const interruptedIndex = STAGES.findIndex(({ key }) => ["failed", "cancelled"].includes(task.stages[key].status));
-  if (interruptedIndex >= 0) return `停在第 ${interruptedIndex + 1} / ${STAGES.length} 階段 · ${STAGES[interruptedIndex].label}`;
+  if (interruptedIndex >= 0) {
+    const label = stageLabel(STAGES[interruptedIndex]);
+    return t`Stopped at stage ${interruptedIndex + 1} of ${STAGES.length} · ${label}`;
+  }
   const nextIndex = STAGES.findIndex(({ key }) => task.stages[key].status !== "completed");
-  return nextIndex >= 0 ? `等待第 ${nextIndex + 1} / ${STAGES.length} 階段 · ${STAGES[nextIndex].label}` : `${STAGES.length} / ${STAGES.length} 階段完成`;
+  if (nextIndex >= 0) {
+    const label = stageLabel(STAGES[nextIndex]);
+    return t`Waiting for stage ${nextIndex + 1} of ${STAGES.length} · ${label}`;
+  }
+  return t`${STAGES.length} of ${STAGES.length} stages complete`;
 }
 
 function taskCurrentStage(task: Task) {
@@ -633,11 +1092,15 @@ function taskCurrentStage(task: Task) {
   return next ?? STAGES[STAGES.length - 1];
 }
 
-function stagePrerequisiteLabel(task: Task, stageKey: StageKey) {
+function stagePrerequisiteKey(task: Task, stageKey: StageKey): StageKey | undefined {
   const stageIndex = STAGES.findIndex(({ key }) => key === stageKey);
   if (stageIndex <= 0) return undefined;
-  const prerequisite = STAGES.slice(0, stageIndex).find(({ key }) => task.stages[key].status !== "completed");
-  return prerequisite?.label;
+  return STAGES.slice(0, stageIndex).find(({ key }) => task.stages[key].status !== "completed")?.key;
+}
+
+function stagePrerequisiteLabel(task: Task, stageKey: StageKey) {
+  const prerequisiteKey = stagePrerequisiteKey(task, stageKey);
+  return prerequisiteKey ? stageLabel(STAGES.find(({ key }) => key === prerequisiteKey)) : undefined;
 }
 
 function taskHasRunningStage(task: Task, except?: StageKey) {
@@ -649,11 +1112,11 @@ function stageActionState(task: Task, stageKey: StageKey, globallyRunning: boole
   const prerequisite = stagePrerequisiteLabel(task, stageKey);
   const blocked = Boolean(prerequisite) || taskHasRunningStage(task, stageKey) || (globallyRunning && current.status !== "running");
   const label = current.status === "running"
-    ? `停止${STAGES.find((stage) => stage.key === stageKey)?.label ?? "階段"}`
+    ? t`Stop ${stageLabel(STAGES.find((stage) => stage.key === stageKey))}`
     : prerequisite
-      ? `等待${prerequisite}完成`
+      ? t`Wait for ${prerequisite} to finish`
       : blocked
-        ? "等待目前階段完成"
+        ? t`Wait for the current stage to finish`
         : stageAction(current.status);
   return { blocked, label, prerequisite };
 }
@@ -689,7 +1152,7 @@ function cloneStages(raw: unknown): Record<StageKey, StageState> {
     result[stage.key] = {
       status: normaliseStageStatus(item.status),
       progress: toProgress(item.progress),
-      message: typeof item.message === "string" && item.message ? localiseUserMessage(item.message) : "尚未執行",
+      message: typeof item.message === "string" && item.message ? item.message : "Not run yet",
       jobId: typeof item.jobId === "string" ? item.jobId : undefined,
       phase: typeof item.phase === "string" && item.phase ? item.phase : undefined,
       completed: nonNegativeInteger(item.completed),
@@ -714,14 +1177,14 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
   const stages = cloneStages(body.stages);
   return {
     projectId: typeof body.projectId === "string" ? body.projectId : `project-${Date.now()}`,
-    name: typeof body.name === "string" && body.name ? body.name : outputPath.split(/[\\/]/).filter(Boolean).pop() || "未命名重建",
+    name: typeof body.name === "string" && body.name ? body.name : outputPath.split(/[\\/]/).filter(Boolean).pop() || "Unnamed reconstruction",
     rootPath: typeof body.rootPath === "string" ? body.rootPath : outputPath,
     inputPaths,
     outputPath,
     settings: normalisePipelineSettings(body.settings),
     stages,
     logs: parseTaskLogs(body.logs ?? body.pipelineLogs, stages),
-    warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [],
+    warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => String(warning)) : [],
     createdAt: typeof body.createdAt === "string" ? body.createdAt : undefined,
     updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : undefined,
   };
@@ -747,7 +1210,7 @@ function readProgress(payload: unknown): ProgressEventPayload {
     stage: normaliseStage(body.stage ?? body.name),
     progress: body.progress !== undefined || body.percent !== undefined ? toProgress(body.progress ?? body.percent) : undefined,
     status: body.status !== undefined || body.state !== undefined ? normaliseStageStatus(body.status ?? body.state) : undefined,
-    message: typeof body.message === "string" ? localiseUserMessage(body.message) : undefined,
+    message: typeof body.message === "string" ? body.message : undefined,
     jobId: typeof body.jobId === "string" ? body.jobId : undefined,
     phase: typeof body.phase === "string" && body.phase ? body.phase : undefined,
     completed: nonNegativeInteger(typeof rawCompleted === "boolean" ? undefined : rawCompleted),
@@ -764,7 +1227,7 @@ function readLogEvent(payload: unknown): LogEventPayload {
   return {
     jobId: typeof body.jobId === "string" ? body.jobId : undefined,
     level: normaliseLogLevel(body.level),
-    message: typeof body.message === "string" ? localiseUserMessage(body.message) : String(payload ?? "處理紀錄"),
+    message: typeof body.message === "string" ? body.message : String(payload ?? "Pipeline log"),
     stage: normaliseStage(body.stage),
     phase: typeof body.phase === "string" && body.phase ? body.phase : undefined,
     timestampMs: timestampMs(body.timestampMs ?? body.timestamp) ?? Date.now(),
@@ -779,12 +1242,15 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const body = value as Record<string, unknown>;
   const tools = Array.isArray(body.tools) ? body.tools : [];
   const accelerators = Array.isArray(body.accelerators) ? body.accelerators : [];
-  const warnings = Array.isArray(body.warnings) ? body.warnings.map((warning) => localiseUserMessage(String(warning))) : [];
+  // Diagnostics are persisted in state as raw backend values. This matters
+  // for a locale switch while the settings sheet is open: no old translation
+  // should survive in the report object.
+  const warnings = Array.isArray(body.warnings) ? body.warnings.map((warning) => String(warning)) : [];
   const itemText = (entry: unknown) => {
     if (typeof entry === "string") return entry;
     if (entry && typeof entry === "object") {
       const record = entry as Record<string, unknown>;
-      return String(record.version ?? record.name ?? record.path ?? record.detail ?? "已偵測");
+      return String(record.version ?? record.name ?? record.path ?? record.detail ?? "Detected");
     }
     return "";
   };
@@ -800,7 +1266,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const entryName = (entry: unknown) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).name ?? "") : String(entry ?? "");
   const entryKind = (entry: unknown) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).kind ?? "") : "";
   const entryPath = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).path === "string" ? String((entry as Record<string, unknown>).path) : "";
-  const entryNote = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).note === "string" ? localiseUserMessage(String((entry as Record<string, unknown>).note)) : "";
+  const entryNote = (entry: unknown) => entry && typeof entry === "object" && typeof (entry as Record<string, unknown>).note === "string" ? String((entry as Record<string, unknown>).note) : "";
   const ffmpeg = tools.find((entry) => entryName(entry).toLowerCase() === "ffmpeg");
   const ffprobe = tools.find((entry) => entryName(entry).toLowerCase() === "ffprobe");
   const colmap = tools.find((entry) => entryName(entry).toLowerCase() === "colmap");
@@ -815,17 +1281,17 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     : undefined;
   type CapabilityState = { known: boolean; available: boolean; text: string };
   const capabilityState = (value: unknown): CapabilityState => {
-    if (typeof value === "boolean") return { known: true, available: value, text: value ? "已支援" : "未支援" };
-    if (typeof value === "number" && Number.isFinite(value)) return { known: true, available: value !== 0, text: value !== 0 ? "已支援" : "未支援" };
+    if (typeof value === "boolean") return { known: true, available: value, text: value ? "Supported" : "Unsupported" };
+    if (typeof value === "number" && Number.isFinite(value)) return { known: true, available: value !== 0, text: value !== 0 ? "Supported" : "Unsupported" };
     if (typeof value === "string") {
       const text = value.trim();
       const lower = text.toLowerCase();
-      if (!text) return { known: false, available: false, text: "未回報" };
+      if (!text) return { known: false, available: false, text: "Not reported" };
       if (/^(false|no|none|unsupported|unavailable|missing|failed|disabled|off|0)$/.test(lower) || /(not\s+supported|without|unavailable|missing|failed|disabled)/i.test(lower)) {
-        return { known: true, available: false, text: "未支援" };
+        return { known: true, available: false, text: "Unsupported" };
       }
       if (/^(true|yes|supported|available|ready|enabled|on|1)$/.test(lower) || /(cuda|gpu|supported|available|ready|enabled)/i.test(lower)) {
-        return { known: true, available: true, text: "已支援" };
+        return { known: true, available: true, text: "Supported" };
       }
       return { known: true, available: true, text };
     }
@@ -840,7 +1306,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
       if (typeof record.status === "string") return capabilityState(record.status);
       if (typeof record.version === "string") return { known: true, available: true, text: record.version };
     }
-    return { known: false, available: false, text: "未回報" };
+    return { known: false, available: false, text: "Not reported" };
   };
   const colmapCuda = capabilityState(colmapCapabilities?.cudaBuild);
   const featureExtractionGpu = capabilityState(colmapCapabilities?.featureExtractionGpu);
@@ -858,22 +1324,22 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const colmapCudaDetails = hasColmapCapabilities
     ? [
       colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) : "",
-      `CUDA build：${colmapCuda.text}`,
-      `SIFT 擷取：${featureExtractionGpu.text}`,
-      `SIFT 配對：${featureMatchingGpu.text}`,
-      `Ceres BA：${mapperBaGpu.known ? mapperBaGpu.available ? "可嘗試（執行期確認 CUDA／cuDSS）" : "僅 CPU" : "未回報"}`,
-      globalMapper.known ? `Global Mapper：${globalMapper.text}` : "",
+      `CUDA build: ${colmapCuda.text}`,
+      `SIFT extraction: ${featureExtractionGpu.text}`,
+      `SIFT matching: ${featureMatchingGpu.text}`,
+      `Ceres BA: ${mapperBaGpu.known ? mapperBaGpu.available ? "May be available (runtime CUDA/cuDSS check required)" : "CPU only" : "Not reported"}`,
+      globalMapper.known ? `Global Mapper: ${globalMapper.text}` : "",
     ].filter(Boolean)
-    : ["舊版診斷未回報 COLMAP build；FFmpeg CUDA／VideoToolbox 不代表 COLMAP CUDA"];
+    : ["The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"];
   const colmapCudaStatus: DiagnosticStatus = hasColmapCapabilities && colmapCuda.known
     ? gpuAvailable && gpuStagesKnown && gpuStagesAvailable ? "ready" : "warning"
     : "unknown";
   const colmapCudaValue = hasColmapCapabilities && colmapCuda.known
     ? gpuAvailable
-      ? gpuStagesKnown && gpuStagesAvailable ? "CUDA 加速可用" : "CUDA 加速部分可用"
-      : "未偵測到可用的 CUDA GPU"
-    : "CUDA 狀態未確認";
-  const capabilityLabels: Record<string, string> = { extract: "影格擷取", mask: "遮罩", align: "對齊" };
+      ? gpuStagesKnown && gpuStagesAvailable ? "CUDA acceleration available" : "CUDA acceleration partially available"
+      : "No usable CUDA GPU detected"
+    : "CUDA status not confirmed";
+  const capabilityLabels: Record<string, string> = { extract: "Frame extraction", mask: "Masking", align: "Alignment" };
   const pipelineCapabilities = body.capabilities && typeof body.capabilities === "object" ? body.capabilities as Record<string, unknown> : undefined;
   const capabilityValue = pipelineCapabilities ? Object.entries(pipelineCapabilities).filter(([, state]) => Boolean(state)).map(([key]) => capabilityLabels[key] ?? key).join(" · ") : "";
   const alignCapability = capabilityState(pipelineCapabilities?.align);
@@ -886,10 +1352,10 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     : [];
   const systemInfo: SystemInfo = {
     osName: typeof rawSystemInfo.osName === "string" && rawSystemInfo.osName.trim() ? rawSystemInfo.osName.trim() : platform,
-    osVersion: typeof rawSystemInfo.osVersion === "string" && rawSystemInfo.osVersion.trim() ? rawSystemInfo.osVersion.trim() : "未偵測到",
+    osVersion: typeof rawSystemInfo.osVersion === "string" && rawSystemInfo.osVersion.trim() ? rawSystemInfo.osVersion.trim() : "Not detected",
     architecture: typeof rawSystemInfo.architecture === "string" && rawSystemInfo.architecture.trim()
       ? rawSystemInfo.architecture.trim()
-      : typeof body.arch === "string" && body.arch.trim() ? body.arch.trim() : "未偵測到",
+      : typeof body.arch === "string" && body.arch.trim() ? body.arch.trim() : "Not detected",
     processors: stringList(rawSystemInfo.processors),
     graphicsAdapters: stringList(rawSystemInfo.graphicsAdapters),
   };
@@ -903,7 +1369,7 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
     })
     : [];
   const ffmpegAccelerationValue = ffmpegAccelerators
-    .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "build 已啟用" : "未支援"}`)
+    .map((entry) => `${entryName(entry) || entryKind(entry) || itemText(entry)}: ${available(entry) ? "enabled in build" : "Unsupported"}`)
     .join(" · ");
   const colmapReady = Boolean(colmap && available(colmap));
   const colmapWorkflowReady = colmapReady && alignCapability.known && alignCapability.available;
@@ -912,41 +1378,42 @@ function parseDoctor(value: unknown, fallback: DoctorReport): DoctorReport {
   const items: DiagnosticItem[] = [
     {
       label: "COLMAP",
-      value: colmapWorkflowReady ? itemText(colmap) : colmapReady ? "COLMAP 對齊能力未確認" : "未偵測到 COLMAP",
-      detail: colmapWorkflowReady ? entryPath(colmap) || "原生雙魚眼相機組對齊流程可用" : colmapReady ? "已找到執行檔，但診斷未確認完整對齊流程" : entryNote(colmap) || "對齊階段會維持待執行",
-      details: colmapReady ? [entryPath(colmap) ? `執行檔：${entryPath(colmap)}` : "執行檔：系統 PATH", `對齊流程：${alignCapability.text}`] : undefined,
+      value: colmapWorkflowReady ? itemText(colmap) : colmapReady ? "COLMAP alignment capability not confirmed" : "COLMAP not detected",
+      detail: colmapWorkflowReady ? entryPath(colmap) || "Native dual-fisheye camera-rig alignment is available" : colmapReady ? "The executable was found, but the complete alignment workflow was not confirmed" : entryNote(colmap) || "The alignment stage will remain pending",
+      details: colmapReady ? [entryPath(colmap) ? `Executable: ${entryPath(colmap)}` : "Executable: system PATH", `Alignment workflow: ${alignCapability.text}`] : undefined,
       status: colmapWorkflowReady ? "ready" : "warning",
     },
     {
       label: COLMAP_CUDA_DIAGNOSTIC_LABEL,
       value: colmapCudaValue,
-      detail: colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) || "COLMAP CUDA 能力已完成檢查" : "COLMAP 的 CUDA 能力檢查結果",
+      detail: colmapCudaAccelerator ? entryNote(colmapCudaAccelerator) || "COLMAP CUDA capabilities were checked" : "COLMAP CUDA capability check result",
       details: colmapCudaDetails,
       status: colmapCudaStatus,
     },
     {
       label: "FFmpeg",
-      value: ffmpegReady ? itemText(ffmpeg) : "FFmpeg 工具不完整",
-      detail: ffmpegReady ? entryPath(ffmpeg) || "FFmpeg 與 ffprobe 皆可用" : "影格擷取需要 FFmpeg 與 ffprobe",
+      value: ffmpegReady ? itemText(ffmpeg) : "FFmpeg tools incomplete",
+      detail: ffmpegReady ? entryPath(ffmpeg) || "FFmpeg and ffprobe are both available" : "Frame extraction requires FFmpeg and ffprobe",
       details: [
-        `FFmpeg：${ffmpeg && available(ffmpeg) ? entryPath(ffmpeg) || itemText(ffmpeg) || "可用" : "未偵測到"}`,
-        `ffprobe：${ffprobe && available(ffprobe) ? entryPath(ffprobe) || itemText(ffprobe) || "可用" : "未偵測到"}`,
+        `FFmpeg: ${ffmpeg && available(ffmpeg) ? entryPath(ffmpeg) || itemText(ffmpeg) || "Available" : "Not detected"}`,
+        `ffprobe: ${ffprobe && available(ffprobe) ? entryPath(ffprobe) || itemText(ffprobe) || "Available" : "Not detected"}`,
       ],
       status: ffmpegReady ? "ready" : "warning",
     },
     {
-      label: "硬體加速",
-      value: ffmpegAccelerators.length ? hardwareAccelerationReady ? "FFmpeg 支援硬體加速" : "FFmpeg 未啟用硬體加速" : "硬體解碼狀態未回報",
-      detail: ffmpegAccelerationValue || `${platform} · FFmpeg 未回報硬體解碼能力`,
-      details: ffmpegAccelerators.map((entry) => entryNote(entry) || `${entryName(entry) || entryKind(entry) || itemText(entry)}：${available(entry) ? "build 已啟用" : "未支援"}`),
+      label: HARDWARE_ACCELERATION_LABEL,
+      value: ffmpegAccelerators.length ? hardwareAccelerationReady ? "FFmpeg hardware acceleration supported" : "FFmpeg hardware acceleration not enabled" : "Hardware decoding status not reported",
+      detail: ffmpegAccelerationValue || `${platform} · FFmpeg hardware decoding capability not reported`,
+      details: ffmpegAccelerators.map((entry) => entryNote(entry) || `${entryName(entry) || entryKind(entry) || itemText(entry)}: ${available(entry) ? "enabled in build" : "Unsupported"}`),
       status: ffmpegAccelerators.length ? hardwareAccelerationReady ? "ready" : "warning" : "unknown",
     },
   ];
   return {
     platform,
     systemInfo,
-    summary: typeof body.summary === "string" ? localiseUserMessage(body.summary) : capabilityValue || fallback.summary,
-    checkedAt: new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),
+    summary: typeof body.summary === "string" ? body.summary : capabilityValue || fallback.summary,
+    // Store a stable timestamp; format it with the active locale in the view.
+    checkedAt: new Date().toISOString(),
     items,
     warnings,
     colmapCapabilities,
@@ -960,7 +1427,7 @@ async function invokeSafely<T>(command: string, args?: Record<string, unknown>) 
   try {
     return await invoke<T>(command, args);
   } catch (error) {
-    console.info(`[SphereAlign] ${command}`, error);
+    console.error(`[SphereAlign] ${command}`, error);
     return null;
   }
 }
@@ -1045,11 +1512,11 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
     };
   }, [source.path]);
 
-  const alt = `${source.detail} 第一個鏡頭的第一幀預覽`;
+  const alt = t`${source.detail}: first-frame preview from the first lens`;
 
   if (!previewUrl) {
     return (
-      <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? "無法產生第一幀預覽" : undefined}>
+      <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? t`Unable to generate a first-frame preview` : undefined}>
         {failed ? <Video aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
       </div>
     );
@@ -1061,12 +1528,12 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
         openOnHover
         delay={120}
         closeDelay={120}
-        render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={`預覽 ${alt}`} />}
+        render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={t`Preview ${alt}`} />}
       >
         <img src={previewUrl} alt={alt} />
       </PopoverTrigger>
       <PopoverContent className="source-preview-card" side="right" sideOffset={12}>
-        <PopoverTitle className="sr-only">{source.detail} 魚眼快照</PopoverTitle>
+        <PopoverTitle className="sr-only">{t`${source.detail} dual-fisheye snapshot`}</PopoverTitle>
         <img className="source-preview-image" src={previewUrl} alt="" />
       </PopoverContent>
     </Popover>
@@ -1074,82 +1541,101 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
 }
 
 function iconForDiagnostic(label: string) {
-  if (label.includes("GPU") || label.includes("CUDA") || label.includes("硬體加速")) return Gpu;
+  if (label.includes("GPU") || label.includes("CUDA") || label.includes("Hardware acceleration")) return Gpu;
   if (label.includes("COLMAP")) return ScanSearch;
   if (label.includes("FFmpeg")) return FileVideoCamera;
   return MonitorCog;
 }
 
 function warningAffectsProcessingSpeed(warning: string) {
-  return /(CUDA|GPU|CPU|硬體|加速|VideoToolbox|解碼|特徵擷取|配對|Ceres|cuDSS)/i.test(warning);
+  return /(CUDA|GPU|CPU|hardware|acceleration|VideoToolbox|decode|decoder|feature extraction|matching|Ceres|cuDSS|performance|speed|slow|fallback|硬體|硬件|加速|解碼|解码|特徵|特征|配對|匹配|影格擷取|顯示卡|显卡|推論回退|推理回退|效能|性能|速度)/i.test(warning);
 }
 
 function diagnosticStatusLabel(status: DiagnosticStatus) {
-  if (status === "ready") return "可用";
-  if (status === "warning") return "需檢查";
-  return "未檢查";
+  if (status === "ready") return t`Available`;
+  if (status === "warning") return t`Needs attention`;
+  return t`Not checked`;
 }
 
+// Match absolute paths independently of the language used for the surrounding
+// diagnostic label. The line-oriented path alternatives intentionally consume
+// spaces so a Windows path such as `C:\\Program Files\\COLMAP` cannot leak its
+// second segment through a whitespace-bounded token match.
+const DIAGNOSTIC_PATH_PATTERN = /(^|[\s("'=:\uFF1A])((?:\/(?!\/)[^\r\n"'<>]+|[A-Z]:[\\/][^\r\n"'<>]+|\\\\[^\r\n"'<>]+))/gim;
+const DIAGNOSTIC_PATH_DETECTION_PATTERN = /(?:^|[\s("'=:\uFF1A])(?:\/(?!\/)[^\r\n"'<>]+|[A-Z]:[\\/][^\r\n"'<>]+|\\\\[^\r\n"'<>]+)/im;
+
 function redactDiagnosticText(value: string) {
-  return value
-    .replace(/\/Users\/[^/\\\r\n]+/gi, "/Users/<user>")
-    .replace(/\/home\/[^/\\\r\n]+/gi, "/home/<user>")
-    .replace(/([A-Z]:\\Users\\)[^\\\r\n]+/gi, "$1<user>");
+  // Redact raw paths before any UI translation. The callback keeps the
+  // familiar placeholders for common locations while covering arbitrary
+  // absolute paths (for example /usr/local/bin or a Windows path outside
+  // `C:\\Users`).
+  return value.replace(DIAGNOSTIC_PATH_PATTERN, (_match, prefix: string, path: string) => {
+    if (/^\/Users\//i.test(path)) return `${prefix}/Users/<user>`;
+    if (/^\/home\//i.test(path)) return `${prefix}/home/<user>`;
+    if (/^\/Applications(?:\/|$)/i.test(path)) return `${prefix}/Applications/<app>`;
+    if (/^[A-Z]:[\\/]/i.test(path)) return `${prefix}<windows path>`;
+    if (/^\\\\/i.test(path)) return `${prefix}<network path>`;
+    return `${prefix}<path>`;
+  });
+}
+
+function containsDiagnosticPath(value: string) {
+  return DIAGNOSTIC_PATH_DETECTION_PATTERN.test(value);
 }
 
 function safeDiagnosticDetail(value: string) {
   const trimmed = value.trim();
-  const absolutePath = /^(?:\/|[A-Z]:[\\/]|\\\\)/i;
-  if (absolutePath.test(trimmed)) return "已偵測到執行檔（完整路徑已隱藏）";
-  return trimmed.replace(
-    /^(執行檔|FFmpeg|ffprobe)：\s*(?:\/|[A-Z]:[\\/]|\\\\).+$/i,
-    "$1：已偵測（完整路徑已隱藏）",
-  );
+  if (!trimmed) return "";
+  // A structured path (for example doctor.tools[].path) and a path embedded
+  // in a localized note are handled identically. Never key this decision off
+  // a translated prefix.
+  if (containsDiagnosticPath(trimmed)) return t`Executable detected (full path hidden)`;
+  return trimmed;
 }
 
 function doctorReportText(doctor: DoctorReport) {
   const lines = [
-    "SphereAlign 診斷資訊",
-    `平台：${doctor.platform}`,
-    `最後檢查：${doctor.checkedAt}`,
-    `摘要：${doctor.summary}`,
+    t`SphereAlign diagnostics`,
+    t`Platform: ${localiseUserMessage(doctor.platform)}`,
+    t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`,
+    t`Summary: ${localiseUserMessage(doctor.summary)}`,
     "",
-    "系統資訊",
-    `- 作業系統：${doctor.systemInfo.osName} ${doctor.systemInfo.osVersion}`,
-    `- 架構：${doctor.systemInfo.architecture}`,
-    "- 處理器：",
-    ...(doctor.systemInfo.processors.length > 0 ? doctor.systemInfo.processors.map((processor) => `  - ${processor}`) : ["  - 未偵測到"]),
-    "- 顯示卡：",
-    ...(doctor.systemInfo.graphicsAdapters.length > 0 ? doctor.systemInfo.graphicsAdapters.map((adapter) => `  - ${adapter}`) : ["  - 未偵測到"]),
+    t`System information`,
+    t`- Operating system: ${localiseUserMessage(doctor.systemInfo.osName)} ${localiseUserMessage(doctor.systemInfo.osVersion)}`,
+    t`- Architecture: ${localiseUserMessage(doctor.systemInfo.architecture)}`,
+    t`- Processors:`,
+    ...(doctor.systemInfo.processors.length > 0 ? doctor.systemInfo.processors.map((processor) => t`  - ${processor}`) : [t`  - Not detected`]),
+    t`- Graphics adapters:`,
+    ...(doctor.systemInfo.graphicsAdapters.length > 0 ? doctor.systemInfo.graphicsAdapters.map((adapter) => t`  - ${adapter}`) : [t`  - Not detected`]),
     "",
-    "環境項目",
+    t`Environment checks`,
   ];
   doctor.items.forEach((item) => {
-    lines.push(`- ${item.label} [${diagnosticStatusLabel(item.status)}]`);
-    lines.push(`  結果：${item.value}`);
-    lines.push(`  說明：${safeDiagnosticDetail(item.detail)}`);
-    item.details?.forEach((detail) => lines.push(`  - ${safeDiagnosticDetail(detail)}`));
+    lines.push(`- ${diagnosticItemLabel(item.label)} [${diagnosticStatusLabel(item.status)}]`);
+    lines.push(t`  Result: ${localiseUserMessage(item.value)}`);
+    lines.push(t`  Details: ${safeDiagnosticDetail(item.detail)}`);
+    item.details?.forEach((detail) => lines.push(t`  - ${safeDiagnosticDetail(detail)}`));
   });
-  lines.push("", "警告");
-  if (doctor.warnings.length > 0) doctor.warnings.forEach((warning) => lines.push(`- ${warning}`));
-  else lines.push("- 無");
+  lines.push("", t`Warnings`);
+  if (doctor.warnings.length > 0) doctor.warnings.forEach((warning) => lines.push(`- ${localiseUserMessage(warning)}`));
+  else lines.push(t`- None`);
   return redactDiagnosticText(lines.join("\n"));
 }
 
 function stageAction(status: StageStatus) {
-  if (status === "running") return "取消";
-  if (status === "cancelled") return "繼續";
-  if (status === "failed") return "重試";
-  if (status === "completed") return "重跑";
-  return "執行";
+  if (status === "running") return t`Cancel`;
+  if (status === "cancelled") return t`Resume`;
+  if (status === "failed") return t`Retry`;
+  if (status === "completed") return t`Run again`;
+  return t`Run`;
 }
 
 function stageStatusLabel(status: StageStatus) {
-  if (status === "running") return "執行中";
-  if (status === "cancelled") return "已取消";
-  if (status === "failed") return "失敗";
-  if (status === "completed") return "完成";
-  return "待執行";
+  if (status === "running") return t`Running`;
+  if (status === "cancelled") return t`Cancelled`;
+  if (status === "failed") return t`Failed`;
+  if (status === "completed") return t`Completed`;
+  return t`Pending`;
 }
 
 function StageStatusBadge({ status }: { status: StageStatus }) {
@@ -1184,18 +1670,18 @@ function estimatedRemainingMs(stage: StageState, nowMs: number) {
 }
 
 function formatEta(value?: number) {
-  if (value === undefined) return "估算中";
-  if (value < 60_000) return `約 ${formatDuration(value)}`;
+  if (value === undefined) return t`Estimating`;
+  if (value < 60_000) return t`About ${formatDuration(value)}`;
   const minutes = Math.max(1, Math.round(value / 60_000));
-  return `約 ${minutes} 分鐘`;
+  return t`About ${minutes} min`;
 }
 
 function processingRateLabel(completed: number | undefined, startedAtMs: number | undefined, nowMs: number) {
-  if (completed === undefined || completed <= 0 || startedAtMs === undefined) return "估算中";
+  if (completed === undefined || completed <= 0 || startedAtMs === undefined) return t`Estimating`;
   const elapsed = Math.max(0, nowMs - startedAtMs);
-  if (elapsed < 1000) return "估算中";
+  if (elapsed < 1000) return t`Estimating`;
   const rate = completed / (elapsed / 1000);
-  return `${rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)} 項目/秒`;
+  return t`${rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)} items/sec`;
 }
 
 function logLevelForStatus(status?: StageStatus): TaskLogLevel {
@@ -1274,7 +1760,12 @@ function appendMessageLog(logs: TaskLog[], taskId: string, payload: LogEventPayl
 }
 
 function App() {
+  // Subscribe the whole screen to Lingui's locale-change event. Most of the
+  // app uses the macro helpers directly, but raw backend messages are rendered
+  // through localiseUserMessage and need the same rerender trigger.
+  const { i18n: lingui } = useLingui();
   const { theme, setTheme } = useTheme();
+  void lingui.locale;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -1294,7 +1785,7 @@ function App() {
   });
   const [sourceInspection, setSourceInspection] = useState<string>("");
   const [sourceColorInspection, setSourceColorInspection] = useState<ColorInspectionSummary | null>(null);
-  const [doctor, setDoctor] = useState<DoctorReport>(EMPTY_DOCTOR);
+  const [doctor, setDoctor] = useState<DoctorReport>(() => emptyDoctor());
   const [doctorLoading, setDoctorLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -1326,10 +1817,10 @@ function App() {
   const performanceWarnings = uniqueDoctorWarnings.filter(warningAffectsProcessingSpeed);
   const generalDoctorWarnings = uniqueDoctorWarnings.filter((warning) => !warningAffectsProcessingSpeed(warning));
   const gpuDiagnostic = doctor.items.find((item) => item.label === COLMAP_CUDA_DIAGNOSTIC_LABEL);
-  const hardwareDiagnostic = doctor.items.find((item) => item.label === "硬體加速");
-  const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
-    || hardwareDiagnostic?.details?.find((detail) => /(CPU|未支援|未確認|不可用)/i.test(detail))
-    || "部分 CUDA 或硬體加速能力不可用，相關階段將改用 CPU。";
+  const hardwareDiagnostic = doctor.items.find((item) => item.label === HARDWARE_ACCELERATION_LABEL);
+  const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
+    || hardwareDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
+    || t`Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU.`;
   const performanceStatus: DiagnosticStatus = performanceWarnings.length > 0 || gpuDiagnostic?.status === "warning" || hardwareDiagnostic?.status === "warning"
     ? "warning"
     : gpuDiagnostic?.status === "unknown" || hardwareDiagnostic?.status === "unknown"
@@ -1387,7 +1878,9 @@ function App() {
     logSequence.current += 1;
     appendTaskLog(taskId, {
       level,
-      message: localiseUserMessage(message),
+      // Keep task logs in the source language. The log row translates this
+      // value at render time, so changing locale also updates existing logs.
+      message,
       timestampMs: Date.now() + logSequence.current / 1000,
     });
   }, [appendTaskLog]);
@@ -1419,8 +1912,8 @@ function App() {
         setSourcePaths([]);
         setSourceInspection("");
         setSourceColorInspection(null);
-        addTaskMessage(manifest.projectId, `已載入可續作專案 ${manifest.name}`);
-        setToast(manifest.warnings.length ? `已載入未完成專案：${manifest.warnings.length} 項警告` : `已載入未完成專案：${manifest.name}`);
+        addTaskMessage(manifest.projectId, `Loaded resumable project ${manifest.name}`);
+        setToast(manifest.warnings.length ? `Loaded unfinished project with ${manifest.warnings.length} warnings` : `Loaded unfinished project: ${manifest.name}`);
         return;
       }
     }
@@ -1428,17 +1921,17 @@ function App() {
       const inspectedPaths = result.sources.flatMap((source) => source.path ? [source.path] : []);
       if (inspectedPaths.length) setSourcePaths(inspectedPaths);
       const valid = result.sources.filter((source) => !source.warnings?.length).length;
-      setSourceInspection(`${result.sources.length} 個來源 · ${valid} 個通過檢查`);
+      setSourceInspection(`${result.sources.length} sources · ${valid} passed inspection`);
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else if (result?.suggestedOutputPath) {
       setOutputDraft(result.suggestedOutputPath);
-      setSourceInspection("已找到來源，可建立新的重建任務");
+      setSourceInspection("Sources found; you can create a new reconstruction task");
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else if (!IS_TAURI_RUNTIME) {
-      setSourceInspection(`${paths.length} 個來源 · 瀏覽器預覽`);
+      setSourceInspection(`${paths.length} sources · browser preview`);
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else {
-      setSourceInspection("尚未取得來源檢查結果");
+      setSourceInspection("Source inspection results are not available yet");
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     }
   }, [addTaskMessage]);
@@ -1450,7 +1943,7 @@ function App() {
     setSourceColorInspection(null);
     if (!editingTaskId) {
       setOutputDraft(deriveOutputPath(actual[0]));
-      setNameDraft(actual[0].split(/[\\/]/).filter(Boolean).pop()?.replace(/[-_]+/g, " ") || "新重建任務");
+      setNameDraft(actual[0].split(/[\\/]/).filter(Boolean).pop()?.replace(/[-_]+/g, " ") || "New reconstruction task");
     }
     if (openDialogAfter) setTaskDialogOpen(true);
     void inspectSourcePaths(actual);
@@ -1482,7 +1975,7 @@ function App() {
 
   const openEditTaskDialog = useCallback((task: Task) => {
     if (!canChangeQueuedTask(task)) {
-      setToast("任務已開始，無法再修改");
+      setToast("This task has started and can no longer be edited");
       return;
     }
     const run = autoPipelineRuns.current[task.projectId];
@@ -1492,7 +1985,7 @@ function App() {
     setSourcePaths(task.inputPaths);
     setOutputDraft(task.outputPath);
     setSettingsDraft(selectAvailableGpu(normalisePipelineSettings(task.settings), doctor.gpuDevices));
-    setSourceInspection(`${task.inputPaths.length} 個來源`);
+      setSourceInspection(`${task.inputPaths.length} sources`);
     setSourceColorInspection(null);
     setDragOver(false);
     setTaskDialogOpen(true);
@@ -1514,7 +2007,7 @@ function App() {
       return;
     }
     try {
-      const result = await openDialog(mode === "directories" ? { directory: true, multiple: true } : { directory: false, multiple: true, filters: [{ name: "OSV / 雙魚眼影片", extensions: ["osv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
+      const result = await openDialog(mode === "directories" ? { directory: true, multiple: true } : { directory: false, multiple: true, filters: [{ name: t`OSV / dual-fisheye video`, extensions: ["osv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
       const paths = result === null ? [] : Array.isArray(result) ? result : [result];
       applySourcePaths(paths);
     } catch (error) {
@@ -1525,7 +2018,7 @@ function App() {
 
   const openOutputPicker = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("瀏覽器預覽會保留自訂輸出路徑");
+      setToast("Browser preview keeps the custom output path");
       return;
     }
     try {
@@ -1538,7 +2031,7 @@ function App() {
 
   const openProject = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("瀏覽器預覽不會讀取本機專案資訊");
+      setToast("Browser preview does not read local project information");
       return;
     }
     try {
@@ -1547,13 +2040,13 @@ function App() {
       const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: result }));
       if (manifest) {
         setTasks((current) => [manifest, ...current]);
-        addTaskMessage(manifest.projectId, `已開啟 ${manifest.name}`);
+        addTaskMessage(manifest.projectId, `Opened ${manifest.name}`);
       } else {
-        setToast("找不到可載入的專案資訊");
+        setToast("No loadable project information was found");
       }
     } catch (error) {
       console.info("[SphereAlign] load project", error);
-      setToast("開啟專案失敗");
+      setToast("Failed to open project");
     }
   }, [addTaskMessage]);
 
@@ -1563,7 +2056,7 @@ function App() {
     const result = await invokeSafely("doctor", { colmapPath: customColmapPath.trim() || null });
     if (runId !== doctorRunId.current) return;
     if (result) {
-      const parsed = parseDoctor(result, EMPTY_DOCTOR);
+      const parsed = parseDoctor(result, emptyDoctor());
       setDoctor(parsed);
       setSettingsDraft((current) => {
         const selected = selectAvailableGpu(current, parsed.gpuDevices);
@@ -1574,7 +2067,7 @@ function App() {
           : selected;
       });
     }
-    else if (!IS_TAURI_RUNTIME) setDoctor({ ...EMPTY_DOCTOR, summary: "瀏覽器預覽未連接本機執行環境" });
+    else if (!IS_TAURI_RUNTIME) setDoctor({ ...emptyDoctor(), summary: "Browser preview is not connected to the local runtime" });
     setDoctorLoading(false);
   }, []);
 
@@ -1584,10 +2077,10 @@ function App() {
       if (IS_TAURI_RUNTIME) await writeClipboardText(report);
       else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
       else throw new Error("clipboard unavailable");
-      setToast("診斷資訊已複製，可直接貼到除錯回報");
+      setToast("Diagnostics copied; you can paste them into a bug report");
     } catch (error) {
       console.info("[SphereAlign] copy diagnostics", error);
-      setToast("無法複製診斷資訊，請檢查剪貼簿權限");
+      setToast("Unable to copy diagnostics; check clipboard permissions");
     }
   }, [doctor]);
 
@@ -1596,14 +2089,14 @@ function App() {
 
   const openColmapPicker = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("COLMAP 路徑會由 Windows 本機執行環境使用");
+      setToast("The COLMAP path is used by the local Windows runtime");
       return;
     }
     try {
       const result = await openDialog({
         directory: false,
         multiple: false,
-        filters: [{ name: "COLMAP 啟動程式", extensions: ["bat", "exe", "cmd"] }],
+        filters: [{ name: t`COLMAP launcher`, extensions: ["bat", "exe", "cmd"] }],
       });
       if (typeof result === "string") {
         setColmapPath(result);
@@ -1616,14 +2109,14 @@ function App() {
 
   const openLutPicker = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
-      setToast("瀏覽器預覽不會讀取本機 LUT；可直接貼上 .cube 路徑");
+      setToast("Browser preview does not read local LUT files; paste a .cube path directly");
       return;
     }
     try {
       const result = await openDialog({
         directory: false,
         multiple: false,
-        filters: [{ name: "3D LUT（Cube）", extensions: ["cube"] }],
+        filters: [{ name: t({ message: "3D LUT (Cube)", context: "file picker filter", comment: "Filter label for a 3D lookup table file using the .cube format." }), extensions: ["cube"] }],
       });
       if (typeof result === "string") {
         setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: result } }));
@@ -1739,7 +2232,7 @@ function App() {
       if (currentRun === run) {
         delete autoPipelineRuns.current[taskId];
         delete pendingStageStarts.current[taskId];
-        setToast("無法自動啟動階段，請查看執行環境訊息");
+        setToast("Unable to start the stage automatically; check the runtime message");
         queueMicrotask(() => pumpAutoPipelineRef.current());
       }
       return;
@@ -1762,7 +2255,7 @@ function App() {
     const startedAtMs = progressAlreadyReceived ? undefined : Date.now();
     updateTaskStage(taskId, stageKey, progressAlreadyReceived
       ? { status: "running", jobId: result.jobId }
-      : { status: "running", progress: 0, message: "正在準備工作", jobId: result.jobId, phase: "starting", startedAtMs, finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
+      : { status: "running", progress: 0, message: PREPARING_WORK_SOURCE, jobId: result.jobId, phase: "starting", startedAtMs, finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
   }, [bindJobToTask, updateTaskStage]);
 
   const pumpAutoPipeline = useCallback(() => {
@@ -1789,9 +2282,9 @@ function App() {
   }, [colmapPath]);
 
   const createTask = useCallback(async () => {
-    if (!sourcePaths.length) { setToast("請先選擇至少一個 OSV 或雙魚眼來源"); return; }
+    if (!sourcePaths.length) { setToast("Select at least one OSV or dual-fisheye source first"); return; }
     if (customLutPathIsInvalid(settingsDraft.extract.lutPath)) {
-      setToast("自訂 LUT 必須是 .cube 檔案");
+      setToast("The custom LUT must be a .cube file");
       return;
     }
     const request = { inputPaths: sourcePaths, outputPath: outputDraft || undefined, name: nameDraft || undefined, settings: { ...settingsDraft } };
@@ -1800,15 +2293,15 @@ function App() {
     let createdTask: Task | null = null;
     if (manifest) {
       createdTask = manifest;
-      const logPayload: LogEventPayload = { level: "info", message: `已建立 ${manifest.name}`, timestampMs: Date.now() };
+      const logPayload: LogEventPayload = { level: "info", message: `Created ${manifest.name}`, timestampMs: Date.now() };
       setTasks((current) => [{ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) }, ...current]);
     } else if (!IS_TAURI_RUNTIME) {
-      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || "瀏覽器預覽任務", rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: ["瀏覽器預覽：尚未連接本機執行環境"], createdAt: new Date().toISOString(), previewOnly: true };
+      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || BROWSER_PREVIEW_TASK_SOURCE, rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: [BROWSER_PREVIEW_NOT_CONNECTED_SOURCE], createdAt: new Date().toISOString(), previewOnly: true };
       createdTask = preview;
-      const logPayload: LogEventPayload = { level: "info", message: `預覽任務已加入 ${preview.name}`, timestampMs: Date.now() };
+      const logPayload: LogEventPayload = { level: "info", message: `Preview task added: ${preview.name}`, timestampMs: Date.now() };
       setTasks((current) => [{ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) }, ...current]);
     } else {
-      setToast("建立任務失敗，請查看執行環境訊息");
+      setToast("Failed to create the task; check the runtime message");
       return;
     }
     setTaskDialogOpen(false);
@@ -1821,12 +2314,12 @@ function App() {
   const saveEditedTask = useCallback(async () => {
     const task = taskSnapshot.current.find((item) => item.projectId === editingTaskId);
     if (!task || !canChangeQueuedTask(task)) {
-      setToast("任務已開始，無法再修改");
+      setToast("This task has started and can no longer be edited");
       return;
     }
-    if (!sourcePaths.length) { setToast("請保留至少一個來源"); return; }
+    if (!sourcePaths.length) { setToast("Keep at least one source"); return; }
     if (customLutPathIsInvalid(settingsDraft.extract.lutPath)) {
-      setToast("自訂 LUT 必須是 .cube 檔案");
+      setToast("The custom LUT must be a .cube file");
       return;
     }
     const settings = normalisePipelineSettings(settingsDraft);
@@ -1836,7 +2329,7 @@ function App() {
         : item));
       setTaskDialogOpen(false);
       setEditingTaskId(null);
-      setToast("已更新預覽任務");
+      setToast("Preview task updated");
       return;
     }
     let result: unknown;
@@ -1845,12 +2338,12 @@ function App() {
         request: { projectPath: task.rootPath || task.outputPath, name: nameDraft || task.name, inputPaths: sourcePaths, settings },
       });
     } catch (error) {
-      console.info("[SphereAlign] update_queued_project", error);
-      setToast(typeof error === "string" ? localiseUserMessage(error) : "儲存任務修改失敗，請查看執行環境訊息");
+      console.error("[SphereAlign] update_queued_project", error);
+      setToast(backendErrorMessage(error));
       return;
     }
     const manifest = manifestFromUnknown(result);
-    if (!manifest) { setToast("儲存任務修改失敗，請查看執行環境訊息"); return; }
+    if (!manifest) { setToast("Failed to save task changes; check the runtime message"); return; }
     setTasks((current) => current.map((item) => item.projectId === task.projectId ? { ...manifest, logs: item.logs } : item));
     const run = autoPipelineRuns.current[task.projectId];
     if (run) {
@@ -1859,7 +2352,7 @@ function App() {
     }
     setTaskDialogOpen(false);
     setEditingTaskId(null);
-    setToast("已更新排隊中的任務");
+    setToast("Queued task updated");
     queueMicrotask(() => pumpAutoPipelineRef.current());
   }, [canChangeQueuedTask, editingTaskId, nameDraft, settingsDraft, sourcePaths]);
 
@@ -1867,7 +2360,7 @@ function App() {
     const task = taskSnapshot.current.find((item) => item.projectId === deletingTaskId);
     if (!task || !canChangeQueuedTask(task)) {
       setDeletingTaskId(null);
-      setToast("任務已開始，無法刪除");
+      setToast("This task has started and cannot be removed");
       return;
     }
     delete autoPipelineRuns.current[task.projectId];
@@ -1876,23 +2369,23 @@ function App() {
     setTasks((current) => current.filter((item) => item.projectId !== task.projectId));
     if (selectedTaskId === task.projectId) setSelectedTaskId(null);
     setDeletingTaskId(null);
-    setToast("已從佇列移除任務；輸出資料夾仍保留");
+    setToast("Task removed from the queue; the output folder is kept");
     queueMicrotask(() => pumpAutoPipelineRef.current());
   }, [canChangeQueuedTask, deletingTaskId, selectedTaskId]);
 
   const enqueueQueuedTask = useCallback((task: Task) => {
     if (!taskHasNotStarted(task)) {
-      setToast("任務已經開始");
+      setToast("This task has already started");
       return;
     }
     startAutoPipeline(task);
-    setToast("已將任務加入執行佇列");
+    setToast("Task added to the run queue");
   }, [startAutoPipeline]);
 
   const startStage = useCallback(async (task: Task, stageKey: StageKey, mode: "start" | "resume" | "retry") => {
-    if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會執行後端工作"); return; }
+    if (!IS_TAURI_RUNTIME) { setToast("Browser preview does not run backend work"); return; }
     if (activeJobIds.current[task.projectId] || autoPipelineRuns.current[task.projectId]) {
-      setToast("此任務已有處理階段執行中，請稍候");
+      setToast("A processing stage is already running for this task; please wait");
       return;
     }
     pendingStageStarts.current[task.projectId] = stageKey;
@@ -1905,16 +2398,16 @@ function App() {
         || taskSnapshot.current.some((currentTask) => currentTask.projectId === task.projectId && currentTask.stages[stageKey].jobId === result.jobId);
       updateTaskStage(task.projectId, stageKey, receivedEarlyProgress
         ? { status: "running", jobId: result.jobId }
-        : { status: "running", progress: task.stages[stageKey].progress, message: "正在準備工作", phase: "starting", jobId: result.jobId, startedAtMs: Date.now(), finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
+        : { status: "running", progress: task.stages[stageKey].progress, message: PREPARING_WORK_SOURCE, phase: "starting", jobId: result.jobId, startedAtMs: Date.now(), finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
     } else {
       delete pendingStageStarts.current[task.projectId];
-      setToast("無法啟動階段，請查看執行環境訊息");
+      setToast("Unable to start the stage; check the runtime message");
       queueMicrotask(() => pumpAutoPipelineRef.current());
     }
   }, [bindJobToTask, colmapPath, settingsDraft, updateTaskStage]);
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
-    if (!IS_TAURI_RUNTIME) { setToast("瀏覽器預覽不會取消後端工作"); return; }
+    if (!IS_TAURI_RUNTIME) { setToast("Browser preview does not cancel backend work"); return; }
     const autoRun = autoPipelineRuns.current[task.projectId];
     if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
     delete pendingStageStarts.current[task.projectId];
@@ -1929,7 +2422,7 @@ function App() {
       delete jobTaskIds.current[jobId];
       if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
       const finishedAtMs = Date.now();
-      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "已取消，可稍後繼續", jobId: undefined, finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
+      updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "Cancelled; you can resume later", jobId: undefined, finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
     }
     queueMicrotask(() => pumpAutoPipelineRef.current());
   }, [updateTaskStage]);
@@ -1983,7 +2476,7 @@ function App() {
           const nextStage = currentIndex >= 0 ? STAGES[currentIndex + 1] : undefined;
           if (!nextStage) {
             delete autoPipelineRuns.current[targetProjectId];
-            addTaskMessage(targetProjectId, "自動管線已完成影格擷取、遮罩與對齊");
+            addTaskMessage(targetProjectId, "Automatic pipeline completed frame extraction, masking, and alignment");
             queueMicrotask(() => pumpAutoPipelineRef.current());
             return;
           }
@@ -2020,13 +2513,15 @@ function App() {
       void cancelStage(task, stageKey);
       return;
     }
-    const prerequisite = stagePrerequisiteLabel(task, stageKey);
-    if (prerequisite) {
-      setToast(`請先完成${prerequisite}`);
+    const prerequisiteKey = stagePrerequisiteKey(task, stageKey);
+    if (prerequisiteKey) {
+      // Keep the state value locale-independent; localiseUserMessage resolves
+      // this small internal key when the toast is rendered.
+      setToast(`Complete prerequisite: ${prerequisiteKey}`);
       return;
     }
     if (Object.keys(activeJobIds.current).length || Object.keys(pendingStageStarts.current).length) {
-      setToast("目前已有處理階段執行中，請稍候");
+      setToast("A processing stage is already running; please wait");
       return;
     }
     void startStage(task, stageKey, status === "cancelled" ? "resume" : status === "failed" || status === "completed" ? "retry" : "start");
@@ -2055,10 +2550,10 @@ function App() {
       <div className="settings-form">
         <FieldGroup>
           <Field>
-            <FieldLabel>影格擷取</FieldLabel>
+            <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for extracting frames.">Frame extraction</Trans></FieldLabel>
             <FieldContent>
               <Field className="extract-base-fps-field">
-                <FieldLabel htmlFor="base-fps">截取影格率（FPS）</FieldLabel>
+                <FieldLabel htmlFor="base-fps"><Trans comment="Base frames-per-second setting for source media extraction.">Base frame rate (FPS)</Trans></FieldLabel>
                 <Input
                   id="base-fps"
                   type="number"
@@ -2081,12 +2576,12 @@ function App() {
                   checked={settingsDraft.extract.skipBlurry}
                   onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, skipBlurry: checked === true } }))}
                 />
-                <FieldLabel htmlFor="sharpness-filter">清晰度過濾</FieldLabel>
+                <FieldLabel htmlFor="sharpness-filter"><Trans context="frame extraction setting" comment="Whether blurry candidate frames should be filtered out.">Sharpness filtering</Trans></FieldLabel>
               </Field>
               {settingsDraft.extract.skipBlurry && (
                 <Field className="extract-candidate-field">
                   <div className="slider-heading">
-                    <FieldLabel id="candidate-fps-label">候選影格率</FieldLabel>
+                    <FieldLabel id="candidate-fps-label"><Trans comment="Frame rate used to sample candidate frames before selecting the sharpest ones.">Candidate frame rate</Trans></FieldLabel>
                     <span className="range-label">{candidateMultiplier}× · {candidateFps} FPS</span>
                   </div>
                   <Slider
@@ -2105,7 +2600,7 @@ function App() {
                     }}
                   />
                   <div className="range-scale" aria-hidden="true"><span>2×</span><span>10×</span></div>
-                  <FieldDescription>以截取影格率的倍率取樣候選，再挑選較清晰的影格。</FieldDescription>
+                  <FieldDescription><Trans comment="Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.">Sample candidates at a multiple of the base frame rate, then select sharper frames.</Trans></FieldDescription>
                 </Field>
               )}
               <Field orientation="horizontal" className="extract-color-field">
@@ -2118,38 +2613,38 @@ function App() {
                   }))}
                 />
                 <div>
-                  <FieldLabel htmlFor="extract-color-mode">套用 D-Log M 還原 LUT</FieldLabel>
+                  <FieldLabel htmlFor="extract-color-mode"><Trans comment="Apply the official or custom lookup table to restore DJI D-Log M color.">Apply the D-Log M restoration LUT</Trans></FieldLabel>
                   {colorMode === "auto" && detectedDlog && (
-                    <FieldDescription>已從 _D 檔名或素材資訊偵測並開啟。</FieldDescription>
+                    <FieldDescription><Trans comment="The source filename suffix or media metadata indicated D-Log M color.">Detected from the _D filename suffix or media metadata and enabled.</Trans></FieldDescription>
                   )}
                 </div>
               </Field>
               <Field className="extract-lut-field" data-invalid={lutPathInvalid || undefined}>
-                <FieldLabel htmlFor="extract-lut-path">自訂 LUT（選填）</FieldLabel>
+                <FieldLabel htmlFor="extract-lut-path"><Trans comment="Optional user-provided 3D LUT file path.">Custom LUT (optional)</Trans></FieldLabel>
                 <div className="input-with-button">
                   <Input
                     id="extract-lut-path"
                     value={lutPath}
-                    placeholder="留白使用官方 D-Log M → Rec.709 LUT"
+                    placeholder={t`Leave blank to use the official D-Log M → Rec.709 LUT`}
                     aria-invalid={lutPathInvalid || undefined}
                     onChange={(event) => setSettingsDraft((current) => ({
                       ...current,
                       extract: { ...current.extract, lutPath: event.currentTarget.value || undefined },
                     }))}
                   />
-                  <Button type="button" variant="outline" size="sm" onClick={() => void openLutPicker()}>選擇 .cube</Button>
-                  {lutPath && <Button type="button" variant="ghost" size="icon-xs" aria-label="清除自訂 LUT" onClick={() => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: undefined } }))}><X /></Button>}
+                  <Button type="button" variant="outline" size="sm" onClick={() => void openLutPicker()}>{t`Choose .cube`}</Button>
+                  {lutPath && <Button type="button" variant="ghost" size="icon-xs" aria-label={t`Clear custom LUT`} onClick={() => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: undefined } }))}><X /></Button>}
                 </div>
                 {lutPathInvalid
-                  ? <Alert variant="destructive"><AlertTriangle /><AlertTitle>LUT 檔案格式不正確</AlertTitle><AlertDescription>請選擇副檔名為 .cube 的 3D LUT。</AlertDescription></Alert>
+                  ? <Alert variant="destructive"><AlertTriangle /><AlertTitle>{t`Invalid LUT file format`}</AlertTitle><AlertDescription>{t`Choose a 3D LUT with the .cube extension.`}</AlertDescription></Alert>
                   : colorMode === "dlogMRec709"
-                    ? <FieldDescription>未指定自訂檔案時，執行階段會使用官方 LUT；指定後會使用這個 .cube。</FieldDescription>
-                    : <FieldDescription>只在需要覆蓋官方 LUT 時指定 .cube。</FieldDescription>}
+                    ? <FieldDescription>{t`When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file.`}</FieldDescription>
+                    : <FieldDescription>{t`Specify a .cube file only when you need to override the official LUT.`}</FieldDescription>}
               </Field>
             </FieldContent>
           </Field>
           <Field>
-            <FieldLabel>遮罩</FieldLabel>
+            <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for creating masks.">Masking</Trans></FieldLabel>
             <FieldContent>
               <Field orientation="horizontal" className="mask-feature-option">
                 <Checkbox
@@ -2164,12 +2659,12 @@ function App() {
                     },
                   }))}
                 />
-                <FieldLabel htmlFor="mask-yolo">YOLO 物件過濾</FieldLabel>
+                <FieldLabel htmlFor="mask-yolo"><Trans comment="Enable object detection masks from YOLO11.">YOLO object filtering</Trans></FieldLabel>
               </Field>
               {settingsDraft.mask.yoloEnabled && (
                 <FieldGroup className="mask-feature-settings">
                   <FieldSet className="mask-object-options">
-                    <FieldLegend variant="label">要遮蔽的物件（可複選）</FieldLegend>
+                    <FieldLegend variant="label"><Trans comment="Select one or more object classes to exclude from reconstruction.">Objects to mask (multiple selection)</Trans></FieldLegend>
                     <FieldGroup data-slot="checkbox-group" className="mask-checkbox-list">
                       {MASK_CLASSES.map((maskClass) => {
                         const checkboxId = `mask-class-${maskClass}`;
@@ -2185,7 +2680,7 @@ function App() {
                                 return { ...current, mask: { ...current.mask, classes, yoloEnabled: classes.length > 0 } };
                               })}
                             />
-                            <FieldLabel htmlFor={checkboxId}>{MASK_CLASS_LABELS[maskClass]}</FieldLabel>
+                            <FieldLabel htmlFor={checkboxId}>{translate(MASK_CLASS_LABELS[maskClass])}</FieldLabel>
                           </Field>
                         );
                       })}
@@ -2199,16 +2694,16 @@ function App() {
                   checked={settingsDraft.mask.maskSky}
                   onCheckedChange={(checked) => setSettingsDraft((current) => ({ ...current, mask: { ...current.mask, maskSky: checked === true } }))}
                 />
-                <FieldLabel htmlFor="mask-sky">天空過濾</FieldLabel>
+                <FieldLabel htmlFor="mask-sky"><Trans comment="Enable SkySeg sky masks.">Sky filtering</Trans></FieldLabel>
               </Field>
-              {settingsDraft.mask.maskSky && <FieldDescription>使用 SkySeg 產生天空遮罩。</FieldDescription>}
+              {settingsDraft.mask.maskSky && <FieldDescription>{t`Use SkySeg to generate sky masks.`}</FieldDescription>}
               {!settingsDraft.mask.yoloEnabled && !settingsDraft.mask.maskSky && (
-                <FieldDescription>未啟用遮罩；影格擷取完成後會直接進入對齊。</FieldDescription>
+                <FieldDescription>{t`Masking is disabled; alignment starts after frame extraction.`}</FieldDescription>
               )}
             </FieldContent>
           </Field>
         <Field>
-          <FieldLabel>對齊</FieldLabel>
+          <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldLabel>
           <FieldContent>
             <div className="settings-stack">
               <Field orientation="horizontal" className="extract-filter-option" data-disabled={doctor.gpuAvailable === false || undefined}>
@@ -2223,13 +2718,13 @@ function App() {
                   }}
                 />
                 <FieldContent>
-                  <FieldLabel htmlFor="use-gpu">對齊使用 CUDA 加速</FieldLabel>
-                  <FieldDescription>{doctor.gpuAvailable === false ? "目前未偵測到可用的 COLMAP CUDA 加速，因此會使用 CPU。" : "偵測到支援 CUDA 的 NVIDIA GPU 時預設開啟；若執行失敗會自動改用 CPU。"}</FieldDescription>
+                  <FieldLabel htmlFor="use-gpu"><Trans comment="Use CUDA acceleration for the COLMAP alignment stage.">Use CUDA acceleration for alignment</Trans></FieldLabel>
+                  <FieldDescription>{doctor.gpuAvailable === false ? t`No usable COLMAP CUDA acceleration was detected, so the CPU will be used.` : t`Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails.`}</FieldDescription>
                 </FieldContent>
               </Field>
               {doctor.gpuAvailable === true && doctor.gpuDevices.length > 1 && (
                 <Field data-disabled={!settingsDraft.align.useGpu || undefined}>
-                  <FieldLabel htmlFor="gpu-index">選擇 GPU</FieldLabel>
+                  <FieldLabel htmlFor="gpu-index"><Trans comment="Select which detected GPU should run alignment.">Select GPU</Trans></FieldLabel>
                   <Select
                     items={doctor.gpuDevices.map((device) => ({ value: String(device.index), label: gpuDeviceLabel(device, doctor.gpuDevices) }))}
                     value={settingsDraft.align.gpuIndex}
@@ -2256,7 +2751,7 @@ function App() {
       <header className="window-bar">
         {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
         <span className="window-title">SphereAlign</span>
-        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge">瀏覽器預覽</Badge>}<Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
+        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge"><Trans comment="Badge indicating that the app is running in a browser-only preview.">Browser preview</Trans></Badge>}<Button variant="ghost" size="icon-sm" aria-label={t`Open settings`} onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
       </header>
 
       <main className="studio-main">
@@ -2264,24 +2759,24 @@ function App() {
         {tasks.length === 0 ? (
           <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
             <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
-            <h1>尚無任務</h1>
-            <p className="empty-description">將 OSV 素材或尚未完成的專案資料夾拖放到這裡，<br />也可以從下方選擇檔案或資料夾。</p>
-            <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload data-icon="inline-start" />選擇檔案</Button><Button size="lg" variant="outline" onClick={() => void openSourcePicker("directories")}><FolderOpen data-icon="inline-start" />選擇資料夾</Button></div>
+            <h1><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h1>
+            <p className="empty-description"><Trans comment="Drop OSV media or an unfinished project folder here, or choose files or a folder below.">Drop OSV media or an unfinished project folder here,<br />or choose files or a folder below.</Trans></p>
+            <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button><Button size="lg" variant="outline" onClick={() => void openSourcePicker("directories")}><FolderOpen data-icon="inline-start" /><Trans context="folder picker action" comment="Button opens a folder picker for a project or source folder.">Choose folder</Trans></Button></div>
             <section className="supported-formats" aria-labelledby="supported-formats-title">
-              <h2 id="supported-formats-title">目前支援</h2>
+              <h2 id="supported-formats-title"><Trans>Supported inputs</Trans></h2>
               <div className="supported-format-list">
-                <article className="supported-format-card"><Film aria-hidden="true" /><span><strong>Osmo 360 原始檔案</strong><small>OSV</small></span></article>
-                <article className="supported-format-card"><Folder aria-hidden="true" /><span><strong>專案資料夾</strong><small>繼續未完成的重建任務</small></span></article>
+                <article className="supported-format-card"><Film aria-hidden="true" /><span><strong><Trans comment="DJI Osmo 360 source media files.">Osmo 360 source files</Trans></strong><small>OSV</small></span></article>
+                <article className="supported-format-card"><Folder aria-hidden="true" /><span><strong><Trans comment="A project folder containing a resumable reconstruction.">Project folder</Trans></strong><small><Trans>Resume an unfinished reconstruction task</Trans></small></span></article>
               </div>
             </section>
           </section>
         ) : (
           <section className="tasks-view">
-            <header className="content-header"><div><h1>重建任務</h1><p>新增任務後會依序執行影格擷取、遮罩與對齊；各階段仍可獨立取消或重試。</p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen />開啟專案</Button><Button onClick={openNewTaskDialog}><Plus />新增重建任務</Button></div></header>
+            <header className="content-header"><div><h1><Trans>Reconstruction tasks</Trans></h1><p><Trans comment="Task pipeline runs extraction, masking, and alignment in order; each stage can still be cancelled or retried independently.">New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently.</Trans></p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button><Button onClick={openNewTaskDialog}><Plus /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button></div></header>
             <div className="task-groups">
               {([
-                { key: "queued", title: "排隊中", description: "尚未開始，可修改或移除。", items: queuedTasks },
-                { key: "started", title: "處理中與已結束", description: "已開始的任務會保留處理階段與紀錄。", items: startedTasks },
+                { key: "queued", title: t`Queued`, description: t`Not started; can be edited or removed.`, items: queuedTasks },
+                { key: "started", title: t`In progress and finished`, description: t`Started tasks keep their stages and processing records.`, items: startedTasks },
               ] as const).filter((group) => group.items.length > 0).map((group) => (
                 <section className="task-group" key={group.key}>
                   <div className="task-group-heading"><div><h2>{group.title}</h2><p>{group.description}</p></div><Badge variant="outline">{group.items.length}</Badge></div>
@@ -2299,42 +2794,42 @@ function App() {
                 return (
                   <article className="task-row" data-queued={queued || undefined} key={task.projectId}>
                     <div className="task-row-top">
-                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? "等待執行" : "正在準備"}</Badge>}{task.previewOnly && <Badge variant="outline">預覽</Badge>}</div><p title={task.outputPath}>{task.outputPath || "尚未指定輸出"}</p></div></div>
+                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}{task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}</div><p title={task.outputPath}>{task.outputPath || t`Output not specified`}</p></div></div>
                       <div className="task-row-actions">
-                        {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" />加入佇列</Button>}
-                        {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" />修改</Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" />刪除</Button></>}
-                        <Button variant="ghost" size="icon-sm" aria-label={`查看 ${task.name} 的詳細資料`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><Info /></Button>
+                        {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" /><Trans context="queue action" comment="Add a queued task to the automatic execution queue.">Add to queue</Trans></Button>}
+                        {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
+                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><Info /></Button>
                       </div>
                     </div>
-                    {queued ? <div className="queued-task-summary"><span>佇列會依建立順序自動執行</span><small>{task.inputPaths.length} 個來源</small></div> : <><div className="task-progress-block">
-                      <div className="task-progress-summary"><span title="依三次實際執行耗時加權：約影格擷取 22%、遮罩 4%、對齊 74%">總進度（時間權重）</span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
-                      <Progress value={overall} aria-label={`${task.name} 整體時間進度`}><ProgressValue /></Progress>
+                    {queued ? <div className="queued-task-summary"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="task-progress-block">
+                      <div className="task-progress-summary"><span title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}><Trans comment="Overall progress weighted by observed stage durations.">Overall progress (time weighted)</Trans></span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                      <Progress value={overall} aria-label={t`${task.name} overall time progress`}><ProgressValue /></Progress>
                       <div className="task-live-summary">
-                        <span><strong>目前階段：{currentStageDefinition.label}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
+                        <span><strong>{t`Current stage: ${stageLabel(currentStageDefinition)}`}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
                         <dl>
-                          <div><dt>處理量</dt><dd>{currentCount || "尚未回報"}</dd></div>
-                          <div><dt>已執行</dt><dd>{currentElapsed !== undefined ? formatDuration(currentElapsed) : "尚未開始"}</dd></div>
-                          <div><dt>預估剩餘</dt><dd>{currentStage.status === "running" ? formatEta(currentEta) : "—"}</dd></div>
+                          <div><dt><Trans>Processed</Trans></dt><dd>{currentCount || t`Not reported yet`}</dd></div>
+                          <div><dt><Trans>Elapsed</Trans></dt><dd>{currentElapsed !== undefined ? formatDuration(currentElapsed) : t`Not started`}</dd></div>
+                          <div><dt><Trans>Estimated remaining</Trans></dt><dd>{currentStage.status === "running" ? formatEta(currentEta) : "—"}</dd></div>
                         </dl>
                       </div>
                     </div>
-                    <div className="stage-row-list" role="list" aria-label="重建處理流程">
+                    <div className="stage-row-list" role="list" aria-label={t`Reconstruction pipeline`}>
                       {STAGES.map((stage, stageIndex) => {
                         const current = task.stages[stage.key];
                         const stageProgress = Math.round(current.progress);
                         const Icon = stage.icon;
                         const action = stageActionState(task, stage.key, hasRunningStage);
                         return (
-                          <div className="task-stage" data-status={current.status} key={stage.key} role="listitem" aria-label={`第 ${stageIndex + 1} / ${STAGES.length} 階段：${stage.label}`}>
+                          <div className="task-stage" data-status={current.status} key={stage.key} role="listitem" aria-label={t`Stage ${stageIndex + 1} of ${STAGES.length}: ${stageLabel(stage)}`}>
                             <span className="task-stage-step" aria-hidden="true"><span>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span></span>
                             <div className="task-stage-label">
                               <Icon />
                               <div className="task-stage-copy">
-                                <strong>{stage.label}</strong>
-                                <small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.message || stage.description}</small>
+                                <strong>{stageLabel(stage)}</strong>
+                                <small>{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small>
                                 {current.status === "running" && (
                                   <div className={`task-stage-progress${stageProgress <= 0 ? " is-waiting" : ""}`}>
-                                    <Progress value={stageProgress} aria-label={`${stage.label}進度`}><ProgressValue /></Progress>
+                                    <Progress value={stageProgress} aria-label={t`${stageLabel(stage)} progress`}><ProgressValue /></Progress>
                                     <span>{stageProgress}%</span>
                                   </div>
                                 )}
@@ -2357,7 +2852,7 @@ function App() {
         )}
       </main>
 
-      {toast && <div className="toast" role="status"><Info /><span>{toast}</span><Button variant="ghost" size="icon-xs" onClick={() => setToast(null)} aria-label="關閉通知"><X /></Button></div>}
+      {toast && <div className="toast" role="status"><Info /><span>{localiseUserMessage(toast)}</span><Button variant="ghost" size="icon-xs" onClick={() => setToast(null)} aria-label={t`Close notification`}><X /></Button></div>}
 
       <Dialog open={taskDialogOpen} onOpenChange={(open) => {
         setTaskDialogOpen(open);
@@ -2369,25 +2864,25 @@ function App() {
         }
       }}>
         <DialogContent className="task-dialog" showCloseButton>
-          <DialogHeader><DialogTitle>{editingTaskId ? "修改排隊任務" : "新增重建任務"}</DialogTitle><DialogDescription>{editingTaskId ? "可在開始前調整任務名稱、來源與處理設定。" : "請只加入同一場景拍攝的 OSV 或雙魚眼素材；同一場景可包含多個來源。若來源屬於不同場景，請分別建立重建任務。"}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</DialogTitle><DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription></DialogHeader>
           <div className="dialog-scroll">
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
-                <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：山區路線／2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
-                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
-                <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button>}</div><FieldDescription>{editingTaskId ? "儲存新的任務名稱時，輸出資料夾會同步重新命名；不支援的檔名字元會改為連字號。" : "建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。"}</FieldDescription></FieldContent></Field>
+                <Field><FieldLabel htmlFor="task-name"><Trans>Task name</Trans></FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder={t`For example: mountain route / 2026-08`} onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
+                <Field><FieldLabel><Trans context="source input" comment="Input media or an unfinished project folder for a reconstruction task.">Sources</Trans></FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span><Trans>Drop OSV media or an unfinished project folder</Trans></span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>{t`Choose sources`}</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={t`Remove ${source.label}`} onClick={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple files or drop an unfinished project folder here.`}</p></FieldContent></Field>
+                <Field><FieldLabel htmlFor="output-path"><Trans context="output destination" comment="Folder where project metadata and reconstruction output are saved.">Output folder</Trans></FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder={t`Defaults beside the first source: colmap-file-name`} onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}><Trans context="output folder picker action" comment="Button opens a folder picker to choose a different output location.">Choose another</Trans></Button>}</div><FieldDescription>{editingTaskId ? t`Saving a new task name also renames the output folder; unsupported filename characters become hyphens.` : t`After creation, project information is saved in the output folder so the task can resume after an interruption.`}</FieldDescription></FieldContent></Field>
               </FieldGroup>
               {renderSettingsFields()}
             </div>
           </div>
-          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? "儲存修改" : "新增任務"}</Button></DialogFooter>
+          <DialogFooter><DialogClose render={<Button variant="ghost" />}><Trans>Cancel</Trans></DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(deletingTaskId)} onOpenChange={(open) => { if (!open) setDeletingTaskId(null); }}>
         <DialogContent showCloseButton={false}>
-          <DialogHeader><DialogTitle>從佇列移除任務？</DialogTitle><DialogDescription>只會移除任務與排隊狀態，不會刪除已建立的輸出資料夾。</DialogDescription></DialogHeader>
-          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button variant="destructive" onClick={deleteQueuedTask}><Trash2 />移除任務</Button></DialogFooter>
+          <DialogHeader><DialogTitle><Trans context="remove task confirmation" comment="Confirmation dialog for removing a queued task.">Remove task from queue?</Trans></DialogTitle><DialogDescription><Trans>Only the task and queue state are removed; the existing output folder is not deleted.</Trans></DialogDescription></DialogHeader>
+          <DialogFooter><DialogClose render={<Button variant="ghost" />}><Trans>Cancel</Trans></DialogClose><Button variant="destructive" onClick={deleteQueuedTask}><Trash2 /><Trans context="task action" comment="Remove the queued task, while keeping its output folder.">Remove task</Trans></Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2396,44 +2891,44 @@ function App() {
           <SheetContent className="task-detail-sheet" side="right">
             <SheetHeader>
               <SheetTitle>{selectedTask.name}</SheetTitle>
-              <SheetDescription>查看目前工作、處理指標與完整處理紀錄；效能監測尚未接通時會明確標示。</SheetDescription>
+              <SheetDescription><Trans comment="Task details include current work, processing metrics, and logs; unavailable performance monitoring is marked explicitly.">View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly.</Trans></SheetDescription>
             </SheetHeader>
             <div className="task-detail-scroll">
               {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
                 <div className="task-detail-current-heading">
-                  <span><small>目前工作</small><strong>{selectedStageDefinition.label}</strong></span>
+                  <span><small><Trans>Current work</Trans></small><strong>{stageLabel(selectedStageDefinition)}</strong></span>
                   <StageStatusBadge status={selectedStage.status} />
                 </div>
                 <div className="task-detail-current-message">
                   <strong>{phaseLabel(selectedStage.phase)}</strong>
-                  <p>{selectedStage.message || selectedStageDefinition.description}</p>
-                  {selectedStage.currentItem && <small>目前項目：{selectedStage.currentItem}</small>}
+                  <p>{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
+                  {selectedStage.currentItem && <small>{t`Current item: ${selectedStage.currentItem}`}</small>}
                 </div>
                 {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="task-detail-current-progress">
-                  <div><span>{selectedStageDefinition.label}進度</span><strong>{Math.round(selectedStage.progress)}%</strong></div>
-                  <Progress value={selectedStage.progress} aria-label={`${selectedStageDefinition.label}進度`}><ProgressValue /></Progress>
+                  <div><span>{t`${stageLabel(selectedStageDefinition)} progress`}</span><strong>{Math.round(selectedStage.progress)}%</strong></div>
+                  <Progress value={selectedStage.progress} aria-label={t`${stageLabel(selectedStageDefinition)} progress`}><ProgressValue /></Progress>
                 </div>}
                 <dl className="task-detail-metrics">
-                  <div><dt>處理量</dt><dd>{logCountLabel(selectedStage.completed, selectedStage.total) || "尚未回報"}</dd></div>
-                  <div><dt>已執行</dt><dd>{formatDuration(taskStageDuration(selectedStage, clockMs))}</dd></div>
-                  <div><dt>預估剩餘</dt><dd>{selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"}</dd></div>
-                  <div><dt>速度（估算）</dt><dd>{selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"}</dd></div>
-                  <div><dt><Cpu />CPU</dt><dd>尚未回報</dd></div>
-                  <div><dt><Gauge />GPU</dt><dd>尚未回報</dd></div>
-                  <div><dt><MemoryStick />記憶體</dt><dd>尚未回報</dd></div>
-                  <div className="task-detail-metric-output"><dt>輸出</dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || "尚未指定"}</dd></div>
+                  <div><dt><Trans>Processed</Trans></dt><dd>{logCountLabel(selectedStage.completed, selectedStage.total) || t`Not reported yet`}</dd></div>
+                  <div><dt><Trans>Elapsed</Trans></dt><dd>{formatDuration(taskStageDuration(selectedStage, clockMs))}</dd></div>
+                  <div><dt><Trans>Estimated remaining</Trans></dt><dd>{selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"}</dd></div>
+                  <div><dt><Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans></dt><dd>{selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"}</dd></div>
+                  <div><dt><Cpu />CPU</dt><dd><Trans>Not reported yet</Trans></dd></div>
+                  <div><dt><Gauge />GPU</dt><dd><Trans>Not reported yet</Trans></dd></div>
+                  <div><dt><MemoryStick /><Trans>Memory</Trans></dt><dd><Trans>Not reported yet</Trans></dd></div>
+                  <div className="task-detail-metric-output"><dt><Trans context="output metric" comment="Output folder or artifact location.">Output</Trans></dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || t`Not specified`}</dd></div>
                 </dl>
               </section>}
 
               <Accordion>
                 <AccordionItem className="task-detail-stage-details" value="pipeline-details">
-                  <AccordionTrigger>查看 Pipeline 詳細資訊</AccordionTrigger>
+                  <AccordionTrigger><Trans comment="Expand the details for each pipeline stage.">View pipeline details</Trans></AccordionTrigger>
                   <AccordionContent><div className="task-detail-stages">
                   {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const action = stageActionState(selectedTask, stage.key, hasRunningStage); return (
                     <div className="task-detail-stage" key={stage.key}>
-                      <div className="task-detail-stage-main"><Icon /><span><strong>{stage.label}</strong><small>{action.prerequisite ? `等待${action.prerequisite}完成` : current.phase ? phaseLabel(current.phase) : current.message || stage.description}</small></span><StageStatusBadge status={current.status} /></div>
+                      <div className="task-detail-stage-main"><Icon /><span><strong>{stageLabel(stage)}</strong><small>{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.phase ? phaseLabel(current.phase) : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small></span><StageStatusBadge status={current.status} /></div>
                       <div className="task-detail-stage-footer">
-                        <div className="task-detail-stage-time"><span><Clock3 />{taskStageDuration(current, clockMs) !== undefined ? `耗時 ${formatDuration(taskStageDuration(current, clockMs))}` : "尚未開始"}</span></div>
+                        <div className="task-detail-stage-time"><span><Clock3 />{taskStageDuration(current, clockMs) !== undefined ? t`Duration ${formatDuration(taskStageDuration(current, clockMs))}` : t`Not started`}</span></div>
                         <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
                       </div>
                     </div>
@@ -2443,41 +2938,57 @@ function App() {
               </Accordion>
 
               <section className="task-detail-section">
-                <div className="task-detail-section-title"><h2>處理紀錄</h2><span>{selectedTaskLogs.length} 筆</span></div>
+                <div className="task-detail-section-title"><h2><Trans>Processing records</Trans></h2><span><Plural value={selectedTaskLogs.length} one="# entry" other="# entries" /></span></div>
                 {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
                   const count = logCountLabel(log.completed, log.total);
                   return <li className={`task-detail-log task-detail-log--${log.level}`} key={log.id}>
                     <span className="task-detail-log-marker" aria-hidden="true" />
-                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{log.message}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>耗時 {formatDuration(log.durationMs)}</span>}</div></div>
+                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{localiseUserMessage(log.message)}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
                   </li>;
-                })}</ol> : <p className="task-detail-empty">尚無處理紀錄；開始執行後會在這裡顯示每個階段與目前位置。</p>}
+                })}</ol> : <p className="task-detail-empty"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
               </section>
 
               <section className="task-detail-section">
-                <div className="task-detail-section-title"><h2>來源</h2><span>{selectedTask.inputPaths.length} 個檔案</span></div>
-                {selectedTask.inputPaths.length > 0 ? <div className="task-detail-sources">{selectedTask.inputPaths.map((path, index) => <div key={`${index}-${path}`} title={path}><Video /><span>{path}</span></div>)}</div> : <p className="task-detail-empty">此任務沒有記錄來源檔案。</p>}
+                <div className="task-detail-section-title"><h2><Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans></h2><span><Plural value={selectedTask.inputPaths.length} one="# file" other="# files" /></span></div>
+                {selectedTask.inputPaths.length > 0 ? <div className="task-detail-sources">{selectedTask.inputPaths.map((path, index) => <div key={`${index}-${path}`} title={path}><Video /><span>{path}</span></div>)}</div> : <p className="task-detail-empty"><Trans>This task has no recorded source files.</Trans></p>}
               </section>
 
               {selectedTask.warnings.length > 0 && (
                 <section className="task-detail-section">
-                  <div className="task-detail-section-title"><h2>警告</h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
-                  <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{warning}</span></div>)}</div>
+                  <div className="task-detail-section-title"><h2><Trans>Warnings</Trans></h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
+                  <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{localiseUserMessage(warning)}</span></div>)}</div>
                 </section>
               )}
             </div>
-            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" />取消整個任務</Button>}<Button variant="outline" onClick={() => setSelectedTaskId(null)}>關閉</Button></SheetFooter>
+            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setSelectedTaskId(null)}><Trans>Close</Trans></Button></SheetFooter>
           </SheetContent>
         </Sheet>
       )}
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle>設定</SheetTitle><SheetDescription>調整介面主題，並檢查 COLMAP、CUDA、FFmpeg 與硬體加速能力。</SheetDescription></SheetHeader>
+          <SheetHeader><SheetTitle><Trans>Settings</Trans></SheetTitle><SheetDescription><Trans>Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities.</Trans></SheetDescription></SheetHeader>
           <div className="settings-sheet-scroll">
             <section className="settings-section">
+              <FieldSet className="language-fieldset">
+                <FieldLegend variant="label"><Trans context="language setting" comment="Select the language used by the interface.">Language</Trans></FieldLegend>
+                <FieldDescription><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></FieldDescription>
+                <Select
+                  items={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: translate(option.label) }))}
+                  value={getLocale()}
+                  onValueChange={(value) => { if (value) void setLocale(value); }}
+                >
+                  <SelectTrigger className="w-full" aria-label={t`Interface language`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{translate(option.label)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </FieldSet>
+            </section>
+            <section className="settings-section">
               <FieldSet className="appearance-fieldset">
-                <FieldLegend variant="label">介面主題</FieldLegend>
-                <FieldDescription>選擇亮色、暗色，或自動跟隨系統外觀。</FieldDescription>
+                <FieldLegend variant="label"><Trans context="theme setting" comment="Select the visual theme of the interface.">Interface theme</Trans></FieldLegend>
+                <FieldDescription><Trans>Choose light, dark, or follow the system appearance automatically.</Trans></FieldDescription>
                 <ToggleGroup
                   className="theme-toggle-group"
                   variant="outline"
@@ -2488,48 +2999,48 @@ function App() {
                     const nextTheme = values[0] as Theme | undefined;
                     if (nextTheme) setTheme(nextTheme);
                   }}
-                  aria-label="介面主題"
+                  aria-label={t`Interface theme`}
                 >
-                  <ToggleGroupItem value="system">跟隨系統</ToggleGroupItem>
-                  <ToggleGroupItem value="light">亮色</ToggleGroupItem>
-                  <ToggleGroupItem value="dark">暗色</ToggleGroupItem>
+                  <ToggleGroupItem value="system"><Trans>System</Trans></ToggleGroupItem>
+                  <ToggleGroupItem value="light"><Trans>Light</Trans></ToggleGroupItem>
+                  <ToggleGroupItem value="dark"><Trans>Dark</Trans></ToggleGroupItem>
                 </ToggleGroup>
               </FieldSet>
             </section>
             <section className="settings-section">
               <div className="settings-section-heading">
-                <div className="settings-section-title"><h2>執行環境</h2><span>最後檢查：{doctor.checkedAt}</span></div>
-                <div className="settings-section-actions" role="group" aria-label="診斷操作">
-                  <Button type="button" variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "尚未檢查"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" />複製診斷資訊</Button>
-                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? "正在檢查" : "重新檢查環境"}</Button>
+                <div className="settings-section-title"><h2><Trans>Runtime environment</Trans></h2><span>{t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`}</span></div>
+                <div className="settings-section-actions" role="group" aria-label={t`Diagnostic actions`}>
+                  <Button type="button" variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "Not checked yet"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" /><Trans>Copy diagnostics</Trans></Button>
+                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? <Trans>Checking</Trans> : <Trans>Check environment again</Trans>}</Button>
                 </div>
               </div>
               <div className="environment-alert-stack">
                 <Alert data-status={doctorEssentialReady ? "ready" : "warning"} role={doctorEssentialReady ? "status" : "alert"}>
                   {doctorEssentialReady ? <CheckCircle2 /> : <AlertTriangle />}
-                  <AlertTitle>{doctorEssentialReady ? "所有必要功能皆可使用" : "有必要功能需要處理"}</AlertTitle>
-                  <AlertDescription>{doctorEssentialReady ? "基本重建流程可以執行。CUDA 與硬體加速屬於選用能力；不可用時仍能處理，但會降低影格擷取、特徵配對與重建速度。" : "缺少必要工具會阻止部分處理階段，請先處理下方標示為「需檢查」的項目。"}</AlertDescription>
+                  <AlertTitle>{doctorEssentialReady ? <Trans>All required capabilities are available</Trans> : <Trans>Required capabilities need attention</Trans>}</AlertTitle>
+                  <AlertDescription>{doctorEssentialReady ? <Trans>Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower.</Trans> : <Trans>Missing required tools will block some stages. Address the items marked “Needs attention” below first.</Trans>}</AlertDescription>
                 </Alert>
                 {performanceStatus !== "ready" && <Alert data-status={performanceStatus === "warning" ? "performance-warning" : "unknown"} role={performanceStatus === "warning" ? "alert" : "status"}>
                   <Gauge />
-                  <AlertTitle>{performanceStatus === "warning" ? "效能會受到影響" : "尚未確認加速能力"}</AlertTitle>
+                  <AlertTitle>{performanceStatus === "warning" ? <Trans>Performance will be affected</Trans> : <Trans>Acceleration capabilities not confirmed</Trans>}</AlertTitle>
                   <AlertDescription>
                     {performanceWarnings.length > 0
-                      ? performanceWarnings.map((warning) => <p key={warning}>{warning}</p>)
+                      ? performanceWarnings.map((warning) => <p key={warning}>{localiseUserMessage(warning)}</p>)
                       : performanceStatus === "warning"
-                        ? <p>{performanceFallback}</p>
-                        : <p>完成環境檢查後，才能確認目前會使用 CUDA、硬體解碼或 CPU。</p>}
-                    {performanceStatus === "warning" && <p>改用 CPU 的階段仍可執行，但處理時間可能明顯增加。</p>}
+                        ? <p>{localiseUserMessage(performanceFallback)}</p>
+                        : <p><Trans>Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used.</Trans></p>}
+                    {performanceStatus === "warning" && <p><Trans>Stages that fall back to the CPU can still run, but processing may take significantly longer.</Trans></p>}
                   </AlertDescription>
                 </Alert>}
               </div>
-              {isWindowsPlatform && <Field><FieldLabel htmlFor="colmap-path">COLMAP 執行檔</FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder="留白時從 PATH 自動偵測" onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>變更路徑</Button></div><FieldDescription>Windows 官方免安裝版請選根目錄的 COLMAP.bat；也可指定自行編譯的 colmap.exe。</FieldDescription></FieldContent></Field>}
-              <div className="doctor-summary"><MonitorCog /><span><strong>{doctor.platform}</strong><small>{doctor.summary}</small></span></div>
-              <div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <article className="doctor-row" key={item.label} data-status={item.status}><Icon /><div className="doctor-row-content"><div className="doctor-row-heading"><span><small>{item.label}</small><strong>{item.value}</strong></span><Badge variant={item.status === "warning" ? "destructive" : "outline"}>{item.status === "ready" ? "可用" : item.status === "warning" ? "需檢查" : "未檢查"}</Badge></div><p>{item.detail}</p>{item.details && item.details.length > 0 && <Accordion className="doctor-details"><AccordionItem value={`${item.label}-details`}><AccordionTrigger>查看詳細資料</AccordionTrigger><AccordionContent><ul>{item.details.map((detail) => <li key={detail}>{detail}</li>)}</ul></AccordionContent></AccordionItem></Accordion>}</div></article>; })}</div>
-              {generalDoctorWarnings.length > 0 && <Alert variant="destructive"><AlertTriangle /><AlertTitle>需要處理</AlertTitle><AlertDescription>{generalDoctorWarnings.map((warning) => <p key={warning}>{warning}</p>)}</AlertDescription></Alert>}
+              {isWindowsPlatform && <Field><FieldLabel htmlFor="colmap-path"><Trans comment="Path to the COLMAP executable used by the Windows runtime.">COLMAP executable</Trans></FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder={t`Leave blank to detect from PATH`} onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>{t`Change path`}</Button></div><FieldDescription><Trans>For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe.</Trans></FieldDescription></FieldContent></Field>}
+              <div className="doctor-summary"><MonitorCog /><span><strong>{localiseUserMessage(doctor.platform)}</strong><small>{localiseUserMessage(doctor.summary)}</small></span></div>
+              <div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <article className="doctor-row" key={item.label} data-status={item.status}><Icon /><div className="doctor-row-content"><div className="doctor-row-heading"><span><small>{diagnosticItemLabel(item.label)}</small><strong>{localiseUserMessage(item.value)}</strong></span><Badge variant={item.status === "warning" ? "destructive" : "outline"}>{diagnosticStatusLabel(item.status)}</Badge></div><p>{localiseUserMessage(item.detail)}</p>{item.details && item.details.length > 0 && <Accordion className="doctor-details"><AccordionItem value={`${item.label}-details`}><AccordionTrigger><Trans>View details</Trans></AccordionTrigger><AccordionContent><ul>{item.details.map((detail) => <li key={detail}>{localiseUserMessage(detail)}</li>)}</ul></AccordionContent></AccordionItem></Accordion>}</div></article>; })}</div>
+              {generalDoctorWarnings.length > 0 && <Alert variant="destructive"><AlertTriangle /><AlertTitle><Trans>Needs attention</Trans></AlertTitle><AlertDescription>{generalDoctorWarnings.map((warning) => <p key={warning}>{localiseUserMessage(warning)}</p>)}</AlertDescription></Alert>}
             </section>
           </div>
-          <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}>關閉</Button></SheetFooter>
+          <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
         </SheetContent>
       </Sheet>
     </div>

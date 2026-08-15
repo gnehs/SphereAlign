@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
+import { Trans } from "@lingui/react/macro"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -70,7 +71,11 @@ function DialogContent({
           >
             <XIcon
             />
-            <span className="sr-only">關閉</span>
+            <span className="sr-only">
+              <Trans comment="Accessible label for the icon-only button that closes the dialog.">
+                Close
+              </Trans>
+            </span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -108,7 +113,9 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close render={<Button variant="outline" />}>
-          關閉
+          <Trans comment="Label for the button that closes the dialog from the footer.">
+            Close
+          </Trans>
         </DialogPrimitive.Close>
       )}
     </div>

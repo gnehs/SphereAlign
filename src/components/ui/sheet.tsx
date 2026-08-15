@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
+import { Trans } from "@lingui/react/macro"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -72,7 +73,11 @@ function SheetContent({
           >
             <XIcon
             />
-            <span className="sr-only">關閉</span>
+            <span className="sr-only">
+              <Trans comment="Accessible label for the icon-only button that closes the sheet.">
+                Close
+              </Trans>
+            </span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>
