@@ -1,6 +1,6 @@
 # IMU 重建流程
 
-GS360 Studio 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使用不依賴座標校正的相對旋轉縮小問題，再用成功的視覺模型估時間偏移與 rotational hand-eye；只有通過驗證的結果才可建立 gravity prior 或進入 global mapper。
+SphereAlign 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使用不依賴座標校正的相對旋轉縮小問題，再用成功的視覺模型估時間偏移與 rotational hand-eye；只有通過驗證的結果才可建立 gravity prior 或進入 global mapper。
 
 ## 執行順序
 
@@ -17,7 +17,7 @@ GS360 Studio 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使�
 
 ## 產品設定
 
-一般 GS360 Studio 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面只保留影格率、清晰度過濾、遮罩及 GPU 選項；不再顯示或保存下列實驗設定。
+一般 SphereAlign 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面只保留影格率、清晰度過濾、遮罩及 GPU 選項；不再顯示或保存下列實驗設定。
 
 一般任務預設開啟 Align 後 gravity 扶正。它與下列 Global Mapper 實驗設定分離，因此 incremental fallback 仍可輸出地面朝下的訓練資料集；缺少或未通過校正的 telemetry 只會產生明確的 skipped 診斷，不會破壞已驗證的視覺模型。
 

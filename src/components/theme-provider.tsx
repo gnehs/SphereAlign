@@ -65,7 +65,7 @@ export function ThemeProvider({
     try {
       window.localStorage.setItem(storageKey, nextTheme);
     } catch (error) {
-      console.info("[GS360] theme preference", error);
+      console.info("[SphereAlign] theme preference", error);
     }
     applyTheme(nextTheme);
     setThemeState(nextTheme);

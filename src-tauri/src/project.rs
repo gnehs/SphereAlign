@@ -362,7 +362,7 @@ fn reserve_project_path(path: &Path) -> Result<ProjectPathReservation, String> {
         .open(&lock_path)
         .map_err(|error| {
             if error.kind() == io::ErrorKind::AlreadyExists {
-                "另一個 GS360 程序正在使用相同的輸出資料夾".to_owned()
+                "另一個 SphereAlign 程序正在使用相同的輸出資料夾".to_owned()
             } else {
                 format!("無法保留輸出資料夾名稱：{error}")
             }
@@ -914,7 +914,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
             let name = root
                 .file_name()
                 .and_then(|value| value.to_str())
-                .unwrap_or("GS360 project")
+                .unwrap_or("SphereAlign project")
                 .to_owned();
             let mut capabilities = BTreeMap::new();
             capabilities.insert("nativeFisheye".to_owned(), true);

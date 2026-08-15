@@ -960,7 +960,7 @@ async function invokeSafely<T>(command: string, args?: Record<string, unknown>) 
   try {
     return await invoke<T>(command, args);
   } catch (error) {
-    console.info(`[GS360] ${command}`, error);
+    console.info(`[SphereAlign] ${command}`, error);
     return null;
   }
 }
@@ -1109,7 +1109,7 @@ function safeDiagnosticDetail(value: string) {
 
 function doctorReportText(doctor: DoctorReport) {
   const lines = [
-    "GS360 Studio 診斷資訊",
+    "SphereAlign 診斷資訊",
     `平台：${doctor.platform}`,
     `最後檢查：${doctor.checkedAt}`,
     `摘要：${doctor.summary}`,
@@ -1355,7 +1355,7 @@ function App() {
       if (path) window.localStorage.setItem(COLMAP_PATH_STORAGE_KEY, path);
       else window.localStorage.removeItem(COLMAP_PATH_STORAGE_KEY);
     } catch (error) {
-      console.info("[GS360] COLMAP path preference", error);
+      console.info("[SphereAlign] COLMAP path preference", error);
     }
   }, [colmapPath]);
 
@@ -1518,7 +1518,7 @@ function App() {
       const paths = result === null ? [] : Array.isArray(result) ? result : [result];
       applySourcePaths(paths);
     } catch (error) {
-      console.info("[GS360] picker fallback", error);
+      console.info("[SphereAlign] picker fallback", error);
       fileInputRef.current?.click();
     }
   }, [applySourcePaths]);
@@ -1532,7 +1532,7 @@ function App() {
       const result = await openDialog({ directory: true, multiple: false });
       if (typeof result === "string") setOutputDraft(result);
     } catch (error) {
-      console.info("[GS360] output picker", error);
+      console.info("[SphereAlign] output picker", error);
     }
   }, []);
 
@@ -1552,7 +1552,7 @@ function App() {
         setToast("找不到可載入的專案資訊");
       }
     } catch (error) {
-      console.info("[GS360] load project", error);
+      console.info("[SphereAlign] load project", error);
       setToast("開啟專案失敗");
     }
   }, [addTaskMessage]);
@@ -1586,7 +1586,7 @@ function App() {
       else throw new Error("clipboard unavailable");
       setToast("診斷資訊已複製，可直接貼到除錯回報");
     } catch (error) {
-      console.info("[GS360] copy diagnostics", error);
+      console.info("[SphereAlign] copy diagnostics", error);
       setToast("無法複製診斷資訊，請檢查剪貼簿權限");
     }
   }, [doctor]);
@@ -1610,7 +1610,7 @@ function App() {
         void runDoctor(result);
       }
     } catch (error) {
-      console.info("[GS360] COLMAP picker", error);
+      console.info("[SphereAlign] COLMAP picker", error);
     }
   }, [runDoctor]);
 
@@ -1629,7 +1629,7 @@ function App() {
         setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: result } }));
       }
     } catch (error) {
-      console.info("[GS360] LUT picker", error);
+      console.info("[SphereAlign] LUT picker", error);
     }
   }, []);
 
@@ -1645,7 +1645,7 @@ function App() {
           if (event.payload.type === "drop") { setDragOver(false); applySourcePaths(event.payload.paths); }
         });
         if (disposed) stop(); else unlisten = stop;
-      } catch (error) { console.info("[GS360] drag-drop", error); }
+      } catch (error) { console.info("[SphereAlign] drag-drop", error); }
     };
     void register();
     return () => { disposed = true; unlisten?.(); };
@@ -1845,7 +1845,7 @@ function App() {
         request: { projectPath: task.rootPath || task.outputPath, name: nameDraft || task.name, inputPaths: sourcePaths, settings },
       });
     } catch (error) {
-      console.info("[GS360] update_queued_project", error);
+      console.info("[SphereAlign] update_queued_project", error);
       setToast(typeof error === "string" ? localiseUserMessage(error) : "儲存任務修改失敗，請查看執行環境訊息");
       return;
     }
@@ -2255,7 +2255,7 @@ function App() {
     <div className="studio-app">
       <header className="window-bar">
         {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
-        <span className="window-title">GS360 Studio</span>
+        <span className="window-title">SphereAlign</span>
         <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge">瀏覽器預覽</Badge>}<Button variant="ghost" size="icon-sm" aria-label="開啟設定" onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
       </header>
 

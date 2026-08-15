@@ -165,7 +165,7 @@ jobs:
             gh release create "$TAG" \
               --draft \
               --generate-notes \
-              --title "GS360 Studio $TAG" \
+              --title "SphereAlign $TAG" \
               --verify-tag
             release_id=$(gh api "repos/$GH_REPO/releases/tags/$TAG" --jq '.id')
           fi
@@ -246,7 +246,7 @@ jobs:
           tagName: ${{ needs.prepare.outputs.tag }}
           retryAttempts: 2
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: gs360-studio-[platform]-[arch]-[bundle]
+          workflowArtifactNamePattern: spherealign-[platform]-[arch]-[bundle]
 
   publish-release:
     name: Publish release

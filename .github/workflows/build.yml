@@ -79,4 +79,4 @@ jobs:
           args: ${{ matrix.args }}
           retryAttempts: 2
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: gs360-studio-[platform]-[arch]-[bundle]
+          workflowArtifactNamePattern: spherealign-[platform]-[arch]-[bundle]

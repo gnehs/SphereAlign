@@ -1,17 +1,17 @@
 <div align="center">
-  <img src="src-tauri/icons/icon.png" width="96" alt="GS360 Studio 標誌">
-  <h1>GS360 Studio</h1>
+  <img src="src-tauri/icons/icon.png" width="96" alt="SphereAlign 標誌">
+  <h1>SphereAlign</h1>
   <p>把 DJI Osmo 360 原始素材，整理成可續作的雙魚眼 COLMAP 專案。</p>
 </div>
 
 > [!WARNING]
 > **目前仍在開發中。** 功能、輸出格式與操作流程仍可能調整；現階段只支援 **DJI Osmo 360**，其他相機與影片來源尚未驗證，也不在支援範圍內。
 
-![GS360 Studio 將 Osmo 360 素材依序完成雙魚眼影格擷取、清晰影格挑選、動態物件與天空遮罩、相機對齊及稀疏點雲重建](assets/readme/workflow-hero.png)
+![SphereAlign 將 Osmo 360 素材依序完成雙魚眼影格擷取、清晰影格挑選、動態物件與天空遮罩、相機對齊及稀疏點雲重建](assets/readme/workflow-hero.png)
 
 ## 從原始素材到可續作的重建專案
 
-GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反覆確認狀態的工作，收進同一個本機桌面流程。加入一個或多個在相同場景拍攝的 Osmo 360 素材後，即可依序完成影格擷取、遮罩與相機對齊。
+SphereAlign 把原本需要在多個工具間往返、手動整理檔案與反覆確認狀態的工作，收進同一個本機桌面流程。加入一個或多個在相同場景拍攝的 Osmo 360 素材後，即可依序完成影格擷取、遮罩與相機對齊。
 
 | 影格擷取 | 場景遮罩 | 相機對齊 |
 | --- | --- | --- |
@@ -33,9 +33,9 @@ GS360 Studio 把原本需要在多個工具間往返、手動整理檔案與反�
 
 ## 可以中止，也可以接著做
 
-![GS360 Studio 的影格擷取、遮罩與對齊階段可獨立取消、重試，並從本機檢查點繼續](assets/readme/resumable-workflow.png)
+![SphereAlign 的影格擷取、遮罩與對齊階段可獨立取消、重試，並從本機檢查點繼續](assets/readme/resumable-workflow.png)
 
-影格擷取、遮罩與對齊都能分開執行、取消、重試或重跑。已完成的產物會保留在專案中；再次開啟任務時，GS360 Studio 會檢查既有結果，盡可能從可安全沿用的進度繼續，而不是每次全部重來。
+影格擷取、遮罩與對齊都能分開執行、取消、重試或重跑。已完成的產物會保留在專案中；再次開啟任務時，SphereAlign 會檢查既有結果，盡可能從可安全沿用的進度繼續，而不是每次全部重來。
 
 IMU／global mapper 的校正 gate、產物與 benchmark 方法請參閱 [IMU 重建流程](docs/IMU_RECONSTRUCTION.md)。開發環境、建置方式、架構、完整輸出結構與實作界線請參閱 [開發文件](docs/DEVELOPMENT.md)。
 
