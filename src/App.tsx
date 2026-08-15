@@ -3009,7 +3009,7 @@ function App() {
                 <div className="settings-section-title"><h2><Trans>Runtime environment</Trans></h2><span>{t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`}</span></div>
                 <div className="settings-section-actions" role="group" aria-label={t`Diagnostic actions`}>
                   <Button type="button" variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "Not checked yet"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" /><Trans>Copy diagnostics</Trans></Button>
-                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? <Trans>Checking</Trans> : <Trans>Check environment again</Trans>}</Button>
+                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? <Trans>Checking</Trans> : <Trans>Check again</Trans>}</Button>
                 </div>
               </div>
               <div className="environment-alert-stack">

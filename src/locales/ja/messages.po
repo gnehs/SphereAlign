@@ -564,7 +564,7 @@ msgid "Change path"
 msgstr "パスを変更"
 
 #: src/App.tsx:3017
-msgid "Check environment again"
+msgid "Check again"
 msgstr "環境を再確認"
 
 #: src/App.tsx:607
