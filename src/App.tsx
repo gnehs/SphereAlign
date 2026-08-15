@@ -50,8 +50,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Field,
   FieldContent,
@@ -941,18 +941,18 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
   }
 
   return (
-    <Dialog>
-      <DialogTrigger render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={`放大查看 ${alt}`} />}>
+    <HoverCard>
+      <HoverCardTrigger
+        delay={120}
+        closeDelay={80}
+        render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={`預覽 ${alt}`} />}
+      >
         <img src={previewUrl} alt={alt} />
-      </DialogTrigger>
-      <DialogContent className="source-preview-dialog">
-        <DialogHeader className="sr-only">
-          <DialogTitle>{source.detail} 預覽</DialogTitle>
-          <DialogDescription>放大的第一個鏡頭第一幀預覽圖。</DialogDescription>
-        </DialogHeader>
-        <img className="source-preview-image" src={previewUrl} alt={alt} />
-      </DialogContent>
-    </Dialog>
+      </HoverCardTrigger>
+      <HoverCardContent className="source-preview-card" side="right" sideOffset={12} aria-label={`${source.detail} 魚眼快照`}>
+        <img className="source-preview-image" src={previewUrl} alt="" />
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

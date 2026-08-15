@@ -858,7 +858,7 @@ button:active {
 }
 
 .source-thumbnail--interactive {
-  cursor: zoom-in;
+  cursor: default;
 }
 
 .source-thumbnail--interactive:focus-visible {
@@ -881,21 +881,21 @@ button:active {
   animation: source-preview-spin 900ms linear infinite;
 }
 
-.source-preview-dialog {
-  width: min(920px, calc(100vw - 32px));
-  max-width: none;
-  padding: 0;
-  background: #0d1117;
+.source-preview-card {
+  width: min(272px, calc(100vw - 32px));
+  overflow: hidden;
+  padding: 6px;
+  border-radius: 50%;
+  background: var(--studio-panel);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 18%), 0 2px 8px rgb(0 0 0 / 10%);
 }
 
 .source-preview-image {
   display: block;
-  width: auto;
-  max-width: 100%;
-  max-height: calc(100vh - 64px);
-  margin: auto;
-  border-radius: inherit;
-  object-fit: contain;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 @keyframes source-preview-spin {
