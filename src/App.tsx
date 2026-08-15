@@ -68,7 +68,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -81,7 +81,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme, type Theme } from "@/components/theme-provider";
-import { getLocale, setLocale } from "@/i18n";
+import { getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
 import "./App.css";
 
 type StageKey = "extract" | "mask" | "align";
@@ -93,12 +93,7 @@ function translate(descriptor: MessageDescriptor) {
   return i18n._(descriptor);
 }
 
-const LANGUAGE_OPTIONS = [
-  { value: "en", label: msg({ message: "English", context: "language option", comment: "Language selector option." }) },
-  { value: "zh-CN", label: msg({ message: "Simplified Chinese", context: "language option", comment: "Language selector option for Simplified Chinese; translated labels may use the native name 简体中文." }) },
-  { value: "zh-TW", label: msg({ message: "Traditional Chinese", context: "language option", comment: "Language selector option for Traditional Chinese; translated labels may use the native name 繁體中文." }) },
-  { value: "ja", label: msg({ message: "Japanese", context: "language option", comment: "Language selector option for Japanese; translated labels may use the native name 日本語." }) },
-] as const;
+const LANGUAGE_OPTIONS = supportedLocales.map((value) => ({ value, label: localeLabels[value] }));
 
 interface ColorInspection {
   shouldApply?: boolean;
@@ -2974,13 +2969,15 @@ function App() {
                 <FieldLegend variant="label"><Trans context="language setting" comment="Select the language used by the interface.">Language</Trans></FieldLegend>
                 <FieldDescription><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></FieldDescription>
                 <Select
-                  items={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: translate(option.label) }))}
+                  items={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                   value={getLocale()}
                   onValueChange={(value) => { if (value) void setLocale(value); }}
                 >
                   <SelectTrigger className="w-full" aria-label={t`Interface language`}><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {LANGUAGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{translate(option.label)}</SelectItem>)}
+                    <SelectGroup>
+                      {LANGUAGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </FieldSet>
