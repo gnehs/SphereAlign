@@ -1,6 +1,7 @@
 mod colmap_feature_cache;
 mod cli;
 mod colmap_priors;
+mod color;
 mod doctor;
 mod extraction;
 mod fisheye;
@@ -29,6 +30,11 @@ fn doctor(colmap_path: Option<String>) -> doctor::DoctorReport {
 #[tauri::command]
 fn inspect_paths(paths: Vec<String>) -> InspectPathsResponse {
     project::inspect(paths)
+}
+
+#[tauri::command]
+fn detect_color_profiles(paths: Vec<String>) -> Vec<color::ColorProfilePathInspection> {
+    color::detect_paths(paths)
 }
 
 #[tauri::command]
@@ -96,6 +102,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             doctor,
             inspect_paths,
+            detect_color_profiles,
             source_preview,
             create_project,
             update_queued_project,

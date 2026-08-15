@@ -1,5 +1,6 @@
 //! Project discovery and resumable manifest handling.
 
+use crate::color;
 use crate::doctor;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -246,6 +247,8 @@ pub struct SourceInspection {
     pub height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lens_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_profile: Option<color::ColorDetection>,
     pub warnings: Vec<String>,
 }
 
@@ -515,6 +518,7 @@ fn inspect_source(path: &Path) -> SourceInspection {
         width: None,
         height: None,
         lens_count: None,
+        color_profile: None,
         warnings: Vec::new(),
     };
     if !inspection.valid {
@@ -526,6 +530,7 @@ fn inspect_source(path: &Path) -> SourceInspection {
 
     match probe_source(&path) {
         Ok(probe) => {
+            inspection.color_profile = Some(color::detect_from_probe(&path, &probe));
             let streams = probe
                 .get("streams")
                 .and_then(Value::as_array)

@@ -153,7 +153,7 @@ pub struct SelectionRecord {
 }
 
 /// JSON payload written atomically after each run (including cancellation).
-pub const SELECTION_METADATA_SCHEMA_VERSION: u32 = 5;
+pub const SELECTION_METADATA_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionMetadata {
@@ -171,6 +171,17 @@ pub struct SelectionMetadata {
     pub intervals: usize,
     pub cancelled: bool,
     pub selections: Vec<SelectionRecord>,
+    /// Color transform resolved before this source was decoded. These values
+    /// participate in resume validation so a changed profile/LUT cannot reuse
+    /// stale candidate selections.
+    #[serde(default)]
+    pub color_mode: String,
+    #[serde(default)]
+    pub resolved_color_profile: String,
+    #[serde(default)]
+    pub color_detection_confidence: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_lut_sha256: Option<String>,
 }
 
 /// Aggregate extraction result.
@@ -949,6 +960,10 @@ pub fn extract_selected_pairs(
         intervals: total_intervals,
         cancelled,
         selections: records.clone(),
+        color_mode: "native".to_owned(),
+        resolved_color_profile: "unknown".to_owned(),
+        color_detection_confidence: 0.0,
+        color_lut_sha256: None,
     };
     write_selection_metadata_atomic(&metadata_path, &metadata)?;
     if request.copy_selected_outputs && !cancelled && !request.output_prefix.is_empty() {
@@ -2055,7 +2070,7 @@ mod tests {
         let metadata: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(request.metadata_path.clone().unwrap())?)
                 .map_err(|error| ExtractionError::Io(error.to_string()))?;
-        assert_eq!(metadata["schema_version"], 5);
+        assert_eq!(metadata["schema_version"], 6);
         assert_eq!(metadata["candidate_storage"], "filesystem_images");
         assert_eq!(metadata["copy_selected_outputs"], false);
         assert_eq!(metadata["outputs_committed"], false);
@@ -2169,7 +2184,7 @@ mod tests {
         assert!(request.lens1_output.join("00000000.png").is_file());
         let metadata = fs::read_to_string(&request.metadata_path.clone().unwrap())?;
         assert!(metadata.contains("requested_dense_fps"));
-        assert!(metadata.contains("\"schema_version\": 5"));
+        assert!(metadata.contains("\"schema_version\": 6"));
         assert!(metadata.contains("\"candidate_storage\": \"filesystem_images\""));
         assert!(metadata.contains("\"sharpness_analysis_max_dimension\": 512"));
         assert!(metadata.contains("\"copy_selected_outputs\": true"));

@@ -5,6 +5,7 @@
 use crate::colmap_feature_cache::{
     clear_matching_cache, database_has_nontrivial_rig, inspect_feature_cache,
 };
+use crate::color::{self, ColorResolution, ValidatedLut};
 use crate::doctor::find_executable;
 use crate::extraction::{
     self, ExtractionRequest, ExtractionStage, SelectionMetadata, SelectionRecord,
@@ -40,12 +41,12 @@ const CANDIDATE_STREAM_WIDTH: usize = CANDIDATE_PROXY_SIZE * 2;
 const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
-const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
+const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 3;
 const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 24;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 25;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -99,6 +100,7 @@ struct AlignFingerprintPayload {
     global_mapper_priors_sha256: String,
     gravity_alignment_sha256: String,
     gravity_transform_sha256: String,
+    color_metadata_sha256: Option<String>,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -112,6 +114,7 @@ struct FeatureFingerprintPayload {
     default_focal_length_factor: f64,
     quality_profile: &'static str,
     include_masks: bool,
+    color_metadata_sha256: Option<String>,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -131,6 +134,11 @@ struct CandidateSelectionCheckpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     telemetry_sha256: Option<String>,
     image_format: String,
+    color_mode: String,
+    resolved_color_profile: String,
+    color_detection_confidence: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    color_lut_sha256: Option<String>,
     selection: SelectionMetadata,
 }
 
@@ -1196,10 +1204,15 @@ fn candidate_ffmpeg_args(
     stream0: usize,
     stream1: usize,
     candidate_fps: f64,
+    lut: Option<&ValidatedLut>,
 ) -> Vec<String> {
     let lens_filter = |stream: usize, label: &str| {
+        let lut_filter = lut
+            .map(color::lut3d_filter)
+            .map(|filter| format!(",format=gbrp10le,{filter}"))
+            .unwrap_or_default();
         format!(
-            "[0:{stream}]fps={candidate_fps},scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
+            "[0:{stream}]fps={candidate_fps}{lut_filter},scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
         )
     };
     let filter = format!(
@@ -1277,9 +1290,14 @@ fn selected_ffmpeg_args(
     selected_indexes: &[u64],
     lens0: &Path,
     lens1: &Path,
+    lut: Option<&ValidatedLut>,
 ) -> Vec<String> {
     let select = balanced_select_expression(selected_indexes);
-    let filter = format!("fps={candidate_fps},select={select}");
+    let lut_filter = lut
+        .map(color::lut3d_filter)
+        .map(|filter| format!(",format=gbrp10le,{filter}"))
+        .unwrap_or_default();
+    let filter = format!("fps={candidate_fps}{lut_filter},select={select}");
     vec![
         "-hide_banner".into(),
         "-nostdin".into(),
@@ -1908,9 +1926,17 @@ fn run_ffmpeg_with_fallback(
 }
 
 fn probe_streams(ffprobe: &Path, input: &Path) -> Result<Value, String> {
-    let output = silent_command(ffprobe).args(["-v", "error",
-        "-show_entries", "stream=index,codec_type,codec_name,time_base,start_time,duration:format=duration,format_name,tags",
-        "-of", "json"]).arg(input).output()
+    let output = silent_command(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_format",
+            "-of",
+            "json",
+        ])
+        .arg(input)
+        .output()
         .map_err(|error| format!("ffprobe failed: {error}"))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
@@ -2093,6 +2119,7 @@ fn load_candidate_selection_checkpoint(
     keyframe_pruning: bool,
     keyframe_thresholds: extraction::KeyframePruningConfig,
     telemetry_sha256: Option<&str>,
+    color_resolution: &ColorResolution,
 ) -> Option<SelectionMetadata> {
     let checkpoint =
         serde_json::from_slice::<CandidateSelectionCheckpoint>(&fs::read(path).ok()?).ok()?;
@@ -2128,6 +2155,17 @@ fn load_candidate_selection_checkpoint(
         && checkpoint.keyframe_pruning == keyframe_pruning
         && checkpoint.keyframe_thresholds == keyframe_thresholds
         && checkpoint.telemetry_sha256.as_deref() == telemetry_sha256
+        && checkpoint.color_mode == color_resolution.mode.as_str()
+        && checkpoint.resolved_color_profile == color_resolution.resolved_profile.as_str()
+        && (checkpoint.color_detection_confidence - color_resolution.confidence).abs() < 1e-6
+        && checkpoint.color_lut_sha256.as_deref() == color_resolution.lut_sha256.as_deref()
+        && checkpoint.selection.color_mode == color_resolution.mode.as_str()
+        && checkpoint.selection.resolved_color_profile
+            == color_resolution.resolved_profile.as_str()
+        && (checkpoint.selection.color_detection_confidence - color_resolution.confidence).abs()
+            < 1e-6
+        && checkpoint.selection.color_lut_sha256.as_deref()
+            == color_resolution.lut_sha256.as_deref()
         && checkpoint.image_format == CANDIDATE_IMAGE_FORMAT
         && checkpoint.selection.schema_version == extraction::SELECTION_METADATA_SCHEMA_VERSION
         && checkpoint.selection.candidate_storage == "memory_rawvideo"
@@ -2155,6 +2193,7 @@ fn write_candidate_selection_checkpoint(
     keyframe_pruning: bool,
     keyframe_thresholds: extraction::KeyframePruningConfig,
     telemetry_sha256: Option<String>,
+    color_resolution: &ColorResolution,
     selection: &SelectionMetadata,
 ) -> Result<(), String> {
     let source_metadata = fs::metadata(input).map_err(|error| error.to_string())?;
@@ -2171,6 +2210,10 @@ fn write_candidate_selection_checkpoint(
         keyframe_thresholds,
         telemetry_sha256,
         image_format: CANDIDATE_IMAGE_FORMAT.to_owned(),
+        color_mode: color_resolution.mode.as_str().to_owned(),
+        resolved_color_profile: color_resolution.resolved_profile.as_str().to_owned(),
+        color_detection_confidence: color_resolution.confidence,
+        color_lut_sha256: color_resolution.lut_sha256.clone(),
         selection: selection.clone(),
     };
     let bytes = serde_json::to_vec_pretty(&checkpoint).map_err(|error| error.to_string())?;
@@ -2313,14 +2356,55 @@ fn run_extract(
     let output = PathBuf::from(&manifest.output_path);
     let (base_fps, dense_fps, skip_blurry) = extract_frame_settings(&manifest.settings);
     let (keyframe_pruning, keyframe_thresholds) = keyframe_pruning_settings(&manifest.settings);
+    let color_mode = color::mode_from_settings(&manifest.settings)?;
+    let custom_lut_path = manifest
+        .settings
+        .pointer("/extract/lutPath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let app_data_dir = app.path().app_data_dir().ok();
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
     let total_sources = manifest.input_paths.len().max(1);
     let mut telemetry_streams = Vec::new();
     let mut normalized_telemetry = Vec::new();
+    let mut color_profiles = Vec::<Value>::new();
     for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
         let input = PathBuf::from(raw_input);
         let current_source = input.to_string_lossy().into_owned();
         let probe = probe_streams(&ffprobe, &input)?;
+        // Probe and resolve every source independently. A mixed capture may
+        // contain a log source beside a display-referred source, so the first
+        // source must never decide the transform for the rest of the job.
+        let color_detection = color::detect_from_probe(&input, &probe);
+        let (color_resolution, color_lut) = color::resolve_for_extract(
+            color_mode,
+            &color_detection,
+            custom_lut_path.as_deref(),
+            app_data_dir.as_deref(),
+        )?;
+        let filter_lut = color_resolution
+            .applied
+            .then(|| color_lut.as_ref())
+            .flatten();
+        for warning in &color_resolution.warnings {
+            emit_log(
+                app,
+                id,
+                "warning",
+                format!("來源 {} 色彩處理：{warning}", source_index + 1),
+            );
+        }
+        color_profiles.push(json!({
+            "sourceIndex": source_index,
+            "path": input.to_string_lossy(),
+            "detectedProfile": color_detection.detected_profile,
+            "confidence": color_detection.confidence,
+            "reasons": color_detection.reasons,
+            "shouldApply": color_detection.should_apply,
+            "resolution": color_resolution,
+        }));
         let streams = stream_indices(&probe, "video");
         let candidate_total = expected_candidate_frames(&probe, candidate_fps);
         if streams.len() < 2 {
@@ -2422,6 +2506,7 @@ fn run_extract(
             keyframe_pruning,
             keyframe_thresholds,
             telemetry_sha256.as_deref(),
+            &color_resolution,
         ) {
             emit_log(
                 app,
@@ -2449,7 +2534,7 @@ fn run_extract(
                 None,
             );
             let software_args =
-                candidate_ffmpeg_args(&input, streams[0], streams[1], candidate_fps);
+                candidate_ffmpeg_args(&input, streams[0], streams[1], candidate_fps, filter_lut);
             let accelerated_args = with_hwaccel_auto(&software_args);
             let mut candidate_progress = CandidateProgressReporter {
                 app,
@@ -2492,6 +2577,10 @@ fn run_extract(
                 intervals: selected_intervals,
                 cancelled: false,
                 selections: selection_records,
+                color_mode: color_resolution.mode.as_str().to_owned(),
+                resolved_color_profile: color_resolution.resolved_profile.as_str().to_owned(),
+                color_detection_confidence: color_resolution.confidence,
+                color_lut_sha256: color_resolution.lut_sha256.clone(),
             };
             write_candidate_selection_checkpoint(
                 &selection_checkpoint,
@@ -2503,6 +2592,7 @@ fn run_extract(
                 keyframe_pruning,
                 keyframe_thresholds,
                 telemetry_sha256.clone(),
+                &color_resolution,
                 &selection,
             )?;
             selection
@@ -2628,6 +2718,7 @@ fn run_extract(
                 &selected_indexes,
                 &decoded_lens0,
                 &decoded_lens1,
+                filter_lut,
             );
             let accelerated_args = with_hwaccel_auto(&software_args);
             run_ffmpeg_with_fallback(
@@ -2827,6 +2918,17 @@ fn run_extract(
     }
     let metadata = output.join("metadata");
     fs::create_dir_all(&metadata).map_err(|e| e.to_string())?;
+    let color_metadata_path = metadata.join("color_profiles.json");
+    fs::write(
+        &color_metadata_path,
+        serde_json::to_vec_pretty(&json!({
+            "schemaVersion": 1,
+            "colorMode": color_mode,
+            "sources": color_profiles.clone(),
+        }))
+        .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
     let imu_status = if !normalized_telemetry.is_empty() {
         "normalized-telemetry-available"
     } else if telemetry_streams.is_empty() {
@@ -2835,7 +2937,7 @@ fn run_extract(
         "raw-data-streams-preserved"
     };
     fs::write(metadata.join("capture.json"), serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 5, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "schemaVersion": 6, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
         "lensCount": 2, "baseFps": base_fps, "candidateFps": candidate_fps,
         "requestedDenseFps": dense_fps, "skipBlurry": skip_blurry,
         "candidateImageFormat": CANDIDATE_IMAGE_FORMAT,
@@ -2843,6 +2945,8 @@ fn run_extract(
         "candidateStorage": "memory",
         "candidatePixelFormat": "gray8",
         "selectedFrameDecode": "second-pass-native-resolution",
+        "colorProfiles": color_profiles,
+        "colorMetadata": "metadata/color_profiles.json",
         "fullResolutionOutputsCommitted": true,
         "sharpness": if skip_blurry { "gaussian+laplacian+tenengrad; conservative pair minimum" } else { "disabled" },
         "sharpnessAnalysisMaxDimension": if skip_blurry { Some(extraction::SHARPNESS_MAX_DIMENSION) } else { None },
@@ -2858,6 +2962,7 @@ fn run_extract(
     Ok(vec![
         output.join("images").to_string_lossy().into_owned(),
         metadata.join("capture.json").to_string_lossy().into_owned(),
+        color_metadata_path.to_string_lossy().into_owned(),
     ])
 }
 
@@ -4239,6 +4344,9 @@ fn build_align_fingerprint(
         gravity_transform_sha256: optional_file_sha256(
             &root.join("metadata/gravity_alignment.sim3.txt"),
         )?,
+        color_metadata_sha256: Some(optional_file_sha256(
+            &root.join("metadata/color_profiles.json"),
+        )?),
         files,
     };
     let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -4265,6 +4373,9 @@ fn build_feature_fingerprint(
         default_focal_length_factor: FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR,
         quality_profile: quality_profile.as_str(),
         include_masks,
+        color_metadata_sha256: Some(optional_file_sha256(
+            &root.join("metadata/color_profiles.json"),
+        )?),
         files,
     };
     let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -8758,44 +8869,41 @@ fn run_align(
 mod tests {
     use super::{
         balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
+        calibrate_focal_before_bootstrap, calibrated_pair_refresh_requires_fail_closed,
         can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
-        cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_step_progress,
-        commit_configured_rig_model, complete_registered_dual_fisheye_frames,
-        create_colmap_database_backup,
-        cross_source_pair_lines,
-        colmap_quality_profile, ColmapQualityProfile,
-        dual_fisheye_registration_totals, expected_candidate_frames, extract_frame_settings,
-        evaluate_global_candidate_quality, extraction_completed_count, feature_extractor_args,
-        global_mapper_args,
-        global_mapper_prerequisite_error, has_valid_global_mapper_priors,
-        calibrate_focal_before_bootstrap, calibrated_pair_refresh_requires_fail_closed,
-        effective_mapper_matches_checkpoint,
-        invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
-        is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
-        load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
-        mapper_gpu_index, mapper_mode, mapper_still_required_after_rig_setup, mask_classes,
-        mask_enabled,
-        matches_importer_args, merge_pair_lists, parse_feature_name, parse_feature_progress,
-        parse_gpu_index,
-        parse_mapper_registration, parse_matching_progress, parse_showinfo_timestamp_ms,
-        probe_duration_seconds, read_raw_frames, registered_rig_image_names,
-        replace_stage_settings, reset_capabilities_for_stage_start, restore_colmap_database_backup,
-        rollback_calibrated_pair_transaction,
+        cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_quality_profile,
+        colmap_step_progress, commit_configured_rig_model, complete_registered_dual_fisheye_frames,
+        create_colmap_database_backup, cross_source_pair_lines, dual_fisheye_registration_totals,
+        effective_mapper_matches_checkpoint, evaluate_global_candidate_quality,
+        expected_candidate_frames, extract_frame_settings, extraction_completed_count,
+        feature_extractor_args, global_mapper_args, global_mapper_prerequisite_error,
+        has_valid_global_mapper_priors, invalidate_calibrated_prior_artifacts,
+        is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
+        keyframe_pruning_settings, load_candidate_selection_checkpoint, map_full_res_candidates,
+        mapper_args, mapper_gpu_index, mapper_mode, mapper_still_required_after_rig_setup,
+        mask_classes, mask_enabled, matches_importer_args, merge_pair_lists, parse_feature_name,
+        parse_feature_progress, parse_gpu_index, parse_mapper_registration,
+        parse_matching_progress, parse_showinfo_timestamp_ms, probe_duration_seconds,
+        read_raw_frames, registered_rig_image_names, replace_stage_settings,
+        reset_capabilities_for_stage_start, restore_colmap_database_backup,
         rig_bootstrap_shared_frame_count, rig_camera_rotations,
-        rig_configs_from_camera_extrinsics,
-        rig_config_has_complete_sensor_poses, rig_mapping_plan, select_best_bootstrap_candidate,
+        rig_config_has_complete_sensor_poses, rig_configs_from_camera_extrinsics, rig_mapping_plan,
+        rollback_calibrated_pair_transaction, select_best_bootstrap_candidate,
         selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
         view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
-        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, GlobalCandidateQualityMetrics,
-        ExtractionStage, GlobalMapperOptions, JobControl, JobManager, LogEvent, MapperMode,
-        MapperOptions, ProgressEvent, RawFrameMessage, RegistrationSummary, RigBootstrapCamera,
-        RigBootstrapConfig, RigBootstrapModelCandidate, RigMappingPlan, StageName,
-        StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
-        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ColmapQualityProfile,
+        ExtractionStage, GlobalCandidateQualityMetrics, GlobalMapperOptions, JobControl,
+        JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent, RawFrameMessage,
+        RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
+        RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
+        CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
+        CANDIDATE_STREAM_WIDTH,
     };
+    use crate::color;
+    use crate::color::ValidatedLut;
     use crate::doctor::ColmapCapabilities;
     use crate::masking::CancelToken;
     use serde_json::json;
@@ -10693,7 +10801,7 @@ mod tests {
 
     #[test]
     fn hardware_acceleration_is_inserted_before_input_only() {
-        let software = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0);
+        let software = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, None);
         assert!(!software.iter().any(|arg| arg == "-hwaccel"));
 
         let accelerated = with_hwaccel_auto(&software);
@@ -10711,7 +10819,7 @@ mod tests {
 
     #[test]
     fn hardware_acceleration_helper_does_not_mutate_fallback_command() {
-        let software = candidate_ffmpeg_args(Path::new("input.osv"), 3, 4, 2.0);
+        let software = candidate_ffmpeg_args(Path::new("input.osv"), 3, 4, 2.0, None);
         let accelerated = with_hwaccel_auto(&software);
 
         assert_eq!(software[2], "-i");
@@ -10724,7 +10832,7 @@ mod tests {
 
     #[test]
     fn candidate_pass_scales_after_fps_without_changing_fallback_arguments() {
-        let args = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0);
+        let args = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, None);
         let filter_index = args
             .iter()
             .position(|value| value == "-filter_complex")
@@ -10745,6 +10853,45 @@ mod tests {
             CANDIDATE_IMAGE_FORMAT,
             "rawvideo-gray8-hstack-1024x512-memory"
         );
+    }
+
+    #[test]
+    fn candidate_and_selected_filters_apply_lut_before_gray_or_jpeg() {
+        let lut = ValidatedLut {
+            path: PathBuf::from("/tmp/D-Log M.cube"),
+            sha256: "test".to_owned(),
+            size: 1,
+        };
+        let candidate = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, Some(&lut));
+        let filter = &candidate[candidate
+            .iter()
+            .position(|value| value == "-filter_complex")
+            .unwrap()
+            + 1];
+        assert_eq!(filter.matches("lut3d=").count(), 2);
+        assert!(filter.find("lut3d=").unwrap() < filter.find("format=gray").unwrap());
+        assert!(filter.contains("interp=tetrahedral"));
+
+        let selected = selected_ffmpeg_args(
+            Path::new("input.osv"),
+            0,
+            1,
+            8.0,
+            &[0],
+            Path::new("capture/lens0"),
+            Path::new("capture/lens1"),
+            Some(&lut),
+        );
+        let filters = selected
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| *value == "-vf")
+            .map(|(index, _)| &selected[index + 1])
+            .collect::<Vec<_>>();
+        assert_eq!(filters.len(), 2);
+        assert!(filters
+            .iter()
+            .all(|filter| { filter.contains("lut3d=") && filter.contains("interp=tetrahedral") }));
     }
 
     #[test]
@@ -10903,6 +11050,7 @@ mod tests {
             &[0, 127],
             Path::new("capture/lens0"),
             Path::new("capture/lens1"),
+            None,
         );
         let filters = args
             .iter()
@@ -11015,6 +11163,21 @@ mod tests {
             intervals: 1,
             cancelled: false,
             selections: records,
+            color_mode: "auto".to_owned(),
+            resolved_color_profile: "unknown".to_owned(),
+            color_detection_confidence: 0.0,
+            color_lut_sha256: None,
+        };
+        let color_resolution = color::ColorResolution {
+            mode: color::ColorMode::Auto,
+            detected_profile: color::ColorProfile::Unknown,
+            resolved_profile: color::ColorProfile::Unknown,
+            confidence: 0.0,
+            applied: false,
+            lut_sha256: None,
+            lut_file_name: None,
+            reasons: vec!["test".to_owned()],
+            warnings: Vec::new(),
         };
         let thresholds = crate::extraction::KeyframePruningConfig::default();
         write_candidate_selection_checkpoint(
@@ -11027,6 +11190,7 @@ mod tests {
             true,
             thresholds,
             Some("telemetry-v1".to_owned()),
+            &color_resolution,
             &selection,
         )
         .unwrap();
@@ -11041,6 +11205,7 @@ mod tests {
             true,
             thresholds,
             Some("telemetry-v1"),
+            &color_resolution,
         )
         .is_some());
         assert!(load_candidate_selection_checkpoint(
@@ -11053,6 +11218,7 @@ mod tests {
             true,
             thresholds,
             Some("telemetry-v1"),
+            &color_resolution,
         )
         .is_none());
         assert!(load_candidate_selection_checkpoint(
@@ -11065,6 +11231,7 @@ mod tests {
             false,
             thresholds,
             Some("telemetry-v1"),
+            &color_resolution,
         )
         .is_none());
         assert!(load_candidate_selection_checkpoint(
@@ -11077,6 +11244,7 @@ mod tests {
             true,
             thresholds,
             Some("telemetry-v2"),
+            &color_resolution,
         )
         .is_none());
         fs::write(&input, b"video-v2-longer").unwrap();
@@ -11090,6 +11258,7 @@ mod tests {
             true,
             thresholds,
             Some("telemetry-v1"),
+            &color_resolution,
         )
         .is_none());
     }

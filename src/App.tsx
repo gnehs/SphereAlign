@@ -82,6 +82,16 @@ import "./App.css";
 type StageKey = "extract" | "mask" | "align";
 type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
+type ExtractColorMode = "auto" | "dlogMRec709" | "native";
+
+interface ColorInspection {
+  shouldApply?: boolean;
+}
+
+interface ColorInspectionSummary {
+  files: ColorInspection[];
+  shouldApply?: boolean;
+}
 
 interface StageState {
   status: StageStatus;
@@ -104,6 +114,8 @@ interface PipelineSettings {
     baseFps: number;
     denseFps: number;
     skipBlurry: boolean;
+    colorMode: ExtractColorMode;
+    lutPath?: string;
   };
   mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; modelDir: string };
   align: {
@@ -255,6 +267,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     baseFps: 3,
     denseFps: 12,
     skipBlurry: true,
+    colorMode: "auto",
   },
   mask: { yoloEnabled: false, classes: [], maskSky: false, modelDir: "" },
   align: {
@@ -263,6 +276,18 @@ const DEFAULT_SETTINGS: PipelineSettings = {
   },
 };
 const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
+
+function normaliseExtractColorMode(value: unknown): ExtractColorMode {
+  const raw = String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (["dlogmrec709", "dlogm709", "dlogm709lut", "dlogmtorec709"].includes(raw)) return "dlogMRec709";
+  if (["native", "original", "none", "off"].includes(raw)) return "native";
+  return "auto";
+}
+
+function customLutPathIsInvalid(path?: string) {
+  const trimmed = path?.trim() ?? "";
+  return Boolean(trimmed) && !trimmed.toLowerCase().endsWith(".cube");
+}
 
 function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
   if (!Number.isFinite(extract.baseFps) || extract.baseFps <= 0 || !Number.isFinite(extract.denseFps)) {
@@ -294,11 +319,16 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
       ? String(rawGpuIndex)
       : DEFAULT_SETTINGS.align.gpuIndex;
   const baseFps = finiteNumber(extract.baseFps, DEFAULT_SETTINGS.extract.baseFps, 1, 30);
+  const lutPath = typeof extract.lutPath === "string" && extract.lutPath.trim()
+    ? extract.lutPath.trim()
+    : undefined;
   return {
     extract: {
       baseFps,
       denseFps: finiteNumber(extract.denseFps, baseFps * DEFAULT_CANDIDATE_MULTIPLIER, baseFps * MIN_CANDIDATE_MULTIPLIER, baseFps * MAX_CANDIDATE_MULTIPLIER),
       skipBlurry: typeof extract.skipBlurry === "boolean" ? extract.skipBlurry : DEFAULT_SETTINGS.extract.skipBlurry,
+      colorMode: normaliseExtractColorMode(extract.colorMode),
+      ...(lutPath ? { lutPath } : {}),
     },
     mask: {
       yoloEnabled,
@@ -948,6 +978,45 @@ function sourceFromPath(path: string, index: number): OsvSource {
   return { id: `${index}-${path}`, path, label: `OSV ${String(index + 1).padStart(2, "0")}`, detail: label };
 }
 
+function normaliseColorInspection(value: unknown): ColorInspection | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const nestedCandidates = [body.colorInspection, body.colorProfile, body.colorDetection, body.detection]
+    .filter((candidate): candidate is Record<string, unknown> => Boolean(candidate) && typeof candidate === "object");
+  const nested = nestedCandidates[0];
+  const shouldApplyValue = body.shouldApply
+    ?? body.should_apply
+    ?? nested?.shouldApply
+    ?? nested?.should_apply;
+  return typeof shouldApplyValue === "boolean" ? { shouldApply: shouldApplyValue } : null;
+}
+
+function normaliseColorInspectionSummary(value: unknown): ColorInspectionSummary | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const rawSources = Array.isArray(body.sources)
+    ? body.sources
+    : Array.isArray(body.files)
+      ? body.files
+      : [];
+  const files = rawSources.flatMap((source) => {
+    const inspection = normaliseColorInspection(source);
+    return inspection ? [inspection] : [];
+  });
+  const aggregateCandidates = [body.colorInspection, body.colorProfileDetection, body.colorDetection, body.colorProfile]
+    .filter((candidate) => candidate && typeof candidate === "object");
+  const aggregate = aggregateCandidates.map((candidate) => normaliseColorInspection(candidate)).find(Boolean)
+    ?? normaliseColorInspection(body);
+  if (!files.length && !aggregate) return null;
+  const fileRecommendations = files.flatMap((file) => file.shouldApply === undefined ? [] : [file.shouldApply]);
+  return {
+    files,
+    shouldApply: aggregate?.shouldApply ?? (fileRecommendations.length === files.length && fileRecommendations.length > 0 && fileRecommendations.every(Boolean)
+      ? true
+      : fileRecommendations.length === files.length && fileRecommendations.every((item) => !item) ? false : undefined),
+  };
+}
+
 function SourceThumbnail({ source }: { source: OsvSource }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -1224,6 +1293,7 @@ function App() {
     }
   });
   const [sourceInspection, setSourceInspection] = useState<string>("");
+  const [sourceColorInspection, setSourceColorInspection] = useState<ColorInspectionSummary | null>(null);
   const [doctor, setDoctor] = useState<DoctorReport>(EMPTY_DOCTOR);
   const [doctorLoading, setDoctorLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -1324,7 +1394,22 @@ function App() {
 
   const inspectSourcePaths = useCallback(async (paths: string[]) => {
     if (!paths.length) return;
-    const result = await invokeSafely<{ kind?: string; sources?: Array<{ path?: string; name?: string; duration?: number; fps?: number; warnings?: string[] }>; project?: { path?: string; status?: string; hasManifest?: boolean }; suggestedOutputPath?: string }>("inspect_paths", { paths });
+    const result = await invokeSafely<{
+      kind?: string;
+      sources?: Array<{
+        path?: string;
+        name?: string;
+        duration?: number;
+        fps?: number;
+        warnings?: string[];
+        colorProfile?: string | Record<string, unknown>;
+        shouldApply?: boolean;
+      }>;
+      colorInspection?: unknown;
+      colorProfileDetection?: unknown;
+      project?: { path?: string; status?: string; hasManifest?: boolean };
+      suggestedOutputPath?: string;
+    }>("inspect_paths", { paths });
     if (IS_TAURI_RUNTIME && result?.project && (result.kind === "project" || result.project.status === "partial" || result.project.hasManifest)) {
       const projectPath = result.project.path || paths[0];
       const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: projectPath }));
@@ -1333,6 +1418,7 @@ function App() {
         setTaskDialogOpen(false);
         setSourcePaths([]);
         setSourceInspection("");
+        setSourceColorInspection(null);
         addTaskMessage(manifest.projectId, `已載入可續作專案 ${manifest.name}`);
         setToast(manifest.warnings.length ? `已載入未完成專案：${manifest.warnings.length} 項警告` : `已載入未完成專案：${manifest.name}`);
         return;
@@ -1343,13 +1429,17 @@ function App() {
       if (inspectedPaths.length) setSourcePaths(inspectedPaths);
       const valid = result.sources.filter((source) => !source.warnings?.length).length;
       setSourceInspection(`${result.sources.length} 個來源 · ${valid} 個通過檢查`);
+      setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else if (result?.suggestedOutputPath) {
       setOutputDraft(result.suggestedOutputPath);
       setSourceInspection("已找到來源，可建立新的重建任務");
+      setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else if (!IS_TAURI_RUNTIME) {
       setSourceInspection(`${paths.length} 個來源 · 瀏覽器預覽`);
+      setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else {
       setSourceInspection("尚未取得來源檢查結果");
+      setSourceColorInspection(normaliseColorInspectionSummary(result));
     }
   }, [addTaskMessage]);
 
@@ -1357,6 +1447,7 @@ function App() {
     const actual = paths.filter(Boolean);
     if (!actual.length) return;
     setSourcePaths(actual);
+    setSourceColorInspection(null);
     if (!editingTaskId) {
       setOutputDraft(deriveOutputPath(actual[0]));
       setNameDraft(actual[0].split(/[\\/]/).filter(Boolean).pop()?.replace(/[-_]+/g, " ") || "新重建任務");
@@ -1371,6 +1462,7 @@ function App() {
     setSourcePaths([]);
     setOutputDraft("");
     setSourceInspection("");
+    setSourceColorInspection(null);
     gpuPreferenceTouched.current = false;
     setSettingsDraft(selectAvailableGpu({
       ...DEFAULT_SETTINGS,
@@ -1401,9 +1493,11 @@ function App() {
     setOutputDraft(task.outputPath);
     setSettingsDraft(selectAvailableGpu(normalisePipelineSettings(task.settings), doctor.gpuDevices));
     setSourceInspection(`${task.inputPaths.length} 個來源`);
+    setSourceColorInspection(null);
     setDragOver(false);
     setTaskDialogOpen(true);
-  }, [canChangeQueuedTask, doctor.gpuDevices]);
+    void inspectSourcePaths(task.inputPaths);
+  }, [canChangeQueuedTask, doctor.gpuDevices, inspectSourcePaths]);
 
   const handleBrowserFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -1519,6 +1613,25 @@ function App() {
       console.info("[GS360] COLMAP picker", error);
     }
   }, [runDoctor]);
+
+  const openLutPicker = useCallback(async () => {
+    if (!IS_TAURI_RUNTIME) {
+      setToast("瀏覽器預覽不會讀取本機 LUT；可直接貼上 .cube 路徑");
+      return;
+    }
+    try {
+      const result = await openDialog({
+        directory: false,
+        multiple: false,
+        filters: [{ name: "3D LUT（Cube）", extensions: ["cube"] }],
+      });
+      if (typeof result === "string") {
+        setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: result } }));
+      }
+    } catch (error) {
+      console.info("[GS360] LUT picker", error);
+    }
+  }, []);
 
   useEffect(() => {
     if (!IS_TAURI_RUNTIME) return;
@@ -1677,6 +1790,10 @@ function App() {
 
   const createTask = useCallback(async () => {
     if (!sourcePaths.length) { setToast("請先選擇至少一個 OSV 或雙魚眼來源"); return; }
+    if (customLutPathIsInvalid(settingsDraft.extract.lutPath)) {
+      setToast("自訂 LUT 必須是 .cube 檔案");
+      return;
+    }
     const request = { inputPaths: sourcePaths, outputPath: outputDraft || undefined, name: nameDraft || undefined, settings: { ...settingsDraft } };
     const result = await invokeSafely("create_project", { request });
     const manifest = manifestFromUnknown(result);
@@ -1697,6 +1814,7 @@ function App() {
     setTaskDialogOpen(false);
     setSourcePaths([]);
     setSourceInspection("");
+    setSourceColorInspection(null);
     if (createdTask) startAutoPipeline(createdTask);
   }, [nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
 
@@ -1707,6 +1825,10 @@ function App() {
       return;
     }
     if (!sourcePaths.length) { setToast("請保留至少一個來源"); return; }
+    if (customLutPathIsInvalid(settingsDraft.extract.lutPath)) {
+      setToast("自訂 LUT 必須是 .cube 檔案");
+      return;
+    }
     const settings = normalisePipelineSettings(settingsDraft);
     if (task.previewOnly) {
       setTasks((current) => current.map((item) => item.projectId === task.projectId
@@ -1923,6 +2045,12 @@ function App() {
   const renderSettingsFields = () => {
     const candidateMultiplier = candidateMultiplierFor(settingsDraft.extract);
     const candidateFps = settingsDraft.extract.baseFps * candidateMultiplier;
+    const colorMode = settingsDraft.extract.colorMode;
+    const detectedDlog = sourceColorInspection?.shouldApply === true
+      || sourceColorInspection?.files.some((file) => file.shouldApply === true) === true;
+    const restoreDlog = colorMode === "dlogMRec709" || (colorMode === "auto" && detectedDlog);
+    const lutPath = settingsDraft.extract.lutPath?.trim() ?? "";
+    const lutPathInvalid = customLutPathIsInvalid(lutPath);
     return (
       <div className="settings-form">
         <FieldGroup>
@@ -1980,6 +2108,44 @@ function App() {
                   <FieldDescription>以截取影格率的倍率取樣候選，再挑選較清晰的影格。</FieldDescription>
                 </Field>
               )}
+              <Field orientation="horizontal" className="extract-color-field">
+                <Switch
+                  id="extract-color-mode"
+                  checked={restoreDlog}
+                  onCheckedChange={(checked) => setSettingsDraft((current) => ({
+                    ...current,
+                    extract: { ...current.extract, colorMode: checked ? "dlogMRec709" : "native" },
+                  }))}
+                />
+                <div>
+                  <FieldLabel htmlFor="extract-color-mode">套用 D-Log M 還原 LUT</FieldLabel>
+                  {colorMode === "auto" && detectedDlog && (
+                    <FieldDescription>已從 _D 檔名或素材資訊偵測並開啟。</FieldDescription>
+                  )}
+                </div>
+              </Field>
+              <Field className="extract-lut-field" data-invalid={lutPathInvalid || undefined}>
+                <FieldLabel htmlFor="extract-lut-path">自訂 LUT（選填）</FieldLabel>
+                <div className="input-with-button">
+                  <Input
+                    id="extract-lut-path"
+                    value={lutPath}
+                    placeholder="留白使用官方 D-Log M → Rec.709 LUT"
+                    aria-invalid={lutPathInvalid || undefined}
+                    onChange={(event) => setSettingsDraft((current) => ({
+                      ...current,
+                      extract: { ...current.extract, lutPath: event.currentTarget.value || undefined },
+                    }))}
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => void openLutPicker()}>選擇 .cube</Button>
+                  {lutPath && <Button type="button" variant="ghost" size="icon-xs" aria-label="清除自訂 LUT" onClick={() => setSettingsDraft((current) => ({ ...current, extract: { ...current.extract, lutPath: undefined } }))}><X /></Button>}
+                </div>
+                {lutPathInvalid
+                  ? <Alert variant="destructive"><AlertTriangle /><AlertTitle>LUT 檔案格式不正確</AlertTitle><AlertDescription>請選擇副檔名為 .cube 的 3D LUT。</AlertDescription></Alert>
+                  : colorMode === "dlogMRec709"
+                    ? <FieldDescription>未指定自訂檔案時，執行階段會使用官方 LUT；指定後會使用這個 .cube。</FieldDescription>
+                    : <FieldDescription>只在需要覆蓋官方 LUT 時指定 .cube。</FieldDescription>}
+              </Field>
             </FieldContent>
           </Field>
           <Field>
@@ -2208,13 +2374,13 @@ function App() {
             <div className="dialog-columns">
               <FieldGroup className="dialog-source-column">
                 <Field><FieldLabel htmlFor="task-name">任務名稱</FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder="例如：山區路線／2026-08" onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
-                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => setSourcePaths((current) => current.filter((path) => path !== source.path))}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
+                <Field><FieldLabel>來源</FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span>拖放 OSV 或尚未完成的專案資料夾</span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>選擇來源</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除 ${source.label}`} onClick={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection || "可選擇多個檔案，或直接拖入尚未完成的專案資料夾。"}</p></FieldContent></Field>
                 <Field><FieldLabel htmlFor="output-path">輸出資料夾</FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder="預設與第一個來源並列：colmap-檔案名稱" onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}>另選</Button>}</div><FieldDescription>{editingTaskId ? "儲存新的任務名稱時，輸出資料夾會同步重新命名；不支援的檔名字元會改為連字號。" : "建立後會在輸出資料夾保存專案資訊，之後可從中斷處繼續。"}</FieldDescription></FieldContent></Field>
               </FieldGroup>
               {renderSettingsFields()}
             </div>
           </div>
-          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? "儲存修改" : "新增任務"}</Button></DialogFooter>
+          <DialogFooter><DialogClose render={<Button variant="ghost" />}>取消</DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? "儲存修改" : "新增任務"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

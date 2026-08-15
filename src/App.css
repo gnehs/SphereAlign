@@ -935,6 +935,15 @@ button:active {
   border-top: 1px solid var(--studio-line);
 }
 
+.extract-color-field,
+.extract-lut-field {
+  gap: 7px;
+}
+
+.extract-lut-field [data-slot="alert"] {
+  margin-top: 2px;
+}
+
 .settings-form [data-slot="field-group"] {
   gap: 14px;
 }
