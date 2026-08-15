@@ -1932,7 +1932,6 @@ function App() {
                   <FieldDescription>以截取影格率的倍率取樣候選，再挑選較清晰的影格。</FieldDescription>
                 </Field>
               )}
-              <div className="rig-note"><ScanLine /><span><strong>智慧抽幀</strong><small>固定使用 IMU 相對旋轉與低解析畫面變化，減少重複影格</small></span></div>
             </FieldContent>
           </Field>
           <Field>
@@ -1998,7 +1997,6 @@ function App() {
           <FieldLabel>對齊</FieldLabel>
           <FieldContent>
             <div className="settings-stack">
-              <div className="rig-note"><Workflow /><span><strong>穩定重建</strong><small>固定使用跨檔視覺檢索與 incremental mapper</small></span></div>
               <Field orientation="horizontal" className="extract-filter-option" data-disabled={doctor.gpuAvailable === false || undefined}>
                 <Switch
                   id="use-gpu"
@@ -2020,7 +2018,6 @@ function App() {
                 <Input id="gpu-index" className="w-20" type="text" inputMode="numeric" disabled={doctor.gpuAvailable === false || !settingsDraft.align.useGpu} value={settingsDraft.align.gpuIndex ?? DEFAULT_SETTINGS.align.gpuIndex} onChange={(event) => { const value = event.currentTarget.value; setSettingsDraft((current) => ({ ...current, align: { ...current.align, gpuIndex: value } })); }} />
                 <FieldDescription>保持 -1 會自動選擇。多張 GPU 可輸入 0,1；部分處理只會使用清單中的第一張。</FieldDescription>
               </Field>
-              <div className="rig-note"><Workflow /><span><strong>實體雙鏡頭相機組流程</strong><small>未知外參先建模校正；已校正外參則直接沿用</small></span></div>
             </div>
           </FieldContent>
         </Field>

@@ -1040,41 +1040,6 @@ button:active {
   gap: 8px;
 }
 
-.rig-note {
-  display: flex;
-  align-items: center;
-  min-height: 33px;
-  padding: 6px 8px;
-  border: 1px solid var(--studio-line);
-  border-radius: 7px;
-  color: var(--studio-blue);
-  background: var(--studio-blue-soft);
-  gap: 8px;
-}
-
-.rig-note > svg {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-}
-
-.rig-note > span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.rig-note strong {
-  color: var(--studio-text);
-  font-size: var(--studio-font-sm);
-  font-weight: 620;
-}
-
-.rig-note small {
-  color: var(--studio-muted);
-  font-size: var(--studio-font-sm);
-}
-
 .toast {
   position: fixed;
   right: 20px;
