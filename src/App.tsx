@@ -51,7 +51,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import {
   Field,
   FieldContent,
@@ -941,18 +941,20 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
   }
 
   return (
-    <HoverCard>
-      <HoverCardTrigger
+    <Popover>
+      <PopoverTrigger
+        openOnHover
         delay={120}
-        closeDelay={80}
+        closeDelay={120}
         render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={`預覽 ${alt}`} />}
       >
         <img src={previewUrl} alt={alt} />
-      </HoverCardTrigger>
-      <HoverCardContent className="source-preview-card" side="right" sideOffset={12} aria-label={`${source.detail} 魚眼快照`}>
+      </PopoverTrigger>
+      <PopoverContent className="source-preview-card" side="right" sideOffset={12}>
+        <PopoverTitle className="sr-only">{source.detail} 魚眼快照</PopoverTitle>
         <img className="source-preview-image" src={previewUrl} alt="" />
-      </HoverCardContent>
-    </HoverCard>
+      </PopoverContent>
+    </Popover>
   );
 }
 
