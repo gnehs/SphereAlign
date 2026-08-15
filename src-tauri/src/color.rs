@@ -636,6 +636,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn escape_filter_value(value: &str) -> String {
     value
         .replace('\\', "\\\\")
+        .replace(':', "\\:")
         .replace('\'', "\\'")
         .replace('\n', "\\n")
         .replace('\r', "\\r")
@@ -779,6 +780,20 @@ mod tests {
         let filter = lut3d_filter(&lut);
         assert!(filter.contains("quote\\'colon.cube"));
         assert!(filter.contains("interp=tetrahedral"));
+    }
+
+    #[test]
+    fn filter_path_escapes_windows_drive_separator() {
+        let lut = ValidatedLut {
+            path: PathBuf::from(r"C:\Users\test\AppData\Roaming\gs360studio\lut.cube"),
+            sha256: "test".to_owned(),
+            size: 1,
+        };
+
+        assert_eq!(
+            lut3d_filter(&lut),
+            r"lut3d=file='C\:\\Users\\test\\AppData\\Roaming\\gs360studio\\lut.cube':interp=tetrahedral"
+        );
     }
 
     #[test]
