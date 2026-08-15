@@ -3,19 +3,29 @@
 use crate::doctor;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::process::silent_command;
 
 pub const MANIFEST_FILE: &str = "project.json";
 pub const MANIFEST_VERSION: u32 = 1;
+const MAX_PROJECT_DIRECTORY_NAME_BYTES: usize = 120;
 
 static PROJECT_COUNTER: AtomicU64 = AtomicU64::new(1);
+static PROJECT_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
+pub fn lock_project_mutation() -> Result<MutexGuard<'static, ()>, String> {
+    PROJECT_MUTATION_LOCK
+        .lock()
+        .map_err(|_| "專案操作鎖暫時無法使用".to_owned())
+}
 
 fn now_timestamp() -> String {
     let seconds = SystemTime::now()
@@ -270,6 +280,141 @@ fn absolute_path(path: &Path) -> PathBuf {
     }
 }
 
+fn project_directory_name(name: &str) -> Result<String, String> {
+    let mut directory_name = String::new();
+    let mut replacing = false;
+    for character in name.trim().chars() {
+        let forbidden = character.is_control()
+            || matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            );
+        if forbidden {
+            if !replacing && !directory_name.is_empty() {
+                directory_name.push('-');
+            }
+            replacing = true;
+            continue;
+        }
+        replacing = false;
+        if directory_name.len() + character.len_utf8() > MAX_PROJECT_DIRECTORY_NAME_BYTES {
+            break;
+        }
+        directory_name.push(character);
+    }
+    let directory_name = directory_name
+        .trim_matches(|character| matches!(character, ' ' | '.' | '-'))
+        .to_owned();
+    if directory_name.is_empty() {
+        return Err("任務名稱無法產生有效的輸出資料夾名稱".to_owned());
+    }
+
+    let windows_stem = directory_name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved_numbered = ["COM", "LPT"].into_iter().any(|prefix| {
+        windows_stem.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+        })
+    });
+    let reserved =
+        matches!(windows_stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || reserved_numbered;
+    Ok(if reserved {
+        format!("{directory_name}-project")
+    } else {
+        directory_name
+    })
+}
+
+fn path_entry_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+struct ProjectPathReservation {
+    lock_path: PathBuf,
+}
+
+impl Drop for ProjectPathReservation {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.lock_path);
+    }
+}
+
+fn reserve_project_path(path: &Path) -> Result<ProjectPathReservation, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "輸出資料夾沒有可用的父目錄".to_owned())?;
+    fs::create_dir_all(parent).map_err(|error| format!("無法建立輸出資料夾父目錄：{error}"))?;
+    let digest = Sha256::digest(path.to_string_lossy().as_bytes());
+    let token = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let lock_path = parent.join(format!(".gs360-project-{token}.lock"));
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                "另一個 GS360 程序正在使用相同的輸出資料夾".to_owned()
+            } else {
+                format!("無法保留輸出資料夾名稱：{error}")
+            }
+        })?;
+    Ok(ProjectPathReservation { lock_path })
+}
+
+fn rename_project_directory(from: &Path, to: &Path) -> Result<(), String> {
+    if from == to {
+        return Ok(());
+    }
+    if !path_entry_exists(to) {
+        return fs::rename(from, to).map_err(|error| format!("無法重新命名輸出資料夾：{error}"));
+    }
+
+    let destination_metadata =
+        fs::symlink_metadata(to).map_err(|error| format!("無法檢查輸出資料夾：{error}"))?;
+    let is_case_only_rename = !destination_metadata.file_type().is_symlink()
+        && matches!(
+            (fs::canonicalize(from), fs::canonicalize(to)),
+            (Ok(source), Ok(destination)) if source == destination
+        );
+    if !is_case_only_rename {
+        return Err("同名輸出資料夾已存在，請使用其他任務名稱".to_owned());
+    }
+
+    let parent = from
+        .parent()
+        .ok_or_else(|| "輸出資料夾沒有可用的父目錄".to_owned())?;
+    let file_name = from
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("project");
+    let temporary = (0_u64..)
+        .map(|attempt| {
+            parent.join(format!(
+                ".{file_name}.rename-{}-{attempt}",
+                PROJECT_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ))
+        })
+        .find(|candidate| !path_entry_exists(candidate))
+        .ok_or_else(|| "無法建立輸出資料夾重新命名暫存路徑".to_owned())?;
+    fs::rename(from, &temporary).map_err(|error| format!("無法準備輸出資料夾重新命名：{error}"))?;
+    if let Err(error) = fs::rename(&temporary, to) {
+        let rollback = fs::rename(&temporary, from);
+        return Err(match rollback {
+            Ok(()) => format!("無法完成輸出資料夾重新命名：{error}"),
+            Err(rollback_error) => {
+                format!("無法完成輸出資料夾重新命名，且復原失敗：{error}；{rollback_error}")
+            }
+        });
+    }
+    Ok(())
+}
+
 fn source_extension(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -451,6 +596,15 @@ fn locate_manifest(path: &Path) -> Option<PathBuf> {
         path.join(".gs360").join(MANIFEST_FILE),
     ];
     candidates.into_iter().find(|candidate| candidate.is_file())
+}
+
+fn root_for_manifest_path(manifest_path: &Path) -> Option<PathBuf> {
+    let parent = manifest_path.parent()?;
+    if parent.file_name().and_then(|value| value.to_str()) == Some(".gs360") {
+        parent.parent().map(Path::to_path_buf)
+    } else {
+        Some(parent.to_path_buf())
+    }
 }
 
 fn infer_partial_project(path: &Path) -> Option<ProjectInspection> {
@@ -784,9 +938,8 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
     let mut manifest: ProjectManifest = serde_json::from_slice(&bytes)
         .map_err(|e| format!("parse project manifest {}: {e}", manifest_path.display()))?;
     if manifest.root_path.is_empty() {
-        manifest.root_path = manifest_path
-            .parent()
-            .unwrap_or(Path::new("."))
+        manifest.root_path = root_for_manifest_path(&manifest_path)
+            .unwrap_or_else(|| PathBuf::from("."))
             .to_string_lossy()
             .into_owned();
     }
@@ -848,6 +1001,7 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
                 .unwrap_or_else(|| Path::new("."))
                 .join(format!("colmap-{stem}"))
         });
+    let _output_reservation = reserve_project_path(&output_path)?;
     fs::create_dir_all(&output_path).map_err(|e| format!("create project directory: {e}"))?;
 
     let manifest_path = output_path.join(MANIFEST_FILE);
@@ -911,36 +1065,95 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
 }
 
 pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManifest, String> {
+    let _mutation_guard = lock_project_mutation()?;
+    let requested_path = absolute_path(Path::new(&request.project_path));
+    let manifest_path = locate_manifest(&requested_path)
+        .ok_or_else(|| "找不到可修改的專案資訊".to_owned())?;
+    let discovered_root = root_for_manifest_path(&manifest_path)
+        .ok_or_else(|| "無法確認專案根目錄".to_owned())?;
     let mut manifest = load(&request.project_path)?;
-    if manifest
-        .stages
-        .values()
-        .any(|stage| {
-            !matches!(stage.status, StageStatus::Pending)
-                || stage.progress > 0.0
-                || stage.started_at_ms.is_some()
-                || stage.finished_at_ms.is_some()
-                || stage.duration_ms.is_some()
-                || !stage.artifacts.is_empty()
-        })
-    {
+    if manifest.stages.values().any(|stage| {
+        !matches!(stage.status, StageStatus::Pending)
+            || stage.progress > 0.0
+            || stage.started_at_ms.is_some()
+            || stage.finished_at_ms.is_some()
+            || stage.duration_ms.is_some()
+            || !stage.artifacts.is_empty()
+    }) {
         return Err("Only a project that has not started can be edited".to_owned());
     }
     if request.input_paths.is_empty() {
         return Err("At least one input path is required".to_owned());
     }
     let name = request.name.trim();
-    if !name.is_empty() {
+    if name.is_empty() {
+        return Err("任務名稱不能是空白".to_owned());
+    }
+    let original_root = absolute_path(Path::new(&manifest.root_path));
+    let root_metadata = fs::symlink_metadata(&original_root)
+        .map_err(|error| format!("無法檢查專案根目錄：{error}"))?;
+    let roots_match = !root_metadata.file_type().is_symlink()
+        && matches!(
+            (fs::canonicalize(&original_root), fs::canonicalize(&discovered_root)),
+            (Ok(stored), Ok(discovered)) if stored == discovered
+        );
+    if !roots_match {
+        return Err("專案資訊中的根目錄與實際位置不一致，已取消重新命名".to_owned());
+    }
+    let mut renamed_root = None;
+    let mut rename_reservations = None;
+    if name != manifest.name {
+        let parent = original_root
+            .parent()
+            .ok_or_else(|| "輸出資料夾沒有可用的父目錄".to_owned())?;
+        let destination = parent.join(project_directory_name(name)?);
+        if destination != original_root {
+            let source_reservation = reserve_project_path(&original_root)?;
+            let destination_reservation = reserve_project_path(&destination)?;
+            rename_reservations = Some((source_reservation, destination_reservation));
+            let canonical_root = fs::canonicalize(&original_root)
+                .map_err(|error| format!("無法確認專案根目錄：{error}"))?;
+            let source_inside_output = request.input_paths.iter().any(|input| {
+                let input = absolute_path(Path::new(input));
+                input.starts_with(&original_root)
+                    || fs::canonicalize(&input)
+                        .is_ok_and(|canonical| canonical.starts_with(&canonical_root))
+            });
+            if source_inside_output {
+                return Err("來源不能位於輸出資料夾內，請先將來源移到其他位置".to_owned());
+            }
+            rename_project_directory(&original_root, &destination)?;
+            manifest.root_path = destination.to_string_lossy().into_owned();
+            manifest.output_path = manifest.root_path.clone();
+            renamed_root = Some(destination);
+        }
         manifest.name = name.to_owned();
     }
     manifest.input_paths = request
         .input_paths
         .iter()
-        .map(|path| absolute_path(Path::new(path)).to_string_lossy().into_owned())
+        .map(|path| {
+            absolute_path(Path::new(path))
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     manifest.settings = request.settings;
     manifest.updated_at = now_timestamp();
-    save_manifest(&manifest)?;
+    if let Err(error) = save_manifest(&manifest) {
+        if let Some(destination) = renamed_root {
+            return Err(
+                match rename_project_directory(&destination, &original_root) {
+                    Ok(()) => format!("儲存任務修改失敗，輸出資料夾已復原：{error}"),
+                    Err(rollback_error) => {
+                        format!("儲存任務修改失敗，且輸出資料夾無法復原：{error}；{rollback_error}")
+                    }
+                },
+            );
+        }
+        return Err(error);
+    }
+    drop(rename_reservations);
     Ok(manifest)
 }
 
@@ -1033,7 +1246,16 @@ mod tests {
         })
         .unwrap();
         assert_eq!(updated.name, "after");
-        assert_eq!(updated.settings.pointer("/extract/baseFps"), Some(&json!(4)));
+        assert_eq!(
+            updated.settings.pointer("/extract/baseFps"),
+            Some(&json!(4))
+        );
+        let renamed_output = root.join("after");
+        assert_eq!(PathBuf::from(&updated.root_path), renamed_output);
+        assert_eq!(updated.output_path, updated.root_path);
+        assert!(!output.exists());
+        assert!(renamed_output.join(MANIFEST_FILE).is_file());
+        assert_eq!(load(&renamed_output).unwrap().name, "after");
 
         let mut started = updated;
         update_stage(
@@ -1053,6 +1275,161 @@ mod tests {
             settings: json!({}),
         })
         .is_err());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn queued_project_rename_does_not_overwrite_an_existing_directory() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.osv");
+        fs::write(&source, b"test").unwrap();
+        let output = root.join("project");
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![source.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("before".to_owned()),
+            settings: Some(json!({})),
+        })
+        .unwrap();
+        fs::create_dir(root.join("occupied")).unwrap();
+
+        let error = update_queued(UpdateQueuedProjectRequest {
+            project_path: manifest.root_path,
+            name: "occupied".to_owned(),
+            input_paths: manifest.input_paths,
+            settings: json!({}),
+        })
+        .unwrap_err();
+
+        assert!(error.contains("同名輸出資料夾已存在"));
+        assert!(output.join(MANIFEST_FILE).is_file());
+        assert_eq!(load(&output).unwrap().name, "before");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn queued_project_supports_case_only_directory_rename() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.osv");
+        fs::write(&source, b"test").unwrap();
+        let output = root.join("Scene");
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![source.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("Scene".to_owned()),
+            settings: Some(json!({})),
+        })
+        .unwrap();
+
+        let updated = update_queued(UpdateQueuedProjectRequest {
+            project_path: manifest.root_path,
+            name: "scene".to_owned(),
+            input_paths: manifest.input_paths,
+            settings: json!({}),
+        })
+        .unwrap();
+
+        let renamed_output = root.join("scene");
+        assert_eq!(PathBuf::from(&updated.root_path), renamed_output);
+        assert!(renamed_output.join(MANIFEST_FILE).is_file());
+        assert_eq!(load(&renamed_output).unwrap().name, "scene");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn queued_project_rename_rejects_a_manifest_with_a_mismatched_root() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.osv");
+        fs::write(&source, b"test").unwrap();
+        let output = root.join("project");
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![source.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("before".to_owned()),
+            settings: Some(json!({})),
+        })
+        .unwrap();
+        fs::create_dir(root.join("unrelated")).unwrap();
+        let mut tampered = serde_json::to_value(&manifest).unwrap();
+        tampered["rootPath"] = json!(root.join("unrelated"));
+        fs::write(
+            output.join(MANIFEST_FILE),
+            serde_json::to_vec_pretty(&tampered).unwrap(),
+        )
+        .unwrap();
+
+        let error = update_queued(UpdateQueuedProjectRequest {
+            project_path: output.to_string_lossy().into_owned(),
+            name: "after".to_owned(),
+            input_paths: manifest.input_paths,
+            settings: json!({}),
+        })
+        .unwrap_err();
+
+        assert!(error.contains("根目錄與實際位置不一致"));
+        assert!(output.join(MANIFEST_FILE).is_file());
+        assert!(!root.join("after").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn queued_project_rename_rejects_a_source_inside_the_output_directory() {
+        let root = temp_dir();
+        let output = root.join("project");
+        fs::create_dir_all(&output).unwrap();
+        let source = output.join("source.osv");
+        fs::write(&source, b"test").unwrap();
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![source.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("before".to_owned()),
+            settings: Some(json!({})),
+        })
+        .unwrap();
+
+        let error = update_queued(UpdateQueuedProjectRequest {
+            project_path: manifest.root_path,
+            name: "after".to_owned(),
+            input_paths: manifest.input_paths,
+            settings: json!({}),
+        })
+        .unwrap_err();
+
+        assert!(error.contains("來源不能位於輸出資料夾內"));
+        assert!(output.join(MANIFEST_FILE).is_file());
+        assert!(!root.join("after").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_directory_names_are_portable_and_preserve_unicode() {
+        assert_eq!(
+            project_directory_name(" 山區/路線: 01 ").unwrap(),
+            "山區-路線- 01"
+        );
+        assert_eq!(project_directory_name("CON").unwrap(), "CON-project");
+        assert!(project_directory_name("...///...").is_err());
+        assert!(project_directory_name("\0\n").is_err());
+        let long_name = "場景".repeat(100);
+        let shortened = project_directory_name(&long_name).unwrap();
+        assert!(shortened.len() <= MAX_PROJECT_DIRECTORY_NAME_BYTES);
+        assert!(shortened.is_char_boundary(shortened.len()));
+    }
+
+    #[test]
+    fn project_path_reservation_is_exclusive_and_released_on_drop() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("project");
+
+        let reservation = reserve_project_path(&output).unwrap();
+        assert!(reserve_project_path(&output).is_err());
+        drop(reservation);
+        assert!(reserve_project_path(&output).is_ok());
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1101,6 +1478,31 @@ mod tests {
         assert!(extract.started_at_ms.is_none());
         assert!(extract.finished_at_ms.is_none());
         assert!(extract.duration_ms.is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_dot_gs360_manifest_resolves_the_project_root() {
+        let root = temp_dir();
+        let metadata_root = root.join(".gs360");
+        fs::create_dir_all(&metadata_root).unwrap();
+        let manifest = json!({
+            "manifestVersion": MANIFEST_VERSION,
+            "projectId": "legacy-dot-gs360",
+            "name": "Legacy",
+            "rootPath": "",
+            "outputPath": "",
+            "stages": {"extract": {"status": "pending"}}
+        });
+        fs::write(
+            metadata_root.join(MANIFEST_FILE),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = load(&root).unwrap();
+        assert_eq!(PathBuf::from(loaded.root_path), root);
+        assert_eq!(loaded.output_path, root.to_string_lossy());
         let _ = fs::remove_dir_all(root);
     }
 

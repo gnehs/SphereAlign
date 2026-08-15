@@ -469,16 +469,36 @@ pub fn start_stage(
     manager: &JobManager,
     request: StartStageRequest,
 ) -> Result<StartStageResponse, String> {
+    let _mutation_guard = project::lock_project_mutation()?;
     let mut manifest = project::load(&request.project_path)?;
     replace_stage_settings(&mut manifest.settings, request.settings.clone());
     reset_capabilities_for_stage_start(&mut manifest, &request.stage);
-    project::save_manifest(&manifest)?;
     let id = job_id();
     let control = JobControl {
         cancelled: Arc::new(AtomicBool::new(false)),
         mask_cancel: CancelToken::new(),
     };
     manager.insert(id.clone(), control.clone())?;
+    let stage_started_at = Instant::now();
+    let skipped_mask = request.stage == StageName::Mask && !mask_enabled(&manifest.settings);
+    let starting_message = if skipped_mask {
+        "未啟用遮罩，正在略過"
+    } else {
+        "處理階段已開始"
+    };
+    if let Err(error) = project::update_stage_timed(
+        &mut manifest,
+        &request.stage,
+        StageStatus::Running,
+        0.0,
+        starting_message,
+        Vec::new(),
+        Vec::new(),
+        Some(stage_started_at),
+    ) {
+        manager.remove(&id);
+        return Err(error);
+    }
     let manager = manager.clone();
     let stage = request.stage.clone();
     let force_retry = request.mode.as_deref() == Some("retry");
@@ -489,23 +509,6 @@ pub fn start_stage(
             manager: manager.clone(),
             id: id.clone(),
         };
-        let stage_started_at = Instant::now();
-        let skipped_mask = stage == StageName::Mask && !mask_enabled(&manifest.settings);
-        let starting_message = if skipped_mask {
-            "未啟用遮罩，正在略過"
-        } else {
-            "處理階段已開始"
-        };
-        let _ = project::update_stage_timed(
-            &mut manifest,
-            &stage,
-            StageStatus::Running,
-            0.0,
-            starting_message,
-            Vec::new(),
-            Vec::new(),
-            Some(stage_started_at),
-        );
         emit_progress(
             &app,
             &id,
