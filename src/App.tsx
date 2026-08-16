@@ -1,7 +1,7 @@
 import {
   AlertTriangle,
   CircleDashed,
-  Clock3,
+  CircleHelp,
   Cpu,
   Film,
   FileVideoCamera,
@@ -80,6 +80,7 @@ import {
 } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme, type Theme } from "@/components/theme-provider";
 import { getEnglishI18n, getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
@@ -1484,7 +1485,27 @@ function normaliseColorInspectionSummary(value: unknown): ColorInspectionSummary
   };
 }
 
-function SourceThumbnail({ source }: { source: OsvSource }) {
+const MAX_SOURCE_PREVIEW_CACHE_ENTRIES = 64;
+const sourcePreviewRequests = new Map<string, Promise<ArrayBuffer>>();
+
+function loadSourcePreview(path: string) {
+  const cached = sourcePreviewRequests.get(path);
+  if (cached) return cached;
+  const request = invoke<ArrayBuffer>("source_preview", { path });
+  sourcePreviewRequests.set(path, request);
+  void request.then(() => {
+    while (sourcePreviewRequests.size > MAX_SOURCE_PREVIEW_CACHE_ENTRIES) {
+      const oldestPath = sourcePreviewRequests.keys().next().value;
+      if (oldestPath === undefined) break;
+      sourcePreviewRequests.delete(oldestPath);
+    }
+  }, () => {
+    if (sourcePreviewRequests.get(path) === request) sourcePreviewRequests.delete(path);
+  });
+  return request;
+}
+
+function SourceThumbnail({ source, previewSide = "right" }: { source: OsvSource; previewSide?: "left" | "right" }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -1497,7 +1518,7 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
     let objectUrl: string | null = null;
     setPreviewUrl(null);
     setFailed(false);
-    void invoke<ArrayBuffer>("source_preview", { path: source.path })
+    void loadSourcePreview(source.path)
       .then((bytes) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
@@ -1532,7 +1553,7 @@ function SourceThumbnail({ source }: { source: OsvSource }) {
       >
         <img src={previewUrl} alt={alt} />
       </PopoverTrigger>
-      <PopoverContent className="source-preview-card" side="right" sideOffset={12}>
+      <PopoverContent className="source-preview-card" side={previewSide} sideOffset={12}>
         <PopoverTitle className="sr-only">{t`${source.detail} dual-fisheye snapshot`}</PopoverTitle>
         <img className="source-preview-image" src={previewUrl} alt="" />
       </PopoverContent>
@@ -1799,8 +1820,10 @@ function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskDetailOpen, setTaskDetailOpen] = useState(false);
   const [taskDetailTab, setTaskDetailTab] = useState<"summary" | "records">("summary");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const taskNameInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [sourcePaths, setSourcePaths] = useState<string[]>([]);
   const [outputDraft, setOutputDraft] = useState("");
@@ -1835,6 +1858,7 @@ function App() {
 
   const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
   const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
+  const selectedTaskSources = useMemo(() => selectedTask?.inputPaths.map(sourceFromPath) ?? [], [selectedTask]);
   const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
   const selectedStageDefinition = selectedTask ? taskCurrentStage(selectedTask) : undefined;
   const selectedStage = selectedTask && selectedStageDefinition ? selectedTask.stages[selectedStageDefinition.key] : undefined;
@@ -2396,7 +2420,10 @@ function App() {
     delete pendingStageStarts.current[task.projectId];
     delete activeJobIds.current[task.projectId];
     setTasks((current) => current.filter((item) => item.projectId !== task.projectId));
-    if (selectedTaskId === task.projectId) setSelectedTaskId(null);
+    if (selectedTaskId === task.projectId) {
+      setTaskDetailOpen(false);
+      setSelectedTaskId(null);
+    }
     setDeletingTaskId(null);
     setToast("Task removed from the queue; the output folder is kept");
     queueMicrotask(() => pumpAutoPipelineRef.current());
@@ -2576,7 +2603,9 @@ function App() {
     const lutPath = settingsDraft.extract.lutPath?.trim() ?? "";
     const lutPathInvalid = customLutPathIsInvalid(lutPath);
     return (
-      <div className="settings-form">
+      <section className="settings-form" aria-labelledby="task-processing-settings-title">
+        <div className="dialog-column-scroll scroll-fade-y scroll-fade-8">
+        <h2 id="task-processing-settings-title" className="task-dialog-section-title"><Trans>Processing settings</Trans></h2>
         <FieldGroup>
           <Field>
             <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for extracting frames.">Frame extraction</Trans></FieldLabel>
@@ -2632,6 +2661,11 @@ function App() {
                   <FieldDescription><Trans comment="Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.">Sample candidates at a multiple of the base frame rate, then select sharper frames.</Trans></FieldDescription>
                 </Field>
               )}
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel><Trans context="settings section" comment="Lookup table settings for restoring source media color.">LUT settings</Trans></FieldLabel>
+            <FieldContent>
               <Field orientation="horizontal" className="extract-color-field">
                 <Switch
                   id="extract-color-mode"
@@ -2771,27 +2805,21 @@ function App() {
           </FieldContent>
         </Field>
         </FieldGroup>
-      </div>
+        </div>
+      </section>
     );
   };
 
   return (
     <div className="studio-app">
-      <header className="window-bar">
-        {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
-        <span className="brand-mark" aria-hidden="true"><ScanSearch /></span>
-        <span className="window-title">SphereAlign</span>
-        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge"><Trans comment="Badge indicating that the app is running in a browser-only preview.">Browser preview</Trans></Badge>}</div>
-      </header>
-
       <main className="studio-main" data-detail-open={selectedTask ? "true" : undefined}>
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
         <header className="workspace-toolbar">
           <h1 className="sr-only"><Trans>Reconstruction tasks</Trans></h1>
           <div className="header-actions">
-            <Button variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
-            <Button onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
-            <Button className="settings-toolbar-button" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+            <Button size="sm" onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
+            <Button size="sm" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
+            <Button className="settings-toolbar-button" size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
           </div>
         </header>
         {tasks.length === 0 ? (
@@ -2828,18 +2856,19 @@ function App() {
                 const currentElapsed = taskStageDuration(currentStage, clockMs);
                 const currentEta = estimatedRemainingMs(currentStage, clockMs);
                 const currentCount = logCountLabel(currentStage.completed, currentStage.total);
+                const primarySource = task.inputPaths.length > 0 ? sourceFromPath(task.inputPaths[0], 0) : undefined;
                 return (
                   <article className="task-row" data-queued={queued || undefined} key={task.projectId}>
                     <div className="task-row-top">
-                      <div className="task-identity"><span className="task-mark"><FileStack /></span><div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}{task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}</div><p title={task.outputPath}>{task.outputPath || t`Output not specified`}</p></div></div>
+                      <div className="task-identity">{primarySource ? <SourceThumbnail source={primarySource} /> : <span className="task-mark"><FileStack /></span>}<div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}{task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}</div><p title={task.outputPath}>{task.outputPath || t`Output not specified`}</p></div></div>
                       <div className="task-row-actions">
                         {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" /><Trans context="queue action" comment="Add a queued task to the automatic execution queue.">Add to queue</Trans></Button>}
                         {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
-                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => { setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); }}><Info /></Button>
+                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={taskDetailOpen && selectedTaskId === task.projectId} onClick={() => { setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); setTaskDetailOpen(true); }}><Info /></Button>
                       </div>
                     </div>
                     {queued ? <div className="queued-task-summary"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="task-progress-block">
-                      <div className="task-progress-summary"><span title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}><Trans comment="Overall progress weighted by observed stage durations.">Overall progress (time weighted)</Trans></span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                      <div className="task-progress-summary"><span title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}><Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans></span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
                       <Progress value={overall} aria-label={t`${task.name} overall time progress`}><ProgressValue /></Progress>
                       <div className="task-live-summary">
                         <span><strong>{t`Current stage: ${stageLabel(currentStageDefinition)}`}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
@@ -2906,19 +2935,34 @@ function App() {
           queueMicrotask(() => pumpAutoPipelineRef.current());
         }
       }}>
-        <DialogContent className="task-dialog" showCloseButton>
-          <DialogHeader><DialogTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</DialogTitle><DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription></DialogHeader>
+        <DialogContent className="task-dialog" showCloseButton={false} initialFocus={taskNameInputRef}>
+          <DialogHeader>
+            <DialogTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</DialogTitle>
+            <DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription>
+            <Popover>
+              <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-dialog-help" aria-label={t`Task creation help`} />}><CircleHelp /></PopoverTrigger>
+              <PopoverContent className="task-dialog-help-popover" side="bottom" sideOffset={8}>
+                <PopoverTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</PopoverTitle>
+                <p>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</p>
+              </PopoverContent>
+            </Popover>
+          </DialogHeader>
           <div className="dialog-scroll">
             <div className="dialog-columns">
-              <FieldGroup className="dialog-source-column">
-                <Field><FieldLabel htmlFor="task-name"><Trans>Task name</Trans></FieldLabel><FieldContent><Input id="task-name" value={nameDraft} placeholder={t`For example: mountain route / 2026-08`} onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
+              <section className="dialog-source-column" aria-labelledby="task-information-title">
+                <div className="dialog-column-scroll scroll-fade-y scroll-fade-8">
+                <h2 id="task-information-title" className="task-dialog-section-title"><Trans>Task information</Trans></h2>
+                <FieldGroup>
+                <Field><FieldLabel htmlFor="task-name"><Trans>Task name</Trans></FieldLabel><FieldContent><Input ref={taskNameInputRef} id="task-name" value={nameDraft} placeholder={t`For example: mountain route / 2026-08`} onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
                 <Field><FieldLabel><Trans context="source input" comment="Input media or an unfinished project folder for a reconstruction task.">Sources</Trans></FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span><Trans>Drop OSV media or an unfinished project folder</Trans></span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>{t`Choose sources`}</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={t`Remove ${source.label}`} onClick={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple files or drop an unfinished project folder here.`}</p></FieldContent></Field>
                 <Field><FieldLabel htmlFor="output-path"><Trans context="output destination" comment="Folder where project metadata and reconstruction output are saved.">Output folder</Trans></FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder={t`Defaults beside the first source: colmap-file-name`} onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}><Trans context="output folder picker action" comment="Button opens a folder picker to choose a different output location.">Choose another</Trans></Button>}</div><FieldDescription>{editingTaskId ? t`Saving a new task name also renames the output folder; unsupported filename characters become hyphens.` : t`After creation, project information is saved in the output folder so the task can resume after an interruption.`}</FieldDescription></FieldContent></Field>
-              </FieldGroup>
+                </FieldGroup>
+                </div>
+              </section>
               {renderSettingsFields()}
             </div>
           </div>
-          <DialogFooter><DialogClose render={<Button variant="ghost" />}><Trans>Cancel</Trans></DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Pencil /> : <Plus />}{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button></DialogFooter>
+          <DialogFooter><DialogClose render={<Button variant="outline" />}><Trans>Cancel</Trans></DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -2929,18 +2973,24 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {selectedTask && (
-        <Sheet open modal={false} onOpenChange={(open) => { if (!open) setSelectedTaskId(null); }}>
+      <Sheet
+        open={taskDetailOpen && Boolean(selectedTask)}
+        modal={false}
+        onOpenChange={setTaskDetailOpen}
+        onOpenChangeComplete={(open) => { if (!open) setSelectedTaskId(null); }}
+      >
+        {selectedTask && (
           <SheetContent className="task-detail-sheet" side="right" showOverlay={false}>
             <SheetHeader>
-              <div className="task-detail-identity"><span className="task-mark"><FileStack /></span><span><SheetTitle>{selectedTask.name}</SheetTitle><SheetDescription title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
+              <div className="task-detail-identity">{selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" /> : <span className="task-mark"><FileStack /></span>}<span><SheetTitle>{selectedTask.name}</SheetTitle><SheetDescription title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
             </SheetHeader>
-            <ToggleGroup className="task-detail-tabs" value={[taskDetailTab]} onValueChange={(value) => { const next = value[0]; if (next === "summary" || next === "records") setTaskDetailTab(next); }}>
-              <ToggleGroupItem value="summary"><Trans>Work summary</Trans></ToggleGroupItem>
-              <ToggleGroupItem value="records"><Trans>Processing records</Trans></ToggleGroupItem>
-            </ToggleGroup>
-            <div className="task-detail-scroll">
-              {taskDetailTab === "summary" && <>{selectedStage && selectedStageDefinition && <section className="task-detail-overview">
+            <Tabs className="task-detail-tabs-root" value={taskDetailTab} onValueChange={(value) => { if (value === "summary" || value === "records") setTaskDetailTab(value); }}>
+              <TabsList className="task-detail-tabs" variant="line">
+                <TabsTrigger value="summary"><Trans>Work summary</Trans></TabsTrigger>
+                <TabsTrigger value="records"><Trans>Processing records</Trans></TabsTrigger>
+              </TabsList>
+              <TabsContent className="task-detail-scroll scroll-fade-y scroll-fade-8" value="summary">
+              {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
                 <div className="task-detail-current-heading">
                   <span><small><Trans>Current work</Trans></small><strong>{stageLabel(selectedStageDefinition)}</strong></span>
                   <StageStatusBadge status={selectedStage.status} />
@@ -2966,26 +3016,9 @@ function App() {
                 </dl>
               </section>}
 
-              <Accordion>
-                <AccordionItem className="task-detail-stage-details" value="pipeline-details">
-                  <AccordionTrigger><Trans comment="Expand the details for each pipeline stage.">View pipeline details</Trans></AccordionTrigger>
-                  <AccordionContent><div className="task-detail-stages">
-                  {STAGES.map((stage) => { const current = selectedTask.stages[stage.key]; const Icon = stage.icon; const action = stageActionState(selectedTask, stage.key, hasRunningStage); return (
-                    <div className="task-detail-stage" key={stage.key}>
-                      <div className="task-detail-stage-main"><Icon /><span><strong>{stageLabel(stage)}</strong><small>{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.phase ? phaseLabel(current.phase) : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small></span><StageStatusBadge status={current.status} /></div>
-                      <div className="task-detail-stage-footer">
-                        <div className="task-detail-stage-time"><span><Clock3 />{taskStageDuration(current, clockMs) !== undefined ? t`Duration ${formatDuration(taskStageDuration(current, clockMs))}` : t`Not started`}</span></div>
-                        <Button variant={current.status === "running" ? "destructive" : "outline"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => handleStageAction(selectedTask, stage.key)}>{current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}{action.label}</Button>
-                      </div>
-                    </div>
-                  ); })}
-                  </div></AccordionContent>
-                </AccordionItem>
-              </Accordion>
-
               <section className="task-detail-section">
                 <div className="task-detail-section-title"><h2><Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans></h2><span><Plural value={selectedTask.inputPaths.length} one="# file" other="# files" /></span></div>
-                {selectedTask.inputPaths.length > 0 ? <div className="task-detail-sources">{selectedTask.inputPaths.map((path, index) => <div key={`${index}-${path}`} title={path}><Video /><span>{path}</span></div>)}</div> : <p className="task-detail-empty"><Trans>This task has no recorded source files.</Trans></p>}
+                {selectedTaskSources.length > 0 ? <div className="task-detail-sources">{selectedTaskSources.map((source) => <div className="source-item task-detail-source-item" key={source.id}><SourceThumbnail source={source} previewSide="left" /><span><strong>{source.detail}</strong><small title={source.path}>{source.path}</small></span></div>)}</div> : <p className="task-detail-empty"><Trans>This task has no recorded source files.</Trans></p>}
               </section>
 
               {selectedTask.warnings.length > 0 && (
@@ -2993,9 +3026,12 @@ function App() {
                   <div className="task-detail-section-title"><h2><Trans>Warnings</Trans></h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
                   <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{localiseUserMessage(warning)}</span></div>)}</div>
                 </section>
-              )}</>}
+              )}
 
-              {taskDetailTab === "records" && <section className="task-detail-section task-detail-records-section">
+              </TabsContent>
+
+              <TabsContent className="task-detail-scroll scroll-fade-y scroll-fade-8" value="records">
+              <section className="task-detail-section task-detail-records-section">
                 <div className="task-detail-section-title"><h2><Trans>Processing records</Trans></h2><span><Plural value={selectedTaskLogs.length} one="# entry" other="# entries" /></span></div>
                 {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
                   const count = logCountLabel(log.completed, log.total);
@@ -3004,21 +3040,21 @@ function App() {
                     <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{localiseUserMessage(log.message)}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
                   </li>;
                 })}</ol> : <p className="task-detail-empty"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
-              </section>}
-            </div>
-            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setSelectedTaskId(null)}><Trans>Close</Trans></Button></SheetFooter>
+              </section>
+              </TabsContent>
+            </Tabs>
+            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setTaskDetailOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
           </SheetContent>
-        </Sheet>
-      )}
+        )}
+      </Sheet>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent className="settings-sheet" side="right">
-          <SheetHeader><SheetTitle><Trans>Settings</Trans></SheetTitle><SheetDescription><Trans>Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities.</Trans></SheetDescription></SheetHeader>
-          <div className="settings-sheet-scroll">
+        <SheetContent className="settings-sheet gap-0" side="right">
+          <SheetHeader><SheetTitle><Trans>Settings</Trans></SheetTitle><SheetDescription><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></SheetDescription></SheetHeader>
+          <div className="settings-sheet-scroll scroll-fade-y scroll-fade-8">
             <section className="settings-section">
               <FieldSet className="language-fieldset">
                 <FieldLegend variant="label"><Trans context="language setting" comment="Select the language used by the interface.">Language</Trans></FieldLegend>
-                <FieldDescription><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></FieldDescription>
                 <Select
                   items={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                   value={getLocale()}

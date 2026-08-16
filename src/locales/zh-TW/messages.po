@@ -1333,6 +1333,12 @@ msgstr "已載入未完成的專案：{name}"
 msgid "Loading YOLO11/SkySeg models"
 msgstr "正在載入 YOLO11/SkySeg 模型"
 
+#. Lookup table settings for restoring source media color.
+#: src/App.tsx:2641
+msgctxt "settings section"
+msgid "LUT settings"
+msgstr "LUT 設定"
+
 #: src/App.tsx:815
 #: src/App.tsx:824
 msgid "Mask I/O error: "
@@ -1641,9 +1647,9 @@ msgid "Output not specified"
 msgstr "未指定輸出"
 
 #. Overall progress weighted by observed stage durations.
-#: src/App.tsx:2842
-msgid "Overall progress (time weighted)"
-msgstr "整體進度（依時間加權）"
+#: src/App.tsx:2836
+msgid "Overall progress"
+msgstr "整體進度"
 
 #: src/App.tsx:751
 msgid "Pairing block {current} / {total} completed"
@@ -1736,6 +1742,10 @@ msgstr "正在處理配對區塊 {current} / {total}"
 #: src/App.tsx:2999
 msgid "Processing records"
 msgstr "處理記錄"
+
+#: src/App.tsx:2582
+msgid "Processing settings"
+msgstr "處理設定"
 
 #. A project folder containing a resumable reconstruction.
 #: src/App.tsx:2807
@@ -2140,6 +2150,14 @@ msgstr "在 PATH 中找不到系統 ffprobe"
 msgid "Task added to the run queue"
 msgstr "任務已加入執行佇列"
 
+#: src/App.tsx:2910
+msgid "Task creation help"
+msgstr "建立任務說明"
+
+#: src/App.tsx:2920
+msgid "Task information"
+msgstr "任務資訊"
+
 #: src/App.tsx:2914
 msgid "Task name"
 msgstr "任務名稱"
@@ -2474,11 +2492,6 @@ msgstr "檢視詳細資料"
 #: src/App.tsx:2838
 msgid "View details for {0}"
 msgstr "檢視 {0} 的詳細資料"
-
-#. Expand the details for each pipeline stage.
-#: src/App.tsx:2971
-msgid "View pipeline details"
-msgstr "檢視管線詳細資料"
 
 #: src/App.tsx:1117
 msgid "Wait for {prerequisite} to finish"

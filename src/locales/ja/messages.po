@@ -1333,6 +1333,12 @@ msgstr "未完了のプロジェクトを読み込みました: {name}"
 msgid "Loading YOLO11/SkySeg models"
 msgstr "YOLO11/SkySegモデルを読み込み中"
 
+#. Lookup table settings for restoring source media color.
+#: src/App.tsx:2641
+msgctxt "settings section"
+msgid "LUT settings"
+msgstr "LUT 設定"
+
 #: src/App.tsx:815
 #: src/App.tsx:824
 msgid "Mask I/O error: "
@@ -1641,9 +1647,9 @@ msgid "Output not specified"
 msgstr "出力未指定"
 
 #. Overall progress weighted by observed stage durations.
-#: src/App.tsx:2842
-msgid "Overall progress (time weighted)"
-msgstr "全体の進捗 (時間加重)"
+#: src/App.tsx:2836
+msgid "Overall progress"
+msgstr "全体の進捗"
 
 #: src/App.tsx:751
 msgid "Pairing block {current} / {total} completed"
@@ -1736,6 +1742,10 @@ msgstr "ペアリングブロック {current}/{total} を処理中"
 #: src/App.tsx:2999
 msgid "Processing records"
 msgstr "処理記録"
+
+#: src/App.tsx:2582
+msgid "Processing settings"
+msgstr "処理設定"
 
 #. A project folder containing a resumable reconstruction.
 #: src/App.tsx:2807
@@ -2140,6 +2150,14 @@ msgstr "システムffprobeがPATHに見つかりません"
 msgid "Task added to the run queue"
 msgstr "タスクを実行キューに追加しました"
 
+#: src/App.tsx:2910
+msgid "Task creation help"
+msgstr "タスク作成の説明"
+
+#: src/App.tsx:2920
+msgid "Task information"
+msgstr "タスク情報"
+
 #: src/App.tsx:2914
 msgid "Task name"
 msgstr "タスク名"
@@ -2474,11 +2492,6 @@ msgstr "詳細を表示"
 #: src/App.tsx:2838
 msgid "View details for {0}"
 msgstr "{0}の詳細を表示"
-
-#. Expand the details for each pipeline stage.
-#: src/App.tsx:2971
-msgid "View pipeline details"
-msgstr "パイプラインの詳細を表示"
 
 #: src/App.tsx:1117
 msgid "Wait for {prerequisite} to finish"

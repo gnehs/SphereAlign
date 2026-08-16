@@ -1333,6 +1333,12 @@ msgstr "Loaded unfinished project: {name}"
 msgid "Loading YOLO11/SkySeg models"
 msgstr "Loading YOLO11/SkySeg models"
 
+#. Lookup table settings for restoring source media color.
+#: src/App.tsx:2641
+msgctxt "settings section"
+msgid "LUT settings"
+msgstr "LUT settings"
+
 #: src/App.tsx:815
 #: src/App.tsx:824
 msgid "Mask I/O error: "
@@ -1641,9 +1647,9 @@ msgid "Output not specified"
 msgstr "Output not specified"
 
 #. Overall progress weighted by observed stage durations.
-#: src/App.tsx:2842
-msgid "Overall progress (time weighted)"
-msgstr "Overall progress (time weighted)"
+#: src/App.tsx:2836
+msgid "Overall progress"
+msgstr "Overall progress"
 
 #: src/App.tsx:751
 msgid "Pairing block {current} / {total} completed"
@@ -1736,6 +1742,10 @@ msgstr "Processing pairing block {current} / {total}"
 #: src/App.tsx:2999
 msgid "Processing records"
 msgstr "Processing records"
+
+#: src/App.tsx:2582
+msgid "Processing settings"
+msgstr "Processing settings"
 
 #. A project folder containing a resumable reconstruction.
 #: src/App.tsx:2807
@@ -2140,6 +2150,14 @@ msgstr "System ffprobe was not found on PATH"
 msgid "Task added to the run queue"
 msgstr "Task added to the run queue"
 
+#: src/App.tsx:2910
+msgid "Task creation help"
+msgstr "Task creation help"
+
+#: src/App.tsx:2920
+msgid "Task information"
+msgstr "Task information"
+
 #: src/App.tsx:2914
 msgid "Task name"
 msgstr "Task name"
@@ -2474,11 +2492,6 @@ msgstr "View details"
 #: src/App.tsx:2838
 msgid "View details for {0}"
 msgstr "View details for {0}"
-
-#. Expand the details for each pipeline stage.
-#: src/App.tsx:2971
-msgid "View pipeline details"
-msgstr "View pipeline details"
 
 #: src/App.tsx:1117
 msgid "Wait for {prerequisite} to finish"
