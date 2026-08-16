@@ -65,57 +65,57 @@ msgstr ""
 #~ msgstr "- プロセッサー:"
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/App.tsx:2999
+#: src/App.tsx:3240
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {#件} other {#件}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/App.tsx:2987
+#: src/App.tsx:3225
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {#ファイル} other {#ファイル}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/App.tsx:2841
+#: src/App.tsx:3057
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {#ソース} other {#ソース}}"
 
 #. placeholder {0}: device.name
-#: src/App.tsx:397
+#: src/App.tsx:406
 msgid "{0} (GPU {ordinal})"
 msgstr "{0} (GPU {ordinal})"
 
 #. placeholder {0}: completed.toLocaleString(getLocale())
 #. placeholder {1}: total.toLocaleString(getLocale())
-#: src/App.tsx:1028
+#: src/App.tsx:1039
 msgid "{0} / {1}"
 msgstr "{0} / {1}"
 
 #. placeholder {0}: source.detail
-#: src/App.tsx:1536
+#: src/App.tsx:1590
 msgid "{0} dual-fisheye snapshot"
 msgstr "{0} デュアルフィッシュアイスナップショット"
 
 #. placeholder {0}: rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)
-#: src/App.tsx:1712
+#: src/App.tsx:1897
 msgid "{0} items/sec"
 msgstr "{0} 件/秒"
 
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1083
+#: src/App.tsx:1094
 msgid "{0} of {1} stages complete"
 msgstr "{0}/{1} ステージ完了"
 
 #. placeholder {0}: task.name
-#: src/App.tsx:2843
+#: src/App.tsx:3059
 msgid "{0} overall time progress"
 msgstr "{0} の全体時間進捗"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/App.tsx:2869
-#: src/App.tsx:2954
-#: src/App.tsx:2955
+#: src/App.tsx:3085
+#: src/App.tsx:3209
+#: src/App.tsx:3210
 msgid "{0} progress"
 msgstr "{0} の進捗"
 
@@ -145,164 +145,167 @@ msgstr "{0} の進捗"
 #~ msgstr "{0}: {1}"
 
 #. placeholder {0}: source.detail
-#: src/App.tsx:1515
+#: src/App.tsx:1554
 msgid "{0}: first-frame preview from the first lens"
 msgstr "{0}: 最初のレンズの先頭フレームプレビュー"
 
 #. Count of items already processed by a pipeline stage.
-#: src/App.tsx:1033
+#: src/App.tsx:1044
 msgid "{completed, plural, one {Processed #} other {Processed #}}"
 msgstr "{completed, plural, one {#件を処理済み} other {#件を処理済み}}"
 
-#: src/App.tsx:775
+#: src/App.tsx:786
 msgid "{count} candidate pairs processed"
 msgstr "{count} 件の候補ペアを処理済み"
 
-#: src/App.tsx:777
-#: src/App.tsx:778
+#: src/App.tsx:788
+#: src/App.tsx:789
 msgid "{count} masks failed; see the pipeline log"
 msgstr "{count} 件のマスクに失敗しました。パイプラインログを確認してください"
 
-#: src/App.tsx:776
+#: src/App.tsx:787
 msgid "{count} masks written"
 msgstr "{count} 件のマスクを書き込み済み"
 
-#: src/App.tsx:781
+#: src/App.tsx:792
 msgid "{count} sources"
 msgstr "{count} ソース"
 
-#: src/App.tsx:780
+#: src/App.tsx:791
 msgid "{count} sources · browser preview"
 msgstr "{count} ソース · ブラウザープレビュー"
 
-#: src/App.tsx:774
+#: src/App.tsx:785
 msgid "{count} sources completed"
 msgstr "{count} ソース完了"
 
 #. placeholder {0}: String(minutes).padStart(2, "0")
-#: src/App.tsx:941
+#: src/App.tsx:952
 msgid "{hours} hr {0} min"
 msgstr "{hours}時間 {0}分"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/App.tsx:788
-#: src/App.tsx:792
+#: src/App.tsx:799
+#: src/App.tsx:803
 msgid "{label}: {0}"
 msgstr "{label}: {0}"
 
 #. placeholder {0}: String(seconds).padStart(2, "0")
-#: src/App.tsx:942
+#: src/App.tsx:953
 msgid "{minutes} min {0} sec"
 msgstr "{minutes}分 {0}秒"
 
-#: src/App.tsx:791
+#: src/App.tsx:802
 msgid "{platform} · FFmpeg hardware decoding capability not reported"
 msgstr "{platform} · FFmpegハードウェアデコード機能は未報告"
 
-#: src/App.tsx:943
+#: src/App.tsx:954
 msgid "{seconds} sec"
 msgstr "{seconds}秒"
 
 #. A source must expose two recognizable video streams for the dual-fisheye workflow.
-#: src/App.tsx:731
+#: src/App.tsx:742
 msgctxt "source validation error"
 msgid "{source} does not contain two recognizable dual-fisheye video streams"
 msgstr "{source}には認識可能なデュアルフィッシュアイ動画ストリームが2つありません"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/App.tsx:790
+#: src/App.tsx:801
 msgid "{tool}: {0}"
 msgstr "{tool}: {0}"
 
 #. Count of all items reported by a pipeline stage.
-#: src/App.tsx:1029
+#: src/App.tsx:1040
 msgid "{total, plural, one {Total #} other {Total #}}"
 msgstr "{total, plural, one {合計 #件} other {合計 #件}}"
 
-#: src/App.tsx:779
+#: src/App.tsx:790
 msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} ソース · {valid} 件が検査に合格"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:2148
+#: src/App.tsx:2354
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT (Cube)"
 
 #. Shown when an untranslated backend progress or status message contains CJK and has no localized mapping; hide the original to avoid misleading users.
-#: src/App.tsx:450
+#: src/App.tsx:461
 msgctxt "backend status fallback"
 msgid "A backend status message is unavailable in this language."
 msgstr "この言語ではバックエンドのステータスメッセージを利用できません。"
 
-#: src/App.tsx:683
+#: src/App.tsx:694
 msgid "A processing stage is already running for this task; please wait"
 msgstr "このタスクでは処理ステージがすでに実行中です。お待ちください"
 
-#: src/App.tsx:688
+#: src/App.tsx:699
 msgid "A processing stage is already running; please wait"
 msgstr "処理ステージがすでに実行中です。お待ちください"
 
 #. placeholder {0}: formatDuration(value)
-#: src/App.tsx:1702
+#: src/App.tsx:1887
 msgid "About {0}"
 msgstr "約{0}"
 
-#: src/App.tsx:1704
+#: src/App.tsx:1889
 msgid "About {minutes} min"
 msgstr "約{minutes}分"
 
-#: src/App.tsx:3074
+#: src/App.tsx:3316
 msgid "Acceleration capabilities not confirmed"
 msgstr "アクセラレーション機能を確認できません"
 
 #. Only add media captured in one scene; separate media from different scenes into separate tasks.
-#: src/App.tsx:2910
+#. Only add media captured in one scene; separate media from different scenes into separate tasks.
+#: src/App.tsx:3128
+#: src/App.tsx:3133
 msgid "Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 msgstr "同じシーンで撮影したOSVまたはデュアルフィッシュアイメディアのみを追加してください。1つのシーンに複数のソースを含められます。シーンごとに別の再構成タスクを作成してください。"
 
 #. Add a queued task to the automatic execution queue.
-#: src/App.tsx:2836
+#: src/App.tsx:3052
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "キューに追加"
 
 #: src/App.tsx:3016
-msgid "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
-msgstr "インターフェースの言語とテーマを調整し、COLMAP、CUDA、FFmpeg、ハードウェアアクセラレーションの機能を確認します。"
+#~ msgid "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
+#~ msgstr "インターフェースの言語とテーマを調整し、COLMAP、CUDA、FFmpeg、ハードウェアアクセラレーションの機能を確認します。"
 
-#: src/App.tsx:2910
+#: src/App.tsx:3128
+#: src/App.tsx:3133
 msgid "Adjust the task name, sources, and processing settings before it starts."
 msgstr "開始前にタスク名、ソース、処理設定を調整します。"
 
-#: src/App.tsx:2916
+#: src/App.tsx:3145
 msgid "After creation, project information is saved in the output folder so the task can resume after an interruption."
 msgstr "作成後、プロジェクト情報は出力フォルダーに保存され、中断後にタスクを再開できます。"
 
 #. Fallback means retrying the same operation with software decoding after hardware decoding fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:711
+#: src/App.tsx:722
 msgctxt "backend error"
 msgid "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
 msgstr "FFmpegのハードウェアデコードに失敗し、ソフトウェアデコードへのフォールバックを準備できませんでした: {0}"
 
-#: src/App.tsx:616
+#: src/App.tsx:627
 msgid "Alignment"
 msgstr "アライメント"
 
 #. The stage that aligns multiple OSV sources and camera rigs.
-#: src/App.tsx:266
+#: src/App.tsx:275
 msgctxt "pipeline stage label"
 msgid "Alignment"
 msgstr "アライメント"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/App.tsx:2735
+#: src/App.tsx:2951
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "アライメント"
 
-#: src/App.tsx:753
+#: src/App.tsx:764
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "アライメント完了: {registered}/{total} カメラリグフレームを登録 ({percentage}%)"
 
@@ -312,70 +315,70 @@ msgstr "アライメント完了: {registered}/{total} カメラリグフレー�
 #~ msgstr "アライメントワークフロー: {0}"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:590
+#: src/App.tsx:601
 msgid "Alignment: Cancelled"
 msgstr "アライメント: キャンセル済み"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:589
+#: src/App.tsx:600
 msgid "Alignment: Completed"
 msgstr "アライメント: 完了"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:591
+#: src/App.tsx:602
 msgid "Alignment: Failed"
 msgstr "アライメント: 失敗"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:587
+#: src/App.tsx:598
 msgid "Alignment: Pending"
 msgstr "アライメント: 保留中"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:588
+#: src/App.tsx:599
 msgid "Alignment: Running"
 msgstr "アライメント: 実行中"
 
-#: src/App.tsx:3069
+#: src/App.tsx:3311
 msgid "All required capabilities are available"
 msgstr "必要な機能をすべて利用できます"
 
 #. Apply the official or custom lookup table to restore DJI D-Log M color.
-#: src/App.tsx:2645
+#: src/App.tsx:2861
 msgid "Apply the D-Log M restoration LUT"
 msgstr "D-Log M復元LUTを適用"
 
 #. Alignment validation error for dual-fisheye frame pairs.
-#: src/App.tsx:555
+#: src/App.tsx:566
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "アライメントには一致するlens0/lens1フレームペアが2つ以上必要です"
 
-#: src/App.tsx:687
+#: src/App.tsx:698
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
 msgstr "自動パイプラインでフレーム抽出、マスキング、アライメントが完了しました"
 
-#: src/App.tsx:646
-#: src/App.tsx:1555
+#: src/App.tsx:657
+#: src/App.tsx:1727
 msgid "Available"
 msgstr "利用可能"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/App.tsx:2585
+#: src/App.tsx:2796
 msgid "Base frame rate (FPS)"
 msgstr "基本フレームレート (FPS)"
 
-#: src/App.tsx:3070
+#: src/App.tsx:3312
 msgid "Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower."
 msgstr "基本的な再構成は実行できます。CUDAとハードウェアアクセラレーションは任意です。なくても処理できますが、フレーム抽出、特徴マッチング、再構成に時間がかかります。"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:293
+#: src/App.tsx:302
 msgctxt "mask class"
 msgid "Bicycle"
 msgstr "自転車"
 
 #. Short label for the initial reconstruction bootstrap.
-#: src/App.tsx:919
+#: src/App.tsx:930
 msgctxt "pipeline phase"
 msgid "Bootstrap reconstruction"
 msgstr "再構成の初期化"
@@ -383,7 +386,7 @@ msgstr "再構成の初期化"
 #. The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/App.tsx:725
+#: src/App.tsx:736
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
 msgstr "FFmpegの候補フレームでハードウェアとソフトウェアの両方のデコードに失敗しました: ハードウェアエラー: {0}、ソフトウェアエラー: {1}"
@@ -392,7 +395,7 @@ msgstr "FFmpegの候補フレームでハードウェアとソフトウェアの
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(cleanup[1])
 #. placeholder {2}: localiseTechnicalErrorDetail(cleanup[2])
-#: src/App.tsx:719
+#: src/App.tsx:730
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
 msgstr "FFmpegの候補フレームでハードウェアとソフトウェアの両方のデコードに失敗しました: ハードウェアエラー: {0}、ソフトウェアエラー: {1}、不完全な出力のクリーンアップにも失敗しました: {2}"
@@ -400,37 +403,37 @@ msgstr "FFmpegの候補フレームでハードウェアとソフトウェアの
 #. The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/App.tsx:706
+#: src/App.tsx:717
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpegのメモリ内候補でハードウェアとソフトウェアの両方のデコードに失敗しました: ハードウェアエラー: {0}、ソフトウェアエラー: {1}"
 
 #. Badge indicating that the app is running in a browser-only preview.
 #: src/App.tsx:2784
-msgid "Browser preview"
-msgstr "ブラウザープレビュー"
+#~ msgid "Browser preview"
+#~ msgstr "ブラウザープレビュー"
 
-#: src/App.tsx:685
+#: src/App.tsx:696
 msgid "Browser preview does not cancel backend work"
 msgstr "ブラウザープレビューではバックエンド処理をキャンセルできません"
 
-#: src/App.tsx:669
+#: src/App.tsx:680
 msgid "Browser preview does not read local LUT files; paste a .cube path directly"
 msgstr "ブラウザープレビューではローカルLUTファイルを読み込めません。.cubeのパスを直接貼り付けてください"
 
-#: src/App.tsx:662
+#: src/App.tsx:673
 msgid "Browser preview does not read local project information"
 msgstr "ブラウザープレビューではローカルのプロジェクト情報を読み込めません"
 
-#: src/App.tsx:682
+#: src/App.tsx:693
 msgid "Browser preview does not run backend work"
 msgstr "ブラウザープレビューではバックエンド処理を実行しません"
 
-#: src/App.tsx:665
+#: src/App.tsx:676
 msgid "Browser preview is not connected to the local runtime"
 msgstr "ブラウザープレビューはローカルランタイムに接続されていません"
 
-#: src/App.tsx:661
+#: src/App.tsx:672
 msgid "Browser preview keeps the custom output path"
 msgstr "ブラウザープレビューではカスタム出力パスを保持します"
 
@@ -439,7 +442,7 @@ msgstr "ブラウザープレビューではカスタム出力パスを保持し
 #~ msgstr "ブラウザープレビュータスク"
 
 #. Fallback task name used when the app runs without the local Tauri runtime.
-#: src/App.tsx:655
+#: src/App.tsx:666
 msgctxt "browser preview task"
 msgid "Browser preview task"
 msgstr "ブラウザープレビュータスク"
@@ -449,141 +452,141 @@ msgstr "ブラウザープレビュータスク"
 #~ msgstr "ブラウザープレビュー: ローカルランタイムに接続されていません"
 
 #. Warning stored on a browser-only preview task because it is not connected to the local Tauri runtime.
-#: src/App.tsx:656
+#: src/App.tsx:667
 msgctxt "browser preview task warning"
 msgid "Browser preview: not connected to the local runtime"
 msgstr "ブラウザープレビュー: ローカルランタイムに接続されていません"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:296
+#: src/App.tsx:305
 msgctxt "mask class"
 msgid "Bus"
 msgstr "バス"
 
 #. Short label for estimating the camera rig.
-#: src/App.tsx:921
+#: src/App.tsx:932
 msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "カメラリグ推定"
 
 #. Short project recovery status indicating that processing can continue.
-#: src/App.tsx:546
+#: src/App.tsx:557
 msgid "Can be resumed"
 msgstr "再開できます"
 
-#: src/App.tsx:1654
-#: src/App.tsx:2921
-#: src/App.tsx:2928
+#: src/App.tsx:1826
+#: src/App.tsx:3152
+#: src/App.tsx:3159
 msgid "Cancel"
 msgstr "キャンセル"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/App.tsx:3009
+#: src/App.tsx:3251
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "タスク全体をキャンセル"
 
-#: src/App.tsx:1663
+#: src/App.tsx:1835
 msgid "Cancelled"
 msgstr "キャンセル済み"
 
 #. Short cancelled status label.
-#: src/App.tsx:923
+#: src/App.tsx:934
 msgctxt "pipeline phase status"
 msgid "Cancelled"
 msgstr "キャンセル済み"
 
 #. Backend progress message: output files were not committed.
 #. Backend progress message: output files were not committed.
-#: src/App.tsx:479
-#: src/App.tsx:511
+#: src/App.tsx:490
+#: src/App.tsx:522
 msgid "Cancelled before committing output"
 msgstr "出力の書き込み前にキャンセルされました"
 
 #. Backend progress message: selection was cancelled before the selected result was committed.
-#: src/App.tsx:508
+#: src/App.tsx:519
 msgid "Cancelled before committing the selected result"
 msgstr "選択結果の書き込み前にキャンセルされました"
 
-#: src/App.tsx:699
+#: src/App.tsx:710
 msgid "Cancelled before interval {interval}"
 msgstr "処理区間 {interval} の前にキャンセルされました"
 
-#: src/App.tsx:746
+#: src/App.tsx:757
 msgid "Cancelled before processing interval {interval}"
 msgstr "処理区間 {interval} の処理前にキャンセルされました"
 
 #. Backend progress message; interval is a processing window, not a time duration.
-#: src/App.tsx:476
+#: src/App.tsx:487
 msgid "Cancelled before processing the next interval"
 msgstr "次の処理区間を処理する前にキャンセルされました"
 
 #. Backend progress message: scoring candidate frames for selection.
 #. Backend progress message: scoring candidate frames for selection.
-#: src/App.tsx:477
-#: src/App.tsx:507
+#: src/App.tsx:488
+#: src/App.tsx:518
 msgid "Cancelled while scoring frame candidates"
 msgstr "フレーム候補のスコアリング中にキャンセルされました"
 
 #. A cancelled stage can be resumed later.
-#: src/App.tsx:525
-#: src/App.tsx:686
+#: src/App.tsx:536
+#: src/App.tsx:697
 msgid "Cancelled; you can resume later"
 msgstr "キャンセル済み。後で再開できます"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/App.tsx:2613
+#: src/App.tsx:2824
 msgid "Candidate frame rate"
 msgstr "候補フレームレート"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:294
+#: src/App.tsx:303
 msgctxt "mask class"
 msgid "Car"
 msgstr "車"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/App.tsx:789
+#: src/App.tsx:800
 msgid "Ceres BA: {0}"
 msgstr "Ceres BA: {0}"
 
-#: src/App.tsx:625
+#: src/App.tsx:636
 msgid "Ceres BA: CPU only"
 msgstr "Ceres BA: CPUのみ"
 
-#: src/App.tsx:624
+#: src/App.tsx:635
 msgid "Ceres BA: May be available (runtime CUDA/cuDSS check required)"
 msgstr "Ceres BA: 利用できる可能性があります (ランタイムでCUDA/cuDSSの確認が必要)"
 
-#: src/App.tsx:626
+#: src/App.tsx:637
 msgid "Ceres BA: Not reported"
 msgstr "Ceres BA: 未報告"
 
-#: src/App.tsx:3085
+#: src/App.tsx:3327
 msgid "Change path"
 msgstr "パスを変更"
 
-#: src/App.tsx:3063
+#: src/App.tsx:3305
 msgid "Check again"
 msgstr "環境を再確認"
 
-#: src/App.tsx:603
+#: src/App.tsx:614
 msgid "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
 msgstr "COLMAPのCUDAビルドとNVIDIA GPUの有無を確認"
 
-#: src/App.tsx:602
+#: src/App.tsx:613
 msgid "Check the COLMAP executable and version"
 msgstr "COLMAPの実行ファイルとバージョンを確認"
 
-#: src/App.tsx:3063
+#: src/App.tsx:3305
 msgid "Checking"
 msgstr "確認中"
 
-#: src/App.tsx:2664
+#: src/App.tsx:2880
 msgid "Choose .cube"
 msgstr ".cubeを選択"
 
-#: src/App.tsx:2668
+#: src/App.tsx:2884
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr ".cube拡張子の3D LUTを選択してください。"
 
@@ -592,127 +595,136 @@ msgstr ".cube拡張子の3D LUTを選択してください。"
 #~ msgstr "別のものを選択"
 
 #. Button opens a folder picker to choose a different output location.
-#: src/App.tsx:2916
+#: src/App.tsx:3145
 msgctxt "output folder picker action"
 msgid "Choose another"
 msgstr "別の出力先を選択"
 
-#: src/App.tsx:3021
+#: src/App.tsx:3259
 msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
 msgstr "英語、簡体字中国語、繁体字中国語、または日本語を選択してください。"
 
 #. Button opens a file picker for source media.
-#: src/App.tsx:2802
+#: src/App.tsx:3017
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "ファイルを選択"
 
 #. Button opens a folder picker for a project or source folder.
 #: src/App.tsx:2802
-msgctxt "folder picker action"
-msgid "Choose folder"
-msgstr "フォルダーを選択"
+#~ msgctxt "folder picker action"
+#~ msgid "Choose folder"
+#~ msgstr "フォルダーを選択"
 
-#: src/App.tsx:3039
+#: src/App.tsx:3281
 msgid "Choose light, dark, or follow the system appearance automatically."
 msgstr "ライト、ダーク、またはシステムの外観に自動追従するテーマを選択してください。"
 
 #: src/App.tsx:2915
-msgid "Choose multiple files or drop an unfinished project folder here."
-msgstr "複数のファイルを選択するか、未完了のプロジェクトフォルダーをここにドロップしてください。"
+#~ msgid "Choose multiple files or drop an unfinished project folder here."
+#~ msgstr "複数のファイルを選択するか、未完了のプロジェクトフォルダーをここにドロップしてください。"
 
-#: src/App.tsx:2915
+#: src/App.tsx:3144
+msgid "Choose multiple OSV or dual-fisheye media files."
+msgstr "複数のOSVまたはデュアルフィッシュアイメディアファイルを選択してください。"
+
+#: src/App.tsx:3144
 msgid "Choose sources"
 msgstr "ソースを選択"
 
-#: src/App.tsx:2665
+#: src/App.tsx:2881
 msgid "Clear custom LUT"
 msgstr "カスタムLUTをクリア"
 
 #. Accessible label for the icon-only button that closes the dialog.
 #. Accessible label for the icon-only button that closes the sheet.
 #. Label for the button that closes the dialog from the footer.
-#: src/App.tsx:3009
-#: src/App.tsx:3091
+#: src/App.tsx:3251
+#: src/App.tsx:3333
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
-#: src/components/ui/sheet.tsx:79
+#: src/components/ui/sheet.tsx:84
 msgid "Close"
 msgstr "閉じる"
 
-#: src/App.tsx:2898
+#: src/App.tsx:3114
 msgid "Close notification"
 msgstr "通知を閉じる"
 
-#: src/App.tsx:762
+#: src/App.tsx:1705
+#: src/App.tsx:1706
+msgid "Close window"
+msgstr "ウィンドウを閉じる"
+
+#: src/App.tsx:773
 msgid "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 msgstr "COLMAP {component} のCeres GPUは利用できません。CeresをCPUに切り替えました: {error}"
 
-#: src/App.tsx:761
+#: src/App.tsx:772
 msgid "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgstr "COLMAP {component} のGPU実行に失敗しました。CPUで再試行します: {error}"
 
-#: src/App.tsx:635
+#: src/App.tsx:646
 msgid "COLMAP alignment capability not confirmed"
 msgstr "COLMAPアライメント機能を確認できません"
 
-#: src/App.tsx:807
+#: src/App.tsx:818
 msgid "COLMAP bootstrap did not produce sparse/0"
 msgstr "COLMAPの初期化でsparse/0が生成されませんでした"
 
 #. Alignment error when COLMAP bootstrap produces no sparse model.
-#: src/App.tsx:556
+#: src/App.tsx:567
 msgid "COLMAP bootstrap produced no sparse submodel"
 msgstr "COLMAPの初期化でsparseサブモデルが生成されませんでした"
 
-#: src/App.tsx:638
+#: src/App.tsx:649
 msgid "COLMAP CUDA capabilities were checked"
 msgstr "COLMAP CUDA機能を確認しました"
 
-#: src/App.tsx:639
+#: src/App.tsx:650
 msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA機能の確認結果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:3085
+#: src/App.tsx:3327
 msgid "COLMAP executable"
 msgstr "COLMAP実行ファイル"
 
 #. The alignment stage cannot start without COLMAP, but the project remains resumable.
-#: src/App.tsx:500
+#: src/App.tsx:511
 msgid "COLMAP is unavailable; alignment will remain pending and resumable"
 msgstr "COLMAPを利用できません。アライメントは保留となり、再開可能です"
 
-#: src/App.tsx:2128
+#: src/App.tsx:2334
 msgid "COLMAP launcher"
 msgstr "COLMAPランチャー"
 
-#: src/App.tsx:636
+#: src/App.tsx:647
 msgid "COLMAP not detected"
 msgstr "COLMAP未検出"
 
-#: src/App.tsx:806
+#: src/App.tsx:817
 msgid "COLMAP was not found on PATH"
 msgstr "COLMAPがPATHに見つかりません"
 
-#: src/App.tsx:798
+#: src/App.tsx:809
 msgid "COLMAP was not found; alignment will remain pending and resumable"
 msgstr "COLMAPが見つかりません。アライメントは保留となり、再開可能です"
 
 #. Backend progress message: mask files are being written.
-#: src/App.tsx:489
+#: src/App.tsx:500
 msgid "Committing mask files"
 msgstr "マスクファイルを書き込み中"
 
 #. Short label for writing output files.
-#: src/App.tsx:915
+#: src/App.tsx:926
 msgctxt "pipeline phase"
 msgid "Committing output"
 msgstr "出力を書き込み中"
 
 #. Shown when a pipeline stage is blocked by an incomplete prerequisite stage.
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/App.tsx:793
+#: src/App.tsx:804
 msgid "Complete {0} first"
 msgstr "{0}を先に完了してください"
 
@@ -720,37 +732,37 @@ msgstr "{0}を先に完了してください"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "{prerequisite} を先に完了してください"
 
-#: src/App.tsx:1665
-#: src/App.tsx:2816
+#: src/App.tsx:1837
+#: src/App.tsx:3031
 msgid "Completed"
 msgstr "完了"
 
 #. Short completed status label.
-#: src/App.tsx:922
+#: src/App.tsx:933
 msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "完了"
 
-#: src/App.tsx:2888
+#: src/App.tsx:3104
 msgid "Completed reconstruction tasks will appear here."
 msgstr "完了した再構築タスクがここに表示されます。"
 
-#: src/App.tsx:605
+#: src/App.tsx:616
 msgid "Confirm FFmpeg hardware decoding capabilities"
 msgstr "FFmpegのハードウェアデコード機能を確認"
 
-#: src/App.tsx:604
+#: src/App.tsx:615
 msgid "Confirm FFmpeg is available on the system PATH"
 msgstr "システムPATHでFFmpegが利用可能か確認"
 
-#: src/App.tsx:3062
+#: src/App.tsx:3304
 msgid "Copy diagnostics"
 msgstr "診断情報をコピー"
 
 #. Backend progress message: copying selected source frames.
 #. Backend progress message: copying selected source frames.
-#: src/App.tsx:480
-#: src/App.tsx:512
+#: src/App.tsx:491
+#: src/App.tsx:523
 msgid "Copying selected frame pair"
 msgstr "選択したフレームペアをコピー中"
 
@@ -759,7 +771,7 @@ msgstr "選択したフレームペアをコピー中"
 #~ msgstr "CPUのみ"
 
 #. Create the reconstruction task.
-#: src/App.tsx:2921
+#: src/App.tsx:3152
 msgctxt "task action"
 msgid "Create task"
 msgstr "タスクを作成"
@@ -769,19 +781,19 @@ msgstr "タスクを作成"
 #~ msgid "Created {0}"
 #~ msgstr "{0} を作成しました"
 
-#: src/App.tsx:786
+#: src/App.tsx:797
 msgid "Created {name}"
 msgstr "{name}を作成しました"
 
-#: src/App.tsx:427
+#: src/App.tsx:436
 msgid "CUDA acceleration"
 msgstr "CUDAアクセラレーション"
 
-#: src/App.tsx:628
+#: src/App.tsx:639
 msgid "CUDA acceleration available"
 msgstr "CUDAアクセラレーションを利用可能"
 
-#: src/App.tsx:629
+#: src/App.tsx:640
 msgid "CUDA acceleration partially available"
 msgstr "CUDAアクセラレーションを一部利用可能"
 
@@ -790,122 +802,131 @@ msgstr "CUDAアクセラレーションを一部利用可能"
 #~ msgid "CUDA build: {0}"
 #~ msgstr "CUDAビルド: {0}"
 
-#: src/App.tsx:618
+#: src/App.tsx:629
 msgid "CUDA build: Supported"
 msgstr "CUDAビルド: 対応"
 
-#: src/App.tsx:619
+#: src/App.tsx:630
 msgid "CUDA build: Unsupported"
 msgstr "CUDAビルド: 非対応"
 
-#: src/App.tsx:631
+#: src/App.tsx:642
 msgid "CUDA status not confirmed"
 msgstr "CUDAステータスを確認できません"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/App.tsx:2951
+#: src/App.tsx:3206
 msgid "Current item: {0}"
 msgstr "現在の項目: {0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/App.tsx:2845
+#: src/App.tsx:3061
 msgid "Current stage: {0}"
 msgstr "現在のステージ: {0}"
 
-#: src/App.tsx:2945
+#: src/App.tsx:3200
 msgid "Current work"
 msgstr "現在の処理"
 
 #. Optional user-provided 3D LUT file path.
-#: src/App.tsx:2652
+#: src/App.tsx:2868
 msgid "Custom LUT (optional)"
 msgstr "カスタムLUT (任意)"
 
-#: src/App.tsx:3054
+#: src/App.tsx:3296
 msgid "Dark"
 msgstr "ダーク"
 
-#: src/App.tsx:750
+#: src/App.tsx:761
 msgid "Decoding and scoring source {source} ({count} candidate pairs processed)"
 msgstr "ソース{source}をデコードしてスコアリング中 ({count} 件の候補ペアを処理済み)"
 
-#: src/App.tsx:771
+#: src/App.tsx:782
 msgid "Decoding and scoring source {source} dual-fisheye candidates in memory"
 msgstr "ソース{source}のデュアルフィッシュアイ候補をメモリ内でデコードしてスコアリング中"
 
 #. Short label for full-resolution decoding.
-#: src/App.tsx:914
+#: src/App.tsx:925
 msgctxt "pipeline phase"
 msgid "Decoding full resolution"
 msgstr "フル解像度をデコード中"
 
-#: src/App.tsx:2916
+#: src/App.tsx:3145
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "最初のソースの隣にデフォルト保存: colmap-file-name"
 
-#: src/App.tsx:606
+#: src/App.tsx:617
 msgid "Detected"
 msgstr "検出済み"
 
 #. The source filename suffix or media metadata indicated D-Log M color.
-#: src/App.tsx:2647
+#: src/App.tsx:2863
 msgid "Detected from the _D filename suffix or media metadata and enabled."
 msgstr "_Dファイル名サフィックスまたはメディアメタデータから検出して有効化しました。"
 
-#: src/App.tsx:3061
+#: src/App.tsx:3303
 msgid "Diagnostic actions"
 msgstr "診断操作"
 
-#: src/App.tsx:666
+#: src/App.tsx:677
 msgid "Diagnostics copied; you can paste them into a bug report"
 msgstr "診断情報をコピーしました。バグレポートに貼り付けられます"
 
 #: src/App.tsx:2915
-msgid "Drop OSV media or an unfinished project folder"
-msgstr "OSVメディアまたは未完了のプロジェクトフォルダーをドロップ"
+#~ msgid "Drop OSV media or an unfinished project folder"
+#~ msgstr "OSVメディアまたは未完了のプロジェクトフォルダーをドロップ"
 
 #. Drop OSV media or an unfinished project folder here, or choose files or a folder below.
 #: src/App.tsx:2801
-msgid "Drop OSV media or an unfinished project folder here,<0/>or choose files or a folder below."
-msgstr "OSVメディアまたは未完了のプロジェクトフォルダーをここにドロップ<0/>または下からファイルかフォルダーを選択してください。"
+#~ msgid "Drop OSV media or an unfinished project folder here,<0/>or choose files or a folder below."
+#~ msgstr "OSVメディアまたは未完了のプロジェクトフォルダーをここにドロップ<0/>または下からファイルかフォルダーを選択してください。"
+
+#: src/App.tsx:3144
+msgid "Drop OSV or dual-fisheye media"
+msgstr "OSVまたはデュアルフィッシュアイメディアをドロップ"
+
+#. Drop source media here or choose files below. Existing projects are opened separately.
+#: src/App.tsx:3016
+msgid "Drop OSV or dual-fisheye media here,<0/>or use Open project to resume an existing project."
+msgstr "OSVまたはデュアルフィッシュアイメディアをここにドロップするか、<0/>「プロジェクトを開く」を使用して既存のプロジェクトを再開してください。"
 
 #. Technical description of the frame extraction stage; keep IMU as the acronym.
-#: src/App.tsx:255
+#: src/App.tsx:264
 msgctxt "pipeline stage description"
 msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "デュアルフィッシュアイフレーム、内部パラメーター、IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
-#. placeholder {0}: formatDuration(taskStageDuration(current, clockMs))
-#: src/App.tsx:2977
-#: src/App.tsx:3004
+#: src/App.tsx:3245
 msgid "Duration {0}"
 msgstr "所要時間 {0}"
 
 #. Technical description of the masking stage.
-#: src/App.tsx:261
+#: src/App.tsx:270
 msgctxt "pipeline stage description"
 msgid "Dynamic-object and sky masks"
 msgstr "動的オブジェクトと空のマスク"
 
 #. Edit a task that has not started.
-#: src/App.tsx:2837
+#: src/App.tsx:3053
 msgctxt "task action"
 msgid "Edit"
 msgstr "編集"
 
 #. Dialog for editing a task before it starts.
-#: src/App.tsx:2910
+#. Dialog for editing a task before it starts.
+#: src/App.tsx:3127
+#: src/App.tsx:3132
 msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "キュー待ちタスクを編集"
 
-#: src/App.tsx:2848
-#: src/App.tsx:2959
+#: src/App.tsx:3064
+#: src/App.tsx:3214
 msgid "Elapsed"
 msgstr "経過時間"
 
-#: src/App.tsx:2751
+#: src/App.tsx:2967
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "CUDA対応NVIDIA GPUが検出されるとデフォルトで有効になります。実行に失敗した場合はCPUにフォールバックします。"
 
@@ -924,18 +945,18 @@ msgstr "CUDA対応NVIDIA GPUが検出されるとデフォルトで有効にな�
 #~ msgid "Environment checks"
 #~ msgstr "環境チェック"
 
-#: src/App.tsx:2849
-#: src/App.tsx:2960
+#: src/App.tsx:3065
+#: src/App.tsx:3215
 msgid "Estimated remaining"
 msgstr "推定残り時間"
 
-#: src/App.tsx:1701
-#: src/App.tsx:1708
-#: src/App.tsx:1710
+#: src/App.tsx:1886
+#: src/App.tsx:1893
+#: src/App.tsx:1895
 msgid "Estimating"
 msgstr "推定中"
 
-#: src/App.tsx:652
+#: src/App.tsx:663
 msgid "Executable detected (full path hidden)"
 msgstr "実行ファイルを検出しました (フルパスは非表示)"
 
@@ -944,137 +965,137 @@ msgstr "実行ファイルを検出しました (フルパスは非表示)"
 #~ msgid "Executable: {0}"
 #~ msgstr "実行ファイル: {0}"
 
-#: src/App.tsx:637
+#: src/App.tsx:648
 msgid "Executable: system PATH"
 msgstr "実行ファイル: システムPATH"
 
 #. A resumable project already contains COLMAP reconstruction output.
 #. A resumable project already contains COLMAP reconstruction output.
-#: src/App.tsx:496
-#: src/App.tsx:535
+#: src/App.tsx:507
+#: src/App.tsx:546
 msgid "Existing COLMAP reconstruction was discovered"
 msgstr "既存のCOLMAP再構成を検出しました"
 
 #. A resumable project already contains extracted dual-fisheye frames.
-#: src/App.tsx:494
+#: src/App.tsx:505
 msgid "Existing dual-fisheye frames were discovered"
 msgstr "既存のデュアルフィッシュアイフレームを検出しました"
 
 #. A resumable project already contains mask files.
 #. A resumable project already contains mask files.
-#: src/App.tsx:495
-#: src/App.tsx:534
+#: src/App.tsx:506
+#: src/App.tsx:545
 msgid "Existing masks were discovered"
 msgstr "既存のマスクを検出しました"
 
 #. Backend alignment progress message while extracting image features.
-#: src/App.tsx:552
+#: src/App.tsx:563
 msgid "Extracting image features"
 msgstr "画像特徴を抽出中"
 
-#: src/App.tsx:810
-#: src/App.tsx:819
+#: src/App.tsx:821
+#: src/App.tsx:830
 msgid "Extraction I/O error: "
 msgstr "抽出I/Oエラー: "
 
-#: src/App.tsx:809
-#: src/App.tsx:818
+#: src/App.tsx:820
+#: src/App.tsx:829
 msgid "Extraction image error: "
 msgstr "抽出画像エラー: "
 
-#: src/App.tsx:1664
+#: src/App.tsx:1836
 msgid "Failed"
 msgstr "失敗"
 
 #. Short failed status label.
-#: src/App.tsx:924
+#: src/App.tsx:935
 msgctxt "pipeline phase status"
 msgid "Failed"
 msgstr "失敗"
 
-#: src/App.tsx:673
+#: src/App.tsx:684
 msgid "Failed to create the task; check the runtime message"
 msgstr "タスクの作成に失敗しました。ランタイムメッセージを確認してください"
 
-#: src/App.tsx:664
+#: src/App.tsx:675
 msgid "Failed to open project"
 msgstr "プロジェクトを開けませんでした"
 
-#: src/App.tsx:765
+#: src/App.tsx:776
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "FFmpeg rawvideoの読み込みに失敗しました: {error}"
 
-#: src/App.tsx:676
+#: src/App.tsx:687
 msgid "Failed to save task changes; check the runtime message"
 msgstr "タスクの変更を保存できませんでした。ランタイムメッセージを確認してください"
 
 #. Short label for extracting image features.
-#: src/App.tsx:918
+#: src/App.tsx:929
 msgctxt "pipeline phase"
 msgid "Feature extraction"
 msgstr "特徴抽出"
 
-#: src/App.tsx:641
+#: src/App.tsx:652
 msgid "FFmpeg and ffprobe are both available"
 msgstr "FFmpegとffprobeの両方が利用可能"
 
-#: src/App.tsx:767
-#: src/App.tsx:799
+#: src/App.tsx:778
+#: src/App.tsx:810
 msgid "FFmpeg candidate frames fell back safely to CPU software decoding"
 msgstr "FFmpegの候補フレームはCPUソフトウェアデコードに安全にフォールバックしました"
 
-#: src/App.tsx:763
+#: src/App.tsx:774
 msgid "FFmpeg did not produce any in-memory candidate frames"
 msgstr "FFmpegがメモリ内に候補フレームを生成しませんでした"
 
 #. PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.
-#: src/App.tsx:701
+#: src/App.tsx:712
 msgctxt "backend progress message"
 msgid "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
 msgstr "FFmpegにPTSのない候補フレームが{count}件ありました。候補FPSを使用してタイミングを推定しました"
 
-#: src/App.tsx:644
+#: src/App.tsx:655
 msgid "FFmpeg hardware acceleration not enabled"
 msgstr "FFmpegハードウェアアクセラレーションは無効"
 
-#: src/App.tsx:643
+#: src/App.tsx:654
 msgid "FFmpeg hardware acceleration supported"
 msgstr "FFmpegハードウェアアクセラレーションに対応"
 
-#: src/App.tsx:766
+#: src/App.tsx:777
 msgid "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 msgstr "FFmpegのハードウェアデコードに失敗しました。CPUソフトウェアデコードで再試行します: {error}"
 
 #. Media preview error when FFmpeg is unavailable.
-#: src/App.tsx:532
+#: src/App.tsx:543
 msgid "FFmpeg is not installed"
 msgstr "FFmpegがインストールされていません"
 
-#: src/App.tsx:768
+#: src/App.tsx:779
 msgid "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 msgstr "FFmpegは{actual}個の同期フレームを生成しましたが、{expected}個が想定されていました"
 
-#: src/App.tsx:764
+#: src/App.tsx:775
 msgid "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 msgstr "FFmpeg rawvideoがフレーム途中で終了しました: {received}/{expected}バイトを受信"
 
 #. Diagnostic note when FFmpeg reports no hardware acceleration components.
-#: src/App.tsx:573
+#: src/App.tsx:584
 msgctxt "backend diagnostic warning"
 msgid "FFmpeg reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "FFmpegからハードウェアアクセラレーションコンポーネントが報告されませんでした。フレーム抽出にはCPUデコードを使用します"
 
-#: src/App.tsx:640
+#: src/App.tsx:651
 msgid "FFmpeg tools incomplete"
 msgstr "FFmpegツールが不完全"
 
 #. Keep FFmpeg, VideoToolbox, and CPU as technical names.
-#: src/App.tsx:501
+#: src/App.tsx:512
 msgid "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder"
 msgstr "FFmpegはVideoToolbox対応なしで見つかりました。抽出にはCPUデコーダーを使用します"
 
 #. Backend tool error: FFmpeg is missing from PATH.
-#: src/App.tsx:548
+#: src/App.tsx:559
 msgid "FFmpeg was not found on the system PATH"
 msgstr "FFmpegがシステムPATHに見つかりません"
 
@@ -1083,16 +1104,16 @@ msgstr "FFmpegがシステムPATHに見つかりません"
 #~ msgid "FFmpeg: {0}"
 #~ msgstr "FFmpeg: {0}"
 
-#: src/App.tsx:647
+#: src/App.tsx:658
 msgid "FFmpeg: Available"
 msgstr "FFmpeg: 利用可能"
 
-#: src/App.tsx:648
+#: src/App.tsx:659
 msgid "FFmpeg: Not detected"
 msgstr "FFmpeg: 未検出"
 
 #. Backend tool error: ffprobe is missing from PATH.
-#: src/App.tsx:549
+#: src/App.tsx:560
 msgid "ffprobe was not found on the system PATH"
 msgstr "ffprobeがシステムPATHに見つかりません"
 
@@ -1101,94 +1122,94 @@ msgstr "ffprobeがシステムPATHに見つかりません"
 #~ msgid "ffprobe: {0}"
 #~ msgstr "ffprobe: {0}"
 
-#: src/App.tsx:649
+#: src/App.tsx:660
 msgid "ffprobe: Available"
 msgstr "ffprobe: 利用可能"
 
-#: src/App.tsx:650
+#: src/App.tsx:661
 msgid "ffprobe: Not detected"
 msgstr "ffprobe: 未検出"
 
 #. Short label for the final mapping/reconstruction pass.
-#: src/App.tsx:920
+#: src/App.tsx:931
 msgctxt "pipeline phase"
 msgid "Final reconstruction"
 msgstr "最終再構成"
 
-#: src/App.tsx:748
+#: src/App.tsx:759
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "初回使用: {model}モデルをダウンロード中 ({percent}%)"
 
-#: src/App.tsx:2914
+#: src/App.tsx:3143
 msgid "For example: mountain route / 2026-08"
 msgstr "例: 山岳ルート / 2026-08"
 
-#: src/App.tsx:3085
+#: src/App.tsx:3327
 msgid "For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe."
 msgstr "公式WindowsポータブルビルドではルートフォルダーのCOLMAP.batを選択してください。自分でビルドしたcolmap.exeも指定できます。"
 
-#: src/App.tsx:614
+#: src/App.tsx:625
 msgid "Frame extraction"
 msgstr "フレーム抽出"
 
 #. The stage that extracts selected frames from source media.
-#: src/App.tsx:254
+#: src/App.tsx:263
 msgctxt "pipeline stage label"
 msgid "Frame extraction"
 msgstr "フレーム抽出"
 
 #. Pipeline stage settings for extracting frames.
-#: src/App.tsx:2582
+#: src/App.tsx:2793
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "フレーム抽出"
 
 #. The frame-extraction stage was cancelled.
 #. The frame-extraction stage was cancelled.
-#: src/App.tsx:482
-#: src/App.tsx:514
+#: src/App.tsx:493
+#: src/App.tsx:525
 msgctxt "backend stage status"
 msgid "Frame extraction cancelled"
 msgstr "フレーム抽出はキャンセルされました"
 
 #. Backend diagnostic warning: both command-line tools are required.
 #. Keep FFmpeg and ffprobe as command-line tool names.
-#: src/App.tsx:499
-#: src/App.tsx:558
-#: src/App.tsx:797
+#: src/App.tsx:510
+#: src/App.tsx:569
+#: src/App.tsx:808
 msgid "Frame extraction requires both system FFmpeg and ffprobe"
 msgstr "フレーム抽出にはシステムのFFmpegとffprobeが必要です"
 
-#: src/App.tsx:642
+#: src/App.tsx:653
 msgid "Frame extraction requires FFmpeg and ffprobe"
 msgstr "フレーム抽出にはFFmpegとffprobeが必要です"
 
-#: src/App.tsx:803
+#: src/App.tsx:814
 msgid "Frame extraction will use CPU decoding"
 msgstr "フレーム抽出ではCPUデコードを使用します"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:580
+#: src/App.tsx:591
 msgid "Frame extraction: Cancelled"
 msgstr "フレーム抽出: キャンセル済み"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:579
+#: src/App.tsx:590
 msgid "Frame extraction: Completed"
 msgstr "フレーム抽出: 完了"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:581
+#: src/App.tsx:592
 msgid "Frame extraction: Failed"
 msgstr "フレーム抽出: 失敗"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:577
+#: src/App.tsx:588
 msgid "Frame extraction: Pending"
 msgstr "フレーム抽出: 保留中"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:578
+#: src/App.tsx:589
 msgid "Frame extraction: Running"
 msgstr "フレーム抽出: 実行中"
 
@@ -1197,36 +1218,36 @@ msgstr "フレーム抽出: 実行中"
 #~ msgid "Global Mapper: {0}"
 #~ msgstr "Global Mapper: {0}"
 
-#: src/App.tsx:428
+#: src/App.tsx:437
 msgid "Hardware acceleration"
 msgstr "ハードウェアアクセラレーション"
 
-#: src/App.tsx:645
+#: src/App.tsx:656
 msgid "Hardware decoding status not reported"
 msgstr "ハードウェアデコードのステータスは未報告"
 
 #. Backend alignment progress message after feature extraction.
-#: src/App.tsx:553
+#: src/App.tsx:564
 msgid "Image feature extraction completed"
 msgstr "画像特徴の抽出が完了しました"
 
 #. Short label for matching images.
-#: src/App.tsx:917
+#: src/App.tsx:928
 msgctxt "pipeline phase"
 msgid "Image matching"
 msgstr "画像マッチング"
 
 #. Backend alignment progress message after image matching.
-#: src/App.tsx:550
+#: src/App.tsx:561
 msgid "Image matching completed"
 msgstr "画像マッチングが完了しました"
 
 #. Backend alignment progress message while importing constrained matches.
-#: src/App.tsx:551
+#: src/App.tsx:562
 msgid "Importing constrained image matches"
 msgstr "制約付き画像マッチをインポート中"
 
-#: src/App.tsx:2815
+#: src/App.tsx:3030
 msgid "In progress"
 msgstr "進行中"
 
@@ -1234,31 +1255,31 @@ msgstr "進行中"
 #~ msgid "In progress and finished"
 #~ msgstr "進行中と完了"
 
-#: src/App.tsx:3027
+#: src/App.tsx:3269
 msgid "Interface language"
 msgstr "インターフェース言語"
 
-#: src/App.tsx:3050
+#: src/App.tsx:3292
 msgid "Interface theme"
 msgstr "インターフェーステーマ"
 
 #. Select the visual theme of the interface.
-#: src/App.tsx:3038
+#: src/App.tsx:3280
 msgctxt "theme setting"
 msgid "Interface theme"
 msgstr "インターフェーステーマ"
 
-#: src/App.tsx:808
-#: src/App.tsx:817
+#: src/App.tsx:819
+#: src/App.tsx:828
 msgid "Invalid extraction input: "
 msgstr "抽出入力が無効です: "
 
-#: src/App.tsx:2668
+#: src/App.tsx:2884
 msgid "Invalid LUT file format"
 msgstr "LUTファイル形式が無効です"
 
-#: src/App.tsx:811
-#: src/App.tsx:820
+#: src/App.tsx:822
+#: src/App.tsx:831
 msgid "Invalid mask input: "
 msgstr "マスク入力が無効です: "
 
@@ -1268,34 +1289,34 @@ msgstr "マスク入力が無効です: "
 #~ msgid "Japanese"
 #~ msgstr "日本語"
 
-#: src/App.tsx:674
+#: src/App.tsx:685
 msgid "Keep at least one source"
 msgstr "ソースを1つ以上残してください"
 
 #. Select the language used by the interface.
-#: src/App.tsx:3020
+#: src/App.tsx:3263
 msgctxt "language setting"
 msgid "Language"
 msgstr "言語"
 
 #. placeholder {0}: formatDoctorCheckedAt(doctor.checkedAt)
-#: src/App.tsx:3060
+#: src/App.tsx:3302
 msgid "Last checked: {0}"
 msgstr "最終確認: {0}"
 
-#: src/App.tsx:3085
+#: src/App.tsx:3327
 msgid "Leave blank to detect from PATH"
 msgstr "空欄にするとPATHから検出します"
 
-#: src/App.tsx:2657
+#: src/App.tsx:2873
 msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
 msgstr "空欄にすると公式のD-Log M → Rec.709 LUTを使用します"
 
-#: src/App.tsx:937
+#: src/App.tsx:948
 msgid "Less than 1 second"
 msgstr "1秒未満"
 
-#: src/App.tsx:3053
+#: src/App.tsx:3295
 msgid "Light"
 msgstr "ライト"
 
@@ -1304,7 +1325,7 @@ msgstr "ライト"
 #~ msgid "Loaded resumable project {0}"
 #~ msgstr "再開可能なプロジェクト{0}を読み込みました"
 
-#: src/App.tsx:782
+#: src/App.tsx:793
 msgid "Loaded resumable project {name}"
 msgstr "再開可能なプロジェクト{name}を読み込みました"
 
@@ -1313,7 +1334,7 @@ msgstr "再開可能なプロジェクト{name}を読み込みました"
 #~ msgid "Loaded unfinished project with {0} warnings"
 #~ msgstr "警告が{0}件ある未完了のプロジェクトを読み込みました"
 
-#: src/App.tsx:783
+#: src/App.tsx:794
 msgid "Loaded unfinished project with {count} warnings"
 msgstr "警告が{count}件ある未完了のプロジェクトを読み込みました"
 
@@ -1322,180 +1343,192 @@ msgstr "警告が{count}件ある未完了のプロジェクトを読み込み�
 #~ msgid "Loaded unfinished project: {0}"
 #~ msgstr "未完了のプロジェクトを読み込みました: {0}"
 
-#: src/App.tsx:784
+#: src/App.tsx:795
 msgid "Loaded unfinished project: {name}"
 msgstr "未完了のプロジェクトを読み込みました: {name}"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/App.tsx:484
-#: src/App.tsx:516
+#: src/App.tsx:495
+#: src/App.tsx:527
 msgid "Loading YOLO11/SkySeg models"
 msgstr "YOLO11/SkySegモデルを読み込み中"
 
 #. Lookup table settings for restoring source media color.
-#: src/App.tsx:2641
+#: src/App.tsx:2849
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT 設定"
 
-#: src/App.tsx:815
-#: src/App.tsx:824
+#: src/App.tsx:826
+#: src/App.tsx:835
 msgid "Mask I/O error: "
 msgstr "マスクI/Oエラー: "
 
-#: src/App.tsx:814
-#: src/App.tsx:823
+#: src/App.tsx:825
+#: src/App.tsx:834
 msgid "Mask image error: "
 msgstr "マスク画像エラー: "
 
 #. Short label for running mask inference.
-#: src/App.tsx:916
+#: src/App.tsx:927
 msgctxt "pipeline phase"
 msgid "Mask inference"
 msgstr "マスク推論"
 
-#: src/App.tsx:813
-#: src/App.tsx:822
+#: src/App.tsx:824
+#: src/App.tsx:833
 msgid "Mask inference error: "
 msgstr "マスク推論エラー: "
 
-#: src/App.tsx:812
-#: src/App.tsx:821
+#: src/App.tsx:823
+#: src/App.tsx:832
 msgid "Mask model error: "
 msgstr "マスクモデルエラー: "
 
-#: src/App.tsx:816
-#: src/App.tsx:825
+#: src/App.tsx:827
+#: src/App.tsx:836
 msgid "Mask operation cancelled"
 msgstr "マスク操作はキャンセルされました"
 
 #. The masking operation was cancelled.
-#: src/App.tsx:519
+#: src/App.tsx:530
 msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "マスク操作はキャンセルされました"
 
-#: src/App.tsx:615
+#: src/App.tsx:626
 msgid "Masking"
 msgstr "マスキング"
 
 #. The stage that creates masks for dynamic objects and sky.
-#: src/App.tsx:260
+#: src/App.tsx:269
 msgctxt "pipeline stage label"
 msgid "Masking"
 msgstr "マスキング"
 
 #. Pipeline stage settings for creating masks.
-#: src/App.tsx:2676
+#: src/App.tsx:2892
 msgctxt "settings section"
 msgid "Masking"
 msgstr "マスキング"
 
 #. The masking stage was cancelled.
-#: src/App.tsx:485
+#: src/App.tsx:496
 msgctxt "backend stage status"
 msgid "Masking cancelled"
 msgstr "マスキングはキャンセルされました"
 
 #. Backend progress message: mask output files were not committed.
 #. Backend progress message: mask output files were not committed.
-#: src/App.tsx:488
-#: src/App.tsx:520
+#: src/App.tsx:499
+#: src/App.tsx:531
 msgid "Masking cancelled before committing output"
 msgstr "出力の書き込み前にマスキングがキャンセルされました"
 
 #. Backend completion message from the masking stage; this is not a request to start masking.
 #. The masking stage completed successfully.
-#: src/App.tsx:490
-#: src/App.tsx:528
+#: src/App.tsx:501
+#: src/App.tsx:539
 msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "マスキングが完了しました"
 
-#: src/App.tsx:2730
+#: src/App.tsx:2946
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "マスキングは無効です。フレーム抽出後にアライメントを開始します。"
 
 #. Backend stage status when no object or sky mask is enabled.
-#: src/App.tsx:522
+#: src/App.tsx:533
 msgid "Masking is disabled; skipping"
 msgstr "マスキングは無効です。スキップしました"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:585
+#: src/App.tsx:596
 msgid "Masking: Cancelled"
 msgstr "マスキング: キャンセル済み"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:584
+#: src/App.tsx:595
 msgid "Masking: Completed"
 msgstr "マスキング: 完了"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:586
+#: src/App.tsx:597
 msgid "Masking: Failed"
 msgstr "マスキング: 失敗"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:582
+#: src/App.tsx:593
 msgid "Masking: Pending"
 msgstr "マスキング: 保留中"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:583
+#: src/App.tsx:594
 msgid "Masking: Running"
 msgstr "マスキング: 実行中"
+
+#: src/App.tsx:1696
+#: src/App.tsx:1697
+msgid "Maximize or restore window"
+msgstr "ウィンドウを最大化または元に戻す"
 
 #: src/App.tsx:931
 #~ msgid "May be available (runtime CUDA/cuDSS check required)"
 #~ msgstr "利用できる可能性があります (ランタイムでCUDA/cuDSSの確認が必要)"
 
-#: src/App.tsx:2964
+#: src/App.tsx:3219
 msgid "Memory"
 msgstr "メモリ"
 
-#: src/App.tsx:3070
+#: src/App.tsx:1687
+#: src/App.tsx:1688
+msgid "Minimize window"
+msgstr "ウィンドウを最小化"
+
+#: src/App.tsx:3312
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "必要なツールがないと一部のステージが停止します。まず下の「要対応」と表示された項目に対処してください。"
 
-#: src/App.tsx:749
+#: src/App.tsx:760
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "モデルを{provider}で読み込みました。CPU推論へのフォールバックは無効です"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:295
+#: src/App.tsx:304
 msgctxt "mask class"
 msgid "Motorcycle"
 msgstr "オートバイ"
 
 #. Technical description of the alignment stage; keep OSV as the product format acronym.
-#: src/App.tsx:267
+#: src/App.tsx:276
 msgctxt "pipeline stage description"
 msgid "Multi-source OSV and camera-rig alignment"
 msgstr "複数ソースのOSVとカメラリグのアライメント"
 
-#: src/App.tsx:632
+#: src/App.tsx:643
 msgid "Native dual-fisheye camera-rig alignment is available"
 msgstr "ネイティブデュアルフィッシュアイのカメラリグアライメントを利用可能"
 
-#: src/App.tsx:1556
-#: src/App.tsx:3088
+#: src/App.tsx:1728
+#: src/App.tsx:3330
 msgid "Needs attention"
 msgstr "要対応"
 
-#: src/App.tsx:659
+#: src/App.tsx:670
 msgid "New reconstruction task"
 msgstr "新しい再構成タスク"
 
 #. Dialog for creating a new reconstruction task.
-#: src/App.tsx:2910
+#. Dialog for creating a new reconstruction task.
+#: src/App.tsx:3127
+#: src/App.tsx:3132
 msgctxt "new task dialog"
 msgid "New reconstruction task"
 msgstr "新しい再構成タスク"
 
 #. Create a new reconstruction task.
-#: src/App.tsx:2793
+#: src/App.tsx:3006
 msgctxt "task action"
 msgid "New reconstruction task"
 msgstr "新しい再構成タスク"
@@ -1505,82 +1538,81 @@ msgstr "新しい再構成タスク"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "新しいタスクはフレーム抽出、マスキング、アライメントを順に実行します。各ステージは個別にキャンセルまたは再試行できます。"
 
-#: src/App.tsx:2887
+#: src/App.tsx:3103
 msgid "No completed tasks yet"
 msgstr "完了したタスクはまだありません"
 
 #. Shown when the selected folder does not contain a project manifest that can be edited.
-#: src/App.tsx:540
+#: src/App.tsx:551
 msgctxt "project edit error"
 msgid "No editable project information was found"
 msgstr "編集可能なプロジェクト情報が見つかりません"
 
-#: src/App.tsx:663
+#: src/App.tsx:674
 msgid "No loadable project information was found"
 msgstr "読み込み可能なプロジェクト情報が見つかりません"
 
-#: src/App.tsx:802
+#: src/App.tsx:813
 msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "COLMAPで使用可能なNVIDIA GPUが検出されないため、CPUを使用します"
 
 #. Empty task list heading.
-#: src/App.tsx:2800
+#: src/App.tsx:3015
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "タスクはまだありません"
 
-#: src/App.tsx:2751
+#: src/App.tsx:2967
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "使用可能なCOLMAP CUDAアクセラレーションが検出されないため、CPUを使用します。"
 
 #. Diagnostic note when no COLMAP executable is available.
-#: src/App.tsx:561
+#: src/App.tsx:572
 msgid "No usable COLMAP executable is selected; COLMAP CUDA build capability cannot be determined"
 msgstr "使用可能なCOLMAP実行ファイルが選択されていないため、COLMAP CUDAビルド機能を判定できません"
 
-#: src/App.tsx:630
+#: src/App.tsx:641
 msgid "No usable CUDA GPU detected"
 msgstr "使用可能なCUDA GPUが検出されません"
 
-#: src/App.tsx:1557
+#: src/App.tsx:1729
 msgid "Not checked"
 msgstr "未確認"
 
-#: src/App.tsx:600
+#: src/App.tsx:611
 msgid "Not checked yet"
 msgstr "まだ確認されていません"
 
-#: src/App.tsx:617
+#: src/App.tsx:628
 msgid "Not detected"
 msgstr "未検出"
 
-#: src/App.tsx:947
-#: src/App.tsx:949
+#: src/App.tsx:958
+#: src/App.tsx:960
 msgid "Not recorded yet"
 msgstr "未記録"
 
-#: src/App.tsx:609
+#: src/App.tsx:620
 msgid "Not reported"
 msgstr "未報告"
 
-#: src/App.tsx:2847
-#: src/App.tsx:2958
-#: src/App.tsx:2962
-#: src/App.tsx:2963
-#: src/App.tsx:2964
+#: src/App.tsx:3063
+#: src/App.tsx:3213
+#: src/App.tsx:3217
+#: src/App.tsx:3218
+#: src/App.tsx:3219
 msgid "Not reported yet"
 msgstr "まだ報告されていません"
 
-#: src/App.tsx:612
+#: src/App.tsx:623
 msgid "Not run yet"
 msgstr "未実行"
 
-#: src/App.tsx:2965
+#: src/App.tsx:3220
 msgid "Not specified"
 msgstr "未指定"
 
-#: src/App.tsx:2848
-#: src/App.tsx:2977
+#: src/App.tsx:3064
 msgid "Not started"
 msgstr "未開始"
 
@@ -1588,21 +1620,23 @@ msgstr "未開始"
 #~ msgid "Not started; can be edited or removed."
 #~ msgstr "未開始。編集または削除できます。"
 
-#: src/App.tsx:935
+#: src/App.tsx:946
 msgid "Not timed yet"
 msgstr "時間未計測"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/App.tsx:2696
+#: src/App.tsx:2912
 msgid "Objects to mask (multiple selection)"
 msgstr "マスク対象オブジェクト (複数選択)"
 
-#: src/App.tsx:2927
+#: src/App.tsx:3158
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "タスクとキューの状態のみ削除され、既存の出力フォルダーは削除されません。"
 
 #. Open an existing resumable project.
-#: src/App.tsx:2792
+#. Open an existing resumable project.
+#: src/App.tsx:3007
+#: src/App.tsx:3017
 msgctxt "project action"
 msgid "Open project"
 msgstr "プロジェクトを開く"
@@ -1616,64 +1650,64 @@ msgstr "プロジェクトを開く"
 #~ msgid "Opened {0}"
 #~ msgstr "{0} を開きました"
 
-#: src/App.tsx:785
+#: src/App.tsx:796
 msgid "Opened {name}"
 msgstr "{name}を開きました"
 
 #. DJI Osmo 360 source media files.
-#: src/App.tsx:2806
+#: src/App.tsx:3021
 msgid "Osmo 360 source files"
 msgstr "Osmo 360ソースファイル"
 
-#: src/App.tsx:2039
+#: src/App.tsx:2251
 msgid "OSV / dual-fisheye video"
 msgstr "OSV / デュアルフィッシュアイ動画"
 
 #. Output folder or artifact location.
-#: src/App.tsx:2965
+#: src/App.tsx:3220
 msgctxt "output metric"
 msgid "Output"
 msgstr "出力"
 
 #. Folder where project metadata and reconstruction output are saved.
-#: src/App.tsx:2916
+#: src/App.tsx:3145
 msgctxt "output destination"
 msgid "Output folder"
 msgstr "出力フォルダー"
 
-#: src/App.tsx:2834
-#: src/App.tsx:2936
+#: src/App.tsx:3050
+#: src/App.tsx:3190
 msgid "Output not specified"
 msgstr "出力未指定"
 
 #. Overall progress weighted by observed stage durations.
-#: src/App.tsx:2836
+#: src/App.tsx:3058
 msgid "Overall progress"
 msgstr "全体の進捗"
 
-#: src/App.tsx:751
+#: src/App.tsx:762
 msgid "Pairing block {current} / {total} completed"
 msgstr "ペアリングブロック {current}/{total} 完了"
 
-#: src/App.tsx:1666
+#: src/App.tsx:1838
 msgid "Pending"
 msgstr "保留中"
 
-#: src/App.tsx:3074
+#: src/App.tsx:3316
 msgid "Performance will be affected"
 msgstr "パフォーマンスに影響します"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:292
+#: src/App.tsx:301
 msgctxt "mask class"
 msgid "Person"
 msgstr "人物"
 
-#: src/App.tsx:611
+#: src/App.tsx:622
 msgid "Pipeline log"
 msgstr "パイプラインログ"
 
-#: src/App.tsx:599
+#: src/App.tsx:610
 msgid "Platform not checked yet"
 msgstr "プラットフォーム未確認"
 
@@ -1682,12 +1716,12 @@ msgstr "プラットフォーム未確認"
 #~ msgid "Platform: {0}"
 #~ msgstr "プラットフォーム: {0}"
 
-#: src/App.tsx:2834
+#: src/App.tsx:3050
 msgid "Preparing"
 msgstr "準備中"
 
 #. Short label for the preparation phase.
-#: src/App.tsx:910
+#: src/App.tsx:921
 msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "準備中"
@@ -1698,16 +1732,16 @@ msgstr "準備中"
 #~ msgstr "処理を準備中"
 
 #. Initial status stored while a backend stage is being prepared; keep this source value locale-independent in task state.
-#: src/App.tsx:654
+#: src/App.tsx:665
 msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "処理を準備中"
 
-#: src/App.tsx:2834
+#: src/App.tsx:3050
 msgid "Preview"
 msgstr "プレビュー"
 
-#: src/App.tsx:1531
+#: src/App.tsx:1583
 msgid "Preview {alt}"
 msgstr "プレビュー {alt}"
 
@@ -1716,39 +1750,39 @@ msgstr "プレビュー {alt}"
 #~ msgid "Preview task added: {0}"
 #~ msgstr "プレビュータスクを追加しました: {0}"
 
-#: src/App.tsx:787
+#: src/App.tsx:798
 msgid "Preview task added: {name}"
 msgstr "プレビュータスクを追加しました: {name}"
 
-#: src/App.tsx:675
+#: src/App.tsx:686
 msgid "Preview task updated"
 msgstr "プレビュータスクを更新しました"
 
-#: src/App.tsx:2847
-#: src/App.tsx:2958
+#: src/App.tsx:3063
+#: src/App.tsx:3213
 msgid "Processed"
 msgstr "処理済み"
 
-#: src/App.tsx:610
-#: src/App.tsx:929
+#: src/App.tsx:621
+#: src/App.tsx:940
 msgid "Processing"
 msgstr "処理中"
 
-#: src/App.tsx:752
+#: src/App.tsx:763
 msgid "Processing pairing block {current} / {total}"
 msgstr "ペアリングブロック {current}/{total} を処理中"
 
-#: src/App.tsx:2940
-#: src/App.tsx:2999
+#: src/App.tsx:3195
+#: src/App.tsx:3240
 msgid "Processing records"
 msgstr "処理記録"
 
-#: src/App.tsx:2582
+#: src/App.tsx:2790
 msgid "Processing settings"
 msgstr "処理設定"
 
 #. A project folder containing a resumable reconstruction.
-#: src/App.tsx:2807
+#: src/App.tsx:3022
 msgid "Project folder"
 msgstr "プロジェクトフォルダー"
 
@@ -1756,200 +1790,200 @@ msgstr "プロジェクトフォルダー"
 #~ msgid "Queued"
 #~ msgstr "キュー待ち"
 
-#: src/App.tsx:677
+#: src/App.tsx:688
 msgid "Queued task updated"
 msgstr "キュー待ちタスクを更新しました"
 
 #. Estimated processing throughput, not network speed.
-#: src/App.tsx:2961
+#: src/App.tsx:3216
 msgid "Rate (estimated)"
 msgstr "レート (推定)"
 
-#: src/App.tsx:2853
+#: src/App.tsx:3069
 msgid "Reconstruction pipeline"
 msgstr "再構成パイプライン"
 
-#: src/App.tsx:2790
+#: src/App.tsx:3004
 msgid "Reconstruction tasks"
 msgstr "再構成タスク"
 
 #. Project recovery status shown while reconstructing a manifest from existing artifacts.
-#: src/App.tsx:545
+#: src/App.tsx:556
 msgid "Recovering project information"
 msgstr "プロジェクト情報を復元中"
 
 #. Remove a queued task without deleting its output folder.
-#: src/App.tsx:2837
+#: src/App.tsx:3053
 msgctxt "task action"
 msgid "Remove"
 msgstr "キューから除外"
 
 #. placeholder {0}: source.label
-#: src/App.tsx:2915
+#: src/App.tsx:3144
 msgid "Remove {0}"
 msgstr "{0}を削除"
 
 #. Remove the queued task, while keeping its output folder.
-#: src/App.tsx:2928
+#: src/App.tsx:3159
 msgctxt "task action"
 msgid "Remove task"
 msgstr "キューから除外 (出力は保持)"
 
 #. Confirmation dialog for removing a queued task.
-#: src/App.tsx:2927
+#: src/App.tsx:3158
 msgctxt "remove task confirmation"
 msgid "Remove task from queue?"
 msgstr "キューから除外しますか？出力フォルダーは保持されます。"
 
-#: src/App.tsx:3069
+#: src/App.tsx:3311
 msgid "Required capabilities need attention"
 msgstr "必要な機能に要対応"
 
-#: src/App.tsx:1655
+#: src/App.tsx:1827
 msgid "Resume"
 msgstr "再開"
 
-#: src/App.tsx:2807
+#: src/App.tsx:3022
 msgid "Resume an unfinished reconstruction task"
 msgstr "未完了の再構成タスクを再開"
 
-#: src/App.tsx:1656
+#: src/App.tsx:1828
 msgid "Retry"
 msgstr "再試行"
 
-#: src/App.tsx:1658
+#: src/App.tsx:1830
 msgid "Run"
 msgstr "実行"
 
-#: src/App.tsx:1657
+#: src/App.tsx:1829
 msgid "Run again"
 msgstr "再実行"
 
-#: src/App.tsx:601
+#: src/App.tsx:612
 msgid "Run an environment check to confirm available capabilities"
 msgstr "環境チェックを実行して利用可能な機能を確認"
 
-#: src/App.tsx:3080
+#: src/App.tsx:3322
 msgid "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 msgstr "環境チェックを実行して、CUDA、ハードウェアデコード、CPUのどれを使用するか確認します。"
 
-#: src/App.tsx:1662
+#: src/App.tsx:1834
 msgid "Running"
 msgstr "実行中"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/App.tsx:487
-#: src/App.tsx:518
+#: src/App.tsx:498
+#: src/App.tsx:529
 msgid "Running YOLO11/SkySeg inference"
 msgstr "YOLO11/SkySeg推論を実行中"
 
-#: src/App.tsx:3060
+#: src/App.tsx:3302
 msgid "Runtime environment"
 msgstr "ランタイム環境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/App.tsx:2632
+#: src/App.tsx:2843
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "基本フレームレートの倍数で候補をサンプリングし、より鮮明なフレームを選択します。"
 
 #. Save changes to a queued task.
-#: src/App.tsx:2921
+#: src/App.tsx:3152
 msgctxt "task action"
 msgid "Save changes"
 msgstr "変更を保存"
 
-#: src/App.tsx:2916
+#: src/App.tsx:3145
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
 msgstr "新しいタスク名を保存すると出力フォルダーの名前も変更されます。対応していないファイル名文字はハイフンになります。"
 
 #. Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
 #. placeholder {1}: localiseTechnicalErrorDetail(rollbackError)
-#: src/App.tsx:836
+#: src/App.tsx:847
 msgctxt "project edit error"
 msgid "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 msgstr "タスクの変更の保存と出力フォルダーの復元に失敗しました: {0}、ロールバックエラー: {1}"
 
 #. The rename/save operation failed, but the output folder was rolled back successfully.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:831
+#: src/App.tsx:842
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "タスクの変更の保存に失敗しました。出力フォルダーは復元されました: {0}"
 
 #. Short label for a scan phase.
-#: src/App.tsx:911
+#: src/App.tsx:922
 msgctxt "pipeline phase"
 msgid "Scanning"
 msgstr "スキャン中"
 
 #. Backend progress message: scanning candidate frame pairs.
 #. Backend progress message: scanning candidate frame pairs.
-#: src/App.tsx:475
-#: src/App.tsx:506
+#: src/App.tsx:486
+#: src/App.tsx:517
 msgid "Scanning dual-fisheye frame candidates"
 msgstr "デュアルフィッシュアイのフレーム候補をスキャン中"
 
 #. Backend progress message: native fisheye images are being inspected.
 #. Backend progress message: native fisheye images are being inspected.
-#: src/App.tsx:483
-#: src/App.tsx:515
+#: src/App.tsx:494
+#: src/App.tsx:526
 msgid "Scanning native dual-fisheye images"
 msgstr "ネイティブデュアルフィッシュアイ画像をスキャン中"
 
-#: src/App.tsx:700
-#: src/App.tsx:747
+#: src/App.tsx:711
+#: src/App.tsx:758
 msgid "Scoring {count} paired candidates"
 msgstr "{count} 件のペア候補をスコアリング中"
 
 #. Short label for scoring candidate frames.
-#: src/App.tsx:912
+#: src/App.tsx:923
 msgctxt "pipeline phase"
 msgid "Scoring candidates"
 msgstr "候補をスコアリング中"
 
 #. Short label for candidate scoring in memory.
-#: src/App.tsx:913
+#: src/App.tsx:924
 msgctxt "pipeline phase"
 msgid "Scoring in-memory candidates"
 msgstr "メモリ内の候補をスコアリング中"
 
-#: src/App.tsx:671
+#: src/App.tsx:682
 msgid "Select at least one OSV or dual-fisheye source first"
 msgstr "OSVまたはデュアルフィッシュアイソースを1つ以上選択してください"
 
 #. Select which detected GPU should run alignment.
-#: src/App.tsx:2756
+#: src/App.tsx:2972
 msgid "Select GPU"
 msgstr "GPUを選択"
 
 #. Backend progress message: a frame pair was selected without copying output files.
-#: src/App.tsx:509
+#: src/App.tsx:520
 msgid "Selected frame pair (output copy disabled)"
 msgstr "選択したフレームペア (出力コピー無効)"
 
 #. Backend message: an output pair was already present, so no duplicate was written.
 #. Backend message: an output pair was already present, so no duplicate was written.
-#: src/App.tsx:478
-#: src/App.tsx:510
+#: src/App.tsx:489
+#: src/App.tsx:521
 msgid "Selected frame pair already exists; skipped"
 msgstr "選択したフレームペアはすでに存在します。スキップしました"
 
 #. Backend progress message: selected source frames were written to output.
 #. Backend progress message: selected source frames were written to output.
-#: src/App.tsx:481
-#: src/App.tsx:513
+#: src/App.tsx:492
+#: src/App.tsx:524
 msgid "Selected frame pair committed"
 msgstr "選択したフレームペアを書き込みました"
 
-#: src/App.tsx:2794
-#: src/App.tsx:3016
+#: src/App.tsx:3008
+#: src/App.tsx:3259
 msgid "Settings"
 msgstr "設定"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/App.tsx:2608
+#: src/App.tsx:2819
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "鮮明度フィルタリング"
@@ -1959,11 +1993,11 @@ msgstr "鮮明度フィルタリング"
 #~ msgid "SIFT extraction: {0}"
 #~ msgstr "SIFT抽出: {0}"
 
-#: src/App.tsx:620
+#: src/App.tsx:631
 msgid "SIFT extraction: Supported"
 msgstr "SIFT抽出: 対応"
 
-#: src/App.tsx:621
+#: src/App.tsx:632
 msgid "SIFT extraction: Unsupported"
 msgstr "SIFT抽出: 非対応"
 
@@ -1972,11 +2006,11 @@ msgstr "SIFT抽出: 非対応"
 #~ msgid "SIFT matching: {0}"
 #~ msgstr "SIFTマッチング: {0}"
 
-#: src/App.tsx:622
+#: src/App.tsx:633
 msgid "SIFT matching: Supported"
 msgstr "SIFTマッチング: 対応"
 
-#: src/App.tsx:623
+#: src/App.tsx:634
 msgid "SIFT matching: Unsupported"
 msgstr "SIFTマッチング: 非対応"
 
@@ -1987,62 +2021,62 @@ msgstr "SIFTマッチング: 非対応"
 #~ msgstr "簡体字中国語"
 
 #. Enable SkySeg sky masks.
-#: src/App.tsx:2726
+#: src/App.tsx:2942
 msgid "Sky filtering"
 msgstr "空のフィルタリング"
 
-#: src/App.tsx:653
-#: src/App.tsx:1852
+#: src/App.tsx:664
+#: src/App.tsx:2040
 msgid "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 msgstr "一部のCUDAまたはハードウェアアクセラレーション機能を利用できません。該当するステージではCPUを使用します。"
 
-#: src/App.tsx:769
+#: src/App.tsx:780
 msgid "Source {source} color processing: {warning}"
 msgstr "ソース{source}の色処理: {warning}"
 
-#: src/App.tsx:772
+#: src/App.tsx:783
 msgid "Source {source} completed scoring {count} candidate pairs"
 msgstr "ソース{source}の候補ペア{count}件のスコアリングが完了しました"
 
-#: src/App.tsx:773
+#: src/App.tsx:784
 msgid "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 msgstr "ソース{source}の動的キーフレーム間引き: 基本FPSの候補を{kept}/{total}件保持 ({removed}件を削除)"
 
-#: src/App.tsx:770
+#: src/App.tsx:781
 msgid "Source {source} reused the in-memory scoring checkpoint"
 msgstr "ソース{source}はメモリ内のスコアリングチェックポイントを再利用しました"
 
 #. Media preview error when the requested source file does not exist.
-#: src/App.tsx:529
+#: src/App.tsx:540
 msgid "Source file was not found"
 msgstr "ソースファイルが見つかりません"
 
-#: src/App.tsx:658
+#: src/App.tsx:669
 msgid "Source inspection results are not available yet"
 msgstr "ソース検査結果はまだ利用できません"
 
-#. Input media or an unfinished project folder for a reconstruction task.
-#: src/App.tsx:2915
+#. Input media for a reconstruction task.
+#: src/App.tsx:3144
 msgctxt "source input"
 msgid "Sources"
 msgstr "ソース"
 
 #. Source media included in this reconstruction task.
-#: src/App.tsx:2987
+#: src/App.tsx:3225
 msgctxt "source section"
 msgid "Sources"
 msgstr "ソース"
 
 #. Project validation error: source media cannot be nested under reconstruction output.
-#: src/App.tsx:538
+#: src/App.tsx:549
 msgid "Sources cannot be inside the output folder; move them elsewhere first"
 msgstr "ソースを出力フォルダー内に置くことはできません。まず別の場所に移動してください"
 
-#: src/App.tsx:657
+#: src/App.tsx:668
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "ソースが見つかりました。新しい再構成タスクを作成できます"
 
-#: src/App.tsx:2671
+#: src/App.tsx:2887
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr ".cubeファイルは公式LUTを上書きする場合のみ指定してください。"
 
@@ -2051,54 +2085,54 @@ msgstr ".cubeファイルは公式LUTを上書きする場合のみ指定して�
 #~ msgstr "SphereAlign診断"
 
 #. Generic pipeline stage label.
-#: src/App.tsx:273
+#: src/App.tsx:282
 msgctxt "pipeline stage fallback"
 msgid "Stage"
 msgstr "ステージ"
 
 #. placeholder {0}: runningIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1071
+#: src/App.tsx:1082
 msgid "Stage {0} of {1} · {label}"
 msgstr "ステージ {0}/{1} · {label}"
 
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/App.tsx:2860
+#: src/App.tsx:3076
 msgid "Stage {0} of {1}: {2}"
 msgstr "ステージ {0}/{1}: {2}"
 
 #. Committed artifacts remain valid and can be reused by a later run.
 #. Committed artifacts remain valid and can be reused by a later run.
-#: src/App.tsx:492
-#: src/App.tsx:524
+#: src/App.tsx:503
+#: src/App.tsx:535
 msgid "Stage cancelled; committed artifacts can be resumed"
 msgstr "ステージはキャンセルされました。書き込み済みの成果物から再開できます"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/App.tsx:493
-#: src/App.tsx:527
+#: src/App.tsx:504
+#: src/App.tsx:538
 msgctxt "backend stage status"
 msgid "Stage completed"
 msgstr "ステージ完了"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/App.tsx:491
-#: src/App.tsx:523
+#: src/App.tsx:502
+#: src/App.tsx:534
 msgctxt "backend stage status"
 msgid "Stage started"
 msgstr "ステージ開始"
 
 #. Short label for a stage summary.
-#: src/App.tsx:925
+#: src/App.tsx:936
 msgctxt "pipeline phase"
 msgid "Stage summary"
 msgstr "ステージ概要"
 
-#: src/App.tsx:3081
+#: src/App.tsx:3323
 msgid "Stages that fall back to the CPU can still run, but processing may take significantly longer."
 msgstr "CPUにフォールバックするステージも実行できますが、処理に大幅に時間がかかる場合があります。"
 
@@ -2107,13 +2141,13 @@ msgstr "CPUにフォールバックするステージも実行できますが、
 #~ msgstr "開始済みのタスクはステージと処理記録を保持します。"
 
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/App.tsx:1115
+#: src/App.tsx:1126
 msgid "Stop {0}"
 msgstr "{0}を停止"
 
 #. placeholder {0}: interruptedIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1076
+#: src/App.tsx:1087
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "ステージ {0}/{1} で停止 · {label}"
 
@@ -2122,23 +2156,23 @@ msgstr "ステージ {0}/{1} で停止 · {label}"
 #~ msgid "Summary: {0}"
 #~ msgstr "概要: {0}"
 
-#: src/App.tsx:607
+#: src/App.tsx:618
 msgid "Supported"
 msgstr "対応"
 
-#: src/App.tsx:2804
+#: src/App.tsx:3019
 msgid "Supported inputs"
 msgstr "対応入力"
 
-#: src/App.tsx:3052
+#: src/App.tsx:3294
 msgid "System"
 msgstr "システム"
 
-#: src/App.tsx:804
+#: src/App.tsx:815
 msgid "System FFmpeg was not found on PATH"
 msgstr "システムFFmpegがPATHに見つかりません"
 
-#: src/App.tsx:805
+#: src/App.tsx:816
 msgid "System ffprobe was not found on PATH"
 msgstr "システムffprobeがPATHに見つかりません"
 
@@ -2146,213 +2180,213 @@ msgstr "システムffprobeがPATHに見つかりません"
 #~ msgid "System information"
 #~ msgstr "システム情報"
 
-#: src/App.tsx:681
+#: src/App.tsx:692
 msgid "Task added to the run queue"
 msgstr "タスクを実行キューに追加しました"
 
-#: src/App.tsx:2910
+#: src/App.tsx:3130
 msgid "Task creation help"
 msgstr "タスク作成の説明"
 
-#: src/App.tsx:2920
+#: src/App.tsx:3141
 msgid "Task information"
 msgstr "タスク情報"
 
-#: src/App.tsx:2914
+#: src/App.tsx:3143
 msgid "Task name"
 msgstr "タスク名"
 
 #. Validation error shown when a queued task name contains only whitespace.
-#: src/App.tsx:542
+#: src/App.tsx:553
 msgctxt "project edit validation"
 msgid "Task name cannot be blank"
 msgstr "タスク名を空白にすることはできません"
 
-#: src/App.tsx:679
+#: src/App.tsx:690
 msgid "Task removed from the queue; the output folder is kept"
 msgstr "タスクをキューから削除しました。出力フォルダーは保持されます"
 
 #. Shown when technical details contain an untranslated message in a non-Traditional-Chinese locale.
-#: src/App.tsx:444
+#: src/App.tsx:455
 msgctxt "backend error details"
 msgid "Technical details are available in diagnostics."
 msgstr "技術的な詳細は診断情報で確認できます。"
 
-#: src/App.tsx:634
+#: src/App.tsx:645
 msgid "The alignment stage will remain pending"
 msgstr "アライメントステージは保留のままです"
 
 #. Backend alignment message when a rig configuration supplies all extrinsics.
-#: src/App.tsx:554
+#: src/App.tsx:565
 msgid "The camera rig already provides complete extrinsics"
 msgstr "カメラリグには完全な外部パラメーターがすでにあります"
 
-#: src/App.tsx:668
+#: src/App.tsx:679
 msgid "The COLMAP path is used by the local Windows runtime"
 msgstr "COLMAPパスはローカルWindowsランタイムで使用されます"
 
-#: src/App.tsx:672
+#: src/App.tsx:683
 msgid "The custom LUT must be a .cube file"
 msgstr "カスタムLUTは.cubeファイルである必要があります"
 
-#: src/App.tsx:633
+#: src/App.tsx:644
 msgid "The executable was found, but the complete alignment workflow was not confirmed"
 msgstr "実行ファイルは見つかりましたが、完全なアライメントワークフローを確認できませんでした"
 
-#: src/App.tsx:627
+#: src/App.tsx:638
 msgid "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"
 msgstr "従来の診断ではCOLMAPビルドが報告されませんでした。FFmpeg CUDA/VideoToolbox対応はCOLMAP CUDAを意味しません"
 
 #. Shown when a backend or Tauri error has no localized mapping. Do not include the raw error text here.
-#: src/App.tsx:438
+#: src/App.tsx:449
 msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "ローカルランタイムで予期しないエラーが発生しました。詳細は診断情報を確認してください。"
 
 #. Shown when the output folder cannot be renamed because its parent directory is unavailable.
-#: src/App.tsx:544
+#: src/App.tsx:555
 msgctxt "project edit error"
 msgid "The output folder has no usable parent directory"
 msgstr "出力フォルダーに使用可能な親ディレクトリがありません"
 
 #. Media preview error when the preview service cannot be used.
-#: src/App.tsx:547
+#: src/App.tsx:558
 msgid "The preview service is temporarily unavailable"
 msgstr "プレビューサービスは一時的に利用できません"
 
 #. A resumable project was recovered after an interrupted run.
 #. A resumable project was recovered after an interrupted run.
-#: src/App.tsx:497
-#: src/App.tsx:536
+#: src/App.tsx:508
+#: src/App.tsx:547
 msgid "The previous run was interrupted; this stage can be resumed"
 msgstr "前回の実行が中断されました。このステージは再開できます"
 
 #. Project operation error while another mutation is in progress.
-#: src/App.tsx:539
+#: src/App.tsx:550
 msgid "The project operation lock is temporarily unavailable"
 msgstr "プロジェクト操作ロックは一時的に利用できません"
 
 #. The rename is cancelled to avoid changing a project whose manifest path is inconsistent.
-#: src/App.tsx:543
+#: src/App.tsx:554
 msgctxt "project edit error"
 msgid "The project root in the manifest does not match its actual location; rename cancelled"
 msgstr "マニフェスト内のプロジェクトルートが実際の場所と一致しません。名前変更をキャンセルしました"
 
 #. Queued tasks run automatically in creation order.
-#: src/App.tsx:2841
+#: src/App.tsx:3057
 msgid "The queue runs automatically in creation order"
 msgstr "キューは作成順に自動実行されます"
 
 #. Diagnostic warning for a COLMAP build without confirmed CUDA support.
-#: src/App.tsx:560
+#: src/App.tsx:571
 msgid "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 msgstr "選択したCOLMAP CUDAビルドを確認できませんでした。特徴抽出とマッチングにはCPUを使用し、Ceres GPUソルバーは有効化できません"
 
-#: src/App.tsx:801
+#: src/App.tsx:812
 msgid "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 msgstr "選択したCOLMAPのバージョン/ヘルプバナーでCUDAが報告されませんでした。CPUで特徴抽出とマッチングを行います"
 
 #. FeatureExtraction and FeatureMatching are COLMAP command-line options; keep these names unchanged.
-#: src/App.tsx:565
+#: src/App.tsx:576
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide both FeatureExtraction and FeatureMatching GPU options; feature stages will use the CPU"
 msgstr "選択したCOLMAPにはFeatureExtractionとFeatureMatchingの両方のGPUオプションがありません。特徴ステージではCPUを使用します"
 
 #. global_mapper is the COLMAP command name; incremental alignment is the fallback workflow.
-#: src/App.tsx:566
+#: src/App.tsx:577
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide global_mapper; only incremental alignment can be used"
 msgstr "選択したCOLMAPにはglobal_mapperがありません。増分アライメントのみ使用できます"
 
 #. Keep view_graph_calibrator, global mapper, and focal prior as COLMAP technical terms.
-#: src/App.tsx:571
+#: src/App.tsx:582
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide view_graph_calibrator; the global mapper's focal prior must be supplied by external calibration"
 msgstr "選択したCOLMAPにはview_graph_calibratorがありません。global mapperのfocal priorは外部キャリブレーションで指定する必要があります"
 
 #. Keep the five COLMAP command names unchanged; dual-camera alignment refers to the dual-fisheye rig workflow.
-#: src/App.tsx:572
+#: src/App.tsx:583
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 msgstr "選択したCOLMAPにfeature_extractor、matches_importer、mapper、model_converter、rig_configuratorがありません。デュアルカメラアライメントワークフローを完了できません"
 
-#: src/App.tsx:800
+#: src/App.tsx:811
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "選択したCOLMAPパスは存在しないか、ファイルではありません"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
-#: src/App.tsx:559
+#: src/App.tsx:570
 msgid "The selected COLMAP supports CUDA, but the Ceres GPU solver was not confirmed; Bundle Adjustment will use the CPU"
 msgstr "選択したCOLMAPはCUDAに対応していますが、Ceres GPUソルバーを確認できませんでした。バンドル調整にはCPUを使用します"
 
 #. BA means Bundle Adjustment; keep global_mapper, Ceres, and Bundle Adjustment as technical terms.
-#: src/App.tsx:569
+#: src/App.tsx:580
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU Ceres BA; global Bundle Adjustment will use the CPU"
 msgstr "選択したglobal_mapperにはGPU Ceres BAがありません。global Bundle AdjustmentにはCPUを使用します"
 
 #. Keep global_mapper and global positioning as COLMAP technical terms.
-#: src/App.tsx:568
+#: src/App.tsx:579
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU global positioning; global positioning will use the CPU"
 msgstr "選択したglobal_mapperにはGPU global positioningがありません。global positioningにはCPUを使用します"
 
 #. Keep global_mapper and fixed-rotation/joint BA stage as COLMAP technical terms.
-#: src/App.tsx:570
+#: src/App.tsx:581
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the fixed-rotation/joint BA stage option; fixed-rotation experimental mode is unavailable"
 msgstr "選択したglobal_mapperにはfixed-rotation/joint BAステージオプションがありません。fixed-rotation実験モードは利用できません"
 
 #. Keep global_mapper and gravity rotation averaging as COLMAP technical terms.
-#: src/App.tsx:567
+#: src/App.tsx:578
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "選択したglobal_mapperにはgravity rotation averagingオプションがありません。global-gravityモードは利用できません"
 
-#: src/App.tsx:3006
+#: src/App.tsx:3247
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "処理記録はまだありません。実行開始後、各ステージと現在位置がここに表示されます。"
 
 #. Diagnostic note when FFmpeg hardware decoding is unavailable.
-#: src/App.tsx:564
+#: src/App.tsx:575
 msgid "This FFmpeg build reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "このFFmpegビルドではハードウェアアクセラレーションコンポーネントが報告されませんでした。フレーム抽出にはCPUデコードを使用します"
 
 #. Backend project message when an existing frame dataset has no source video.
-#: src/App.tsx:557
+#: src/App.tsx:568
 msgid "This folder has no source video; masking or alignment can run directly on existing frames"
 msgstr "このフォルダーにはソース動画がありません。既存のフレームでマスキングまたはアライメントを直接実行できます"
 
 #. Project metadata was reconstructed from files already on disk.
 #. Project metadata was reconstructed from files already on disk.
-#: src/App.tsx:498
-#: src/App.tsx:537
+#: src/App.tsx:509
+#: src/App.tsx:548
 msgid "This project manifest was recovered from existing artifacts"
 msgstr "既存ファイルからこのプロジェクトマニフェストを復元しました"
 
 #. Media preview error for an unsupported source format.
-#: src/App.tsx:530
+#: src/App.tsx:541
 msgid "This source format is not supported"
 msgstr "このソース形式には対応していません"
 
-#: src/App.tsx:680
+#: src/App.tsx:691
 msgid "This task has already started"
 msgstr "このタスクはすでに開始されています"
 
-#: src/App.tsx:2988
+#: src/App.tsx:3226
 msgid "This task has no recorded source files."
 msgstr "このタスクには記録されたソースファイルがありません。"
 
-#: src/App.tsx:660
+#: src/App.tsx:671
 msgid "This task has started and can no longer be edited"
 msgstr "このタスクは開始済みのため編集できません"
 
-#: src/App.tsx:678
+#: src/App.tsx:689
 msgid "This task has started and cannot be removed"
 msgstr "このタスクは開始済みのため削除できません"
 
 #. Diagnostic warning for an unsupported COLMAP version.
-#: src/App.tsx:563
+#: src/App.tsx:574
 msgid "This workflow requires COLMAP 4.1.1 or newer; older versions do not support the complete rig and global alignment workflow"
 msgstr "このワークフローにはCOLMAP 4.1.1以降が必要です。古いバージョンは完全なリグおよびグローバルアライメントワークフローに対応していません"
 
@@ -2363,119 +2397,125 @@ msgstr "このワークフローにはCOLMAP 4.1.1以降が必要です。古い
 #~ msgstr "繁体字中国語"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:297
+#: src/App.tsx:306
 msgctxt "mask class"
 msgid "Truck"
 msgstr "トラック"
 
-#: src/App.tsx:667
+#: src/App.tsx:678
 msgid "Unable to copy diagnostics; check clipboard permissions"
 msgstr "診断情報をコピーできません。クリップボードの権限を確認してください"
 
-#: src/App.tsx:756
+#: src/App.tsx:767
 msgid "Unable to copy frame {source} to {destination}: {error}"
 msgstr "フレーム{source}を{destination}にコピーできません: {error}"
 
-#: src/App.tsx:755
+#: src/App.tsx:766
 msgid "Unable to create temporary frame {frame}: {error}"
 msgstr "一時フレーム{frame}を作成できません: {error}"
 
-#: src/App.tsx:758
+#: src/App.tsx:769
 msgid "Unable to create temporary metadata {path}: {error}"
 msgstr "一時メタデータ{path}を作成できません: {error}"
 
 #. Project root means the folder containing the loaded project manifest.
-#: src/App.tsx:541
+#: src/App.tsx:552
 msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "プロジェクトルートを特定できません"
 
-#: src/App.tsx:651
-#: src/App.tsx:1519
+#: src/App.tsx:662
+#: src/App.tsx:1563
 msgid "Unable to generate a first-frame preview"
 msgstr "先頭フレームのプレビューを生成できません"
 
 #. Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:826
+#: src/App.tsx:837
 msgctxt "project edit error"
 msgid "Unable to inspect the project root: {0}"
 msgstr "プロジェクトルートを確認できません: {0}"
 
 #. Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:741
+#: src/App.tsx:752
 msgctxt "backend diagnostic warning"
 msgid "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 msgstr "ソース{source}の正規化テレメトリを解析できません。visual noveltyとmaximum-gapフォールバックを使用します: {0}"
 
 #. Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:736
+#: src/App.tsx:747
 msgctxt "backend diagnostic warning"
 msgid "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 msgstr "ソース{source}の正規化テレメトリを読み込めません。IMUキーフレーム項目を無効にしました: {0}"
 
-#: src/App.tsx:754
+#: src/App.tsx:765
 msgid "Unable to read source frame {frame}: {error}"
 msgstr "ソースフレーム{frame}を読み込めません: {error}"
 
 #. Media preview error when the first frame cannot be decoded.
-#: src/App.tsx:531
+#: src/App.tsx:542
 msgid "Unable to read the first video frame"
 msgstr "最初のビデオフレームを読み込めません"
 
 #. Diagnostic warning when COLMAP capability probing cannot read the version banner.
-#: src/App.tsx:562
+#: src/App.tsx:573
 msgid "Unable to read the selected COLMAP version banner; capabilities are conservatively treated as unknown or unavailable"
 msgstr "選択したCOLMAPのバージョンバナーを読み込めません。機能は保守的に不明または利用不可として扱われます"
 
 #. Media preview error when FFmpeg cannot be launched.
-#: src/App.tsx:533
+#: src/App.tsx:544
 msgid "Unable to start FFmpeg"
 msgstr "FFmpegを開始できません"
 
-#: src/App.tsx:670
+#: src/App.tsx:681
 msgid "Unable to start the stage automatically; check the runtime message"
 msgstr "ステージを自動的に開始できません。ランタイムメッセージを確認してください"
 
-#: src/App.tsx:684
+#: src/App.tsx:695
 msgid "Unable to start the stage; check the runtime message"
 msgstr "ステージを開始できません。ランタイムメッセージを確認してください"
 
-#: src/App.tsx:757
+#: src/App.tsx:768
 msgid "Unable to sync temporary frame {frame}: {error}"
 msgstr "一時フレーム{frame}を同期できません: {error}"
 
-#: src/App.tsx:760
+#: src/App.tsx:771
 msgid "Unable to sync temporary metadata {path}: {error}"
 msgstr "一時メタデータ{path}を同期できません: {error}"
 
-#: src/App.tsx:759
+#: src/App.tsx:770
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "一時メタデータ{path}を書き込めません: {error}"
 
-#: src/App.tsx:613
+#: src/App.tsx:624
 msgid "Unnamed reconstruction"
 msgstr "名前なしの再構成"
 
-#: src/App.tsx:608
+#: src/App.tsx:619
 msgid "Unsupported"
 msgstr "非対応"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/App.tsx:2750
+#: src/App.tsx:2966
 msgid "Use CUDA acceleration for alignment"
 msgstr "アライメントにCUDAアクセラレーションを使用"
 
-#: src/App.tsx:2728
+#. Shown after a project folder is dropped into the new-task media picker; directs the user to the dedicated project-opening action.
+#: src/App.tsx:674
+#~ msgctxt "project folder drop guidance"
+#~ msgid "Use Open project to open a project folder"
+#~ msgstr ""
+
+#: src/App.tsx:2944
 msgid "Use SkySeg to generate sky masks."
 msgstr "SkySegで空のマスクを生成します。"
 
 #. Backend message: an existing mask file was reused.
 #. Backend message: an existing mask file was reused.
-#: src/App.tsx:486
-#: src/App.tsx:517
+#: src/App.tsx:497
+#: src/App.tsx:528
 msgid "Verified that the mask exists; skipped"
 msgstr "マスクが存在することを確認しました。スキップしました"
 
@@ -2484,66 +2524,69 @@ msgstr "マスクが存在することを確認しました。スキップしま
 #~ msgid "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
 #~ msgstr "現在の処理、処理メトリクス、完全な処理記録を表示します。利用できないパフォーマンス監視は明示的に示されます。"
 
-#: src/App.tsx:3087
+#: src/App.tsx:3329
 msgid "View details"
 msgstr "詳細を表示"
 
 #. placeholder {0}: task.name
-#: src/App.tsx:2838
+#: src/App.tsx:3054
 msgid "View details for {0}"
 msgstr "{0}の詳細を表示"
 
-#: src/App.tsx:1117
+#: src/App.tsx:1128
 msgid "Wait for {prerequisite} to finish"
 msgstr "{prerequisite}の完了を待機"
 
-#: src/App.tsx:1119
+#: src/App.tsx:1130
 msgid "Wait for the current stage to finish"
 msgstr "現在のステージの完了を待機"
 
 #. placeholder {0}: action.prerequisite
-#: src/App.tsx:2866
-#: src/App.tsx:2975
+#: src/App.tsx:3082
 msgid "Waiting for {0} to finish"
 msgstr "{0}の完了を待機"
 
 #. placeholder {0}: nextIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1081
+#: src/App.tsx:1092
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "ステージ {0}/{1} の完了を待機 · {label}"
 
-#: src/App.tsx:2834
+#: src/App.tsx:3050
 msgid "Waiting to run"
 msgstr "実行待ち"
 
-#: src/App.tsx:2993
+#: src/App.tsx:3231
 msgid "Warnings"
 msgstr "警告"
 
-#: src/App.tsx:2842
+#: src/App.tsx:3058
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "観測された3回の実行時間で加重: フレーム抽出22%、マスキング4%、アライメント74%"
 
-#: src/App.tsx:2670
+#: src/App.tsx:2886
 msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
 msgstr "カスタムファイルを指定しない場合、ランタイムは公式LUTを使用します。それ以外の場合はこの.cubeファイルを使用します。"
 
-#: src/App.tsx:2939
+#: src/App.tsx:1683
+msgid "Window controls"
+msgstr "ウィンドウコントロール"
+
+#: src/App.tsx:3194
 msgid "Work summary"
 msgstr "作業概要"
 
 #. Backend progress message: mask files are being written.
-#: src/App.tsx:521
+#: src/App.tsx:532
 msgid "Writing mask files"
 msgstr "マスクファイルを書き込み中"
 
 #. Backend stage summary when no mask filters are enabled.
-#: src/App.tsx:526
+#: src/App.tsx:537
 msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLOと空のフィルタリングは無効です。マスキングをスキップしました"
 
 #. Enable object detection masks from YOLO11.
-#: src/App.tsx:2691
+#: src/App.tsx:2907
 msgid "YOLO object filtering"
 msgstr "YOLOオブジェクトフィルタリング"

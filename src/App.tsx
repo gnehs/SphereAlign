@@ -33,7 +33,9 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import { i18n, type I18n, type MessageDescriptor } from "@lingui/core";
 import { msg, plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
@@ -86,6 +88,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTheme, type Theme } from "@/components/theme-provider";
 import { getEnglishI18n, getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
+import { cn } from "@/lib/utils";
 import "./App.css";
 
 type StageKey = "extract" | "mask" | "align";
@@ -98,6 +101,9 @@ function translate(descriptor: MessageDescriptor) {
 }
 
 const LANGUAGE_OPTIONS = supportedLocales.map((value) => ({ value, label: localeLabels[value] }));
+const TASK_DETAIL_DURATION_SECONDS = 0.28;
+const TASK_DETAIL_EASE = [0.22, 1, 0.36, 1] as const;
+const TASK_DETAIL_TRANSITION = { duration: TASK_DETAIL_DURATION_SECONDS, ease: TASK_DETAIL_EASE };
 
 interface ColorInspection {
   shouldApply?: boolean;
@@ -1509,7 +1515,15 @@ function loadSourcePreview(path: string) {
   return request;
 }
 
-function SourceThumbnail({ source, previewSide = "right" }: { source: OsvSource; previewSide?: "left" | "right" }) {
+function SourceThumbnail({
+  source,
+  previewSide = "right",
+  size = "default",
+}: {
+  source: OsvSource;
+  previewSide?: "left" | "right";
+  size?: "default" | "compact";
+}) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -1541,8 +1555,14 @@ function SourceThumbnail({ source, previewSide = "right" }: { source: OsvSource;
 
   if (!previewUrl) {
     return (
-      <div className={`source-thumbnail${failed ? " source-thumbnail--failed" : ""}`} title={failed ? t`Unable to generate a first-frame preview` : undefined}>
-        {failed ? <Video aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
+      <div
+        className={cn(
+          "grid aspect-square shrink-0 place-items-center overflow-hidden rounded-full border bg-muted text-muted-foreground",
+          size === "compact" ? "size-10.5" : "size-12",
+        )}
+        title={failed ? t`Unable to generate a first-frame preview` : undefined}
+      >
+        {failed ? <Video className="size-4.5" aria-hidden="true" /> : <CircleDashed className="size-4.5 animate-spin [animation-duration:900ms]" aria-hidden="true" />}
       </div>
     );
   }
@@ -1553,15 +1573,123 @@ function SourceThumbnail({ source, previewSide = "right" }: { source: OsvSource;
         openOnHover
         delay={120}
         closeDelay={120}
-        render={<button type="button" className="source-thumbnail source-thumbnail--interactive" aria-label={t`Preview ${alt}`} />}
+        render={(
+          <button
+            type="button"
+            className={cn(
+              "aspect-square shrink-0 cursor-default overflow-hidden rounded-full border bg-muted p-0 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              size === "compact" ? "size-10.5" : "size-12",
+            )}
+            aria-label={t`Preview ${alt}`}
+          />
+        )}
       >
-        <img src={previewUrl} alt={alt} />
+        <img className="size-full object-cover" src={previewUrl} alt={alt} />
       </PopoverTrigger>
-      <PopoverContent className="source-preview-card" side={previewSide} sideOffset={12}>
+      <PopoverContent className="w-[min(272px,calc(100vw-32px))] overflow-hidden rounded-full p-1.5 shadow-[0_18px_48px_rgb(0_0_0/18%),0_2px_8px_rgb(0_0_0/10%)]" side={previewSide} sideOffset={12}>
         <PopoverTitle className="sr-only">{t`${source.detail} dual-fisheye snapshot`}</PopoverTitle>
-        <img className="source-preview-image" src={previewUrl} alt="" />
+        <img className="block aspect-square w-full rounded-full object-cover" src={previewUrl} alt="" />
       </PopoverContent>
     </Popover>
+  );
+}
+
+function SupportedFormatCard({ icon: Icon, title, detail }: { icon: LucideIcon; title: ReactNode; detail: ReactNode }) {
+  return (
+    <article className="flex min-w-0 items-center gap-3 rounded-xl border bg-card px-3.5 py-3">
+      <Icon className="size-5 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
+        <small className="truncate text-xs text-muted-foreground">{detail}</small>
+      </span>
+    </article>
+  );
+}
+
+function SourceListItem({
+  source,
+  title,
+  detail,
+  previewSide = "right",
+  onRemove,
+  removeLabel,
+}: {
+  source: OsvSource;
+  title: ReactNode;
+  detail: ReactNode;
+  previewSide?: "left" | "right";
+  onRemove?: () => void;
+  removeLabel?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 border-t px-2 py-2 first:border-t-0">
+      <SourceThumbnail source={source} previewSide={previewSide} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <strong className="truncate text-sm font-medium text-foreground">{title}</strong>
+        <small className="truncate font-mono text-xs text-muted-foreground" title={typeof detail === "string" ? detail : undefined}>{detail}</small>
+      </span>
+      {onRemove && (
+        <Button type="button" variant="ghost" size="icon-xs" aria-label={removeLabel} onClick={onRemove}>
+          <X />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function DetailSectionHeading({ title, meta }: { title: ReactNode; meta: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <span className="text-sm text-muted-foreground">{meta}</span>
+    </div>
+  );
+}
+
+function DetailMetric({
+  label,
+  value,
+  icon: Icon,
+  fullWidth = false,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  icon?: LucideIcon;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div className={cn(
+      "flex min-w-0 flex-col gap-1 border-b py-2.5 odd:border-r odd:pr-3.5 even:pl-3.5",
+      fullWidth && "col-span-full border-r-0 px-0 odd:pr-0 even:pl-0",
+    )}>
+      <dt className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {Icon && <Icon className="size-3.5" aria-hidden="true" />}
+        {label}
+      </dt>
+      <dd className={cn("min-w-0 text-sm tabular-nums text-foreground", fullWidth && "truncate font-mono")}>{value}</dd>
+    </div>
+  );
+}
+
+function AppNotice({ message, onClose, avoidBottomAction = false }: { message: string; onClose: () => void; avoidBottomAction?: boolean }) {
+  return (
+    <m.div
+      initial={{ y: 8, opacity: 0, scale: 0.98 }}
+      animate={{ y: 0, opacity: 1, scale: 1 }}
+      exit={{ y: 6, opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.18, ease: TASK_DETAIL_EASE }}
+      className={cn("fixed bottom-5 left-5 z-60 flex w-[min(360px,calc(100vw-40px))] items-start gap-2.5 rounded-xl border bg-popover/95 p-3 text-sm text-popover-foreground shadow-md backdrop-blur-md", avoidBottomAction && "max-[760px]:bottom-18")}
+      role="status"
+      aria-atomic="true"
+    >
+      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+        <Info className="size-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1 self-center leading-relaxed break-words">{message}</span>
+      <Button className="-mt-1 -mr-1 shrink-0" variant="ghost" size="icon-xs" onClick={onClose} aria-label={t`Close notification`}>
+        <X />
+      </Button>
+    </m.div>
   );
 }
 
@@ -1574,14 +1702,32 @@ function WindowsWindowControls() {
   };
 
   return (
-    <div className="window-controls" aria-label={t`Window controls`}>
-      <Button className="window-control-button" variant="ghost" aria-label={t`Minimize window`} title={t`Minimize window`} onClick={() => runWindowCommand(() => appWindow.minimize())}>
+    <div className="flex self-stretch" aria-label={t`Window controls`}>
+      <Button
+        className="h-full w-11 rounded-none"
+        variant="ghost"
+        aria-label={t`Minimize window`}
+        title={t`Minimize window`}
+        onClick={() => runWindowCommand(() => appWindow.minimize())}
+      >
         <Minus />
       </Button>
-      <Button className="window-control-button" variant="ghost" aria-label={t`Maximize or restore window`} title={t`Maximize or restore window`} onClick={() => runWindowCommand(() => appWindow.toggleMaximize())}>
+      <Button
+        className="h-full w-11 rounded-none"
+        variant="ghost"
+        aria-label={t`Maximize or restore window`}
+        title={t`Maximize or restore window`}
+        onClick={() => runWindowCommand(() => appWindow.toggleMaximize())}
+      >
         <Square />
       </Button>
-      <Button className="window-control-button window-control-button--close" variant="ghost" aria-label={t`Close window`} title={t`Close window`} onClick={() => runWindowCommand(() => appWindow.close())}>
+      <Button
+        className="h-full w-11 rounded-none hover:bg-destructive hover:text-destructive-foreground"
+        variant="ghost"
+        aria-label={t`Close window`}
+        title={t`Close window`}
+        onClick={() => runWindowCommand(() => appWindow.close())}
+      >
         <X />
       </Button>
     </div>
@@ -1716,10 +1862,23 @@ function stageStatusLabel(status: StageStatus) {
 
 function StageStatusBadge({ status }: { status: StageStatus }) {
   return (
-    <Badge data-status={status} variant={status === "failed" ? "destructive" : "outline"}>
+    <Badge
+      className={cn(
+        status === "running" && "border-primary/30 bg-primary/10 text-primary [&_[data-icon=inline-start]]:animate-spin [&_[data-icon=inline-start]]:[animation-duration:900ms]",
+        status === "completed" && "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+        status === "cancelled" && "bg-muted text-muted-foreground",
+      )}
+      variant={status === "failed" ? "destructive" : "outline"}
+    >
       {status === "running"
         ? <LoaderCircle data-icon="inline-start" aria-hidden="true" />
-        : <span className={`status-dot status-dot--${status}`} />}
+        : <span className={cn(
+          "block size-1.25 rounded-full bg-current",
+          status === "completed" && "text-emerald-600",
+          status === "failed" && "text-destructive",
+          status === "cancelled" && "text-amber-600",
+          status === "pending" && "text-muted-foreground",
+        )} />}
       {stageStatusLabel(status)}
     </Badge>
   );
@@ -1875,6 +2034,12 @@ function App() {
   const terminalJobIds = useRef<Set<string>>(new Set());
   const ignoredJobIds = useRef<Set<string>>(new Set());
   const pendingStageStarts = useRef<Record<string, StageKey>>({});
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeoutId = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
   const taskSnapshot = useRef<Task[]>([]);
   const logSequence = useRef(0);
@@ -1982,6 +2147,18 @@ function App() {
     });
   }, [appendTaskLog]);
 
+  const loadProjectPath = useCallback(async (path: string) => {
+    const manifest = manifestFromUnknown(await invokeSafely("load_project", { path }));
+    if (!manifest) {
+      setToast("No loadable project information was found");
+      return false;
+    }
+    setTasks((current) => [manifest, ...current.filter((task) => task.projectId !== manifest.projectId)]);
+    addTaskMessage(manifest.projectId, `Opened ${manifest.name}`);
+    setToast(manifest.warnings.length ? `Loaded unfinished project with ${manifest.warnings.length} warnings` : `Loaded unfinished project: ${manifest.name}`);
+    return true;
+  }, [addTaskMessage]);
+
   const inspectSourcePaths = useCallback(async (paths: string[]) => {
     if (!paths.length) return;
     const result = await invokeSafely<{
@@ -2002,17 +2179,12 @@ function App() {
     }>("inspect_paths", { paths });
     if (IS_TAURI_RUNTIME && result?.project && (result.kind === "project" || result.project.status === "partial" || result.project.hasManifest)) {
       const projectPath = result.project.path || paths[0];
-      const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: projectPath }));
-      if (manifest) {
-        setTasks((current) => [manifest, ...current.filter((task) => task.projectId !== manifest.projectId)]);
-        setTaskDialogOpen(false);
-        setSourcePaths([]);
-        setSourceInspection("");
-        setSourceColorInspection(null);
-        addTaskMessage(manifest.projectId, `Loaded resumable project ${manifest.name}`);
-        setToast(manifest.warnings.length ? `Loaded unfinished project with ${manifest.warnings.length} warnings` : `Loaded unfinished project: ${manifest.name}`);
-        return;
-      }
+      setTaskDialogOpen(false);
+      setSourcePaths([]);
+      setSourceInspection("");
+      setSourceColorInspection(null);
+      await loadProjectPath(projectPath);
+      return;
     }
     if (result?.sources?.length) {
       const inspectedPaths = result.sources.flatMap((source) => source.path ? [source.path] : []);
@@ -2031,7 +2203,7 @@ function App() {
       setSourceInspection("Source inspection results are not available yet");
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     }
-  }, [addTaskMessage]);
+  }, [loadProjectPath]);
 
   const applySourcePaths = useCallback((paths: string[], openDialogAfter = true) => {
     const actual = paths.filter(Boolean);
@@ -2098,13 +2270,13 @@ function App() {
     applySourcePaths(paths);
   }, [applySourcePaths]);
 
-  const openSourcePicker = useCallback(async (mode: "files" | "directories") => {
+  const openSourcePicker = useCallback(async () => {
     if (!IS_TAURI_RUNTIME) {
       fileInputRef.current?.click();
       return;
     }
     try {
-      const result = await openDialog(mode === "directories" ? { directory: true, multiple: true } : { directory: false, multiple: true, filters: [{ name: t`OSV / dual-fisheye video`, extensions: ["osv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
+      const result = await openDialog({ directory: false, multiple: true, filters: [{ name: t`OSV / dual-fisheye video`, extensions: ["osv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
       const paths = result === null ? [] : Array.isArray(result) ? result : [result];
       applySourcePaths(paths);
     } catch (error) {
@@ -2134,18 +2306,12 @@ function App() {
     try {
       const result = await openDialog({ directory: true, multiple: false });
       if (typeof result !== "string") return;
-      const manifest = manifestFromUnknown(await invokeSafely("load_project", { path: result }));
-      if (manifest) {
-        setTasks((current) => [manifest, ...current]);
-        addTaskMessage(manifest.projectId, `Opened ${manifest.name}`);
-      } else {
-        setToast("No loadable project information was found");
-      }
+      await loadProjectPath(result);
     } catch (error) {
       console.info("[SphereAlign] load project", error);
       setToast("Failed to open project");
     }
-  }, [addTaskMessage]);
+  }, [loadProjectPath]);
 
   const runDoctor = useCallback(async (customColmapPath: string) => {
     const runId = ++doctorRunId.current;
@@ -2647,14 +2813,14 @@ function App() {
     const lutPath = settingsDraft.extract.lutPath?.trim() ?? "";
     const lutPathInvalid = customLutPathIsInvalid(lutPath);
     return (
-      <section className="settings-form" aria-labelledby="task-processing-settings-title">
-        <div className="dialog-column-scroll scroll-fade-y scroll-fade-8">
-        <h2 id="task-processing-settings-title" className="task-dialog-section-title"><Trans>Processing settings</Trans></h2>
-        <FieldGroup>
+      <section className="min-h-0 overflow-hidden border-l max-[760px]:overflow-visible max-[760px]:border-t max-[760px]:border-l-0" aria-labelledby="task-processing-settings-title">
+        <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto overscroll-contain px-7 py-6 [scrollbar-gutter:stable] max-[920px]:px-5 max-[760px]:h-auto max-[760px]:overflow-visible max-[760px]:p-5 max-[760px]:[--scroll-fade-mask:none]">
+        <h2 id="task-processing-settings-title" className="mb-4 text-lg font-semibold text-foreground"><Trans>Processing settings</Trans></h2>
+        <FieldGroup className="gap-4 [&>[data-slot=field]]:rounded-lg [&>[data-slot=field]]:border [&>[data-slot=field]]:bg-card [&>[data-slot=field]]:p-3">
           <Field>
             <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for extracting frames.">Frame extraction</Trans></FieldLabel>
             <FieldContent>
-              <Field className="extract-base-fps-field">
+              <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                 <FieldLabel htmlFor="base-fps"><Trans comment="Base frames-per-second setting for source media extraction.">Base frame rate (FPS)</Trans></FieldLabel>
                 <Input
                   id="base-fps"
@@ -2672,7 +2838,7 @@ function App() {
                   }}
                 />
               </Field>
-              <Field orientation="horizontal" className="extract-filter-option">
+              <Field orientation="horizontal" className="mt-2.5 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                 <Checkbox
                   id="sharpness-filter"
                   checked={settingsDraft.extract.skipBlurry}
@@ -2681,10 +2847,10 @@ function App() {
                 <FieldLabel htmlFor="sharpness-filter"><Trans context="frame extraction setting" comment="Whether blurry candidate frames should be filtered out.">Sharpness filtering</Trans></FieldLabel>
               </Field>
               {settingsDraft.extract.skipBlurry && (
-                <Field className="extract-candidate-field">
-                  <div className="slider-heading">
+                <Field className="mt-2 min-h-7 border-0 bg-transparent px-0 py-0.5">
+                  <div className="flex items-center justify-between">
                     <FieldLabel id="candidate-fps-label"><Trans comment="Frame rate used to sample candidate frames before selecting the sharpest ones.">Candidate frame rate</Trans></FieldLabel>
-                    <span className="range-label">{candidateMultiplier}× · {candidateFps} FPS</span>
+                    <span className="ml-auto font-mono text-sm text-muted-foreground">{candidateMultiplier}× · {candidateFps} FPS</span>
                   </div>
                   <Slider
                     aria-labelledby="candidate-fps-label"
@@ -2701,7 +2867,7 @@ function App() {
                       }));
                     }}
                   />
-                  <div className="range-scale" aria-hidden="true"><span>2×</span><span>10×</span></div>
+                  <div className="flex items-center justify-between font-mono text-sm text-muted-foreground" aria-hidden="true"><span>2×</span><span>10×</span></div>
                   <FieldDescription><Trans comment="Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.">Sample candidates at a multiple of the base frame rate, then select sharper frames.</Trans></FieldDescription>
                 </Field>
               )}
@@ -2710,7 +2876,7 @@ function App() {
           <Field>
             <FieldLabel><Trans context="settings section" comment="Lookup table settings for restoring source media color.">LUT settings</Trans></FieldLabel>
             <FieldContent>
-              <Field orientation="horizontal" className="extract-color-field">
+              <Field orientation="horizontal" className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5">
                 <Switch
                   id="extract-color-mode"
                   checked={restoreDlog}
@@ -2726,9 +2892,9 @@ function App() {
                   )}
                 </div>
               </Field>
-              <Field className="extract-lut-field" data-invalid={lutPathInvalid || undefined}>
+              <Field className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=alert]]:mt-0.5" data-invalid={lutPathInvalid || undefined}>
                 <FieldLabel htmlFor="extract-lut-path"><Trans comment="Optional user-provided 3D LUT file path.">Custom LUT (optional)</Trans></FieldLabel>
-                <div className="input-with-button">
+                <div className="flex items-center gap-2 [&_input]:flex-1">
                   <Input
                     id="extract-lut-path"
                     value={lutPath}
@@ -2753,7 +2919,7 @@ function App() {
           <Field>
             <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for creating masks.">Masking</Trans></FieldLabel>
             <FieldContent>
-              <Field orientation="horizontal" className="mask-feature-option">
+              <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                 <Checkbox
                   id="mask-yolo"
                   checked={settingsDraft.mask.yoloEnabled}
@@ -2769,14 +2935,14 @@ function App() {
                 <FieldLabel htmlFor="mask-yolo"><Trans comment="Enable object detection masks from YOLO11.">YOLO object filtering</Trans></FieldLabel>
               </Field>
               {settingsDraft.mask.yoloEnabled && (
-                <FieldGroup className="mask-feature-settings">
-                  <FieldSet className="mask-object-options">
+                <FieldGroup className="gap-2 px-0 pt-1 pb-2">
+                  <FieldSet className="gap-2">
                     <FieldLegend variant="label"><Trans comment="Select one or more object classes to exclude from reconstruction.">Objects to mask (multiple selection)</Trans></FieldLegend>
-                    <FieldGroup data-slot="checkbox-group" className="mask-checkbox-list">
+                    <FieldGroup data-slot="checkbox-group" className="grid grid-cols-2 gap-x-3 gap-y-2">
                       {MASK_CLASSES.map((maskClass) => {
                         const checkboxId = `mask-class-${maskClass}`;
                         return (
-                          <Field key={maskClass} orientation="horizontal" className="mask-checkbox-option">
+                          <Field key={maskClass} orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                             <Checkbox
                               id={checkboxId}
                               checked={settingsDraft.mask.classes.includes(maskClass)}
@@ -2795,7 +2961,7 @@ function App() {
                   </FieldSet>
                 </FieldGroup>
               )}
-              <Field orientation="horizontal" className="mask-feature-option">
+              <Field orientation="horizontal" className="mt-2 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                 <Checkbox
                   id="mask-sky"
                   checked={settingsDraft.mask.maskSky}
@@ -2812,8 +2978,8 @@ function App() {
         <Field>
           <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldLabel>
           <FieldContent>
-            <div className="settings-stack">
-              <Field orientation="horizontal" className="extract-filter-option" data-disabled={doctor.gpuAvailable === false || undefined}>
+            <div className="flex flex-col gap-2">
+              <Field orientation="horizontal" className="mt-2.5 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal" data-disabled={doctor.gpuAvailable === false || undefined}>
                 <Switch
                   id="use-gpu"
                   size="sm"
@@ -2855,42 +3021,46 @@ function App() {
   };
 
   return (
-    <div className="studio-app">
-      <main className="studio-main" data-detail-open={selectedTask ? "true" : undefined}>
+    <div className="flex size-full flex-col bg-background">
+      <main className="flex min-h-0 flex-1 flex-col overflow-auto">
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
-        <header className={`workspace-toolbar${IS_MACOS_RUNTIME ? " workspace-toolbar--macos" : ""}${IS_WINDOWS_RUNTIME ? " workspace-toolbar--windows" : ""}`}>
+        <header className={cn(
+          "sticky top-0 z-40 flex min-h-13 shrink-0 items-center border-b bg-background/95 px-4 py-2 backdrop-blur-sm select-none max-[760px]:px-3.5 max-[760px]:py-3",
+          IS_MACOS_RUNTIME && "pl-[86px]",
+          IS_WINDOWS_RUNTIME && "pr-0 py-0",
+        )}>
           <h1 className="sr-only"><Trans>Reconstruction tasks</Trans></h1>
-          <div className="header-actions" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
+          <div className="flex min-h-9 w-full shrink-0 items-center gap-2 self-stretch max-[760px]:[&_[data-slot=button]]:flex-1" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
             <Button size="sm" onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
             <Button size="sm" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
-            <Button className="settings-toolbar-button" size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+            <Button className="ml-auto" size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
             <WindowsWindowControls />
           </div>
         </header>
         {tasks.length === 0 ? (
-          <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
-            <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
-            <h2><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h2>
-            <p className="empty-description"><Trans comment="Drop OSV media or an unfinished project folder here, or choose files or a folder below.">Drop OSV media or an unfinished project folder here,<br />or choose files or a folder below.</Trans></p>
-            <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button><Button size="lg" variant="outline" onClick={() => void openSourcePicker("directories")}><FolderOpen data-icon="inline-start" /><Trans context="folder picker action" comment="Button opens a folder picker for a project or source folder.">Choose folder</Trans></Button></div>
-            <section className="supported-formats" aria-labelledby="supported-formats-title">
-              <h2 id="supported-formats-title"><Trans>Supported inputs</Trans></h2>
-              <div className="supported-format-list">
-                <article className="supported-format-card"><Film aria-hidden="true" /><span><strong><Trans comment="DJI Osmo 360 source media files.">Osmo 360 source files</Trans></strong><small>OSV</small></span></article>
-                <article className="supported-format-card"><Folder aria-hidden="true" /><span><strong><Trans comment="A project folder containing a resumable reconstruction.">Project folder</Trans></strong><small><Trans>Resume an unfinished reconstruction task</Trans></small></span></article>
+          <section className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-14 pb-18 text-center" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+            <div className={cn("mb-5.5 grid size-17.5 place-items-center rounded-[18px] border bg-card text-muted-foreground transition-[border-color,color,transform,background] duration-200 [&_svg]:size-7", dragOver && "scale-[1.03] border-primary/50 bg-primary/10 text-primary")} aria-hidden="true"><FileStack /></div>
+            <h2 className="text-[28px] font-semibold tracking-[-0.045em] text-foreground"><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h2>
+            <p className="mt-3 text-base leading-relaxed text-muted-foreground"><Trans comment="Drop source media here or choose files below. Existing projects are opened separately.">Drop OSV or dual-fisheye media here,<br />or use Open project to resume an existing project.</Trans></p>
+            <div className="mt-6 flex items-center gap-2.5 max-[760px]:w-[min(280px,100%)] max-[760px]:flex-col max-[760px]:items-stretch"><Button size="lg" onClick={() => void openSourcePicker()}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button><Button size="lg" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button></div>
+            <section className="mt-7 w-[min(520px,100%)] text-left max-[760px]:w-[min(320px,100%)]" aria-labelledby="supported-formats-title">
+              <h2 id="supported-formats-title" className="mb-2.5 text-xs font-semibold tracking-wide text-muted-foreground"><Trans>Supported inputs</Trans></h2>
+              <div className="grid grid-cols-2 gap-2.5 max-[760px]:grid-cols-1">
+                <SupportedFormatCard icon={Film} title={<Trans comment="DJI Osmo 360 source media files.">Osmo 360 source files</Trans>} detail="OSV" />
+                <SupportedFormatCard icon={Folder} title={<Trans comment="A project folder containing a resumable reconstruction.">Project folder</Trans>} detail={<Trans>Resume an unfinished reconstruction task</Trans>} />
               </div>
             </section>
           </section>
         ) : (
-          <section className="tasks-view">
-            <div className="task-groups">
+          <m.section className={cn("mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5", taskDetailOpen && selectedTask && "max-w-none pr-[526px] max-[920px]:pr-8 max-[760px]:pr-3.5")} layout transition={{ layout: TASK_DETAIL_TRANSITION }}>
+            <div className="grid gap-7">
               {([
                 { key: "active", title: t`In progress`, items: activeTasks },
                 { key: "completed", title: t`Completed`, items: completedTasks },
               ] as const).filter((group) => group.key === "completed" || group.items.length > 0).map((group) => (
-                <section className="task-group" key={group.key}>
-                  <div className="task-group-heading"><div><h2>{group.title}</h2><Badge variant="secondary">{group.items.length}</Badge></div></div>
-                  {group.items.length > 0 ? <div className="task-list">
+                <section key={group.key}>
+                  <div className="mb-3 flex items-center px-0.5"><div className="flex items-center gap-2.5"><h2 className="text-lg font-semibold">{group.title}</h2><Badge variant="secondary">{group.items.length}</Badge></div></div>
+                  {group.items.length > 0 ? <div className="flex flex-col gap-3.5 overflow-visible">
               {group.items.map((task) => {
                 const overall = taskProgress(task);
                 const queued = taskHasNotStarted(task);
@@ -2903,43 +3073,43 @@ function App() {
                 const currentCount = logCountLabel(currentStage.completed, currentStage.total);
                 const primarySource = task.inputPaths.length > 0 ? sourceFromPath(task.inputPaths[0], 0) : undefined;
                 return (
-                  <article className="task-row" data-queued={queued || undefined} key={task.projectId}>
-                    <div className="task-row-top">
-                      <div className="task-identity">{primarySource ? <SourceThumbnail source={primarySource} /> : <span className="task-mark"><FileStack /></span>}<div><div className="task-name-line"><h2>{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}{task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}</div><p title={task.outputPath}>{task.outputPath || t`Output not specified`}</p></div></div>
-                      <div className="task-row-actions">
+                  <article className={cn("rounded-xl border bg-card px-7.5 pt-6.5 pb-7.5 shadow-sm max-[760px]:px-4.5 max-[760px]:pt-5 max-[760px]:pb-6", queued && "bg-primary/[0.02]")} key={task.projectId}>
+                    <div className="flex items-center justify-between gap-4.5">
+                      <div className="flex min-w-0 items-center gap-3">{primarySource ? <SourceThumbnail source={primarySource} /> : <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5.5"><FileStack /></span>}<div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-[17px] font-semibold text-foreground">{task.name}</h2>{queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}{task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}</div><p className="mt-1 max-w-160 truncate font-mono text-sm text-muted-foreground" title={task.outputPath}>{task.outputPath || t`Output not specified`}</p></div></div>
+                      <div className="flex shrink-0 items-center gap-1">
                         {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" /><Trans context="queue action" comment="Add a queued task to the automatic execution queue.">Add to queue</Trans></Button>}
-                        {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
+                        {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
                         <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={taskDetailOpen && selectedTaskId === task.projectId} onClick={() => { setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); setTaskDetailOpen(true); }}><Info /></Button>
                       </div>
                     </div>
-                    {queued ? <div className="queued-task-summary"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="task-progress-block">
-                      <div className="task-progress-summary"><span title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}><Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans></span><small>{taskProgressSummary(task)}</small><strong>{overall}%</strong></div>
+                    {queued ? <div className="mt-4 ml-15 flex items-center justify-between text-sm text-muted-foreground max-[760px]:ml-0"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="mt-6.5 mb-4 ml-15 max-[760px]:ml-0 [&_[data-slot=progress-track]]:h-1.75 [&_[data-slot=progress-value]]:hidden">
+                      <div className="mb-2 flex items-center gap-2 text-sm"><span className="font-medium text-foreground" title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}><Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans></span><small className="text-muted-foreground">{taskProgressSummary(task)}</small><strong className="ml-auto font-mono font-medium text-foreground">{overall}%</strong></div>
                       <Progress value={overall} aria-label={t`${task.name} overall time progress`}><ProgressValue /></Progress>
-                      <div className="task-live-summary">
-                        <span><strong>{t`Current stage: ${stageLabel(currentStageDefinition)}`}</strong><small>{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
-                        <dl>
-                          <div><dt><Trans>Processed</Trans></dt><dd>{currentCount || t`Not reported yet`}</dd></div>
-                          <div><dt><Trans>Elapsed</Trans></dt><dd>{currentElapsed !== undefined ? formatDuration(currentElapsed) : t`Not started`}</dd></div>
-                          <div><dt><Trans>Estimated remaining</Trans></dt><dd>{currentStage.status === "running" ? formatEta(currentEta) : "—"}</dd></div>
+                      <div className="mt-3.5 grid grid-cols-[minmax(180px,1fr)_minmax(330px,auto)] items-end gap-4.5 max-[920px]:grid-cols-1 max-[920px]:items-start">
+                        <span className="flex min-w-0 flex-col gap-1"><strong className="text-sm font-medium text-foreground">{t`Current stage: ${stageLabel(currentStageDefinition)}`}</strong><small className="truncate text-sm text-muted-foreground">{currentStage.phase ? phaseLabel(currentStage.phase) : stageStatusLabel(currentStage.status)}</small></span>
+                        <dl className="grid grid-cols-3 gap-5 max-[760px]:grid-cols-1 max-[760px]:gap-2.5">
+                          <div className="flex flex-col gap-1"><dt className="text-sm text-muted-foreground"><Trans>Processed</Trans></dt><dd className="text-sm tabular-nums text-foreground">{currentCount || t`Not reported yet`}</dd></div>
+                          <div className="flex flex-col gap-1"><dt className="text-sm text-muted-foreground"><Trans>Elapsed</Trans></dt><dd className="text-sm tabular-nums text-foreground">{currentElapsed !== undefined ? formatDuration(currentElapsed) : t`Not started`}</dd></div>
+                          <div className="flex flex-col gap-1"><dt className="text-sm text-muted-foreground"><Trans>Estimated remaining</Trans></dt><dd className="text-sm tabular-nums text-foreground">{currentStage.status === "running" ? formatEta(currentEta) : "—"}</dd></div>
                         </dl>
                       </div>
                     </div>
-                    <div className="stage-row-list" role="list" aria-label={t`Reconstruction pipeline`}>
+                    <div className="ml-15 grid grid-cols-1 border-t max-[760px]:ml-0" role="list" aria-label={t`Reconstruction pipeline`}>
                       {STAGES.map((stage, stageIndex) => {
                         const current = task.stages[stage.key];
                         const stageProgress = Math.round(current.progress);
                         const Icon = stage.icon;
                         const action = stageActionState(task, stage.key, hasRunningStage);
                         return (
-                          <div className="task-stage" data-status={current.status} key={stage.key} role="listitem" aria-label={t`Stage ${stageIndex + 1} of ${STAGES.length}: ${stageLabel(stage)}`}>
-                            <span className="task-stage-step" aria-hidden="true"><span>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span></span>
-                            <div className="task-stage-label">
-                              <Icon />
-                              <div className="task-stage-copy">
-                                <strong>{stageLabel(stage)}</strong>
-                                <small>{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small>
+                          <div className="relative flex min-w-0 items-center gap-2 border-t py-4 first:border-t-0 max-[760px]:flex-wrap max-[760px]:items-start max-[760px]:py-3" data-status={current.status} key={stage.key} role="listitem" aria-label={t`Stage ${stageIndex + 1} of ${STAGES.length}: ${stageLabel(stage)}`}>
+                            <span className="relative grid w-6 shrink-0 self-stretch place-items-start" aria-hidden="true"><span className={cn("relative z-10 grid size-5 place-items-center rounded-full border bg-card text-[0.72rem] font-semibold text-muted-foreground [&_svg]:size-3", current.status === "running" && "border-primary text-primary ring-3 ring-primary/10", current.status === "completed" && "border-emerald-600 bg-emerald-500/10 text-emerald-600")}>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span>{stageIndex < STAGES.length - 1 && <span className="absolute top-5 -bottom-3 left-1/2 w-px -translate-x-1/2 bg-border" />}</span>
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                              <Icon className={cn("size-4 shrink-0 text-muted-foreground", current.status === "running" && "text-primary")} />
+                              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                <strong className="text-sm font-medium text-foreground">{stageLabel(stage)}</strong>
+                                <small className="truncate text-sm text-muted-foreground">{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small>
                                 {current.status === "running" && (
-                                  <div className={`task-stage-progress${stageProgress <= 0 ? " is-waiting" : ""}`}>
+                                  <div className={cn("mt-1.5 flex w-[min(360px,100%)] items-center gap-2 [&_[data-slot=progress]]:min-w-20 [&_[data-slot=progress]]:flex-1 [&_[data-slot=progress-track]]:h-0.75 [&_[data-slot=progress-value]]:hidden [&>span]:w-7.5 [&>span]:text-right [&>span]:font-mono [&>span]:text-sm [&>span]:text-muted-foreground", stageProgress <= 0 && "[&_[data-slot=progress-indicator]]:!w-[30%] [&_[data-slot=progress-indicator]]:animate-[stage-progress-waiting_1.2s_ease-in-out_infinite]")}>
                                     <Progress value={stageProgress} aria-label={t`${stageLabel(stage)} progress`}><ProgressValue /></Progress>
                                     <span>{stageProgress}%</span>
                                   </div>
@@ -2955,7 +3125,7 @@ function App() {
                   </article>
                 );
               })}
-                  </div> : <Empty className="completed-empty">
+                  </div> : <Empty className="min-h-39 rounded-xl border border-dashed bg-card/70 text-muted-foreground [&_[data-slot=empty-description]]:text-muted-foreground [&_[data-slot=empty-title]]:text-muted-foreground">
                     <EmptyHeader>
                       <EmptyMedia variant="icon"><CheckCircle2 /></EmptyMedia>
                       <EmptyTitle><Trans>No completed tasks yet</Trans></EmptyTitle>
@@ -2965,11 +3135,13 @@ function App() {
                 </section>
               ))}
             </div>
-          </section>
+          </m.section>
         )}
       </main>
 
-      {toast && <div className="toast" role="status"><Info /><span>{localiseUserMessage(toast)}</span><Button variant="ghost" size="icon-xs" onClick={() => setToast(null)} aria-label={t`Close notification`}><X /></Button></div>}
+      <AnimatePresence initial={false}>
+        {toast && <AppNotice key={toast} message={localiseUserMessage(toast)} onClose={() => setToast(null)} avoidBottomAction={taskDetailOpen} />}
+      </AnimatePresence>
 
       <Dialog open={taskDialogOpen} onOpenChange={(open) => {
         setTaskDialogOpen(open);
@@ -2980,34 +3152,34 @@ function App() {
           queueMicrotask(() => pumpAutoPipelineRef.current());
         }
       }}>
-        <DialogContent className="task-dialog" showCloseButton={false} initialFocus={taskNameInputRef}>
-          <DialogHeader>
+        <DialogContent className="grid h-[min(880px,calc(100vh-32px))] max-h-[min(880px,calc(100vh-32px))] w-[min(960px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[960px] max-[760px]:h-[calc(100vh-24px)] max-[760px]:max-h-[calc(100vh-24px)] max-[760px]:w-[calc(100vw-24px)]" showCloseButton={false} initialFocus={taskNameInputRef}>
+          <DialogHeader className="relative border-b px-7 py-5 max-[760px]:px-5 max-[760px]:py-4">
             <DialogTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</DialogTitle>
             <DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription>
             <Popover>
-              <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-dialog-help" aria-label={t`Task creation help`} />}><CircleHelp /></PopoverTrigger>
-              <PopoverContent className="task-dialog-help-popover" side="bottom" sideOffset={8}>
+              <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="absolute top-4 right-5" aria-label={t`Task creation help`} />}><CircleHelp /></PopoverTrigger>
+              <PopoverContent className="max-w-80 [&>p]:mt-2 [&>p]:text-sm [&>p]:leading-relaxed [&>p]:text-muted-foreground" side="bottom" sideOffset={8}>
                 <PopoverTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</PopoverTitle>
                 <p>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</p>
               </PopoverContent>
             </Popover>
           </DialogHeader>
-          <div className="dialog-scroll">
-            <div className="dialog-columns">
-              <section className="dialog-source-column" aria-labelledby="task-information-title">
-                <div className="dialog-column-scroll scroll-fade-y scroll-fade-8">
-                <h2 id="task-information-title" className="task-dialog-section-title"><Trans>Task information</Trans></h2>
+          <div className="min-h-0 overflow-hidden max-[760px]:overflow-y-auto">
+            <div className="grid size-full min-h-0 grid-cols-2 max-[760px]:h-auto max-[760px]:min-h-full max-[760px]:grid-cols-1">
+              <section className="min-h-0 overflow-hidden max-[760px]:overflow-visible" aria-labelledby="task-information-title">
+                <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto overscroll-contain px-7 py-6 [scrollbar-gutter:stable] max-[920px]:px-5 max-[760px]:h-auto max-[760px]:overflow-visible max-[760px]:p-5 max-[760px]:[--scroll-fade-mask:none]">
+                <h2 id="task-information-title" className="mb-4 text-lg font-semibold text-foreground"><Trans>Task information</Trans></h2>
                 <FieldGroup>
                 <Field><FieldLabel htmlFor="task-name"><Trans>Task name</Trans></FieldLabel><FieldContent><Input ref={taskNameInputRef} id="task-name" value={nameDraft} placeholder={t`For example: mountain route / 2026-08`} onChange={(event) => setNameDraft(event.currentTarget.value)} /></FieldContent></Field>
-                <Field><FieldLabel><Trans context="source input" comment="Input media or an unfinished project folder for a reconstruction task.">Sources</Trans></FieldLabel><FieldContent><div className={`source-drop ${dragOver ? "is-dragging" : ""}`} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack /><span><Trans>Drop OSV media or an unfinished project folder</Trans></span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker("files")}>{t`Choose sources`}</Button></div>{selectedSources.length > 0 && <div className="source-list">{selectedSources.map((source) => <div className="source-item" key={source.id}><SourceThumbnail source={source} /><span><strong>{source.label}</strong><small>{source.detail}</small></span><Button type="button" variant="ghost" size="icon-xs" aria-label={t`Remove ${source.label}`} onClick={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }}><X /></Button></div>)}</div>}<p className="inspection-note">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple files or drop an unfinished project folder here.`}</p></FieldContent></Field>
-                <Field><FieldLabel htmlFor="output-path"><Trans context="output destination" comment="Folder where project metadata and reconstruction output are saved.">Output folder</Trans></FieldLabel><FieldContent><div className="input-with-button"><Input id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder={t`Defaults beside the first source: colmap-file-name`} onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}><Trans context="output folder picker action" comment="Button opens a folder picker to choose a different output location.">Choose another</Trans></Button>}</div><FieldDescription>{editingTaskId ? t`Saving a new task name also renames the output folder; unsupported filename characters become hyphens.` : t`After creation, project information is saved in the output folder so the task can resume after an interruption.`}</FieldDescription></FieldContent></Field>
+                <Field><FieldLabel><Trans context="source input" comment="Input media for a reconstruction task.">Sources</Trans></FieldLabel><FieldContent><div className={cn("flex min-h-18 items-center gap-3 rounded-lg border border-dashed px-4 py-3 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary", dragOver && "border-primary/50 bg-primary/10 text-primary")} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}><FileStack className="size-4.5 shrink-0" /><span className="flex-1 text-sm"><Trans>Drop OSV or dual-fisheye media</Trans></span><Button type="button" variant="outline" size="sm" onClick={() => void openSourcePicker()}>{t`Choose sources`}</Button></div>{selectedSources.length > 0 && <div className="mt-2 overflow-hidden rounded-lg border">{selectedSources.map((source) => <SourceListItem key={source.id} source={source} title={source.label} detail={source.detail} removeLabel={t`Remove ${source.label}`} onRemove={() => { setSourcePaths((current) => current.filter((path) => path !== source.path)); setSourceColorInspection(null); }} />)}</div>}<p className="mt-2 text-sm text-muted-foreground">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple OSV or dual-fisheye media files.`}</p></FieldContent></Field>
+                <Field><FieldLabel htmlFor="output-path"><Trans context="output destination" comment="Folder where project metadata and reconstruction output are saved.">Output folder</Trans></FieldLabel><FieldContent><div className="flex items-center gap-2"><Input className="flex-1" id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder={t`Defaults beside the first source: colmap-file-name`} onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void openOutputPicker()}><Trans context="output folder picker action" comment="Button opens a folder picker to choose a different output location.">Choose another</Trans></Button>}</div><FieldDescription>{editingTaskId ? t`Saving a new task name also renames the output folder; unsupported filename characters become hyphens.` : t`After creation, project information is saved in the output folder so the task can resume after an interruption.`}</FieldDescription></FieldContent></Field>
                 </FieldGroup>
                 </div>
               </section>
               {renderSettingsFields()}
             </div>
           </div>
-          <DialogFooter><DialogClose render={<Button variant="outline" />}><Trans>Cancel</Trans></DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button></DialogFooter>
+          <DialogFooter className="border-t px-5 py-4"><DialogClose render={<Button variant="outline" />}><Trans>Cancel</Trans></DialogClose><Button onClick={() => void (editingTaskId ? saveEditedTask() : createTask())} disabled={!sourcePaths.length || customLutPathIsInvalid(settingsDraft.extract.lutPath)}>{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -3022,83 +3194,102 @@ function App() {
         open={taskDetailOpen && Boolean(selectedTask)}
         modal={false}
         onOpenChange={setTaskDetailOpen}
-        onOpenChangeComplete={(open) => { if (!open) setSelectedTaskId(null); }}
       >
-        {selectedTask && (
-          <SheetContent className="task-detail-sheet" side="right" showOverlay={false}>
-            <SheetHeader>
-              <div className="task-detail-identity">{selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" /> : <span className="task-mark"><FileStack /></span>}<span><SheetTitle>{selectedTask.name}</SheetTitle><SheetDescription title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
+        <AnimatePresence initial={false} onExitComplete={() => { if (!taskDetailOpen) setSelectedTaskId(null); }}>
+          {taskDetailOpen && selectedTask && (
+            <SheetContent
+            key="task-detail"
+            className="gap-0 overflow-hidden rounded-tl-xl border bg-card p-0 shadow-lg data-[side=right]:top-13 data-[side=right]:right-0 data-[side=right]:bottom-0 data-[side=right]:!h-[calc(100%-3.25rem)] data-[side=right]:w-[min(460px,100vw)] data-[side=right]:sm:max-w-[460px] max-[760px]:data-[side=right]:w-screen max-[760px]:data-[side=right]:max-w-none max-[760px]:rounded-none"
+            side="right"
+            showOverlay={false}
+            keepMounted
+            disableCssTransition
+            render={
+              <m.div
+                initial={{ x: 32, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 32, opacity: 0 }}
+                transition={{
+                  x: TASK_DETAIL_TRANSITION,
+                  opacity: { duration: TASK_DETAIL_DURATION_SECONDS, ease: "linear" },
+                }}
+              />
+            }
+          >
+            <SheetHeader className="border-b px-6 pt-6 pb-4">
+              <div className="flex min-w-0 items-center gap-3.5 pr-7">{selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" size="compact" /> : <span className="grid size-10.5 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5"><FileStack /></span>}<span className="flex min-w-0 flex-1 flex-col gap-1"><SheetTitle className="text-base font-semibold text-foreground">{selectedTask.name}</SheetTitle><SheetDescription className="mt-0 truncate font-mono text-sm text-muted-foreground" title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
             </SheetHeader>
-            <Tabs className="task-detail-tabs-root" value={taskDetailTab} onValueChange={(value) => { if (value === "summary" || value === "records") setTaskDetailTab(value); }}>
-              <TabsList className="task-detail-tabs" variant="line">
-                <TabsTrigger value="summary"><Trans>Work summary</Trans></TabsTrigger>
-                <TabsTrigger value="records"><Trans>Processing records</Trans></TabsTrigger>
+            <Tabs className="min-h-0 flex-1 gap-0" value={taskDetailTab} onValueChange={(value) => { if (value === "summary" || value === "records") setTaskDetailTab(value); }}>
+              <TabsList className="mx-5 grid w-auto shrink-0 grid-cols-2 border-b" variant="line">
+                <TabsTrigger className="w-full min-w-0" value="summary"><Trans>Work summary</Trans></TabsTrigger>
+                <TabsTrigger className="w-full min-w-0" value="records"><Trans>Processing records</Trans></TabsTrigger>
               </TabsList>
-              <TabsContent className="task-detail-scroll scroll-fade-y scroll-fade-8" value="summary">
-              {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
-                <div className="task-detail-current-heading">
-                  <span><small><Trans>Current work</Trans></small><strong>{stageLabel(selectedStageDefinition)}</strong></span>
+              <TabsContent className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6 pb-6" value="summary">
+              {selectedStage && selectedStageDefinition && <section className="border-b py-5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 flex-col gap-1"><small className="text-sm text-muted-foreground"><Trans>Current work</Trans></small><strong className="text-base font-semibold text-foreground">{stageLabel(selectedStageDefinition)}</strong></span>
                   <StageStatusBadge status={selectedStage.status} />
                 </div>
-                <div className="task-detail-current-message">
-                  <strong>{phaseLabel(selectedStage.phase)}</strong>
-                  <p>{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
-                  {selectedStage.currentItem && <small>{t`Current item: ${selectedStage.currentItem}`}</small>}
+                <div className="mt-4 flex flex-col gap-1 text-sm">
+                  <strong className="font-semibold text-foreground">{phaseLabel(selectedStage.phase)}</strong>
+                  <p className="leading-relaxed break-anywhere text-muted-foreground">{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
+                  {selectedStage.currentItem && <small className="leading-relaxed break-anywhere text-muted-foreground">{t`Current item: ${selectedStage.currentItem}`}</small>}
                 </div>
-                {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="task-detail-current-progress">
-                  <div><span>{t`${stageLabel(selectedStageDefinition)} progress`}</span><strong>{Math.round(selectedStage.progress)}%</strong></div>
+                {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="mt-4 flex flex-col gap-2 [&_[data-slot=progress-track]]:h-1.25 [&_[data-slot=progress-value]]:hidden">
+                  <div className="flex items-center justify-between gap-3 text-sm"><span className="text-muted-foreground">{t`${stageLabel(selectedStageDefinition)} progress`}</span><strong className="font-mono text-primary">{Math.round(selectedStage.progress)}%</strong></div>
                   <Progress value={selectedStage.progress} aria-label={t`${stageLabel(selectedStageDefinition)} progress`}><ProgressValue /></Progress>
                 </div>}
-                <dl className="task-detail-metrics">
-                  <div><dt><Trans>Processed</Trans></dt><dd>{logCountLabel(selectedStage.completed, selectedStage.total) || t`Not reported yet`}</dd></div>
-                  <div><dt><Trans>Elapsed</Trans></dt><dd>{formatDuration(taskStageDuration(selectedStage, clockMs))}</dd></div>
-                  <div><dt><Trans>Estimated remaining</Trans></dt><dd>{selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"}</dd></div>
-                  <div><dt><Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans></dt><dd>{selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"}</dd></div>
-                  <div><dt><Cpu />CPU</dt><dd><Trans>Not reported yet</Trans></dd></div>
-                  <div><dt><Gauge />GPU</dt><dd><Trans>Not reported yet</Trans></dd></div>
-                  <div><dt><MemoryStick /><Trans>Memory</Trans></dt><dd><Trans>Not reported yet</Trans></dd></div>
-                  <div className="task-detail-metric-output"><dt><Trans context="output metric" comment="Output folder or artifact location.">Output</Trans></dt><dd title={selectedTask.outputPath}>{selectedTask.outputPath || t`Not specified`}</dd></div>
+                <dl className="mt-4.5 grid grid-cols-2 border-t">
+                  <DetailMetric label={<Trans>Processed</Trans>} value={logCountLabel(selectedStage.completed, selectedStage.total) || t`Not reported yet`} />
+                  <DetailMetric label={<Trans>Elapsed</Trans>} value={formatDuration(taskStageDuration(selectedStage, clockMs))} />
+                  <DetailMetric label={<Trans>Estimated remaining</Trans>} value={selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"} />
+                  <DetailMetric label={<Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans>} value={selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"} />
+                  <DetailMetric icon={Cpu} label="CPU" value={<Trans>Not reported yet</Trans>} />
+                  <DetailMetric icon={Gauge} label="GPU" value={<Trans>Not reported yet</Trans>} />
+                  <DetailMetric icon={MemoryStick} label={<Trans>Memory</Trans>} value={<Trans>Not reported yet</Trans>} />
+                  <DetailMetric fullWidth label={<Trans context="output metric" comment="Output folder or artifact location.">Output</Trans>} value={selectedTask.outputPath || t`Not specified`} />
                 </dl>
               </section>}
 
-              <section className="task-detail-section">
-                <div className="task-detail-section-title"><h2><Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans></h2><span><Plural value={selectedTask.inputPaths.length} one="# file" other="# files" /></span></div>
-                {selectedTaskSources.length > 0 ? <div className="task-detail-sources">{selectedTaskSources.map((source) => <div className="source-item task-detail-source-item" key={source.id}><SourceThumbnail source={source} previewSide="left" /><span><strong>{source.detail}</strong><small title={source.path}>{source.path}</small></span></div>)}</div> : <p className="task-detail-empty"><Trans>This task has no recorded source files.</Trans></p>}
+              <section className="border-b py-5">
+                <DetailSectionHeading title={<Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans>} meta={<Plural value={selectedTask.inputPaths.length} one="# file" other="# files" />} />
+                {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-y">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}
               </section>
 
               {selectedTask.warnings.length > 0 && (
-                <section className="task-detail-section">
-                  <div className="task-detail-section-title"><h2><Trans>Warnings</Trans></h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
-                  <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{localiseUserMessage(warning)}</span></div>)}</div>
+                <section className="border-b py-5">
+                  <DetailSectionHeading title={<Trans>Warnings</Trans>} meta={<Badge variant="destructive">{selectedTask.warnings.length}</Badge>} />
+                  <div className="flex flex-col border-t">{selectedTask.warnings.map((warning, index) => <div className="flex min-w-0 items-start gap-2 border-t py-2.5 first:border-t-0" key={`${index}-${warning}`}><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" /><span className="min-w-0 text-sm leading-relaxed text-amber-700 dark:text-amber-400">{localiseUserMessage(warning)}</span></div>)}</div>
                 </section>
               )}
 
               </TabsContent>
 
-              <TabsContent className="task-detail-scroll scroll-fade-y scroll-fade-8" value="records">
-              <section className="task-detail-section task-detail-records-section">
-                <div className="task-detail-section-title"><h2><Trans>Processing records</Trans></h2><span><Plural value={selectedTaskLogs.length} one="# entry" other="# entries" /></span></div>
-                {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
+              <TabsContent className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6 pb-6" value="records">
+              <section className="pt-5">
+                <DetailSectionHeading title={<Trans>Processing records</Trans>} meta={<Plural value={selectedTaskLogs.length} one="# entry" other="# entries" />} />
+                {selectedTaskLogs.length > 0 ? <ol className="relative flex list-none flex-col pt-0.5 before:absolute before:inset-y-2 before:left-1.75 before:w-px before:bg-border">{selectedTaskLogs.map((log) => {
                   const count = logCountLabel(log.completed, log.total);
-                  return <li className={`task-detail-log task-detail-log--${log.level}`} key={log.id}>
-                    <span className="task-detail-log-marker" aria-hidden="true" />
-                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{localiseUserMessage(log.message)}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
+                  return <li className="relative flex min-w-0 gap-2 border-t py-2.5 pl-5 first:border-t-0" key={log.id}>
+                    <span className={cn("absolute top-3.5 left-0.75 z-10 size-2.25 rounded-full border-2 border-card bg-primary ring-1 ring-primary", log.level === "warning" && "bg-amber-500 ring-amber-500", log.level === "error" && "bg-destructive ring-destructive")} aria-hidden="true" />
+                    <div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"><span className="shrink-0 font-mono">{formatTimestamp(log.timestampMs, true)}</span><strong className="truncate text-sm font-semibold text-muted-foreground">{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p className="mt-1 text-sm leading-relaxed break-anywhere text-foreground">{localiseUserMessage(log.message)}</p><div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground [&>span+span]:border-l [&>span+span]:pl-2">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
                   </li>;
-                })}</ol> : <p className="task-detail-empty"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
+                })}</ol> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
               </section>
               </TabsContent>
             </Tabs>
-            <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setTaskDetailOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
-          </SheetContent>
-        )}
+            <SheetFooter className="border-t px-6 pt-4 pb-5.5">{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setTaskDetailOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
+            </SheetContent>
+          )}
+        </AnimatePresence>
       </Sheet>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent className="settings-sheet gap-0" side="right">
-          <SheetHeader><SheetTitle><Trans>Settings</Trans></SheetTitle><SheetDescription><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></SheetDescription></SheetHeader>
-          <div className="settings-sheet-scroll scroll-fade-y scroll-fade-8">
-            <section className="settings-section">
-              <FieldSet className="language-fieldset">
+        <SheetContent className="w-[min(420px,100vw)] gap-0 border-l bg-card p-0 data-[side=right]:sm:max-w-[420px]" side="right">
+          <SheetHeader className="border-b px-6 pt-6 pb-4"><SheetTitle className="text-base font-semibold"><Trans>Settings</Trans></SheetTitle><SheetDescription className="mt-2 text-sm leading-relaxed"><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></SheetDescription></SheetHeader>
+          <div className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6">
+            <section className="border-b py-4 last:border-b-0">
+              <FieldSet>
                 <FieldLegend variant="label"><Trans context="language setting" comment="Select the language used by the interface.">Language</Trans></FieldLegend>
                 <Select
                   items={LANGUAGE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
@@ -3114,12 +3305,12 @@ function App() {
                 </Select>
               </FieldSet>
             </section>
-            <section className="settings-section">
-              <FieldSet className="appearance-fieldset">
+            <section className="border-b py-4 last:border-b-0">
+              <FieldSet className="gap-2.5">
                 <FieldLegend variant="label"><Trans context="theme setting" comment="Select the visual theme of the interface.">Interface theme</Trans></FieldLegend>
                 <FieldDescription><Trans>Choose light, dark, or follow the system appearance automatically.</Trans></FieldDescription>
                 <ToggleGroup
-                  className="theme-toggle-group"
+                  className="grid w-full grid-cols-3 [&_[data-slot=toggle-group-item]]:w-full [&_[data-slot=toggle-group-item]]:min-w-0"
                   variant="outline"
                   size="sm"
                   spacing={0}
@@ -3136,21 +3327,21 @@ function App() {
                 </ToggleGroup>
               </FieldSet>
             </section>
-            <section className="settings-section">
-              <div className="settings-section-heading">
-                <div className="settings-section-title"><h2><Trans>Runtime environment</Trans></h2><span>{t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`}</span></div>
-                <div className="settings-section-actions" role="group" aria-label={t`Diagnostic actions`}>
+            <section className="border-b py-4 last:border-b-0">
+              <div className="mb-3 flex flex-col items-stretch gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-1"><h2 className="text-base font-semibold text-foreground"><Trans>Runtime environment</Trans></h2><span className="text-sm text-muted-foreground">{t`Last checked: ${formatDoctorCheckedAt(doctor.checkedAt)}`}</span></div>
+                <div className="grid w-full grid-cols-2 gap-2 [&_[data-slot=button]]:w-full [&_[data-slot=button]]:min-w-0" role="group" aria-label={t`Diagnostic actions`}>
                   <Button type="button" variant="outline" size="sm" disabled={doctorLoading || doctor.checkedAt === "Not checked yet"} onClick={() => void copyDoctorReport()}><Copy data-icon="inline-start" /><Trans>Copy diagnostics</Trans></Button>
-                  <Button type="button" size="sm" className={doctorLoading ? "is-spinning" : ""} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? <Trans>Checking</Trans> : <Trans>Check again</Trans>}</Button>
+                  <Button type="button" size="sm" className={doctorLoading ? "[&_svg]:animate-spin [&_svg]:[animation-duration:750ms]" : undefined} disabled={doctorLoading} onClick={() => void runDoctor(colmapPath)}><RefreshCw data-icon="inline-start" />{doctorLoading ? <Trans>Checking</Trans> : <Trans>Check again</Trans>}</Button>
                 </div>
               </div>
-              <div className="environment-alert-stack">
-                <Alert data-status={doctorEssentialReady ? "ready" : "warning"} role={doctorEssentialReady ? "status" : "alert"}>
+              <div className="mb-4 flex flex-col gap-2.5">
+                <Alert className={doctorEssentialReady ? "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 [&_[data-slot=alert-description]]:text-muted-foreground dark:text-emerald-400" : undefined} variant={doctorEssentialReady ? "default" : "destructive"} role={doctorEssentialReady ? "status" : "alert"}>
                   {doctorEssentialReady ? <CheckCircle2 /> : <AlertTriangle />}
                   <AlertTitle>{doctorEssentialReady ? <Trans>All required capabilities are available</Trans> : <Trans>Required capabilities need attention</Trans>}</AlertTitle>
                   <AlertDescription>{doctorEssentialReady ? <Trans>Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower.</Trans> : <Trans>Missing required tools will block some stages. Address the items marked “Needs attention” below first.</Trans>}</AlertDescription>
                 </Alert>
-                {performanceStatus !== "ready" && <Alert data-status={performanceStatus === "warning" ? "performance-warning" : "unknown"} role={performanceStatus === "warning" ? "alert" : "status"}>
+                {performanceStatus !== "ready" && <Alert className={cn("[&_[data-slot=alert-description]]:leading-relaxed [&_[data-slot=alert-description]]:text-muted-foreground", performanceStatus === "warning" ? "border-amber-600/40 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground")} role={performanceStatus === "warning" ? "alert" : "status"}>
                   <Gauge />
                   <AlertTitle>{performanceStatus === "warning" ? <Trans>Performance will be affected</Trans> : <Trans>Acceleration capabilities not confirmed</Trans>}</AlertTitle>
                   <AlertDescription>
@@ -3163,13 +3354,13 @@ function App() {
                   </AlertDescription>
                 </Alert>}
               </div>
-              {isWindowsPlatform && <Field><FieldLabel htmlFor="colmap-path"><Trans comment="Path to the COLMAP executable used by the Windows runtime.">COLMAP executable</Trans></FieldLabel><FieldContent><div className="input-with-button"><Input id="colmap-path" value={colmapPath} placeholder={t`Leave blank to detect from PATH`} onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>{t`Change path`}</Button></div><FieldDescription><Trans>For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe.</Trans></FieldDescription></FieldContent></Field>}
-              <div className="doctor-summary"><MonitorCog /><span><strong>{localiseUserMessage(doctor.platform)}</strong><small>{localiseUserMessage(doctor.summary)}</small></span></div>
-              <div className="doctor-list">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <article className="doctor-row" key={item.label} data-status={item.status}><Icon /><div className="doctor-row-content"><div className="doctor-row-heading"><span><small>{diagnosticItemLabel(item.label)}</small><strong>{localiseUserMessage(item.value)}</strong></span><Badge variant={item.status === "warning" ? "destructive" : "outline"}>{diagnosticStatusLabel(item.status)}</Badge></div><p>{localiseUserMessage(item.detail)}</p>{item.details && item.details.length > 0 && <Accordion className="doctor-details"><AccordionItem value={`${item.label}-details`}><AccordionTrigger><Trans>View details</Trans></AccordionTrigger><AccordionContent><ul>{item.details.map((detail) => <li key={detail}>{localiseUserMessage(detail)}</li>)}</ul></AccordionContent></AccordionItem></Accordion>}</div></article>; })}</div>
+              {isWindowsPlatform && <Field><FieldLabel htmlFor="colmap-path"><Trans comment="Path to the COLMAP executable used by the Windows runtime.">COLMAP executable</Trans></FieldLabel><FieldContent><div className="flex items-center gap-2 [&_input]:flex-1"><Input id="colmap-path" value={colmapPath} placeholder={t`Leave blank to detect from PATH`} onChange={(event) => setColmapPath(event.currentTarget.value)} /><Button type="button" variant="outline" size="sm" onClick={() => void openColmapPicker()}>{t`Change path`}</Button></div><FieldDescription><Trans>For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe.</Trans></FieldDescription></FieldContent></Field>}
+              <div className="flex items-start gap-2.5 py-2.5"><MonitorCog className="mt-0.5 size-4 shrink-0 text-primary" strokeWidth={1.75} /><span className="flex min-w-0 flex-1 flex-col gap-1"><strong className="text-base font-medium text-foreground">{localiseUserMessage(doctor.platform)}</strong><small className="text-sm leading-snug break-anywhere text-muted-foreground">{localiseUserMessage(doctor.summary)}</small></span></div>
+              <div className="border-t">{doctor.items.map((item) => { const Icon = iconForDiagnostic(item.label); return <article className="flex min-w-0 items-start gap-2.5 border-t py-2.5 first:border-t-0" key={item.label}><Icon className={cn("mt-0.75 size-4 shrink-0 text-muted-foreground", item.status === "ready" && "text-emerald-600", item.status === "warning" && "text-destructive")} strokeWidth={1.75} /><div className="flex min-w-0 flex-1 flex-col gap-1"><div className="flex min-w-0 items-start gap-2"><span className="flex min-w-0 flex-1 flex-col gap-1"><small className="text-sm leading-snug break-anywhere text-muted-foreground">{diagnosticItemLabel(item.label)}</small><strong className="text-base font-medium text-foreground">{localiseUserMessage(item.value)}</strong></span><Badge className="shrink-0 text-sm" variant={item.status === "warning" ? "destructive" : "outline"}>{diagnosticStatusLabel(item.status)}</Badge></div><p className="mt-0.5 text-sm leading-relaxed break-anywhere text-muted-foreground">{localiseUserMessage(item.detail)}</p>{item.details && item.details.length > 0 && <Accordion className="mt-1"><AccordionItem value={`${item.label}-details`}><AccordionTrigger className="w-fit py-1 text-sm font-medium text-primary"><Trans>View details</Trans></AccordionTrigger><AccordionContent><ul className="mt-2 mb-0.5 flex list-none flex-col gap-1.5 text-sm leading-relaxed text-muted-foreground">{item.details.map((detail) => <li className="border-l-2 pl-3 break-anywhere" key={detail}>{localiseUserMessage(detail)}</li>)}</ul></AccordionContent></AccordionItem></Accordion>}</div></article>; })}</div>
               {generalDoctorWarnings.length > 0 && <Alert variant="destructive"><AlertTriangle /><AlertTitle><Trans>Needs attention</Trans></AlertTitle><AlertDescription>{generalDoctorWarnings.map((warning) => <p key={warning}>{localiseUserMessage(warning)}</p>)}</AlertDescription></Alert>}
             </section>
           </div>
-          <SheetFooter><Button variant="outline" onClick={() => setSettingsOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
+          <SheetFooter className="border-t px-6 pt-4 pb-5.5"><Button variant="outline" onClick={() => setSettingsOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
         </SheetContent>
       </Sheet>
     </div>
