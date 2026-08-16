@@ -23,6 +23,7 @@ import {
   Square,
   Gauge,
   MemoryStick,
+  Minus,
   CheckCircle2,
   Copy,
   Trash2,
@@ -40,6 +41,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { Badge } from "@/components/ui/badge";
@@ -431,6 +433,8 @@ function diagnosticItemLabel(label: string) {
 }
 
 const IS_TAURI_RUNTIME = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+const IS_WINDOWS_RUNTIME = IS_TAURI_RUNTIME && typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+const IS_MACOS_RUNTIME = IS_TAURI_RUNTIME && typeof navigator !== "undefined" && /Macintosh|Mac OS X/i.test(navigator.userAgent);
 
 const PREPARING_WORK_SOURCE = "Preparing work";
 const BROWSER_PREVIEW_TASK_SOURCE = "Browser preview task";
@@ -1561,6 +1565,29 @@ function SourceThumbnail({ source, previewSide = "right" }: { source: OsvSource;
   );
 }
 
+function WindowsWindowControls() {
+  if (!IS_WINDOWS_RUNTIME) return null;
+
+  const appWindow = getCurrentWindow();
+  const runWindowCommand = (command: () => Promise<void>) => {
+    void command().catch((error) => console.error("[SphereAlign] Window control", error));
+  };
+
+  return (
+    <div className="window-controls" aria-label={t`Window controls`}>
+      <Button className="window-control-button" variant="ghost" aria-label={t`Minimize window`} title={t`Minimize window`} onClick={() => runWindowCommand(() => appWindow.minimize())}>
+        <Minus />
+      </Button>
+      <Button className="window-control-button" variant="ghost" aria-label={t`Maximize or restore window`} title={t`Maximize or restore window`} onClick={() => runWindowCommand(() => appWindow.toggleMaximize())}>
+        <Square />
+      </Button>
+      <Button className="window-control-button window-control-button--close" variant="ghost" aria-label={t`Close window`} title={t`Close window`} onClick={() => runWindowCommand(() => appWindow.close())}>
+        <X />
+      </Button>
+    </div>
+  );
+}
+
 function iconForDiagnostic(label: string) {
   if (label.includes("GPU") || label.includes("CUDA") || label.includes("Hardware acceleration")) return Gpu;
   if (label.includes("COLMAP")) return ScanSearch;
@@ -1888,6 +1915,11 @@ function App() {
   const activeTasks = useMemo(() => orderedTasks.filter((task) => !taskIsCompleted(task)), [orderedTasks]);
   const completedTasks = useMemo(() => orderedTasks.filter(taskIsCompleted), [orderedTasks]);
   const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
+  const taskbarProgress = useMemo(() => {
+    const runningTasks = tasks.filter((task) => STAGES.some(({ key }) => task.stages[key].status === "running"));
+    if (runningTasks.length === 0) return null;
+    return Math.round(runningTasks.reduce((total, task) => total + taskProgress(task), 0) / runningTasks.length);
+  }, [tasks]);
 
   useEffect(() => {
     taskSnapshot.current = tasks;
@@ -1908,6 +1940,18 @@ function App() {
     const interval = window.setInterval(() => setClockMs(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [hasRunningStage]);
+
+  useEffect(() => {
+    if (!IS_WINDOWS_RUNTIME) return;
+    const state = taskbarProgress === null
+      ? { status: ProgressBarStatus.None }
+      : taskbarProgress === 0
+        ? { status: ProgressBarStatus.Indeterminate }
+        : { status: ProgressBarStatus.Normal, progress: taskbarProgress };
+    void getCurrentWindow().setProgressBar(state).catch((error) => {
+      console.error("[SphereAlign] Windows taskbar progress", error);
+    });
+  }, [taskbarProgress]);
 
   const appendTaskLog = useCallback((taskId: string, payload: LogEventPayload, stage?: StageKey, phase?: string) => {
     setTasks((current) => current.map((task) => task.projectId === taskId
@@ -2814,12 +2858,13 @@ function App() {
     <div className="studio-app">
       <main className="studio-main" data-detail-open={selectedTask ? "true" : undefined}>
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
-        <header className="workspace-toolbar">
+        <header className={`workspace-toolbar${IS_MACOS_RUNTIME ? " workspace-toolbar--macos" : ""}${IS_WINDOWS_RUNTIME ? " workspace-toolbar--windows" : ""}`}>
           <h1 className="sr-only"><Trans>Reconstruction tasks</Trans></h1>
-          <div className="header-actions">
+          <div className="header-actions" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
             <Button size="sm" onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
             <Button size="sm" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
             <Button className="settings-toolbar-button" size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+            <WindowsWindowControls />
           </div>
         </header>
         {tasks.length === 0 ? (

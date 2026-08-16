@@ -104,6 +104,37 @@ button:active {
   background: color-mix(in srgb, var(--studio-surface) 95%, transparent);
 }
 
+.workspace-toolbar--macos {
+  padding-left: 86px;
+}
+
+.workspace-toolbar--windows {
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  user-select: none;
+}
+
+.workspace-toolbar--windows .header-actions {
+  align-self: stretch;
+}
+
+.window-controls {
+  display: flex;
+  align-self: stretch;
+}
+
+.window-control-button {
+  width: 44px;
+  height: 100%;
+  border-radius: 0;
+}
+
+.window-control-button--close:hover {
+  color: white;
+  background: var(--studio-red);
+}
+
 .header-actions {
   display: flex;
   width: 100%;
