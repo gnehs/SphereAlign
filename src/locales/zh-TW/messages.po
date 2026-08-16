@@ -15,107 +15,107 @@ msgstr ""
 
 #. placeholder {0}: safeDiagnosticDetail(detail)
 #: src/App.tsx:1619
-msgid "  - {0}"
-msgstr "  - {0}"
+#~ msgid "  - {0}"
+#~ msgstr "  - {0}"
 
 #: src/App.tsx:1611
-msgid "  - {adapter}"
-msgstr "  - {adapter}"
+#~ msgid "  - {adapter}"
+#~ msgstr "  - {adapter}"
 
 #: src/App.tsx:1609
-msgid "  - {processor}"
-msgstr "  - {processor}"
+#~ msgid "  - {processor}"
+#~ msgstr "  - {processor}"
 
 #: src/App.tsx:1609
 #: src/App.tsx:1611
-msgid "  - Not detected"
-msgstr "  - 未偵測到"
+#~ msgid "  - Not detected"
+#~ msgstr "  - 未偵測到"
 
 #. placeholder {0}: safeDiagnosticDetail(item.detail)
 #: src/App.tsx:1618
-msgid "  Details: {0}"
-msgstr "  詳細資料：{0}"
+#~ msgid "  Details: {0}"
+#~ msgstr "  詳細資料：{0}"
 
 #. placeholder {0}: localiseUserMessage(item.value)
 #: src/App.tsx:1617
-msgid "  Result: {0}"
-msgstr "  結果：{0}"
+#~ msgid "  Result: {0}"
+#~ msgstr "  結果：{0}"
 
 #. placeholder {0}: localiseUserMessage(doctor.systemInfo.architecture)
 #: src/App.tsx:1607
-msgid "- Architecture: {0}"
-msgstr "- 架構：{0}"
+#~ msgid "- Architecture: {0}"
+#~ msgstr "- 架構：{0}"
 
 #: src/App.tsx:1610
-msgid "- Graphics adapters:"
-msgstr "- 顯示卡介面卡："
+#~ msgid "- Graphics adapters:"
+#~ msgstr "- 顯示卡介面卡："
 
 #: src/App.tsx:1623
-msgid "- None"
-msgstr "- 無"
+#~ msgid "- None"
+#~ msgstr "- 無"
 
 #. placeholder {0}: localiseUserMessage(doctor.systemInfo.osName)
 #. placeholder {1}: localiseUserMessage(doctor.systemInfo.osVersion)
 #: src/App.tsx:1606
-msgid "- Operating system: {0} {1}"
-msgstr "- 作業系統：{0} {1}"
+#~ msgid "- Operating system: {0} {1}"
+#~ msgstr "- 作業系統：{0} {1}"
 
 #: src/App.tsx:1608
-msgid "- Processors:"
-msgstr "- 處理器："
+#~ msgid "- Processors:"
+#~ msgstr "- 處理器："
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/App.tsx:2943
+#: src/App.tsx:2999
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {# 筆} other {# 筆}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/App.tsx:2954
+#: src/App.tsx:2987
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# 個檔案} other {# 個檔案}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/App.tsx:2806
+#: src/App.tsx:2841
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# 個來源} other {# 個來源}}"
 
 #. placeholder {0}: device.name
-#: src/App.tsx:401
+#: src/App.tsx:397
 msgid "{0} (GPU {ordinal})"
 msgstr "{0}（GPU {ordinal}）"
 
 #. placeholder {0}: completed.toLocaleString(getLocale())
 #. placeholder {1}: total.toLocaleString(getLocale())
-#: src/App.tsx:1034
+#: src/App.tsx:1028
 msgid "{0} / {1}"
 msgstr "{0} / {1}"
 
 #. placeholder {0}: source.detail
-#: src/App.tsx:1538
+#: src/App.tsx:1536
 msgid "{0} dual-fisheye snapshot"
 msgstr "{0} 雙魚眼快照"
 
 #. placeholder {0}: rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)
-#: src/App.tsx:1686
+#: src/App.tsx:1712
 msgid "{0} items/sec"
 msgstr "{0} 個項目/秒"
 
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1085
+#: src/App.tsx:1083
 msgid "{0} of {1} stages complete"
 msgstr "{0} / {1} 個階段已完成"
 
 #. placeholder {0}: task.name
-#: src/App.tsx:2808
+#: src/App.tsx:2843
 msgid "{0} overall time progress"
 msgstr "{0} 的整體時間進度"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/App.tsx:2834
-#: src/App.tsx:2910
-#: src/App.tsx:2911
+#: src/App.tsx:2869
+#: src/App.tsx:2954
+#: src/App.tsx:2955
 msgid "{0} progress"
 msgstr "{0} 進度"
 
@@ -145,164 +145,164 @@ msgstr "{0} 進度"
 #~ msgstr "{0}：{1}"
 
 #. placeholder {0}: source.detail
-#: src/App.tsx:1517
+#: src/App.tsx:1515
 msgid "{0}: first-frame preview from the first lens"
 msgstr "{0}：第一個鏡頭的第一影格預覽"
 
 #. Count of items already processed by a pipeline stage.
-#: src/App.tsx:1039
+#: src/App.tsx:1033
 msgid "{completed, plural, one {Processed #} other {Processed #}}"
 msgstr "{completed, plural, one {已處理 #} other {已處理 #}}"
 
-#: src/App.tsx:779
+#: src/App.tsx:775
 msgid "{count} candidate pairs processed"
 msgstr "已處理 {count} 個候選影格對"
 
-#: src/App.tsx:781
-#: src/App.tsx:782
+#: src/App.tsx:777
+#: src/App.tsx:778
 msgid "{count} masks failed; see the pipeline log"
 msgstr "{count} 個遮罩失敗；請查看管線記錄"
 
-#: src/App.tsx:780
+#: src/App.tsx:776
 msgid "{count} masks written"
 msgstr "已寫入 {count} 個遮罩"
 
-#: src/App.tsx:785
+#: src/App.tsx:781
 msgid "{count} sources"
 msgstr "{count} 個來源"
 
-#: src/App.tsx:784
+#: src/App.tsx:780
 msgid "{count} sources · browser preview"
 msgstr "{count} 個來源 · 瀏覽器預覽"
 
-#: src/App.tsx:778
+#: src/App.tsx:774
 msgid "{count} sources completed"
 msgstr "{count} 個來源已完成"
 
 #. placeholder {0}: String(minutes).padStart(2, "0")
-#: src/App.tsx:947
+#: src/App.tsx:941
 msgid "{hours} hr {0} min"
 msgstr "{hours} 小時 {0} 分鐘"
 
 #. placeholder {0}: localiseUserMessage(status)
+#: src/App.tsx:788
 #: src/App.tsx:792
-#: src/App.tsx:796
 msgid "{label}: {0}"
 msgstr "{label}：{0}"
 
 #. placeholder {0}: String(seconds).padStart(2, "0")
-#: src/App.tsx:948
+#: src/App.tsx:942
 msgid "{minutes} min {0} sec"
 msgstr "{minutes} 分鐘 {0} 秒"
 
-#: src/App.tsx:795
+#: src/App.tsx:791
 msgid "{platform} · FFmpeg hardware decoding capability not reported"
 msgstr "{platform} · 未回報 FFmpeg 硬體解碼能力"
 
-#: src/App.tsx:949
+#: src/App.tsx:943
 msgid "{seconds} sec"
 msgstr "{seconds} 秒"
 
 #. A source must expose two recognizable video streams for the dual-fisheye workflow.
-#: src/App.tsx:735
+#: src/App.tsx:731
 msgctxt "source validation error"
 msgid "{source} does not contain two recognizable dual-fisheye video streams"
 msgstr "{source} 不包含兩個可辨識的雙魚眼影片串流"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/App.tsx:794
+#: src/App.tsx:790
 msgid "{tool}: {0}"
 msgstr "{tool}：{0}"
 
 #. Count of all items reported by a pipeline stage.
-#: src/App.tsx:1035
+#: src/App.tsx:1029
 msgid "{total, plural, one {Total #} other {Total #}}"
 msgstr "{total, plural, one {總計 #} other {總計 #}}"
 
-#: src/App.tsx:783
+#: src/App.tsx:779
 msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} 個來源 · {valid} 個通過檢查"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:2121
+#: src/App.tsx:2148
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT（Cube）"
 
 #. Shown when an untranslated backend progress or status message contains CJK and has no localized mapping; hide the original to avoid misleading users.
-#: src/App.tsx:454
+#: src/App.tsx:450
 msgctxt "backend status fallback"
 msgid "A backend status message is unavailable in this language."
 msgstr "此語言無法提供後端狀態訊息。"
 
-#: src/App.tsx:687
+#: src/App.tsx:683
 msgid "A processing stage is already running for this task; please wait"
 msgstr "此任務已有處理階段正在執行；請稍候"
 
-#: src/App.tsx:692
+#: src/App.tsx:688
 msgid "A processing stage is already running; please wait"
 msgstr "已有處理階段正在執行；請稍候"
 
 #. placeholder {0}: formatDuration(value)
-#: src/App.tsx:1676
+#: src/App.tsx:1702
 msgid "About {0}"
 msgstr "約 {0}"
 
-#: src/App.tsx:1678
+#: src/App.tsx:1704
 msgid "About {minutes} min"
 msgstr "約 {minutes} 分鐘"
 
-#: src/App.tsx:3028
+#: src/App.tsx:3074
 msgid "Acceleration capabilities not confirmed"
 msgstr "尚未確認加速能力"
 
 #. Only add media captured in one scene; separate media from different scenes into separate tasks.
-#: src/App.tsx:2869
+#: src/App.tsx:2910
 msgid "Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 msgstr "僅新增在同一場景擷取的 OSV 或雙魚眼媒體。同一場景可包含多個來源。不同場景請建立個別的重建任務。"
 
 #. Add a queued task to the automatic execution queue.
-#: src/App.tsx:2801
+#: src/App.tsx:2836
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "加入佇列"
 
-#: src/App.tsx:2972
+#: src/App.tsx:3016
 msgid "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
 msgstr "調整介面語言與主題，並檢查 COLMAP、CUDA、FFmpeg 及硬體加速能力。"
 
-#: src/App.tsx:2869
+#: src/App.tsx:2910
 msgid "Adjust the task name, sources, and processing settings before it starts."
 msgstr "在開始前調整任務名稱、來源與處理設定。"
 
-#: src/App.tsx:2875
+#: src/App.tsx:2916
 msgid "After creation, project information is saved in the output folder so the task can resume after an interruption."
 msgstr "建立後，專案資訊會儲存在輸出資料夾中，讓任務在中斷後可以繼續。"
 
 #. Fallback means retrying the same operation with software decoding after hardware decoding fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:715
+#: src/App.tsx:711
 msgctxt "backend error"
 msgid "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
 msgstr "FFmpeg 硬體解碼失敗後，無法準備軟體解碼備援：{0}"
 
-#: src/App.tsx:620
+#: src/App.tsx:616
 msgid "Alignment"
 msgstr "對齊"
 
 #. The stage that aligns multiple OSV sources and camera rigs.
-#: src/App.tsx:270
+#: src/App.tsx:266
 msgctxt "pipeline stage label"
 msgid "Alignment"
 msgstr "對齊"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/App.tsx:2708
+#: src/App.tsx:2735
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "對齊"
 
-#: src/App.tsx:757
+#: src/App.tsx:753
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "對齊已完成：已註冊 {registered} / {total} 個相機組影格（{percentage}%）"
 
@@ -312,70 +312,70 @@ msgstr "對齊已完成：已註冊 {registered} / {total} 個相機組影格（
 #~ msgstr "對齊工作流程：{0}"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:594
+#: src/App.tsx:590
 msgid "Alignment: Cancelled"
 msgstr "對齊：已取消"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:593
+#: src/App.tsx:589
 msgid "Alignment: Completed"
 msgstr "對齊：已完成"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:595
+#: src/App.tsx:591
 msgid "Alignment: Failed"
 msgstr "對齊：失敗"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:591
+#: src/App.tsx:587
 msgid "Alignment: Pending"
 msgstr "對齊：待處理"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/App.tsx:592
+#: src/App.tsx:588
 msgid "Alignment: Running"
 msgstr "對齊：執行中"
 
-#: src/App.tsx:3023
+#: src/App.tsx:3069
 msgid "All required capabilities are available"
 msgstr "所有必要能力皆可用"
 
 #. Apply the official or custom lookup table to restore DJI D-Log M color.
-#: src/App.tsx:2618
+#: src/App.tsx:2645
 msgid "Apply the D-Log M restoration LUT"
 msgstr "套用 D-Log M 還原 LUT"
 
 #. Alignment validation error for dual-fisheye frame pairs.
-#: src/App.tsx:559
+#: src/App.tsx:555
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "至少需要兩組相符的 lens0/lens1 影格對才能對齊"
 
-#: src/App.tsx:691
+#: src/App.tsx:687
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
 msgstr "自動管線已完成影格擷取、遮罩與對齊"
 
-#: src/App.tsx:650
-#: src/App.tsx:1557
+#: src/App.tsx:646
+#: src/App.tsx:1555
 msgid "Available"
 msgstr "可用"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/App.tsx:2558
+#: src/App.tsx:2585
 msgid "Base frame rate (FPS)"
 msgstr "基準影格率 (FPS)"
 
-#: src/App.tsx:3024
+#: src/App.tsx:3070
 msgid "Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower."
 msgstr "基本重建可以執行。CUDA 與硬體加速為選用功能；即使沒有它們仍可處理，但影格擷取、特徵匹配與重建會較慢。"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:297
+#: src/App.tsx:293
 msgctxt "mask class"
 msgid "Bicycle"
 msgstr "自行車"
 
 #. Short label for the initial reconstruction bootstrap.
-#: src/App.tsx:925
+#: src/App.tsx:919
 msgctxt "pipeline phase"
 msgid "Bootstrap reconstruction"
 msgstr "啟動重建"
@@ -383,7 +383,7 @@ msgstr "啟動重建"
 #. The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/App.tsx:729
+#: src/App.tsx:725
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}"
@@ -392,7 +392,7 @@ msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(cleanup[1])
 #. placeholder {2}: localiseTechnicalErrorDetail(cleanup[2])
-#: src/App.tsx:723
+#: src/App.tsx:719
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
 msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}；未完成輸出的清理也失敗：{2}"
@@ -400,37 +400,37 @@ msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0
 #. The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/App.tsx:710
+#: src/App.tsx:706
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 記憶體中候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}"
 
 #. Badge indicating that the app is running in a browser-only preview.
-#: src/App.tsx:2756
+#: src/App.tsx:2784
 msgid "Browser preview"
 msgstr "瀏覽器預覽"
 
-#: src/App.tsx:689
+#: src/App.tsx:685
 msgid "Browser preview does not cancel backend work"
 msgstr "瀏覽器預覽不會取消後端工作"
 
-#: src/App.tsx:673
+#: src/App.tsx:669
 msgid "Browser preview does not read local LUT files; paste a .cube path directly"
 msgstr "瀏覽器預覽不會讀取本機 LUT 檔案；請直接貼上 .cube 路徑"
 
-#: src/App.tsx:666
+#: src/App.tsx:662
 msgid "Browser preview does not read local project information"
 msgstr "瀏覽器預覽不會讀取本機專案資訊"
 
-#: src/App.tsx:686
+#: src/App.tsx:682
 msgid "Browser preview does not run backend work"
 msgstr "瀏覽器預覽不會執行後端工作"
 
-#: src/App.tsx:669
+#: src/App.tsx:665
 msgid "Browser preview is not connected to the local runtime"
 msgstr "瀏覽器預覽未連線至本機執行環境"
 
-#: src/App.tsx:665
+#: src/App.tsx:661
 msgid "Browser preview keeps the custom output path"
 msgstr "瀏覽器預覽會保留自訂輸出路徑"
 
@@ -439,7 +439,7 @@ msgstr "瀏覽器預覽會保留自訂輸出路徑"
 #~ msgstr "瀏覽器預覽任務"
 
 #. Fallback task name used when the app runs without the local Tauri runtime.
-#: src/App.tsx:659
+#: src/App.tsx:655
 msgctxt "browser preview task"
 msgid "Browser preview task"
 msgstr "瀏覽器預覽任務"
@@ -449,141 +449,141 @@ msgstr "瀏覽器預覽任務"
 #~ msgstr "瀏覽器預覽：未連線至本機執行環境"
 
 #. Warning stored on a browser-only preview task because it is not connected to the local Tauri runtime.
-#: src/App.tsx:660
+#: src/App.tsx:656
 msgctxt "browser preview task warning"
 msgid "Browser preview: not connected to the local runtime"
 msgstr "瀏覽器預覽：未連線至本機執行環境"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:300
+#: src/App.tsx:296
 msgctxt "mask class"
 msgid "Bus"
 msgstr "公車"
 
 #. Short label for estimating the camera rig.
-#: src/App.tsx:927
+#: src/App.tsx:921
 msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "相機組估算"
 
 #. Short project recovery status indicating that processing can continue.
-#: src/App.tsx:550
+#: src/App.tsx:546
 msgid "Can be resumed"
 msgstr "可繼續"
 
-#: src/App.tsx:1628
-#: src/App.tsx:2880
-#: src/App.tsx:2887
+#: src/App.tsx:1654
+#: src/App.tsx:2921
+#: src/App.tsx:2928
 msgid "Cancel"
 msgstr "取消"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/App.tsx:2965
+#: src/App.tsx:3009
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "取消整個任務"
 
-#: src/App.tsx:1637
+#: src/App.tsx:1663
 msgid "Cancelled"
 msgstr "已取消"
 
 #. Short cancelled status label.
-#: src/App.tsx:929
+#: src/App.tsx:923
 msgctxt "pipeline phase status"
 msgid "Cancelled"
 msgstr "已取消"
 
 #. Backend progress message: output files were not committed.
 #. Backend progress message: output files were not committed.
-#: src/App.tsx:483
-#: src/App.tsx:515
+#: src/App.tsx:479
+#: src/App.tsx:511
 msgid "Cancelled before committing output"
 msgstr "在寫入輸出前已取消"
 
 #. Backend progress message: selection was cancelled before the selected result was committed.
-#: src/App.tsx:512
+#: src/App.tsx:508
 msgid "Cancelled before committing the selected result"
 msgstr "在寫入選取結果前已取消"
 
-#: src/App.tsx:703
+#: src/App.tsx:699
 msgid "Cancelled before interval {interval}"
 msgstr "在處理區段 {interval} 前已取消"
 
-#: src/App.tsx:750
+#: src/App.tsx:746
 msgid "Cancelled before processing interval {interval}"
 msgstr "在處理區段 {interval} 前已取消"
 
 #. Backend progress message; interval is a processing window, not a time duration.
-#: src/App.tsx:480
+#: src/App.tsx:476
 msgid "Cancelled before processing the next interval"
 msgstr "在處理下一個處理區段前已取消"
 
 #. Backend progress message: scoring candidate frames for selection.
 #. Backend progress message: scoring candidate frames for selection.
-#: src/App.tsx:481
-#: src/App.tsx:511
+#: src/App.tsx:477
+#: src/App.tsx:507
 msgid "Cancelled while scoring frame candidates"
 msgstr "評分影格候選項目時已取消"
 
 #. A cancelled stage can be resumed later.
-#: src/App.tsx:529
-#: src/App.tsx:690
+#: src/App.tsx:525
+#: src/App.tsx:686
 msgid "Cancelled; you can resume later"
 msgstr "已取消；稍後可以繼續"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/App.tsx:2586
+#: src/App.tsx:2613
 msgid "Candidate frame rate"
 msgstr "候選影格率"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:298
+#: src/App.tsx:294
 msgctxt "mask class"
 msgid "Car"
 msgstr "汽車"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/App.tsx:793
+#: src/App.tsx:789
 msgid "Ceres BA: {0}"
 msgstr "Ceres BA：{0}"
 
-#: src/App.tsx:629
+#: src/App.tsx:625
 msgid "Ceres BA: CPU only"
 msgstr "Ceres BA：僅使用 CPU"
 
-#: src/App.tsx:628
+#: src/App.tsx:624
 msgid "Ceres BA: May be available (runtime CUDA/cuDSS check required)"
 msgstr "Ceres BA：可能可用（需要執行環境 CUDA/cuDSS 檢查）"
 
-#: src/App.tsx:630
+#: src/App.tsx:626
 msgid "Ceres BA: Not reported"
 msgstr "Ceres BA：未回報"
 
-#: src/App.tsx:3039
+#: src/App.tsx:3085
 msgid "Change path"
 msgstr "變更路徑"
 
-#: src/App.tsx:3017
+#: src/App.tsx:3063
 msgid "Check again"
 msgstr "再次檢查環境"
 
-#: src/App.tsx:607
+#: src/App.tsx:603
 msgid "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
 msgstr "檢查 COLMAP CUDA 組建，以及是否有可用的 NVIDIA GPU"
 
-#: src/App.tsx:606
+#: src/App.tsx:602
 msgid "Check the COLMAP executable and version"
 msgstr "檢查 COLMAP 可執行檔與版本"
 
-#: src/App.tsx:3017
+#: src/App.tsx:3063
 msgid "Checking"
 msgstr "檢查中"
 
-#: src/App.tsx:2637
+#: src/App.tsx:2664
 msgid "Choose .cube"
 msgstr "選擇 .cube"
 
-#: src/App.tsx:2641
+#: src/App.tsx:2668
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "選擇副檔名為 .cube 的 3D LUT。"
 
@@ -592,127 +592,127 @@ msgstr "選擇副檔名為 .cube 的 3D LUT。"
 #~ msgstr "選擇其他"
 
 #. Button opens a folder picker to choose a different output location.
-#: src/App.tsx:2875
+#: src/App.tsx:2916
 msgctxt "output folder picker action"
 msgid "Choose another"
 msgstr "選擇其他"
 
-#: src/App.tsx:2977
+#: src/App.tsx:3021
 msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
 msgstr "選擇英文、簡體中文、繁體中文或日文。"
 
 #. Button opens a file picker for source media.
-#: src/App.tsx:2766
+#: src/App.tsx:2802
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "選擇檔案"
 
 #. Button opens a folder picker for a project or source folder.
-#: src/App.tsx:2766
+#: src/App.tsx:2802
 msgctxt "folder picker action"
 msgid "Choose folder"
 msgstr "選擇資料夾"
 
-#: src/App.tsx:2993
+#: src/App.tsx:3039
 msgid "Choose light, dark, or follow the system appearance automatically."
 msgstr "選擇淺色、深色，或自動遵循系統外觀。"
 
-#: src/App.tsx:2874
+#: src/App.tsx:2915
 msgid "Choose multiple files or drop an unfinished project folder here."
 msgstr "選擇多個檔案，或將未完成的專案資料夾拖放到這裡。"
 
-#: src/App.tsx:2874
+#: src/App.tsx:2915
 msgid "Choose sources"
 msgstr "選擇來源"
 
-#: src/App.tsx:2638
+#: src/App.tsx:2665
 msgid "Clear custom LUT"
 msgstr "清除自訂 LUT"
 
 #. Accessible label for the icon-only button that closes the dialog.
 #. Accessible label for the icon-only button that closes the sheet.
 #. Label for the button that closes the dialog from the footer.
-#: src/App.tsx:2965
-#: src/App.tsx:3045
+#: src/App.tsx:3009
+#: src/App.tsx:3091
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
-#: src/components/ui/sheet.tsx:77
+#: src/components/ui/sheet.tsx:79
 msgid "Close"
 msgstr "關閉"
 
-#: src/App.tsx:2857
+#: src/App.tsx:2898
 msgid "Close notification"
 msgstr "關閉通知"
 
-#: src/App.tsx:766
+#: src/App.tsx:762
 msgid "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 msgstr "COLMAP {component} 的 Ceres GPU 無法使用；Ceres 已切換至 CPU：{error}"
 
-#: src/App.tsx:765
+#: src/App.tsx:761
 msgid "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgstr "COLMAP {component} GPU 執行失敗；正在改用 CPU 重試：{error}"
 
-#: src/App.tsx:639
+#: src/App.tsx:635
 msgid "COLMAP alignment capability not confirmed"
 msgstr "尚未確認 COLMAP 對齊能力"
 
-#: src/App.tsx:811
+#: src/App.tsx:807
 msgid "COLMAP bootstrap did not produce sparse/0"
 msgstr "COLMAP 啟動重建未產生 sparse/0"
 
 #. Alignment error when COLMAP bootstrap produces no sparse model.
-#: src/App.tsx:560
+#: src/App.tsx:556
 msgid "COLMAP bootstrap produced no sparse submodel"
 msgstr "COLMAP 啟動重建未產生 sparse 子模型"
 
-#: src/App.tsx:642
+#: src/App.tsx:638
 msgid "COLMAP CUDA capabilities were checked"
 msgstr "已檢查 COLMAP CUDA 能力"
 
-#: src/App.tsx:643
+#: src/App.tsx:639
 msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA 能力檢查結果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:3039
+#: src/App.tsx:3085
 msgid "COLMAP executable"
 msgstr "COLMAP 可執行檔"
 
 #. The alignment stage cannot start without COLMAP, but the project remains resumable.
-#: src/App.tsx:504
+#: src/App.tsx:500
 msgid "COLMAP is unavailable; alignment will remain pending and resumable"
 msgstr "COLMAP 無法使用；對齊將保持待處理狀態，且可繼續執行"
 
-#: src/App.tsx:2101
+#: src/App.tsx:2128
 msgid "COLMAP launcher"
 msgstr "COLMAP 啟動器"
 
-#: src/App.tsx:640
+#: src/App.tsx:636
 msgid "COLMAP not detected"
 msgstr "未偵測到 COLMAP"
 
-#: src/App.tsx:810
+#: src/App.tsx:806
 msgid "COLMAP was not found on PATH"
 msgstr "在 PATH 中找不到 COLMAP"
 
-#: src/App.tsx:802
+#: src/App.tsx:798
 msgid "COLMAP was not found; alignment will remain pending and resumable"
 msgstr "找不到 COLMAP；對齊將保持待處理狀態，且可繼續執行"
 
 #. Backend progress message: mask files are being written.
-#: src/App.tsx:493
+#: src/App.tsx:489
 msgid "Committing mask files"
 msgstr "正在寫入遮罩檔案"
 
 #. Short label for writing output files.
-#: src/App.tsx:921
+#: src/App.tsx:915
 msgctxt "pipeline phase"
 msgid "Committing output"
 msgstr "正在寫入輸出"
 
 #. Shown when a pipeline stage is blocked by an incomplete prerequisite stage.
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/App.tsx:797
+#: src/App.tsx:793
 msgid "Complete {0} first"
 msgstr "請先完成 {0}"
 
@@ -720,32 +720,37 @@ msgstr "請先完成 {0}"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "請先完成 {prerequisite}"
 
-#: src/App.tsx:1639
+#: src/App.tsx:1665
+#: src/App.tsx:2816
 msgid "Completed"
 msgstr "已完成"
 
 #. Short completed status label.
-#: src/App.tsx:928
+#: src/App.tsx:922
 msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "已完成"
 
-#: src/App.tsx:609
+#: src/App.tsx:2888
+msgid "Completed reconstruction tasks will appear here."
+msgstr "完成的重建任務會顯示在這裡。"
+
+#: src/App.tsx:605
 msgid "Confirm FFmpeg hardware decoding capabilities"
 msgstr "確認 FFmpeg 硬體解碼能力"
 
-#: src/App.tsx:608
+#: src/App.tsx:604
 msgid "Confirm FFmpeg is available on the system PATH"
 msgstr "確認系統 PATH 上有可用的 FFmpeg"
 
-#: src/App.tsx:3016
+#: src/App.tsx:3062
 msgid "Copy diagnostics"
 msgstr "複製診斷資料"
 
 #. Backend progress message: copying selected source frames.
 #. Backend progress message: copying selected source frames.
-#: src/App.tsx:484
-#: src/App.tsx:516
+#: src/App.tsx:480
+#: src/App.tsx:512
 msgid "Copying selected frame pair"
 msgstr "正在複製所選影格對"
 
@@ -754,7 +759,7 @@ msgstr "正在複製所選影格對"
 #~ msgstr "僅使用 CPU"
 
 #. Create the reconstruction task.
-#: src/App.tsx:2880
+#: src/App.tsx:2921
 msgctxt "task action"
 msgid "Create task"
 msgstr "建立任務"
@@ -764,19 +769,19 @@ msgstr "建立任務"
 #~ msgid "Created {0}"
 #~ msgstr "已建立 {0}"
 
-#: src/App.tsx:790
+#: src/App.tsx:786
 msgid "Created {name}"
 msgstr "已建立 {name}"
 
-#: src/App.tsx:431
+#: src/App.tsx:427
 msgid "CUDA acceleration"
 msgstr "CUDA 加速"
 
-#: src/App.tsx:632
+#: src/App.tsx:628
 msgid "CUDA acceleration available"
 msgstr "CUDA 加速可用"
 
-#: src/App.tsx:633
+#: src/App.tsx:629
 msgid "CUDA acceleration partially available"
 msgstr "CUDA 加速部分可用"
 
@@ -785,122 +790,122 @@ msgstr "CUDA 加速部分可用"
 #~ msgid "CUDA build: {0}"
 #~ msgstr "CUDA 組建：{0}"
 
-#: src/App.tsx:622
+#: src/App.tsx:618
 msgid "CUDA build: Supported"
 msgstr "CUDA 組建：支援"
 
-#: src/App.tsx:623
+#: src/App.tsx:619
 msgid "CUDA build: Unsupported"
 msgstr "CUDA 組建：不支援"
 
-#: src/App.tsx:635
+#: src/App.tsx:631
 msgid "CUDA status not confirmed"
 msgstr "尚未確認 CUDA 狀態"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/App.tsx:2907
+#: src/App.tsx:2951
 msgid "Current item: {0}"
 msgstr "目前項目：{0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/App.tsx:2810
+#: src/App.tsx:2845
 msgid "Current stage: {0}"
 msgstr "目前階段：{0}"
 
-#: src/App.tsx:2901
+#: src/App.tsx:2945
 msgid "Current work"
 msgstr "目前工作"
 
 #. Optional user-provided 3D LUT file path.
-#: src/App.tsx:2625
+#: src/App.tsx:2652
 msgid "Custom LUT (optional)"
 msgstr "自訂 LUT（選用）"
 
-#: src/App.tsx:3008
+#: src/App.tsx:3054
 msgid "Dark"
 msgstr "深色"
 
-#: src/App.tsx:754
+#: src/App.tsx:750
 msgid "Decoding and scoring source {source} ({count} candidate pairs processed)"
 msgstr "正在解碼並評分來源 {source}（已處理 {count} 個候選影格對）"
 
-#: src/App.tsx:775
+#: src/App.tsx:771
 msgid "Decoding and scoring source {source} dual-fisheye candidates in memory"
 msgstr "正在記憶體中解碼並評分來源 {source} 的雙魚眼候選影格"
 
 #. Short label for full-resolution decoding.
-#: src/App.tsx:920
+#: src/App.tsx:914
 msgctxt "pipeline phase"
 msgid "Decoding full resolution"
 msgstr "正在解碼完整解析度"
 
-#: src/App.tsx:2875
+#: src/App.tsx:2916
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "第一個來源旁的預設值：colmap-file-name"
 
-#: src/App.tsx:610
+#: src/App.tsx:606
 msgid "Detected"
 msgstr "已偵測到"
 
 #. The source filename suffix or media metadata indicated D-Log M color.
-#: src/App.tsx:2620
+#: src/App.tsx:2647
 msgid "Detected from the _D filename suffix or media metadata and enabled."
 msgstr "已從檔名結尾的 _D 或媒體中繼資料偵測到，並已啟用。"
 
-#: src/App.tsx:3015
+#: src/App.tsx:3061
 msgid "Diagnostic actions"
 msgstr "診斷動作"
 
-#: src/App.tsx:670
+#: src/App.tsx:666
 msgid "Diagnostics copied; you can paste them into a bug report"
 msgstr "診斷資料已複製；你可以將其貼到錯誤回報中"
 
-#: src/App.tsx:2874
+#: src/App.tsx:2915
 msgid "Drop OSV media or an unfinished project folder"
 msgstr "拖放 OSV 媒體或未完成的專案資料夾"
 
 #. Drop OSV media or an unfinished project folder here, or choose files or a folder below.
-#: src/App.tsx:2765
+#: src/App.tsx:2801
 msgid "Drop OSV media or an unfinished project folder here,<0/>or choose files or a folder below."
 msgstr "將 OSV 媒體或未完成的專案資料夾拖放到這裡，<0/>或在下方選擇檔案或資料夾。"
 
 #. Technical description of the frame extraction stage; keep IMU as the acronym.
-#: src/App.tsx:259
+#: src/App.tsx:255
 msgctxt "pipeline stage description"
 msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "雙魚眼影格、內部參數與 IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
 #. placeholder {0}: formatDuration(taskStageDuration(current, clockMs))
-#: src/App.tsx:2933
-#: src/App.tsx:2948
+#: src/App.tsx:2977
+#: src/App.tsx:3004
 msgid "Duration {0}"
 msgstr "持續時間 {0}"
 
 #. Technical description of the masking stage.
-#: src/App.tsx:265
+#: src/App.tsx:261
 msgctxt "pipeline stage description"
 msgid "Dynamic-object and sky masks"
 msgstr "動態物件與天空遮罩"
 
 #. Edit a task that has not started.
-#: src/App.tsx:2802
+#: src/App.tsx:2837
 msgctxt "task action"
 msgid "Edit"
 msgstr "編輯"
 
 #. Dialog for editing a task before it starts.
-#: src/App.tsx:2869
+#: src/App.tsx:2910
 msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "編輯已排入佇列的任務"
 
-#: src/App.tsx:2813
-#: src/App.tsx:2915
+#: src/App.tsx:2848
+#: src/App.tsx:2959
 msgid "Elapsed"
 msgstr "經過時間"
 
-#: src/App.tsx:2724
+#: src/App.tsx:2751
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "偵測到支援 CUDA 的 NVIDIA GPU 時預設啟用；如果執行失敗，會改用 CPU。"
 
@@ -911,27 +916,26 @@ msgstr "偵測到支援 CUDA 的 NVIDIA GPU 時預設啟用；如果執行失敗
 
 #. Language selector option.
 #: src/App.tsx:97
-msgctxt "language option"
-msgid "English"
-msgstr "英文"
+#~ msgctxt "language option"
+#~ msgid "English"
+#~ msgstr "英文"
 
 #: src/App.tsx:1613
-msgid "Environment checks"
-msgstr "環境檢查"
+#~ msgid "Environment checks"
+#~ msgstr "環境檢查"
 
-#: src/App.tsx:2814
-#: src/App.tsx:2916
+#: src/App.tsx:2849
+#: src/App.tsx:2960
 msgid "Estimated remaining"
 msgstr "預估剩餘時間"
 
-#: src/App.tsx:1675
-#: src/App.tsx:1682
-#: src/App.tsx:1684
+#: src/App.tsx:1701
+#: src/App.tsx:1708
+#: src/App.tsx:1710
 msgid "Estimating"
 msgstr "估算中"
 
-#: src/App.tsx:656
-#: src/App.tsx:1594
+#: src/App.tsx:652
 msgid "Executable detected (full path hidden)"
 msgstr "已偵測到可執行檔（完整路徑已隱藏）"
 
@@ -940,137 +944,137 @@ msgstr "已偵測到可執行檔（完整路徑已隱藏）"
 #~ msgid "Executable: {0}"
 #~ msgstr "可執行檔：{0}"
 
-#: src/App.tsx:641
+#: src/App.tsx:637
 msgid "Executable: system PATH"
 msgstr "可執行檔：系統 PATH"
 
 #. A resumable project already contains COLMAP reconstruction output.
 #. A resumable project already contains COLMAP reconstruction output.
-#: src/App.tsx:500
-#: src/App.tsx:539
+#: src/App.tsx:496
+#: src/App.tsx:535
 msgid "Existing COLMAP reconstruction was discovered"
 msgstr "已發現現有 COLMAP 重建結果"
 
 #. A resumable project already contains extracted dual-fisheye frames.
-#: src/App.tsx:498
+#: src/App.tsx:494
 msgid "Existing dual-fisheye frames were discovered"
 msgstr "已發現現有雙魚眼影格"
 
 #. A resumable project already contains mask files.
 #. A resumable project already contains mask files.
-#: src/App.tsx:499
-#: src/App.tsx:538
+#: src/App.tsx:495
+#: src/App.tsx:534
 msgid "Existing masks were discovered"
 msgstr "已發現現有遮罩"
 
 #. Backend alignment progress message while extracting image features.
-#: src/App.tsx:556
+#: src/App.tsx:552
 msgid "Extracting image features"
 msgstr "正在擷取影像特徵"
 
-#: src/App.tsx:814
-#: src/App.tsx:823
+#: src/App.tsx:810
+#: src/App.tsx:819
 msgid "Extraction I/O error: "
 msgstr "擷取 I/O 錯誤： "
 
-#: src/App.tsx:813
-#: src/App.tsx:822
+#: src/App.tsx:809
+#: src/App.tsx:818
 msgid "Extraction image error: "
 msgstr "擷取影像錯誤： "
 
-#: src/App.tsx:1638
+#: src/App.tsx:1664
 msgid "Failed"
 msgstr "失敗"
 
 #. Short failed status label.
-#: src/App.tsx:930
+#: src/App.tsx:924
 msgctxt "pipeline phase status"
 msgid "Failed"
 msgstr "失敗"
 
-#: src/App.tsx:677
+#: src/App.tsx:673
 msgid "Failed to create the task; check the runtime message"
 msgstr "建立任務失敗；請檢查執行環境訊息"
 
-#: src/App.tsx:668
+#: src/App.tsx:664
 msgid "Failed to open project"
 msgstr "開啟專案失敗"
 
-#: src/App.tsx:769
+#: src/App.tsx:765
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "讀取 FFmpeg rawvideo 失敗：{error}"
 
-#: src/App.tsx:680
+#: src/App.tsx:676
 msgid "Failed to save task changes; check the runtime message"
 msgstr "儲存任務變更失敗；請檢查執行環境訊息"
 
 #. Short label for extracting image features.
-#: src/App.tsx:924
+#: src/App.tsx:918
 msgctxt "pipeline phase"
 msgid "Feature extraction"
 msgstr "特徵擷取"
 
-#: src/App.tsx:645
+#: src/App.tsx:641
 msgid "FFmpeg and ffprobe are both available"
 msgstr "FFmpeg 與 ffprobe 均可用"
 
-#: src/App.tsx:771
-#: src/App.tsx:803
+#: src/App.tsx:767
+#: src/App.tsx:799
 msgid "FFmpeg candidate frames fell back safely to CPU software decoding"
 msgstr "FFmpeg 候選影格已安全改用 CPU 軟體解碼"
 
-#: src/App.tsx:767
+#: src/App.tsx:763
 msgid "FFmpeg did not produce any in-memory candidate frames"
 msgstr "FFmpeg 未產生任何記憶體中的候選影格"
 
 #. PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.
-#: src/App.tsx:705
+#: src/App.tsx:701
 msgctxt "backend progress message"
 msgid "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
 msgstr "FFmpeg 有 {count} 個候選影格缺少 PTS；已使用候選 FPS 估算時間"
 
-#: src/App.tsx:648
+#: src/App.tsx:644
 msgid "FFmpeg hardware acceleration not enabled"
 msgstr "未啟用 FFmpeg 硬體加速"
 
-#: src/App.tsx:647
+#: src/App.tsx:643
 msgid "FFmpeg hardware acceleration supported"
 msgstr "支援 FFmpeg 硬體加速"
 
-#: src/App.tsx:770
+#: src/App.tsx:766
 msgid "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 msgstr "FFmpeg 硬體解碼失敗；正在改用 CPU 軟體解碼重試：{error}"
 
 #. Media preview error when FFmpeg is unavailable.
-#: src/App.tsx:536
+#: src/App.tsx:532
 msgid "FFmpeg is not installed"
 msgstr "未安裝 FFmpeg"
 
-#: src/App.tsx:772
+#: src/App.tsx:768
 msgid "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 msgstr "FFmpeg 產生了 {actual} 個同步影格，但預期為 {expected} 個"
 
-#: src/App.tsx:768
+#: src/App.tsx:764
 msgid "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 msgstr "FFmpeg rawvideo 在影格中途結束：已收到 {received}/{expected} 位元組"
 
 #. Diagnostic note when FFmpeg reports no hardware acceleration components.
-#: src/App.tsx:577
+#: src/App.tsx:573
 msgctxt "backend diagnostic warning"
 msgid "FFmpeg reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "FFmpeg 未回報硬體加速元件；影格擷取將使用 CPU 解碼"
 
-#: src/App.tsx:644
+#: src/App.tsx:640
 msgid "FFmpeg tools incomplete"
 msgstr "FFmpeg 工具不完整"
 
 #. Keep FFmpeg, VideoToolbox, and CPU as technical names.
-#: src/App.tsx:505
+#: src/App.tsx:501
 msgid "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder"
 msgstr "找到了 FFmpeg，但不支援 VideoToolbox；擷取將使用 CPU 解碼器"
 
 #. Backend tool error: FFmpeg is missing from PATH.
-#: src/App.tsx:552
+#: src/App.tsx:548
 msgid "FFmpeg was not found on the system PATH"
 msgstr "在系統 PATH 中找不到 FFmpeg"
 
@@ -1079,16 +1083,16 @@ msgstr "在系統 PATH 中找不到 FFmpeg"
 #~ msgid "FFmpeg: {0}"
 #~ msgstr "FFmpeg：{0}"
 
-#: src/App.tsx:651
+#: src/App.tsx:647
 msgid "FFmpeg: Available"
 msgstr "FFmpeg：可用"
 
-#: src/App.tsx:652
+#: src/App.tsx:648
 msgid "FFmpeg: Not detected"
 msgstr "FFmpeg：未偵測到"
 
 #. Backend tool error: ffprobe is missing from PATH.
-#: src/App.tsx:553
+#: src/App.tsx:549
 msgid "ffprobe was not found on the system PATH"
 msgstr "在系統 PATH 中找不到 ffprobe"
 
@@ -1097,94 +1101,94 @@ msgstr "在系統 PATH 中找不到 ffprobe"
 #~ msgid "ffprobe: {0}"
 #~ msgstr "ffprobe：{0}"
 
-#: src/App.tsx:653
+#: src/App.tsx:649
 msgid "ffprobe: Available"
 msgstr "ffprobe：可用"
 
-#: src/App.tsx:654
+#: src/App.tsx:650
 msgid "ffprobe: Not detected"
 msgstr "ffprobe：未偵測到"
 
 #. Short label for the final mapping/reconstruction pass.
-#: src/App.tsx:926
+#: src/App.tsx:920
 msgctxt "pipeline phase"
 msgid "Final reconstruction"
 msgstr "最終重建"
 
-#: src/App.tsx:752
+#: src/App.tsx:748
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "首次使用：正在下載 {model} 模型（{percent}%）"
 
-#: src/App.tsx:2873
+#: src/App.tsx:2914
 msgid "For example: mountain route / 2026-08"
 msgstr "例如：山路 / 2026-08"
 
-#: src/App.tsx:3039
+#: src/App.tsx:3085
 msgid "For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe."
 msgstr "對於官方 Windows 可攜版，請在根資料夾中選取 COLMAP.bat；也可以指定自行組建的 colmap.exe。"
 
-#: src/App.tsx:618
+#: src/App.tsx:614
 msgid "Frame extraction"
 msgstr "影格擷取"
 
 #. The stage that extracts selected frames from source media.
-#: src/App.tsx:258
+#: src/App.tsx:254
 msgctxt "pipeline stage label"
 msgid "Frame extraction"
 msgstr "影格擷取"
 
 #. Pipeline stage settings for extracting frames.
-#: src/App.tsx:2555
+#: src/App.tsx:2582
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "影格擷取"
 
 #. The frame-extraction stage was cancelled.
 #. The frame-extraction stage was cancelled.
-#: src/App.tsx:486
-#: src/App.tsx:518
+#: src/App.tsx:482
+#: src/App.tsx:514
 msgctxt "backend stage status"
 msgid "Frame extraction cancelled"
 msgstr "影格擷取已取消"
 
 #. Backend diagnostic warning: both command-line tools are required.
 #. Keep FFmpeg and ffprobe as command-line tool names.
-#: src/App.tsx:503
-#: src/App.tsx:562
-#: src/App.tsx:801
+#: src/App.tsx:499
+#: src/App.tsx:558
+#: src/App.tsx:797
 msgid "Frame extraction requires both system FFmpeg and ffprobe"
 msgstr "影格擷取需要系統 FFmpeg 與 ffprobe"
 
-#: src/App.tsx:646
+#: src/App.tsx:642
 msgid "Frame extraction requires FFmpeg and ffprobe"
 msgstr "影格擷取需要 FFmpeg 與 ffprobe"
 
-#: src/App.tsx:807
+#: src/App.tsx:803
 msgid "Frame extraction will use CPU decoding"
 msgstr "影格擷取將使用 CPU 解碼"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:584
+#: src/App.tsx:580
 msgid "Frame extraction: Cancelled"
 msgstr "影格擷取：已取消"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:583
+#: src/App.tsx:579
 msgid "Frame extraction: Completed"
 msgstr "影格擷取：已完成"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:585
+#: src/App.tsx:581
 msgid "Frame extraction: Failed"
 msgstr "影格擷取：失敗"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:581
+#: src/App.tsx:577
 msgid "Frame extraction: Pending"
 msgstr "影格擷取：待處理"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/App.tsx:582
+#: src/App.tsx:578
 msgid "Frame extraction: Running"
 msgstr "影格擷取：執行中"
 
@@ -1193,102 +1197,105 @@ msgstr "影格擷取：執行中"
 #~ msgid "Global Mapper: {0}"
 #~ msgstr "Global Mapper：{0}"
 
-#: src/App.tsx:432
+#: src/App.tsx:428
 msgid "Hardware acceleration"
 msgstr "硬體加速"
 
-#: src/App.tsx:649
+#: src/App.tsx:645
 msgid "Hardware decoding status not reported"
 msgstr "未回報硬體解碼狀態"
 
 #. Backend alignment progress message after feature extraction.
-#: src/App.tsx:557
+#: src/App.tsx:553
 msgid "Image feature extraction completed"
 msgstr "影像特徵擷取已完成"
 
 #. Short label for matching images.
-#: src/App.tsx:923
+#: src/App.tsx:917
 msgctxt "pipeline phase"
 msgid "Image matching"
 msgstr "影像匹配"
 
 #. Backend alignment progress message after image matching.
-#: src/App.tsx:554
+#: src/App.tsx:550
 msgid "Image matching completed"
 msgstr "影像匹配已完成"
 
 #. Backend alignment progress message while importing constrained matches.
-#: src/App.tsx:555
+#: src/App.tsx:551
 msgid "Importing constrained image matches"
 msgstr "正在匯入受限的影像匹配"
 
-#: src/App.tsx:2781
-msgid "In progress and finished"
-msgstr "進行中與已完成"
+#: src/App.tsx:2815
+msgid "In progress"
+msgstr "進行中"
 
-#: src/App.tsx:2983
+#: src/App.tsx:2781
+#~ msgid "In progress and finished"
+#~ msgstr "進行中與已完成"
+
+#: src/App.tsx:3027
 msgid "Interface language"
 msgstr "介面語言"
 
-#: src/App.tsx:3004
+#: src/App.tsx:3050
 msgid "Interface theme"
 msgstr "介面主題"
 
 #. Select the visual theme of the interface.
-#: src/App.tsx:2992
+#: src/App.tsx:3038
 msgctxt "theme setting"
 msgid "Interface theme"
 msgstr "介面主題"
 
-#: src/App.tsx:812
-#: src/App.tsx:821
+#: src/App.tsx:808
+#: src/App.tsx:817
 msgid "Invalid extraction input: "
 msgstr "無效的擷取輸入： "
 
-#: src/App.tsx:2641
+#: src/App.tsx:2668
 msgid "Invalid LUT file format"
 msgstr "無效的 LUT 檔案格式"
 
-#: src/App.tsx:815
-#: src/App.tsx:824
+#: src/App.tsx:811
+#: src/App.tsx:820
 msgid "Invalid mask input: "
 msgstr "無效的遮罩輸入： "
 
 #. Language selector option for Japanese; translated labels may use the native name 日本語.
 #: src/App.tsx:100
-msgctxt "language option"
-msgid "Japanese"
-msgstr "日文"
+#~ msgctxt "language option"
+#~ msgid "Japanese"
+#~ msgstr "日文"
 
-#: src/App.tsx:678
+#: src/App.tsx:674
 msgid "Keep at least one source"
 msgstr "至少保留一個來源"
 
 #. Select the language used by the interface.
-#: src/App.tsx:2976
+#: src/App.tsx:3020
 msgctxt "language setting"
 msgid "Language"
 msgstr "語言"
 
 #. placeholder {0}: formatDoctorCheckedAt(doctor.checkedAt)
-#: src/App.tsx:1602
-#: src/App.tsx:3014
+#: src/App.tsx:3060
 msgid "Last checked: {0}"
 msgstr "上次檢查：{0}"
 
-#: src/App.tsx:3039
+#: src/App.tsx:3085
 msgid "Leave blank to detect from PATH"
 msgstr "留白以從 PATH 偵測"
 
-#: src/App.tsx:2630
+#: src/App.tsx:2657
 msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
 msgstr "留白以使用官方 D-Log M → Rec.709 LUT"
 
-#: src/App.tsx:943
+#: src/App.tsx:937
 msgid "Less than 1 second"
 msgstr "少於 1 秒"
 
-#: src/App.tsx:3007
+#: src/App.tsx:3053
 msgid "Light"
 msgstr "淺色"
 
@@ -1297,7 +1304,7 @@ msgstr "淺色"
 #~ msgid "Loaded resumable project {0}"
 #~ msgstr "已載入可繼續的專案 {0}"
 
-#: src/App.tsx:786
+#: src/App.tsx:782
 msgid "Loaded resumable project {name}"
 msgstr "已載入可繼續的專案 {name}"
 
@@ -1306,7 +1313,7 @@ msgstr "已載入可繼續的專案 {name}"
 #~ msgid "Loaded unfinished project with {0} warnings"
 #~ msgstr "已載入含 {0} 個警告的未完成專案"
 
-#: src/App.tsx:787
+#: src/App.tsx:783
 msgid "Loaded unfinished project with {count} warnings"
 msgstr "已載入含 {count} 個警告的未完成專案"
 
@@ -1315,122 +1322,122 @@ msgstr "已載入含 {count} 個警告的未完成專案"
 #~ msgid "Loaded unfinished project: {0}"
 #~ msgstr "已載入未完成的專案：{0}"
 
-#: src/App.tsx:788
+#: src/App.tsx:784
 msgid "Loaded unfinished project: {name}"
 msgstr "已載入未完成的專案：{name}"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/App.tsx:488
-#: src/App.tsx:520
+#: src/App.tsx:484
+#: src/App.tsx:516
 msgid "Loading YOLO11/SkySeg models"
 msgstr "正在載入 YOLO11/SkySeg 模型"
 
-#: src/App.tsx:819
-#: src/App.tsx:828
+#: src/App.tsx:815
+#: src/App.tsx:824
 msgid "Mask I/O error: "
 msgstr "遮罩 I/O 錯誤： "
 
-#: src/App.tsx:818
-#: src/App.tsx:827
+#: src/App.tsx:814
+#: src/App.tsx:823
 msgid "Mask image error: "
 msgstr "遮罩影像錯誤： "
 
 #. Short label for running mask inference.
-#: src/App.tsx:922
+#: src/App.tsx:916
 msgctxt "pipeline phase"
 msgid "Mask inference"
 msgstr "遮罩推論"
 
-#: src/App.tsx:817
-#: src/App.tsx:826
+#: src/App.tsx:813
+#: src/App.tsx:822
 msgid "Mask inference error: "
 msgstr "遮罩推論錯誤："
 
-#: src/App.tsx:816
-#: src/App.tsx:825
+#: src/App.tsx:812
+#: src/App.tsx:821
 msgid "Mask model error: "
 msgstr "遮罩模型錯誤："
 
-#: src/App.tsx:820
-#: src/App.tsx:829
+#: src/App.tsx:816
+#: src/App.tsx:825
 msgid "Mask operation cancelled"
 msgstr "遮罩作業已取消"
 
 #. The masking operation was cancelled.
-#: src/App.tsx:523
+#: src/App.tsx:519
 msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "遮罩作業已取消"
 
-#: src/App.tsx:619
+#: src/App.tsx:615
 msgid "Masking"
 msgstr "遮罩處理"
 
 #. The stage that creates masks for dynamic objects and sky.
-#: src/App.tsx:264
+#: src/App.tsx:260
 msgctxt "pipeline stage label"
 msgid "Masking"
 msgstr "遮罩處理"
 
 #. Pipeline stage settings for creating masks.
-#: src/App.tsx:2649
+#: src/App.tsx:2676
 msgctxt "settings section"
 msgid "Masking"
 msgstr "遮罩處理"
 
 #. The masking stage was cancelled.
-#: src/App.tsx:489
+#: src/App.tsx:485
 msgctxt "backend stage status"
 msgid "Masking cancelled"
 msgstr "遮罩處理已取消"
 
 #. Backend progress message: mask output files were not committed.
 #. Backend progress message: mask output files were not committed.
-#: src/App.tsx:492
-#: src/App.tsx:524
+#: src/App.tsx:488
+#: src/App.tsx:520
 msgid "Masking cancelled before committing output"
 msgstr "遮罩處理在寫入輸出前已取消"
 
 #. Backend completion message from the masking stage; this is not a request to start masking.
 #. The masking stage completed successfully.
-#: src/App.tsx:494
-#: src/App.tsx:532
+#: src/App.tsx:490
+#: src/App.tsx:528
 msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "遮罩處理已完成"
 
-#: src/App.tsx:2703
+#: src/App.tsx:2730
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "已停用遮罩處理；影格擷取後開始對齊。"
 
 #. Backend stage status when no object or sky mask is enabled.
-#: src/App.tsx:526
+#: src/App.tsx:522
 msgid "Masking is disabled; skipping"
 msgstr "已停用遮罩處理；略過"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:589
+#: src/App.tsx:585
 msgid "Masking: Cancelled"
 msgstr "遮罩處理：已取消"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:588
+#: src/App.tsx:584
 msgid "Masking: Completed"
 msgstr "遮罩處理：已完成"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:590
+#: src/App.tsx:586
 msgid "Masking: Failed"
 msgstr "遮罩處理：失敗"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:586
+#: src/App.tsx:582
 msgid "Masking: Pending"
 msgstr "遮罩處理：待處理"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/App.tsx:587
+#: src/App.tsx:583
 msgid "Masking: Running"
 msgstr "遮罩處理：執行中"
 
@@ -1438,238 +1445,243 @@ msgstr "遮罩處理：執行中"
 #~ msgid "May be available (runtime CUDA/cuDSS check required)"
 #~ msgstr "可能可用（需要執行環境 CUDA/cuDSS 檢查）"
 
-#: src/App.tsx:2920
+#: src/App.tsx:2964
 msgid "Memory"
 msgstr "記憶體"
 
-#: src/App.tsx:3024
+#: src/App.tsx:3070
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "缺少必要工具會阻擋部分階段。請先處理下方標示為「需要注意」的項目。"
 
-#: src/App.tsx:753
+#: src/App.tsx:749
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "模型已由 {provider} 載入；已停用 CPU 推論備援"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:299
+#: src/App.tsx:295
 msgctxt "mask class"
 msgid "Motorcycle"
 msgstr "機車"
 
 #. Technical description of the alignment stage; keep OSV as the product format acronym.
-#: src/App.tsx:271
+#: src/App.tsx:267
 msgctxt "pipeline stage description"
 msgid "Multi-source OSV and camera-rig alignment"
 msgstr "多來源 OSV 與相機組對齊"
 
-#: src/App.tsx:636
+#: src/App.tsx:632
 msgid "Native dual-fisheye camera-rig alignment is available"
 msgstr "原生雙魚眼相機組對齊可用"
 
-#: src/App.tsx:1558
-#: src/App.tsx:3042
+#: src/App.tsx:1556
+#: src/App.tsx:3088
 msgid "Needs attention"
 msgstr "需要注意"
 
-#: src/App.tsx:663
+#: src/App.tsx:659
 msgid "New reconstruction task"
 msgstr "新增重建任務"
 
 #. Dialog for creating a new reconstruction task.
-#: src/App.tsx:2869
+#: src/App.tsx:2910
 msgctxt "new task dialog"
 msgid "New reconstruction task"
 msgstr "新增重建任務"
 
 #. Create a new reconstruction task.
-#: src/App.tsx:2777
+#: src/App.tsx:2793
 msgctxt "task action"
 msgid "New reconstruction task"
 msgstr "新增重建任務"
 
 #. Task pipeline runs extraction, masking, and alignment in order; each stage can still be cancelled or retried independently.
 #: src/App.tsx:2777
-msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
-msgstr "新任務會依序執行影格擷取、遮罩處理與對齊；每個階段仍可個別取消或重試。"
+#~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
+#~ msgstr "新任務會依序執行影格擷取、遮罩處理與對齊；每個階段仍可個別取消或重試。"
+
+#: src/App.tsx:2887
+msgid "No completed tasks yet"
+msgstr "尚無已完成的任務"
 
 #. Shown when the selected folder does not contain a project manifest that can be edited.
-#: src/App.tsx:544
+#: src/App.tsx:540
 msgctxt "project edit error"
 msgid "No editable project information was found"
 msgstr "找不到可編輯的專案資訊"
 
-#: src/App.tsx:667
+#: src/App.tsx:663
 msgid "No loadable project information was found"
 msgstr "找不到可載入的專案資訊"
 
-#: src/App.tsx:806
+#: src/App.tsx:802
 msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "未偵測到 COLMAP 可使用的 NVIDIA GPU；將使用 CPU"
 
 #. Empty task list heading.
-#: src/App.tsx:2764
+#: src/App.tsx:2800
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "尚無任務"
 
-#: src/App.tsx:2724
+#: src/App.tsx:2751
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "未偵測到可用的 COLMAP CUDA 加速，因此將使用 CPU。"
 
 #. Diagnostic note when no COLMAP executable is available.
-#: src/App.tsx:565
+#: src/App.tsx:561
 msgid "No usable COLMAP executable is selected; COLMAP CUDA build capability cannot be determined"
 msgstr "未選取可用的 COLMAP 可執行檔；無法判定 COLMAP CUDA 組建能力"
 
-#: src/App.tsx:634
+#: src/App.tsx:630
 msgid "No usable CUDA GPU detected"
 msgstr "未偵測到可用的 CUDA GPU"
 
-#: src/App.tsx:1559
+#: src/App.tsx:1557
 msgid "Not checked"
 msgstr "未檢查"
 
-#: src/App.tsx:604
+#: src/App.tsx:600
 msgid "Not checked yet"
 msgstr "尚未檢查"
 
-#: src/App.tsx:621
+#: src/App.tsx:617
 msgid "Not detected"
 msgstr "未偵測到"
 
-#: src/App.tsx:953
-#: src/App.tsx:955
+#: src/App.tsx:947
+#: src/App.tsx:949
 msgid "Not recorded yet"
 msgstr "尚未記錄"
 
-#: src/App.tsx:613
+#: src/App.tsx:609
 msgid "Not reported"
 msgstr "未回報"
 
-#: src/App.tsx:2812
-#: src/App.tsx:2914
-#: src/App.tsx:2918
-#: src/App.tsx:2919
-#: src/App.tsx:2920
+#: src/App.tsx:2847
+#: src/App.tsx:2958
+#: src/App.tsx:2962
+#: src/App.tsx:2963
+#: src/App.tsx:2964
 msgid "Not reported yet"
 msgstr "尚未回報"
 
-#: src/App.tsx:616
+#: src/App.tsx:612
 msgid "Not run yet"
 msgstr "尚未執行"
 
-#: src/App.tsx:2921
+#: src/App.tsx:2965
 msgid "Not specified"
 msgstr "未指定"
 
-#: src/App.tsx:2813
-#: src/App.tsx:2933
+#: src/App.tsx:2848
+#: src/App.tsx:2977
 msgid "Not started"
 msgstr "尚未開始"
 
 #: src/App.tsx:2780
-msgid "Not started; can be edited or removed."
-msgstr "尚未開始；可編輯或移除。"
+#~ msgid "Not started; can be edited or removed."
+#~ msgstr "尚未開始；可編輯或移除。"
 
-#: src/App.tsx:941
+#: src/App.tsx:935
 msgid "Not timed yet"
 msgstr "尚未計時"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/App.tsx:2669
+#: src/App.tsx:2696
 msgid "Objects to mask (multiple selection)"
 msgstr "要遮罩的物件（可多選）"
 
-#: src/App.tsx:2886
+#: src/App.tsx:2927
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "只會移除任務與佇列狀態；不會刪除現有輸出資料夾。"
 
 #. Open an existing resumable project.
-#: src/App.tsx:2777
+#: src/App.tsx:2792
 msgctxt "project action"
 msgid "Open project"
 msgstr "開啟專案"
 
 #: src/App.tsx:2756
-msgid "Open settings"
-msgstr "開啟設定"
+#~ msgid "Open settings"
+#~ msgstr "開啟設定"
 
 #. placeholder {0}: manifest.name
 #: src/App.tsx:1617
 #~ msgid "Opened {0}"
 #~ msgstr "已開啟 {0}"
 
-#: src/App.tsx:789
+#: src/App.tsx:785
 msgid "Opened {name}"
 msgstr "已開啟 {name}"
 
 #. DJI Osmo 360 source media files.
-#: src/App.tsx:2770
+#: src/App.tsx:2806
 msgid "Osmo 360 source files"
 msgstr "Osmo 360 來源檔案"
 
-#: src/App.tsx:2012
+#: src/App.tsx:2039
 msgid "OSV / dual-fisheye video"
 msgstr "OSV / 雙魚眼影片"
 
 #. Output folder or artifact location.
-#: src/App.tsx:2921
+#: src/App.tsx:2965
 msgctxt "output metric"
 msgid "Output"
 msgstr "輸出"
 
 #. Folder where project metadata and reconstruction output are saved.
-#: src/App.tsx:2875
+#: src/App.tsx:2916
 msgctxt "output destination"
 msgid "Output folder"
 msgstr "輸出資料夾"
 
-#: src/App.tsx:2799
+#: src/App.tsx:2834
+#: src/App.tsx:2936
 msgid "Output not specified"
 msgstr "未指定輸出"
 
 #. Overall progress weighted by observed stage durations.
-#: src/App.tsx:2807
+#: src/App.tsx:2842
 msgid "Overall progress (time weighted)"
 msgstr "整體進度（依時間加權）"
 
-#: src/App.tsx:755
+#: src/App.tsx:751
 msgid "Pairing block {current} / {total} completed"
 msgstr "配對區塊 {current} / {total} 已完成"
 
-#: src/App.tsx:1640
+#: src/App.tsx:1666
 msgid "Pending"
 msgstr "待處理"
 
-#: src/App.tsx:3028
+#: src/App.tsx:3074
 msgid "Performance will be affected"
 msgstr "效能將受影響"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:296
+#: src/App.tsx:292
 msgctxt "mask class"
 msgid "Person"
 msgstr "人物"
 
-#: src/App.tsx:615
+#: src/App.tsx:611
 msgid "Pipeline log"
 msgstr "管線記錄"
 
-#: src/App.tsx:603
+#: src/App.tsx:599
 msgid "Platform not checked yet"
 msgstr "平台尚未檢查"
 
 #. placeholder {0}: localiseUserMessage(doctor.platform)
 #: src/App.tsx:1601
-msgid "Platform: {0}"
-msgstr "平台：{0}"
+#~ msgid "Platform: {0}"
+#~ msgstr "平台：{0}"
 
-#: src/App.tsx:2799
+#: src/App.tsx:2834
 msgid "Preparing"
 msgstr "準備中"
 
 #. Short label for the preparation phase.
-#: src/App.tsx:916
+#: src/App.tsx:910
 msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "準備中"
@@ -1680,16 +1692,16 @@ msgstr "準備中"
 #~ msgstr "準備工作"
 
 #. Initial status stored while a backend stage is being prepared; keep this source value locale-independent in task state.
-#: src/App.tsx:658
+#: src/App.tsx:654
 msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "準備工作"
 
-#: src/App.tsx:2799
+#: src/App.tsx:2834
 msgid "Preview"
 msgstr "預覽"
 
-#: src/App.tsx:1533
+#: src/App.tsx:1531
 msgid "Preview {alt}"
 msgstr "預覽 {alt}"
 
@@ -1698,234 +1710,236 @@ msgstr "預覽 {alt}"
 #~ msgid "Preview task added: {0}"
 #~ msgstr "已新增預覽任務：{0}"
 
-#: src/App.tsx:791
+#: src/App.tsx:787
 msgid "Preview task added: {name}"
 msgstr "已新增預覽任務：{name}"
 
-#: src/App.tsx:679
+#: src/App.tsx:675
 msgid "Preview task updated"
 msgstr "預覽任務已更新"
 
-#: src/App.tsx:2812
-#: src/App.tsx:2914
+#: src/App.tsx:2847
+#: src/App.tsx:2958
 msgid "Processed"
 msgstr "已處理"
 
-#: src/App.tsx:614
-#: src/App.tsx:935
+#: src/App.tsx:610
+#: src/App.tsx:929
 msgid "Processing"
 msgstr "處理中"
 
-#: src/App.tsx:756
+#: src/App.tsx:752
 msgid "Processing pairing block {current} / {total}"
 msgstr "正在處理配對區塊 {current} / {total}"
 
-#: src/App.tsx:2943
+#: src/App.tsx:2940
+#: src/App.tsx:2999
 msgid "Processing records"
 msgstr "處理記錄"
 
 #. A project folder containing a resumable reconstruction.
-#: src/App.tsx:2771
+#: src/App.tsx:2807
 msgid "Project folder"
 msgstr "專案資料夾"
 
 #: src/App.tsx:2780
-msgid "Queued"
-msgstr "已排入佇列"
+#~ msgid "Queued"
+#~ msgstr "已排入佇列"
 
-#: src/App.tsx:681
+#: src/App.tsx:677
 msgid "Queued task updated"
 msgstr "已更新佇列任務"
 
 #. Estimated processing throughput, not network speed.
-#: src/App.tsx:2917
+#: src/App.tsx:2961
 msgid "Rate (estimated)"
 msgstr "速率（預估）"
 
-#: src/App.tsx:2818
+#: src/App.tsx:2853
 msgid "Reconstruction pipeline"
 msgstr "重建管線"
 
-#: src/App.tsx:2777
+#: src/App.tsx:2790
 msgid "Reconstruction tasks"
 msgstr "重建任務"
 
 #. Project recovery status shown while reconstructing a manifest from existing artifacts.
-#: src/App.tsx:549
+#: src/App.tsx:545
 msgid "Recovering project information"
 msgstr "正在復原專案資訊"
 
 #. Remove a queued task without deleting its output folder.
-#: src/App.tsx:2802
+#: src/App.tsx:2837
 msgctxt "task action"
 msgid "Remove"
 msgstr "移除"
 
 #. placeholder {0}: source.label
-#: src/App.tsx:2874
+#: src/App.tsx:2915
 msgid "Remove {0}"
 msgstr "移除 {0}"
 
 #. Remove the queued task, while keeping its output folder.
-#: src/App.tsx:2887
+#: src/App.tsx:2928
 msgctxt "task action"
 msgid "Remove task"
 msgstr "移除任務"
 
 #. Confirmation dialog for removing a queued task.
-#: src/App.tsx:2886
+#: src/App.tsx:2927
 msgctxt "remove task confirmation"
 msgid "Remove task from queue?"
 msgstr "要從佇列移除任務嗎？"
 
-#: src/App.tsx:3023
+#: src/App.tsx:3069
 msgid "Required capabilities need attention"
 msgstr "必要能力需要注意"
 
-#: src/App.tsx:1629
+#: src/App.tsx:1655
 msgid "Resume"
 msgstr "繼續"
 
-#: src/App.tsx:2771
+#: src/App.tsx:2807
 msgid "Resume an unfinished reconstruction task"
 msgstr "繼續未完成的重建任務"
 
-#: src/App.tsx:1630
+#: src/App.tsx:1656
 msgid "Retry"
 msgstr "重試"
 
-#: src/App.tsx:1632
+#: src/App.tsx:1658
 msgid "Run"
 msgstr "執行"
 
-#: src/App.tsx:1631
+#: src/App.tsx:1657
 msgid "Run again"
 msgstr "再次執行"
 
-#: src/App.tsx:605
+#: src/App.tsx:601
 msgid "Run an environment check to confirm available capabilities"
 msgstr "執行環境檢查以確認可用能力"
 
-#: src/App.tsx:3034
+#: src/App.tsx:3080
 msgid "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 msgstr "執行環境檢查，以確認將使用 CUDA、硬體解碼或 CPU。"
 
-#: src/App.tsx:1636
+#: src/App.tsx:1662
 msgid "Running"
 msgstr "執行中"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/App.tsx:491
-#: src/App.tsx:522
+#: src/App.tsx:487
+#: src/App.tsx:518
 msgid "Running YOLO11/SkySeg inference"
 msgstr "正在執行 YOLO11/SkySeg 推論"
 
-#: src/App.tsx:3014
+#: src/App.tsx:3060
 msgid "Runtime environment"
 msgstr "執行環境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/App.tsx:2605
+#: src/App.tsx:2632
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "以基準影格率的倍數取樣候選影格，然後選取較清晰的影格。"
 
 #. Save changes to a queued task.
-#: src/App.tsx:2880
+#: src/App.tsx:2921
 msgctxt "task action"
 msgid "Save changes"
 msgstr "儲存變更"
 
-#: src/App.tsx:2875
+#: src/App.tsx:2916
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
 msgstr "儲存新的任務名稱也會重新命名輸出資料夾；不支援的檔名字元會變成連字號。"
 
 #. Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
 #. placeholder {1}: localiseTechnicalErrorDetail(rollbackError)
-#: src/App.tsx:840
+#: src/App.tsx:836
 msgctxt "project edit error"
 msgid "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 msgstr "儲存任務變更失敗，且無法還原輸出資料夾：{0}；回復錯誤：{1}"
 
 #. The rename/save operation failed, but the output folder was rolled back successfully.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:835
+#: src/App.tsx:831
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "儲存任務變更失敗；輸出資料夾已還原：{0}"
 
 #. Short label for a scan phase.
-#: src/App.tsx:917
+#: src/App.tsx:911
 msgctxt "pipeline phase"
 msgid "Scanning"
 msgstr "掃描中"
 
 #. Backend progress message: scanning candidate frame pairs.
 #. Backend progress message: scanning candidate frame pairs.
-#: src/App.tsx:479
-#: src/App.tsx:510
+#: src/App.tsx:475
+#: src/App.tsx:506
 msgid "Scanning dual-fisheye frame candidates"
 msgstr "正在掃描雙魚眼候選影格"
 
 #. Backend progress message: native fisheye images are being inspected.
 #. Backend progress message: native fisheye images are being inspected.
-#: src/App.tsx:487
-#: src/App.tsx:519
+#: src/App.tsx:483
+#: src/App.tsx:515
 msgid "Scanning native dual-fisheye images"
 msgstr "正在掃描原生雙魚眼影像"
 
-#: src/App.tsx:704
-#: src/App.tsx:751
+#: src/App.tsx:700
+#: src/App.tsx:747
 msgid "Scoring {count} paired candidates"
 msgstr "正在評分 {count} 個配對候選項目"
 
 #. Short label for scoring candidate frames.
-#: src/App.tsx:918
+#: src/App.tsx:912
 msgctxt "pipeline phase"
 msgid "Scoring candidates"
 msgstr "評分候選項目"
 
 #. Short label for candidate scoring in memory.
-#: src/App.tsx:919
+#: src/App.tsx:913
 msgctxt "pipeline phase"
 msgid "Scoring in-memory candidates"
 msgstr "評分記憶體中的候選項目"
 
-#: src/App.tsx:675
+#: src/App.tsx:671
 msgid "Select at least one OSV or dual-fisheye source first"
 msgstr "請先至少選取一個 OSV 或雙魚眼來源"
 
 #. Select which detected GPU should run alignment.
-#: src/App.tsx:2729
+#: src/App.tsx:2756
 msgid "Select GPU"
 msgstr "選取 GPU"
 
 #. Backend progress message: a frame pair was selected without copying output files.
-#: src/App.tsx:513
+#: src/App.tsx:509
 msgid "Selected frame pair (output copy disabled)"
 msgstr "所選影格對（已停用輸出複製）"
 
 #. Backend message: an output pair was already present, so no duplicate was written.
 #. Backend message: an output pair was already present, so no duplicate was written.
-#: src/App.tsx:482
-#: src/App.tsx:514
+#: src/App.tsx:478
+#: src/App.tsx:510
 msgid "Selected frame pair already exists; skipped"
 msgstr "所選影格對已存在；已略過"
 
 #. Backend progress message: selected source frames were written to output.
 #. Backend progress message: selected source frames were written to output.
-#: src/App.tsx:485
-#: src/App.tsx:517
+#: src/App.tsx:481
+#: src/App.tsx:513
 msgid "Selected frame pair committed"
 msgstr "已寫入所選影格對"
 
-#: src/App.tsx:2972
+#: src/App.tsx:2794
+#: src/App.tsx:3016
 msgid "Settings"
 msgstr "設定"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/App.tsx:2581
+#: src/App.tsx:2608
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "清晰度篩選"
@@ -1935,11 +1949,11 @@ msgstr "清晰度篩選"
 #~ msgid "SIFT extraction: {0}"
 #~ msgstr "SIFT 擷取：{0}"
 
-#: src/App.tsx:624
+#: src/App.tsx:620
 msgid "SIFT extraction: Supported"
 msgstr "SIFT 擷取：支援"
 
-#: src/App.tsx:625
+#: src/App.tsx:621
 msgid "SIFT extraction: Unsupported"
 msgstr "SIFT 擷取：不支援"
 
@@ -1948,572 +1962,575 @@ msgstr "SIFT 擷取：不支援"
 #~ msgid "SIFT matching: {0}"
 #~ msgstr "SIFT 匹配：{0}"
 
-#: src/App.tsx:626
+#: src/App.tsx:622
 msgid "SIFT matching: Supported"
 msgstr "SIFT 匹配：支援"
 
-#: src/App.tsx:627
+#: src/App.tsx:623
 msgid "SIFT matching: Unsupported"
 msgstr "SIFT 匹配：不支援"
 
 #. Language selector option for Simplified Chinese; translated labels may use the native name 简体中文.
 #: src/App.tsx:98
-msgctxt "language option"
-msgid "Simplified Chinese"
-msgstr "簡體中文"
+#~ msgctxt "language option"
+#~ msgid "Simplified Chinese"
+#~ msgstr "簡體中文"
 
 #. Enable SkySeg sky masks.
-#: src/App.tsx:2699
+#: src/App.tsx:2726
 msgid "Sky filtering"
 msgstr "天空篩選"
 
-#: src/App.tsx:657
-#: src/App.tsx:1825
+#: src/App.tsx:653
+#: src/App.tsx:1852
 msgid "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 msgstr "部分 CUDA 或硬體加速能力無法使用；受影響的階段將使用 CPU。"
 
-#: src/App.tsx:773
+#: src/App.tsx:769
 msgid "Source {source} color processing: {warning}"
 msgstr "來源 {source} 色彩處理：{warning}"
 
-#: src/App.tsx:776
+#: src/App.tsx:772
 msgid "Source {source} completed scoring {count} candidate pairs"
 msgstr "來源 {source} 已完成 {count} 個候選影格對的評分"
 
-#: src/App.tsx:777
+#: src/App.tsx:773
 msgid "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 msgstr "來源 {source} 動態關鍵影格剪枝保留 {kept} / {total} 個基準 FPS 候選影格（移除 {removed} 個）"
 
-#: src/App.tsx:774
+#: src/App.tsx:770
 msgid "Source {source} reused the in-memory scoring checkpoint"
 msgstr "來源 {source} 已重用記憶體中的評分檢查點"
 
 #. Media preview error when the requested source file does not exist.
-#: src/App.tsx:533
+#: src/App.tsx:529
 msgid "Source file was not found"
 msgstr "找不到來源檔案"
 
-#: src/App.tsx:662
+#: src/App.tsx:658
 msgid "Source inspection results are not available yet"
 msgstr "來源檢查結果尚未可用"
 
 #. Input media or an unfinished project folder for a reconstruction task.
-#: src/App.tsx:2874
+#: src/App.tsx:2915
 msgctxt "source input"
 msgid "Sources"
 msgstr "來源"
 
 #. Source media included in this reconstruction task.
-#: src/App.tsx:2954
+#: src/App.tsx:2987
 msgctxt "source section"
 msgid "Sources"
 msgstr "來源"
 
 #. Project validation error: source media cannot be nested under reconstruction output.
-#: src/App.tsx:542
+#: src/App.tsx:538
 msgid "Sources cannot be inside the output folder; move them elsewhere first"
 msgstr "來源不能位於輸出資料夾內；請先移到其他位置"
 
-#: src/App.tsx:661
+#: src/App.tsx:657
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "已找到來源；你可以建立新的重建任務"
 
-#: src/App.tsx:2644
+#: src/App.tsx:2671
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "只有需要覆寫官方 LUT 時才指定 .cube 檔案。"
 
 #: src/App.tsx:1600
-msgid "SphereAlign diagnostics"
-msgstr "SphereAlign 診斷資料"
+#~ msgid "SphereAlign diagnostics"
+#~ msgstr "SphereAlign 診斷資料"
 
 #. Generic pipeline stage label.
-#: src/App.tsx:277
+#: src/App.tsx:273
 msgctxt "pipeline stage fallback"
 msgid "Stage"
 msgstr "階段"
 
 #. placeholder {0}: runningIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1073
+#: src/App.tsx:1071
 msgid "Stage {0} of {1} · {label}"
 msgstr "第 {0} / {1} 個階段 · {label}"
 
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/App.tsx:2825
+#: src/App.tsx:2860
 msgid "Stage {0} of {1}: {2}"
 msgstr "第 {0} / {1} 個階段：{2}"
 
 #. Committed artifacts remain valid and can be reused by a later run.
 #. Committed artifacts remain valid and can be reused by a later run.
-#: src/App.tsx:496
-#: src/App.tsx:528
+#: src/App.tsx:492
+#: src/App.tsx:524
 msgid "Stage cancelled; committed artifacts can be resumed"
 msgstr "階段已取消；已寫入的產物可繼續使用"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/App.tsx:497
-#: src/App.tsx:531
+#: src/App.tsx:493
+#: src/App.tsx:527
 msgctxt "backend stage status"
 msgid "Stage completed"
 msgstr "階段已完成"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/App.tsx:495
-#: src/App.tsx:527
+#: src/App.tsx:491
+#: src/App.tsx:523
 msgctxt "backend stage status"
 msgid "Stage started"
 msgstr "階段已開始"
 
 #. Short label for a stage summary.
-#: src/App.tsx:931
+#: src/App.tsx:925
 msgctxt "pipeline phase"
 msgid "Stage summary"
 msgstr "階段摘要"
 
-#: src/App.tsx:3035
+#: src/App.tsx:3081
 msgid "Stages that fall back to the CPU can still run, but processing may take significantly longer."
 msgstr "改用 CPU 的階段仍可執行，但處理時間可能大幅增加。"
 
 #: src/App.tsx:2781
-msgid "Started tasks keep their stages and processing records."
-msgstr "已開始的任務會保留其階段與處理記錄。"
+#~ msgid "Started tasks keep their stages and processing records."
+#~ msgstr "已開始的任務會保留其階段與處理記錄。"
 
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/App.tsx:1117
+#: src/App.tsx:1115
 msgid "Stop {0}"
 msgstr "停止 {0}"
 
 #. placeholder {0}: interruptedIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1078
+#: src/App.tsx:1076
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "已停止於第 {0} / {1} 個階段 · {label}"
 
 #. placeholder {0}: localiseUserMessage(doctor.summary)
 #: src/App.tsx:1603
-msgid "Summary: {0}"
-msgstr "摘要：{0}"
+#~ msgid "Summary: {0}"
+#~ msgstr "摘要：{0}"
 
-#: src/App.tsx:611
+#: src/App.tsx:607
 msgid "Supported"
 msgstr "支援"
 
-#: src/App.tsx:2768
+#: src/App.tsx:2804
 msgid "Supported inputs"
 msgstr "支援的輸入"
 
-#: src/App.tsx:3006
+#: src/App.tsx:3052
 msgid "System"
 msgstr "系統"
 
-#: src/App.tsx:808
+#: src/App.tsx:804
 msgid "System FFmpeg was not found on PATH"
 msgstr "在 PATH 中找不到系統 FFmpeg"
 
-#: src/App.tsx:809
+#: src/App.tsx:805
 msgid "System ffprobe was not found on PATH"
 msgstr "在 PATH 中找不到系統 ffprobe"
 
 #: src/App.tsx:1605
-msgid "System information"
-msgstr "系統資訊"
+#~ msgid "System information"
+#~ msgstr "系統資訊"
 
-#: src/App.tsx:685
+#: src/App.tsx:681
 msgid "Task added to the run queue"
 msgstr "任務已加入執行佇列"
 
-#: src/App.tsx:2873
+#: src/App.tsx:2914
 msgid "Task name"
 msgstr "任務名稱"
 
 #. Validation error shown when a queued task name contains only whitespace.
-#: src/App.tsx:546
+#: src/App.tsx:542
 msgctxt "project edit validation"
 msgid "Task name cannot be blank"
 msgstr "任務名稱不可空白"
 
-#: src/App.tsx:683
+#: src/App.tsx:679
 msgid "Task removed from the queue; the output folder is kept"
 msgstr "任務已從佇列移除；輸出資料夾會保留"
 
 #. Shown when technical details contain an untranslated message in a non-Traditional-Chinese locale.
-#: src/App.tsx:448
+#: src/App.tsx:444
 msgctxt "backend error details"
 msgid "Technical details are available in diagnostics."
 msgstr "診斷資料中提供技術詳細資訊。"
 
-#: src/App.tsx:638
+#: src/App.tsx:634
 msgid "The alignment stage will remain pending"
 msgstr "對齊階段將保持待處理"
 
 #. Backend alignment message when a rig configuration supplies all extrinsics.
-#: src/App.tsx:558
+#: src/App.tsx:554
 msgid "The camera rig already provides complete extrinsics"
 msgstr "相機組已提供完整的外部參數"
 
-#: src/App.tsx:672
+#: src/App.tsx:668
 msgid "The COLMAP path is used by the local Windows runtime"
 msgstr "本機 Windows 執行環境使用此 COLMAP 路徑"
 
-#: src/App.tsx:676
+#: src/App.tsx:672
 msgid "The custom LUT must be a .cube file"
 msgstr "自訂 LUT 必須是 .cube 檔案"
 
-#: src/App.tsx:637
+#: src/App.tsx:633
 msgid "The executable was found, but the complete alignment workflow was not confirmed"
 msgstr "已找到可執行檔，但尚未確認完整的對齊工作流程"
 
-#: src/App.tsx:631
+#: src/App.tsx:627
 msgid "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"
 msgstr "舊版診斷未回報 COLMAP 組建；FFmpeg CUDA/VideoToolbox 不代表 COLMAP CUDA"
 
 #. Shown when a backend or Tauri error has no localized mapping. Do not include the raw error text here.
-#: src/App.tsx:442
+#: src/App.tsx:438
 msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "本機執行環境傳回未預期的錯誤。詳情請參閱診斷資料。"
 
 #. Shown when the output folder cannot be renamed because its parent directory is unavailable.
-#: src/App.tsx:548
+#: src/App.tsx:544
 msgctxt "project edit error"
 msgid "The output folder has no usable parent directory"
 msgstr "輸出資料夾沒有可用的上層資料夾"
 
 #. Media preview error when the preview service cannot be used.
-#: src/App.tsx:551
+#: src/App.tsx:547
 msgid "The preview service is temporarily unavailable"
 msgstr "預覽服務暫時無法使用"
 
 #. A resumable project was recovered after an interrupted run.
 #. A resumable project was recovered after an interrupted run.
-#: src/App.tsx:501
-#: src/App.tsx:540
+#: src/App.tsx:497
+#: src/App.tsx:536
 msgid "The previous run was interrupted; this stage can be resumed"
 msgstr "上一次執行已中斷；此階段可以繼續"
 
 #. Project operation error while another mutation is in progress.
-#: src/App.tsx:543
+#: src/App.tsx:539
 msgid "The project operation lock is temporarily unavailable"
 msgstr "專案作業鎖暫時無法使用"
 
 #. The rename is cancelled to avoid changing a project whose manifest path is inconsistent.
-#: src/App.tsx:547
+#: src/App.tsx:543
 msgctxt "project edit error"
 msgid "The project root in the manifest does not match its actual location; rename cancelled"
 msgstr "資訊清單中的專案根目錄與實際位置不符；已取消重新命名"
 
 #. Queued tasks run automatically in creation order.
-#: src/App.tsx:2806
+#: src/App.tsx:2841
 msgid "The queue runs automatically in creation order"
 msgstr "佇列會依建立順序自動執行"
 
 #. Diagnostic warning for a COLMAP build without confirmed CUDA support.
-#: src/App.tsx:564
+#: src/App.tsx:560
 msgid "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 msgstr "未確認所選 COLMAP CUDA 組建；特徵擷取與匹配將使用 CPU，且無法啟用 Ceres GPU 求解器"
 
-#: src/App.tsx:805
+#: src/App.tsx:801
 msgid "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 msgstr "所選 COLMAP 的版本／說明橫幅未回報 CUDA；將使用 CPU 進行特徵擷取與匹配"
 
 #. FeatureExtraction and FeatureMatching are COLMAP command-line options; keep these names unchanged.
-#: src/App.tsx:569
+#: src/App.tsx:565
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide both FeatureExtraction and FeatureMatching GPU options; feature stages will use the CPU"
 msgstr "所選 COLMAP 未提供 FeatureExtraction 與 FeatureMatching GPU 選項；特徵階段將使用 CPU"
 
 #. global_mapper is the COLMAP command name; incremental alignment is the fallback workflow.
-#: src/App.tsx:570
+#: src/App.tsx:566
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide global_mapper; only incremental alignment can be used"
 msgstr "所選 COLMAP 未提供 global_mapper；僅能使用增量對齊"
 
 #. Keep view_graph_calibrator, global mapper, and focal prior as COLMAP technical terms.
-#: src/App.tsx:575
+#: src/App.tsx:571
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide view_graph_calibrator; the global mapper's focal prior must be supplied by external calibration"
 msgstr "所選 COLMAP 未提供 view_graph_calibrator；global mapper 的 focal prior 必須由外部校正提供"
 
 #. Keep the five COLMAP command names unchanged; dual-camera alignment refers to the dual-fisheye rig workflow.
-#: src/App.tsx:576
+#: src/App.tsx:572
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 msgstr "所選 COLMAP 缺少 feature_extractor、matches_importer、mapper、model_converter 或 rig_configurator；雙相機對齊工作流程無法完成"
 
-#: src/App.tsx:804
+#: src/App.tsx:800
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "所選 COLMAP 路徑不存在或不是檔案"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
-#: src/App.tsx:563
+#: src/App.tsx:559
 msgid "The selected COLMAP supports CUDA, but the Ceres GPU solver was not confirmed; Bundle Adjustment will use the CPU"
 msgstr "所選 COLMAP 支援 CUDA，但尚未確認 Ceres GPU 求解器；Bundle Adjustment 將使用 CPU"
 
 #. BA means Bundle Adjustment; keep global_mapper, Ceres, and Bundle Adjustment as technical terms.
-#: src/App.tsx:573
+#: src/App.tsx:569
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU Ceres BA; global Bundle Adjustment will use the CPU"
 msgstr "所選 global_mapper 未提供 GPU Ceres BA；全域 Bundle Adjustment 將使用 CPU"
 
 #. Keep global_mapper and global positioning as COLMAP technical terms.
-#: src/App.tsx:572
+#: src/App.tsx:568
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU global positioning; global positioning will use the CPU"
 msgstr "所選 global_mapper 未提供 GPU global positioning；global positioning 將使用 CPU"
 
 #. Keep global_mapper and fixed-rotation/joint BA stage as COLMAP technical terms.
-#: src/App.tsx:574
+#: src/App.tsx:570
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the fixed-rotation/joint BA stage option; fixed-rotation experimental mode is unavailable"
 msgstr "所選 global_mapper 未提供 fixed-rotation/joint BA 階段選項；fixed-rotation 實驗模式無法使用"
 
 #. Keep global_mapper and gravity rotation averaging as COLMAP technical terms.
-#: src/App.tsx:571
+#: src/App.tsx:567
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "所選 global_mapper 未提供 gravity rotation averaging 選項；global-gravity 模式無法使用"
 
-#: src/App.tsx:2950
+#: src/App.tsx:3006
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "尚無處理記錄；開始執行後，每個階段及其目前位置會顯示於此。"
 
 #. Diagnostic note when FFmpeg hardware decoding is unavailable.
-#: src/App.tsx:568
+#: src/App.tsx:564
 msgid "This FFmpeg build reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "此 FFmpeg 組建未回報硬體加速元件；影格擷取將使用 CPU 解碼"
 
 #. Backend project message when an existing frame dataset has no source video.
-#: src/App.tsx:561
+#: src/App.tsx:557
 msgid "This folder has no source video; masking or alignment can run directly on existing frames"
 msgstr "此資料夾沒有來源影片；可直接對現有影格執行遮罩處理或對齊"
 
 #. Project metadata was reconstructed from files already on disk.
 #. Project metadata was reconstructed from files already on disk.
-#: src/App.tsx:502
-#: src/App.tsx:541
+#: src/App.tsx:498
+#: src/App.tsx:537
 msgid "This project manifest was recovered from existing artifacts"
 msgstr "已從現有檔案復原此專案資訊清單"
 
 #. Media preview error for an unsupported source format.
-#: src/App.tsx:534
+#: src/App.tsx:530
 msgid "This source format is not supported"
 msgstr "不支援此來源格式"
 
-#: src/App.tsx:684
+#: src/App.tsx:680
 msgid "This task has already started"
 msgstr "此任務已經開始"
 
-#: src/App.tsx:2955
+#: src/App.tsx:2988
 msgid "This task has no recorded source files."
 msgstr "此任務沒有已記錄的來源檔案。"
 
-#: src/App.tsx:664
+#: src/App.tsx:660
 msgid "This task has started and can no longer be edited"
 msgstr "此任務已開始，無法再編輯"
 
-#: src/App.tsx:682
+#: src/App.tsx:678
 msgid "This task has started and cannot be removed"
 msgstr "此任務已開始，無法移除"
 
 #. Diagnostic warning for an unsupported COLMAP version.
-#: src/App.tsx:567
+#: src/App.tsx:563
 msgid "This workflow requires COLMAP 4.1.1 or newer; older versions do not support the complete rig and global alignment workflow"
 msgstr "此工作流程需要 COLMAP 4.1.1 或更新版本；較舊版本不支援完整的相機組與全域對齊工作流程"
 
 #. Language selector option for Traditional Chinese; translated labels may use the native name 繁體中文.
 #: src/App.tsx:99
-msgctxt "language option"
-msgid "Traditional Chinese"
-msgstr "繁體中文"
+#~ msgctxt "language option"
+#~ msgid "Traditional Chinese"
+#~ msgstr "繁體中文"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/App.tsx:301
+#: src/App.tsx:297
 msgctxt "mask class"
 msgid "Truck"
 msgstr "卡車"
 
-#: src/App.tsx:671
+#: src/App.tsx:667
 msgid "Unable to copy diagnostics; check clipboard permissions"
 msgstr "無法複製診斷資料；請檢查剪貼簿權限"
 
-#: src/App.tsx:760
+#: src/App.tsx:756
 msgid "Unable to copy frame {source} to {destination}: {error}"
 msgstr "無法將影格 {source} 複製到 {destination}：{error}"
 
-#: src/App.tsx:759
+#: src/App.tsx:755
 msgid "Unable to create temporary frame {frame}: {error}"
 msgstr "無法建立暫存影格 {frame}：{error}"
 
-#: src/App.tsx:762
+#: src/App.tsx:758
 msgid "Unable to create temporary metadata {path}: {error}"
 msgstr "無法建立暫存中繼資料 {path}：{error}"
 
 #. Project root means the folder containing the loaded project manifest.
-#: src/App.tsx:545
+#: src/App.tsx:541
 msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "無法判定專案根目錄"
 
-#: src/App.tsx:655
-#: src/App.tsx:1521
+#: src/App.tsx:651
+#: src/App.tsx:1519
 msgid "Unable to generate a first-frame preview"
 msgstr "無法產生第一影格預覽"
 
 #. Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:830
+#: src/App.tsx:826
 msgctxt "project edit error"
 msgid "Unable to inspect the project root: {0}"
 msgstr "無法檢查專案根目錄：{0}"
 
 #. Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:745
+#: src/App.tsx:741
 msgctxt "backend diagnostic warning"
 msgid "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 msgstr "無法解析來源 {source} 的正規化遙測資料；將使用視覺新穎度與最大間隔備援：{0}"
 
 #. Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/App.tsx:740
+#: src/App.tsx:736
 msgctxt "backend diagnostic warning"
 msgid "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 msgstr "無法讀取來源 {source} 的正規化遙測資料；已停用 IMU 關鍵影格項目：{0}"
 
-#: src/App.tsx:758
+#: src/App.tsx:754
 msgid "Unable to read source frame {frame}: {error}"
 msgstr "無法讀取來源影格 {frame}：{error}"
 
 #. Media preview error when the first frame cannot be decoded.
-#: src/App.tsx:535
+#: src/App.tsx:531
 msgid "Unable to read the first video frame"
 msgstr "無法讀取影片第一影格"
 
 #. Diagnostic warning when COLMAP capability probing cannot read the version banner.
-#: src/App.tsx:566
+#: src/App.tsx:562
 msgid "Unable to read the selected COLMAP version banner; capabilities are conservatively treated as unknown or unavailable"
 msgstr "無法讀取所選 COLMAP 的版本橫幅；能力會保守地視為未知或不可用"
 
 #. Media preview error when FFmpeg cannot be launched.
-#: src/App.tsx:537
+#: src/App.tsx:533
 msgid "Unable to start FFmpeg"
 msgstr "無法啟動 FFmpeg"
 
-#: src/App.tsx:674
+#: src/App.tsx:670
 msgid "Unable to start the stage automatically; check the runtime message"
 msgstr "無法自動啟動階段；請檢查執行環境訊息"
 
-#: src/App.tsx:688
+#: src/App.tsx:684
 msgid "Unable to start the stage; check the runtime message"
 msgstr "無法啟動階段；請檢查執行環境訊息"
 
-#: src/App.tsx:761
+#: src/App.tsx:757
 msgid "Unable to sync temporary frame {frame}: {error}"
 msgstr "無法同步暫存影格 {frame}：{error}"
 
-#: src/App.tsx:764
+#: src/App.tsx:760
 msgid "Unable to sync temporary metadata {path}: {error}"
 msgstr "無法同步暫存中繼資料 {path}：{error}"
 
-#: src/App.tsx:763
+#: src/App.tsx:759
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "無法寫入暫存中繼資料 {path}：{error}"
 
-#: src/App.tsx:617
+#: src/App.tsx:613
 msgid "Unnamed reconstruction"
 msgstr "未命名的重建"
 
-#: src/App.tsx:612
+#: src/App.tsx:608
 msgid "Unsupported"
 msgstr "不支援"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/App.tsx:2723
+#: src/App.tsx:2750
 msgid "Use CUDA acceleration for alignment"
 msgstr "使用 CUDA 加速進行對齊"
 
-#: src/App.tsx:2701
+#: src/App.tsx:2728
 msgid "Use SkySeg to generate sky masks."
 msgstr "使用 SkySeg 產生天空遮罩。"
 
 #. Backend message: an existing mask file was reused.
 #. Backend message: an existing mask file was reused.
-#: src/App.tsx:490
-#: src/App.tsx:521
+#: src/App.tsx:486
+#: src/App.tsx:517
 msgid "Verified that the mask exists; skipped"
 msgstr "已確認遮罩存在；已略過"
 
 #. Task details include current work, processing metrics, and logs; unavailable performance monitoring is marked explicitly.
 #: src/App.tsx:2896
-msgid "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
-msgstr "檢視目前工作、處理指標與完整處理記錄；無法使用的效能監控會明確標示。"
+#~ msgid "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
+#~ msgstr "檢視目前工作、處理指標與完整處理記錄；無法使用的效能監控會明確標示。"
 
-#: src/App.tsx:3041
+#: src/App.tsx:3087
 msgid "View details"
 msgstr "檢視詳細資料"
 
 #. placeholder {0}: task.name
-#: src/App.tsx:2803
+#: src/App.tsx:2838
 msgid "View details for {0}"
 msgstr "檢視 {0} 的詳細資料"
 
 #. Expand the details for each pipeline stage.
-#: src/App.tsx:2927
+#: src/App.tsx:2971
 msgid "View pipeline details"
 msgstr "檢視管線詳細資料"
 
-#: src/App.tsx:1119
+#: src/App.tsx:1117
 msgid "Wait for {prerequisite} to finish"
 msgstr "等待 {prerequisite} 完成"
 
-#: src/App.tsx:1121
+#: src/App.tsx:1119
 msgid "Wait for the current stage to finish"
 msgstr "等待目前階段完成"
 
 #. placeholder {0}: action.prerequisite
-#: src/App.tsx:2831
-#: src/App.tsx:2931
+#: src/App.tsx:2866
+#: src/App.tsx:2975
 msgid "Waiting for {0} to finish"
 msgstr "等待 {0} 完成"
 
 #. placeholder {0}: nextIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/App.tsx:1083
+#: src/App.tsx:1081
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "等待第 {0} / {1} 個階段 · {label}"
 
-#: src/App.tsx:2799
+#: src/App.tsx:2834
 msgid "Waiting to run"
 msgstr "等待執行"
 
-#: src/App.tsx:1621
-#: src/App.tsx:2960
+#: src/App.tsx:2993
 msgid "Warnings"
 msgstr "警告"
 
-#: src/App.tsx:2807
+#: src/App.tsx:2842
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "以三次觀測到的執行時間加權：影格擷取 22%、遮罩處理 4%、對齊 74%"
 
-#: src/App.tsx:2643
+#: src/App.tsx:2670
 msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
 msgstr "未指定自訂檔案時，執行環境會使用官方 LUT；否則會使用此 .cube 檔案。"
 
+#: src/App.tsx:2939
+msgid "Work summary"
+msgstr "工作摘要"
+
 #. Backend progress message: mask files are being written.
-#: src/App.tsx:525
+#: src/App.tsx:521
 msgid "Writing mask files"
 msgstr "正在寫入遮罩檔案"
 
 #. Backend stage summary when no mask filters are enabled.
-#: src/App.tsx:530
+#: src/App.tsx:526
 msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO 與天空篩選已停用；已略過遮罩處理"
 
 #. Enable object detection masks from YOLO11.
-#: src/App.tsx:2664
+#: src/App.tsx:2691
 msgid "YOLO object filtering"
 msgstr "YOLO 物件篩選"

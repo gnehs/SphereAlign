@@ -44,6 +44,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
@@ -1059,6 +1060,10 @@ function taskHasNotStarted(task: Task) {
   });
 }
 
+function taskIsCompleted(task: Task) {
+  return STAGES.every(({ key }) => task.stages[key].status === "completed");
+}
+
 function taskProgressSummary(task: Task) {
   const runningIndex = STAGES.findIndex(({ key }) => task.stages[key].status === "running");
   if (runningIndex >= 0) {
@@ -1794,6 +1799,7 @@ function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskDetailTab, setTaskDetailTab] = useState<"summary" | "records">("summary");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [sourcePaths, setSourcePaths] = useState<string[]>([]);
@@ -1855,8 +1861,8 @@ function App() {
     // manifests created within the backend's same timestamp resolution.
     .sort((left, right) => taskCreatedAtMs(left.task) - taskCreatedAtMs(right.task) || right.index - left.index)
     .map(({ task }) => task), [tasks]);
-  const queuedTasks = useMemo(() => orderedTasks.filter(taskHasNotStarted), [orderedTasks]);
-  const startedTasks = useMemo(() => orderedTasks.filter((task) => !taskHasNotStarted(task)), [orderedTasks]);
+  const activeTasks = useMemo(() => orderedTasks.filter((task) => !taskIsCompleted(task)), [orderedTasks]);
+  const completedTasks = useMemo(() => orderedTasks.filter(taskIsCompleted), [orderedTasks]);
   const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
 
   useEffect(() => {
@@ -2773,16 +2779,25 @@ function App() {
     <div className="studio-app">
       <header className="window-bar">
         {!IS_TAURI_RUNTIME && <div className="traffic-lights" aria-hidden="true"><span className="traffic-red" /><span className="traffic-yellow" /><span className="traffic-green" /></div>}
+        <span className="brand-mark" aria-hidden="true"><ScanSearch /></span>
         <span className="window-title">SphereAlign</span>
-        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge"><Trans comment="Badge indicating that the app is running in a browser-only preview.">Browser preview</Trans></Badge>}<Button variant="ghost" size="icon-sm" aria-label={t`Open settings`} onClick={() => setSettingsOpen(true)}><Settings2 /></Button></div>
+        <div className="window-actions">{!IS_TAURI_RUNTIME && <Badge variant="outline" className="runtime-badge"><Trans comment="Badge indicating that the app is running in a browser-only preview.">Browser preview</Trans></Badge>}</div>
       </header>
 
-      <main className="studio-main">
+      <main className="studio-main" data-detail-open={selectedTask ? "true" : undefined}>
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
+        <header className="workspace-toolbar">
+          <h1 className="sr-only"><Trans>Reconstruction tasks</Trans></h1>
+          <div className="header-actions">
+            <Button variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
+            <Button onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
+            <Button className="settings-toolbar-button" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+          </div>
+        </header>
         {tasks.length === 0 ? (
           <section className="empty-state" onDragEnter={(event) => { event.preventDefault(); setDragOver(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
             <div className={`empty-icon ${dragOver ? "is-dragging" : ""}`} aria-hidden="true"><FileStack /></div>
-            <h1><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h1>
+            <h2><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h2>
             <p className="empty-description"><Trans comment="Drop OSV media or an unfinished project folder here, or choose files or a folder below.">Drop OSV media or an unfinished project folder here,<br />or choose files or a folder below.</Trans></p>
             <div className="empty-actions"><Button size="lg" onClick={() => void openSourcePicker("files")}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button><Button size="lg" variant="outline" onClick={() => void openSourcePicker("directories")}><FolderOpen data-icon="inline-start" /><Trans context="folder picker action" comment="Button opens a folder picker for a project or source folder.">Choose folder</Trans></Button></div>
             <section className="supported-formats" aria-labelledby="supported-formats-title">
@@ -2795,15 +2810,14 @@ function App() {
           </section>
         ) : (
           <section className="tasks-view">
-            <header className="content-header"><div><h1><Trans>Reconstruction tasks</Trans></h1><p><Trans comment="Task pipeline runs extraction, masking, and alignment in order; each stage can still be cancelled or retried independently.">New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently.</Trans></p></div><div className="header-actions"><Button variant="outline" onClick={() => void openProject()}><FolderOpen /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button><Button onClick={openNewTaskDialog}><Plus /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button></div></header>
             <div className="task-groups">
               {([
-                { key: "queued", title: t`Queued`, description: t`Not started; can be edited or removed.`, items: queuedTasks },
-                { key: "started", title: t`In progress and finished`, description: t`Started tasks keep their stages and processing records.`, items: startedTasks },
-              ] as const).filter((group) => group.items.length > 0).map((group) => (
+                { key: "active", title: t`In progress`, items: activeTasks },
+                { key: "completed", title: t`Completed`, items: completedTasks },
+              ] as const).filter((group) => group.key === "completed" || group.items.length > 0).map((group) => (
                 <section className="task-group" key={group.key}>
-                  <div className="task-group-heading"><div><h2>{group.title}</h2><p>{group.description}</p></div><Badge variant="outline">{group.items.length}</Badge></div>
-                  <div className="task-list">
+                  <div className="task-group-heading"><div><h2>{group.title}</h2><Badge variant="secondary">{group.items.length}</Badge></div></div>
+                  {group.items.length > 0 ? <div className="task-list">
               {group.items.map((task) => {
                 const overall = taskProgress(task);
                 const queued = taskHasNotStarted(task);
@@ -2821,7 +2835,7 @@ function App() {
                       <div className="task-row-actions">
                         {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" /><Trans context="queue action" comment="Add a queued task to the automatic execution queue.">Add to queue</Trans></Button>}
                         {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="task-delete-button" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
-                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => setSelectedTaskId(task.projectId)}><Info /></Button>
+                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={selectedTaskId === task.projectId} onClick={() => { setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); }}><Info /></Button>
                       </div>
                     </div>
                     {queued ? <div className="queued-task-summary"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="task-progress-block">
@@ -2867,7 +2881,13 @@ function App() {
                   </article>
                 );
               })}
-                  </div>
+                  </div> : <Empty className="completed-empty">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><CheckCircle2 /></EmptyMedia>
+                      <EmptyTitle><Trans>No completed tasks yet</Trans></EmptyTitle>
+                      <EmptyDescription><Trans>Completed reconstruction tasks will appear here.</Trans></EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>}
                 </section>
               ))}
             </div>
@@ -2910,14 +2930,17 @@ function App() {
       </Dialog>
 
       {selectedTask && (
-        <Sheet open onOpenChange={(open) => { if (!open) setSelectedTaskId(null); }}>
-          <SheetContent className="task-detail-sheet" side="right">
+        <Sheet open modal={false} onOpenChange={(open) => { if (!open) setSelectedTaskId(null); }}>
+          <SheetContent className="task-detail-sheet" side="right" showOverlay={false}>
             <SheetHeader>
-              <SheetTitle>{selectedTask.name}</SheetTitle>
-              <SheetDescription><Trans comment="Task details include current work, processing metrics, and logs; unavailable performance monitoring is marked explicitly.">View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly.</Trans></SheetDescription>
+              <div className="task-detail-identity"><span className="task-mark"><FileStack /></span><span><SheetTitle>{selectedTask.name}</SheetTitle><SheetDescription title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
             </SheetHeader>
+            <ToggleGroup className="task-detail-tabs" value={[taskDetailTab]} onValueChange={(value) => { const next = value[0]; if (next === "summary" || next === "records") setTaskDetailTab(next); }}>
+              <ToggleGroupItem value="summary"><Trans>Work summary</Trans></ToggleGroupItem>
+              <ToggleGroupItem value="records"><Trans>Processing records</Trans></ToggleGroupItem>
+            </ToggleGroup>
             <div className="task-detail-scroll">
-              {selectedStage && selectedStageDefinition && <section className="task-detail-overview">
+              {taskDetailTab === "summary" && <>{selectedStage && selectedStageDefinition && <section className="task-detail-overview">
                 <div className="task-detail-current-heading">
                   <span><small><Trans>Current work</Trans></small><strong>{stageLabel(selectedStageDefinition)}</strong></span>
                   <StageStatusBadge status={selectedStage.status} />
@@ -2961,17 +2984,6 @@ function App() {
               </Accordion>
 
               <section className="task-detail-section">
-                <div className="task-detail-section-title"><h2><Trans>Processing records</Trans></h2><span><Plural value={selectedTaskLogs.length} one="# entry" other="# entries" /></span></div>
-                {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
-                  const count = logCountLabel(log.completed, log.total);
-                  return <li className={`task-detail-log task-detail-log--${log.level}`} key={log.id}>
-                    <span className="task-detail-log-marker" aria-hidden="true" />
-                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{localiseUserMessage(log.message)}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
-                  </li>;
-                })}</ol> : <p className="task-detail-empty"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
-              </section>
-
-              <section className="task-detail-section">
                 <div className="task-detail-section-title"><h2><Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans></h2><span><Plural value={selectedTask.inputPaths.length} one="# file" other="# files" /></span></div>
                 {selectedTask.inputPaths.length > 0 ? <div className="task-detail-sources">{selectedTask.inputPaths.map((path, index) => <div key={`${index}-${path}`} title={path}><Video /><span>{path}</span></div>)}</div> : <p className="task-detail-empty"><Trans>This task has no recorded source files.</Trans></p>}
               </section>
@@ -2981,7 +2993,18 @@ function App() {
                   <div className="task-detail-section-title"><h2><Trans>Warnings</Trans></h2><Badge variant="destructive">{selectedTask.warnings.length}</Badge></div>
                   <div className="task-detail-warnings">{selectedTask.warnings.map((warning, index) => <div key={`${index}-${warning}`}><AlertTriangle /><span>{localiseUserMessage(warning)}</span></div>)}</div>
                 </section>
-              )}
+              )}</>}
+
+              {taskDetailTab === "records" && <section className="task-detail-section task-detail-records-section">
+                <div className="task-detail-section-title"><h2><Trans>Processing records</Trans></h2><span><Plural value={selectedTaskLogs.length} one="# entry" other="# entries" /></span></div>
+                {selectedTaskLogs.length > 0 ? <ol className="task-detail-log-list">{selectedTaskLogs.map((log) => {
+                  const count = logCountLabel(log.completed, log.total);
+                  return <li className={`task-detail-log task-detail-log--${log.level}`} key={log.id}>
+                    <span className="task-detail-log-marker" aria-hidden="true" />
+                    <div className="task-detail-log-main"><div className="task-detail-log-heading"><span>{formatTimestamp(log.timestampMs, true)}</span><strong>{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p>{localiseUserMessage(log.message)}</p><div className="task-detail-log-meta">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
+                  </li>;
+                })}</ol> : <p className="task-detail-empty"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
+              </section>}
             </div>
             <SheetFooter>{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setSelectedTaskId(null)}><Trans>Close</Trans></Button></SheetFooter>
           </SheetContent>
