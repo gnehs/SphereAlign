@@ -120,7 +120,7 @@ msgid "{0} progress"
 msgstr "{0} progress"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:218
+#: src/components/source-media.tsx:221
 msgid "{0} source snapshot"
 msgstr "{0} source snapshot"
 
@@ -155,7 +155,7 @@ msgstr "{0} source snapshot"
 #~ msgstr "{0}: first-frame preview from the first lens"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:182
+#: src/components/source-media.tsx:185
 msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}: first-frame preview from the first video stream"
 
@@ -1283,6 +1283,14 @@ msgstr "Frame extraction: Running"
 msgid "Ground correction may be unavailable"
 msgstr "Ground correction may be unavailable"
 
+#: src/components/source-media.tsx:80
+msgid "Ground reference is unavailable"
+msgstr "Ground reference is unavailable"
+
+#: src/components/source-media.tsx:80
+msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+msgstr "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
 msgstr "Hardware acceleration"
@@ -1821,7 +1829,7 @@ msgstr "Platform not checked yet"
 #~ msgid "Platform: {0}"
 #~ msgstr "Platform: {0}"
 
-#: src/components/source-media.tsx:130
+#: src/components/source-media.tsx:133
 msgid "Possible impact"
 msgstr "Possible impact"
 
@@ -1850,7 +1858,7 @@ msgstr "Preparing work"
 msgid "Preview"
 msgstr "Preview"
 
-#: src/components/source-media.tsx:211
+#: src/components/source-media.tsx:214
 msgid "Preview {alt}"
 msgstr "Preview {alt}"
 
@@ -2111,11 +2119,11 @@ msgid "Sharpness filtering"
 msgstr "Sharpness filtering"
 
 #. placeholder {0}: issues.length
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show {0} source issues"
 msgstr "Show {0} source issues"
 
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show source issue"
 msgstr "Show source issue"
 
@@ -2202,7 +2210,7 @@ msgstr "Source file not found"
 msgid "Source file was not found"
 msgstr "Source file was not found"
 
-#: src/components/source-media.tsx:113
+#: src/components/source-media.tsx:115
 msgid "Source inspection issues"
 msgstr "Source inspection issues"
 
@@ -2595,7 +2603,7 @@ msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "Unable to determine the project root"
 
-#: src/components/source-media.tsx:191
+#: src/components/source-media.tsx:194
 #: src/lib/pipeline.ts:612
 msgid "Unable to generate a first-frame preview"
 msgstr "Unable to generate a first-frame preview"

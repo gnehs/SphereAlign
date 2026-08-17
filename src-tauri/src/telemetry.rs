@@ -21,7 +21,9 @@ use crate::fisheye::{LensOpticalOcclusions, OpticalOcclusion};
 
 const PARSER_REVISION: &str =
     "77a3b810a0e0f64688a90546c5aaf24c9dba00bd+spherealign-dji-protobuf-v1";
-const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 3;
+const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 4;
+const GYRO_INTEGRATION_GAP_WARNING_MS: f64 = 100.0;
+const MAX_GYRO_INTEGRATION_GAP_MS: f64 = 2_000.0;
 
 /// A quaternion in scalar-first `(w, x, y, z)` order.
 pub type Quaternion = [f64; 4];
@@ -129,6 +131,23 @@ pub struct QuaternionSample {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AttitudeSource {
+    #[default]
+    Unavailable,
+    NativeFused,
+    GyroIntegratedRelative,
+}
+
+impl AttitudeSource {
+    /// Only a native fused stream may carry a world/gravity reference.
+    /// Gyro integration deliberately starts at identity and is relative-only.
+    pub fn has_absolute_reference(self) -> bool {
+        matches!(self, Self::NativeFused)
+    }
 }
 
 impl QuaternionSample {
@@ -255,7 +274,7 @@ pub fn validate_attitude_samples(samples: &[QuaternionSample]) -> AttitudeDiagno
     diagnose_attitude(samples, DEFAULT_ATTITUDE_DISCONTINUITY_DEG)
 }
 
-/// A normalized, timestamp-ordered view of fused attitude samples.
+/// A normalized, timestamp-ordered view of attitude samples.
 ///
 /// The source order is retained in [`AttitudeDiagnostics`] so a caller can
 /// detect malformed timestamps, while interpolation uses a sorted copy and
@@ -264,10 +283,19 @@ pub fn validate_attitude_samples(samples: &[QuaternionSample]) -> AttitudeDiagno
 pub struct AttitudeTimeline {
     samples: Vec<QuaternionSample>,
     diagnostics: AttitudeDiagnostics,
+    max_interpolation_gap_ms: Option<f64>,
 }
 
 impl AttitudeTimeline {
+    #[cfg(test)]
     pub fn new(samples: &[QuaternionSample]) -> Self {
+        Self::new_with_max_interpolation_gap(samples, None)
+    }
+
+    fn new_with_max_interpolation_gap(
+        samples: &[QuaternionSample],
+        max_interpolation_gap_ms: Option<f64>,
+    ) -> Self {
         let diagnostics = validate_attitude_samples(samples);
         let mut normalized = samples
             .iter()
@@ -291,6 +319,7 @@ impl AttitudeTimeline {
         Self {
             samples: unique,
             diagnostics,
+            max_interpolation_gap_ms,
         }
     }
 
@@ -340,6 +369,12 @@ impl AttitudeTimeline {
         if duration <= f64::EPSILON {
             return Some(right.clone());
         }
+        if self
+            .max_interpolation_gap_ms
+            .is_some_and(|maximum| duration > maximum)
+        {
+            return None;
+        }
         let factor = (timestamp_ms - left.timestamp_ms) / duration;
         let quaternion = slerp_quaternion(left.quaternion(), right.quaternion(), factor)?;
         Some(QuaternionSample {
@@ -370,6 +405,11 @@ pub struct NormalizedTelemetry {
     pub fused_attitude_sample_count: usize,
     pub fused_attitude_rate_hz: Option<f64>,
     pub fused_attitude: Vec<QuaternionSample>,
+    pub integrated_gyro_attitude_sample_count: usize,
+    pub integrated_gyro_attitude_rate_hz: Option<f64>,
+    pub integrated_gyro_attitude: Vec<QuaternionSample>,
+    #[serde(default)]
+    pub attitude_source: AttitudeSource,
     #[serde(default)]
     pub attitude_diagnostics: AttitudeDiagnostics,
     pub coordinate_frame: String,
@@ -379,7 +419,17 @@ pub struct NormalizedTelemetry {
 
 impl NormalizedTelemetry {
     pub fn attitude_timeline(&self) -> AttitudeTimeline {
-        AttitudeTimeline::new(&self.fused_attitude)
+        let maximum_gap = (self.attitude_source == AttitudeSource::GyroIntegratedRelative)
+            .then_some(GYRO_INTEGRATION_GAP_WARNING_MS);
+        AttitudeTimeline::new_with_max_interpolation_gap(self.attitude_samples(), maximum_gap)
+    }
+
+    pub fn attitude_samples(&self) -> &[QuaternionSample] {
+        if self.fused_attitude.is_empty() {
+            &self.integrated_gyro_attitude
+        } else {
+            &self.fused_attitude
+        }
     }
 }
 
@@ -416,19 +466,22 @@ fn describe_coordinate_frame(
     parser_name: &str,
     camera_type: &str,
     normalized_imu_sample_count: usize,
-    fused_attitude_sample_count: usize,
+    attitude_source: AttitudeSource,
 ) -> String {
     let source = telemetry_source_label(parser_name, camera_type);
-    if fused_attitude_sample_count > 0 {
-        format!(
+    match attitude_source {
+        AttitudeSource::NativeFused => format!(
             "{source} fused attitude normalized by telemetry-parser; sensor-to-camera transform is unverified; not a COLMAP camera qvec"
-        )
-    } else if normalized_imu_sample_count > 0 {
-        format!(
-            "{source} normalized IMU axes; no fused-attitude samples were detected; not a camera pose or COLMAP qvec"
-        )
-    } else {
-        "No verified telemetry coordinate frame; not a camera pose or COLMAP qvec".to_owned()
+        ),
+        AttitudeSource::GyroIntegratedRelative => format!(
+            "{source} normalized gyro integrated from an arbitrary identity orientation; relative rotation only; sensor-to-camera transform is unverified; not a gravity reference or COLMAP camera qvec"
+        ),
+        AttitudeSource::Unavailable if normalized_imu_sample_count > 0 => format!(
+            "{source} normalized IMU axes; no usable attitude timeline was produced; not a camera pose or COLMAP qvec"
+        ),
+        AttitudeSource::Unavailable => {
+            "No verified telemetry coordinate frame; not a camera pose or COLMAP qvec".to_owned()
+        }
     }
 }
 
@@ -436,24 +489,26 @@ fn base_telemetry_warnings(
     parser_name: &str,
     camera_type: &str,
     normalized_imu_sample_count: usize,
-    fused_attitude_sample_count: usize,
+    attitude_source: AttitudeSource,
 ) -> Vec<String> {
     let source = telemetry_source_label(parser_name, camera_type);
     let mut warnings = vec![format!("Raw {source} streams remain the source of truth.")];
-    if fused_attitude_sample_count > 0 {
-        warnings.push(
+    match attitude_source {
+        AttitudeSource::NativeFused => warnings.push(
             "A verified sensor-to-camera transform is required before using fused attitude as a COLMAP prior."
                 .to_owned(),
-        );
-    } else if normalized_imu_sample_count > 0 {
-        warnings.push(
-            "Only normalized IMU samples were detected; no fused attitude is available as a COLMAP prior."
+        ),
+        AttitudeSource::GyroIntegratedRelative => warnings.push(
+            "Gyroscope samples were integrated for relative rotation and hand-eye calibration; the arbitrary initial orientation must not be used as a gravity or absolute camera-pose prior."
                 .to_owned(),
-        );
-    } else {
-        warnings.push(
+        ),
+        AttitudeSource::Unavailable if normalized_imu_sample_count > 0 => warnings.push(
+            "Only normalized IMU samples were detected; no usable attitude timeline is available as a COLMAP prior."
+                .to_owned(),
+        ),
+        AttitudeSource::Unavailable => warnings.push(
             "No usable IMU or fused-attitude samples are available as a COLMAP prior.".to_owned(),
-        );
+        ),
     }
     warnings
 }
@@ -465,6 +520,7 @@ pub struct TelemetryExport {
     pub camera_model: Option<String>,
     pub normalized_imu_sample_count: usize,
     pub fused_attitude_sample_count: usize,
+    pub integrated_gyro_attitude_sample_count: usize,
 }
 
 /// Lightweight metadata capability probe used by source inspection.
@@ -479,6 +535,8 @@ pub struct TelemetryInspection {
     pub camera_model: Option<String>,
     pub samples_available: bool,
     pub normalized_imu_sample_count: usize,
+    pub gyro_sample_count: usize,
+    pub gyro_attitude_available: bool,
     pub fused_attitude_sample_count: usize,
 }
 
@@ -502,9 +560,20 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
     )
     .map_err(|error| error.to_string())?;
     let samples_available = input.samples.is_some();
-    let normalized_imu_sample_count = telemetry_parser::util::normalized_imu(&input, None)
-        .map_err(|error| error.to_string())?
-        .len();
+    let normalized_imu =
+        telemetry_parser::util::normalized_imu(&input, None).map_err(|error| error.to_string())?;
+    let normalized_imu_sample_count = normalized_imu.len();
+    let gyro_sample_count = normalized_imu
+        .iter()
+        .filter(|sample| {
+            sample.timestamp_ms.is_finite()
+                && sample
+                    .gyro
+                    .is_some_and(|gyro| gyro.iter().all(|value| value.is_finite()))
+        })
+        .count();
+    let gyro_attitude_available = input.camera_type().eq_ignore_ascii_case("Insta360")
+        && integrate_normalized_gyro(&normalized_imu).is_ok();
     let mut fused_attitude_sample_count = 0usize;
     for sample in input.samples.iter().flatten() {
         let Some(groups) = sample.tag_map.as_ref() else {
@@ -542,6 +611,8 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
         camera_model: input.camera_model().cloned(),
         samples_available,
         normalized_imu_sample_count,
+        gyro_sample_count,
+        gyro_attitude_available,
         fused_attitude_sample_count,
     })
 }
@@ -802,6 +873,110 @@ fn multiply_quaternions(left: Quaternion, right: Quaternion) -> Quaternion {
         lw * ry - lx * rz + ly * rw + lz * rx,
         lw * rz + lx * ry - ly * rx + lz * rw,
     ]
+}
+
+/// Integrate normalized body-frame angular velocity into a relative attitude.
+///
+/// telemetry-parser's normalized IMU contract is degrees/second and
+/// milliseconds. The initial orientation is intentionally identity, so the
+/// result is suitable for relative-rotation hand-eye calibration but not for
+/// gravity alignment or an absolute camera pose prior.
+#[derive(Debug)]
+struct GyroIntegration {
+    samples: Vec<QuaternionSample>,
+    gap_count: usize,
+    max_gap_ms: f64,
+    non_monotonic_timestamp_count: usize,
+    duplicate_timestamp_count: usize,
+}
+
+fn integrate_normalized_gyro(samples: &[IMUData]) -> Result<GyroIntegration, String> {
+    let mut gyro = samples
+        .iter()
+        .filter_map(|sample| {
+            let value = sample.gyro?;
+            (sample.timestamp_ms.is_finite() && value.iter().all(|component| component.is_finite()))
+                .then_some((sample.timestamp_ms, value))
+        })
+        .collect::<Vec<_>>();
+    let non_monotonic_timestamp_count =
+        gyro.windows(2).filter(|pair| pair[1].0 < pair[0].0).count();
+    let duplicate_timestamp_count = gyro
+        .windows(2)
+        .filter(|pair| pair[1].0 == pair[0].0)
+        .count();
+    gyro.sort_by(|left, right| left.0.total_cmp(&right.0));
+    gyro.dedup_by(|left, right| left.0 == right.0);
+    if gyro.len() < 2 {
+        return Err("fewer than two finite gyro samples are available".to_owned());
+    }
+
+    let mut attitude = [1.0, 0.0, 0.0, 0.0];
+    let mut integrated = Vec::with_capacity(gyro.len());
+    let mut gap_count = 0usize;
+    let mut max_gap_ms = 0.0_f64;
+    integrated.push(QuaternionSample {
+        timestamp_ms: gyro[0].0,
+        w: attitude[0],
+        x: attitude[1],
+        y: attitude[2],
+        z: attitude[3],
+    });
+    for pair in gyro.windows(2) {
+        let [(previous_timestamp, previous), (timestamp, current)] = pair else {
+            continue;
+        };
+        let dt_ms = timestamp - previous_timestamp;
+        if !dt_ms.is_finite() || dt_ms <= 0.0 {
+            return Err("gyro timestamps are not strictly increasing".to_owned());
+        }
+        if dt_ms > MAX_GYRO_INTEGRATION_GAP_MS {
+            return Err(format!(
+                "gyro timeline contains a {dt_ms:.3} ms gap (maximum supported gap is {MAX_GYRO_INTEGRATION_GAP_MS:.1} ms)"
+            ));
+        }
+        if dt_ms > GYRO_INTEGRATION_GAP_WARNING_MS {
+            gap_count += 1;
+            max_gap_ms = max_gap_ms.max(dt_ms);
+        }
+
+        let dt_seconds = dt_ms / 1_000.0;
+        let omega = std::array::from_fn::<_, 3, _>(|axis| {
+            (previous[axis] + current[axis]) * 0.5_f64.to_radians()
+        });
+        let speed = omega.iter().map(|value| value * value).sum::<f64>().sqrt();
+        if !speed.is_finite() {
+            return Err("gyro angular speed overflowed during integration".to_owned());
+        }
+        let delta = if speed <= f64::EPSILON {
+            [1.0, 0.0, 0.0, 0.0]
+        } else {
+            let half_angle = speed * dt_seconds * 0.5;
+            let scale = half_angle.sin() / speed;
+            [
+                half_angle.cos(),
+                omega[0] * scale,
+                omega[1] * scale,
+                omega[2] * scale,
+            ]
+        };
+        attitude = normalize_quaternion(multiply_quaternions(attitude, delta))
+            .ok_or_else(|| "gyro integration produced an invalid quaternion".to_owned())?;
+        integrated.push(QuaternionSample {
+            timestamp_ms: *timestamp,
+            w: attitude[0],
+            x: attitude[1],
+            y: attitude[2],
+            z: attitude[3],
+        });
+    }
+    Ok(GyroIntegration {
+        samples: integrated,
+        gap_count,
+        max_gap_ms,
+        non_monotonic_timestamp_count,
+        duplicate_timestamp_count,
+    })
 }
 
 /// Match telemetry-parser's DJI normalized-attitude convention. This is still
@@ -1143,21 +1318,60 @@ pub fn parse_and_write(
             fused_attitude = fallback.samples;
         }
     }
-    if normalized_imu.is_empty() && fused_attitude.is_empty() {
+    let mut attitude_source = if fused_attitude.is_empty() {
+        AttitudeSource::Unavailable
+    } else {
+        AttitudeSource::NativeFused
+    };
+    let mut integrated_gyro_attitude = Vec::new();
+    let mut gyro_integration_gap = None;
+    let mut gyro_timestamp_repairs = None;
+    let mut gyro_integration_error = None;
+    if attitude_source == AttitudeSource::Unavailable
+        && camera_type.eq_ignore_ascii_case("Insta360")
+    {
+        match integrate_normalized_gyro(&normalized_imu) {
+            Ok(integrated) => {
+                if integrated.gap_count > 0 {
+                    gyro_integration_gap = Some((integrated.gap_count, integrated.max_gap_ms));
+                }
+                if integrated.non_monotonic_timestamp_count > 0
+                    || integrated.duplicate_timestamp_count > 0
+                {
+                    gyro_timestamp_repairs = Some((
+                        integrated.non_monotonic_timestamp_count,
+                        integrated.duplicate_timestamp_count,
+                    ));
+                }
+                integrated_gyro_attitude = integrated.samples;
+                attitude_source = AttitudeSource::GyroIntegratedRelative;
+            }
+            Err(error) => gyro_integration_error = Some(error),
+        }
+    }
+    if normalized_imu.is_empty() && fused_attitude.is_empty() && integrated_gyro_attitude.is_empty()
+    {
         return Err(
             "supported container was detected, but it contained no usable IMU or fused-attitude samples; no compatible DJI protobuf attitude layout was found"
                 .to_owned(),
         );
     }
 
-    let attitude_diagnostics = validate_attitude_samples(&fused_attitude);
-    let fused_attitude_rate_hz = attitude_diagnostics.rate_hz;
+    let attitude_samples = if fused_attitude.is_empty() {
+        &integrated_gyro_attitude
+    } else {
+        &fused_attitude
+    };
+    let attitude_diagnostics = validate_attitude_samples(attitude_samples);
+    let fused_attitude_rate_hz = validate_attitude_samples(&fused_attitude).rate_hz;
+    let integrated_gyro_attitude_rate_hz =
+        validate_attitude_samples(&integrated_gyro_attitude).rate_hz;
     let normalized_imu_sample_count = normalized_imu.len();
     let mut warnings = base_telemetry_warnings(
         &parser_name,
         &camera_type,
         normalized_imu_sample_count,
-        fused_attitude.len(),
+        attitude_source,
     );
     if invalid_fused_attitude_samples > 0 {
         warnings.push("Invalid fused-attitude quaternion samples were dropped.".to_owned());
@@ -1165,6 +1379,21 @@ pub fn parse_and_write(
     if let Some(proto) = fallback_proto {
         warnings.push(format!(
             "Fused attitude was decoded through SphereAlign's schema-aware DJI protobuf fallback ({proto}); rotational hand-eye calibration is still required before COLMAP use."
+        ));
+    }
+    if let Some(error) = gyro_integration_error {
+        warnings.push(format!(
+            "Normalized gyro could not be integrated into a relative attitude timeline: {error}."
+        ));
+    }
+    if let Some((gap_count, max_gap_ms)) = gyro_integration_gap {
+        warnings.push(format!(
+            "Integrated gyro contains {gap_count} telemetry gap(s) above {GYRO_INTEGRATION_GAP_WARNING_MS:.1} ms (maximum {max_gap_ms:.3} ms); hand-eye residual validation remains mandatory."
+        ));
+    }
+    if let Some((non_monotonic_count, duplicate_count)) = gyro_timestamp_repairs {
+        warnings.push(format!(
+            "Gyro integration sorted {non_monotonic_count} non-monotonic timestamp pair(s) and removed {duplicate_count} duplicate timestamp pair(s)."
         ));
     }
     if !attitude_diagnostics.is_monotonic() {
@@ -1184,7 +1413,7 @@ pub fn parse_and_write(
         &parser_name,
         &camera_type,
         normalized_imu_sample_count,
-        fused_attitude.len(),
+        attitude_source,
     );
     let normalized = NormalizedTelemetry {
         schema_version: NORMALIZED_TELEMETRY_SCHEMA_VERSION,
@@ -1202,6 +1431,10 @@ pub fn parse_and_write(
         fused_attitude_sample_count: fused_attitude.len(),
         fused_attitude_rate_hz,
         fused_attitude,
+        integrated_gyro_attitude_sample_count: integrated_gyro_attitude.len(),
+        integrated_gyro_attitude_rate_hz,
+        integrated_gyro_attitude,
+        attitude_source,
         attitude_diagnostics,
         coordinate_frame,
         applied_to_colmap: false,
@@ -1213,6 +1446,7 @@ pub fn parse_and_write(
         camera_model,
         normalized_imu_sample_count,
         fused_attitude_sample_count: normalized.fused_attitude_sample_count,
+        integrated_gyro_attitude_sample_count: normalized.integrated_gyro_attitude_sample_count,
     })
 }
 
@@ -1241,7 +1475,12 @@ fn existing_export(
     }
     let normalized_imu_sample_count = value.get("normalizedImuSampleCount")?.as_u64()? as usize;
     let fused_attitude_sample_count = value.get("fusedAttitudeSampleCount")?.as_u64()? as usize;
-    if normalized_imu_sample_count == 0 && fused_attitude_sample_count == 0 {
+    let integrated_gyro_attitude_sample_count =
+        value.get("integratedGyroAttitudeSampleCount")?.as_u64()? as usize;
+    if normalized_imu_sample_count == 0
+        && fused_attitude_sample_count == 0
+        && integrated_gyro_attitude_sample_count == 0
+    {
         return None;
     }
     Some(TelemetryExport {
@@ -1252,6 +1491,7 @@ fn existing_export(
             .map(str::to_owned),
         normalized_imu_sample_count,
         fused_attitude_sample_count,
+        integrated_gyro_attitude_sample_count,
     })
 }
 
@@ -1437,6 +1677,20 @@ mod tests {
     }
 
     #[test]
+    fn relative_gyro_timeline_does_not_interpolate_across_gaps() {
+        let timeline = AttitudeTimeline::new_with_max_interpolation_gap(
+            &[
+                sample(0.0, [1.0, 0.0, 0.0, 0.0]),
+                sample(200.0, [1.0, 0.0, 0.0, 0.0]),
+            ],
+            Some(GYRO_INTEGRATION_GAP_WARNING_MS),
+        );
+        assert!(timeline.interpolate(0.0).is_some());
+        assert!(timeline.interpolate(100.0).is_none());
+        assert!(timeline.interpolate(200.0).is_some());
+    }
+
+    #[test]
     fn normalized_export_round_trips_and_exposes_timeline() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("telemetry.json");
@@ -1459,6 +1713,10 @@ mod tests {
                 sample(0.0, [1.0, 0.0, 0.0, 0.0]),
                 sample(100.0, [1.0, 0.0, 0.0, 0.0]),
             ],
+            integrated_gyro_attitude_sample_count: 0,
+            integrated_gyro_attitude_rate_hz: None,
+            integrated_gyro_attitude: Vec::new(),
+            attitude_source: AttitudeSource::NativeFused,
             attitude_diagnostics: AttitudeDiagnostics::default(),
             coordinate_frame: "test".to_owned(),
             applied_to_colmap: false,
@@ -1474,6 +1732,51 @@ mod tests {
     }
 
     #[test]
+    fn integrates_normalized_gyro_as_relative_attitude() {
+        let imu = [
+            IMUData {
+                timestamp_ms: 0.0,
+                gyro: Some([0.0, 0.0, 450.0]),
+                ..IMUData::default()
+            },
+            IMUData {
+                timestamp_ms: 100.0,
+                gyro: Some([0.0, 0.0, 450.0]),
+                ..IMUData::default()
+            },
+        ];
+        let integrated = integrate_normalized_gyro(&imu).unwrap();
+        assert_eq!(integrated.samples.len(), 2);
+        assert!(
+            (quaternion_angle_deg(
+                integrated.samples[0].quaternion(),
+                integrated.samples[1].quaternion()
+            ) - 45.0)
+                .abs()
+                < 1e-10
+        );
+    }
+
+    #[test]
+    fn gyro_integration_rejects_unbounded_gaps() {
+        let imu = [
+            IMUData {
+                timestamp_ms: 0.0,
+                gyro: Some([1.0, 0.0, 0.0]),
+                ..IMUData::default()
+            },
+            IMUData {
+                timestamp_ms: MAX_GYRO_INTEGRATION_GAP_MS + 1.0,
+                gyro: Some([1.0, 0.0, 0.0]),
+                ..IMUData::default()
+            },
+        ];
+        assert!(integrate_normalized_gyro(&imu)
+            .unwrap_err()
+            .contains("maximum supported gap"));
+    }
+
+    #[test]
     fn normalized_cache_rejects_older_semantic_schema() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("telemetry.json");
@@ -1484,7 +1787,8 @@ mod tests {
                 "sourceSize": 42,
                 "sourceModifiedNanos": "123",
                 "normalizedImuSampleCount": 0,
-                "fusedAttitudeSampleCount": 1
+                "fusedAttitudeSampleCount": 1,
+                "integratedGyroAttitudeSampleCount": 0
             })
         };
         fs::write(&path, serde_json::to_vec(&payload(1)).unwrap()).unwrap();
@@ -1500,27 +1804,38 @@ mod tests {
     #[test]
     fn insta360_descriptions_do_not_claim_dji_or_fused_attitude() {
         let timebase = describe_timebase("Insta360", "Insta360", true);
-        let coordinate_frame = describe_coordinate_frame("Insta360", "Insta360", 10, 0);
-        let warnings = base_telemetry_warnings("Insta360", "Insta360", 10, 0);
+        let coordinate_frame = describe_coordinate_frame(
+            "Insta360",
+            "Insta360",
+            10,
+            AttitudeSource::GyroIntegratedRelative,
+        );
+        let warnings = base_telemetry_warnings(
+            "Insta360",
+            "Insta360",
+            10,
+            AttitudeSource::GyroIntegratedRelative,
+        );
 
         assert!(timebase.contains("first frame/gyro timestamp"));
         assert!(!timebase.contains("DJI"));
         assert!(!timebase.contains("OSV"));
-        assert!(coordinate_frame.contains("normalized IMU axes"));
-        assert!(coordinate_frame.contains("no fused-attitude samples"));
+        assert!(coordinate_frame.contains("normalized gyro integrated"));
+        assert!(coordinate_frame.contains("relative rotation only"));
         assert!(!coordinate_frame.contains("DJI"));
         assert!(!coordinate_frame.contains("OSV"));
         assert!(warnings
             .iter()
-            .any(|warning| warning.contains("no fused attitude is available")));
+            .any(|warning| warning.contains("relative rotation and hand-eye calibration")));
         assert!(warnings.iter().all(|warning| !warning.contains("DJI")));
         assert!(warnings.iter().all(|warning| !warning.contains("OSV")));
     }
 
     #[test]
     fn coordinate_frame_requires_transform_when_attitude_exists() {
-        let coordinate_frame = describe_coordinate_frame("dvtm_oq101", "DJI", 4, 2);
-        let warnings = base_telemetry_warnings("dvtm_oq101", "DJI", 4, 2);
+        let coordinate_frame =
+            describe_coordinate_frame("dvtm_oq101", "DJI", 4, AttitudeSource::NativeFused);
+        let warnings = base_telemetry_warnings("dvtm_oq101", "DJI", 4, AttitudeSource::NativeFused);
 
         assert!(coordinate_frame.contains("fused attitude"));
         assert!(coordinate_frame.contains("sensor-to-camera transform is unverified"));
@@ -1834,7 +2149,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires GS360_TEST_INSTA_DIR"]
-    fn parses_real_insta360_imu_without_claiming_fused_attitude() {
+    fn parses_real_insta360_imu_as_relative_attitude() {
         let root = PathBuf::from(
             std::env::var("GS360_TEST_INSTA_DIR").expect("GS360_TEST_INSTA_DIR is required"),
         );
@@ -1852,7 +2167,18 @@ mod tests {
             let normalized = read_normalized_telemetry(&output).unwrap();
             assert_eq!(normalized.camera_type, "Insta360");
             assert!(export.normalized_imu_sample_count > 0);
-            assert_eq!(export.fused_attitude_sample_count, 0);
+            assert!(
+                export.integrated_gyro_attitude_sample_count > 0,
+                "model {:?} did not produce relative attitude: {:?}",
+                export.camera_model,
+                normalized.warnings
+            );
+            assert_eq!(
+                normalized.attitude_source,
+                AttitudeSource::GyroIntegratedRelative
+            );
+            assert_eq!(normalized.fused_attitude_sample_count, 0);
+            assert!(!normalized.attitude_source.has_absolute_reference());
             assert!(!normalized.timebase.contains("DJI"));
             assert!(!normalized.coordinate_frame.contains("DJI"));
             parsed.push(export.camera_model);

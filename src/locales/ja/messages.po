@@ -120,7 +120,7 @@ msgid "{0} progress"
 msgstr "{0} の進捗"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:218
+#: src/components/source-media.tsx:221
 msgid "{0} source snapshot"
 msgstr "{0} ソーススナップショット"
 
@@ -155,7 +155,7 @@ msgstr "{0} ソーススナップショット"
 #~ msgstr "{0}: 最初のレンズの先頭フレームプレビュー"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:182
+#: src/components/source-media.tsx:185
 msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}：最初のビデオストリームの先頭フレームプレビュー"
 
@@ -1283,6 +1283,14 @@ msgstr "フレーム抽出: 実行中"
 msgid "Ground correction may be unavailable"
 msgstr "地面補正を使用できない可能性があります"
 
+#: src/components/source-media.tsx:80
+msgid "Ground reference is unavailable"
+msgstr "地面基準を利用できません"
+
+#: src/components/source-media.tsx:80
+msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+msgstr "ジャイロスコープのサンプルは相対回転のキャリブレーションに使用できますが、絶対的な地面方向は得られません。"
+
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
 msgstr "ハードウェアアクセラレーション"
@@ -1821,7 +1829,7 @@ msgstr "プラットフォーム未確認"
 #~ msgid "Platform: {0}"
 #~ msgstr "プラットフォーム: {0}"
 
-#: src/components/source-media.tsx:130
+#: src/components/source-media.tsx:133
 msgid "Possible impact"
 msgstr "考えられる影響"
 
@@ -1850,7 +1858,7 @@ msgstr "処理を準備中"
 msgid "Preview"
 msgstr "プレビュー"
 
-#: src/components/source-media.tsx:211
+#: src/components/source-media.tsx:214
 msgid "Preview {alt}"
 msgstr "プレビュー {alt}"
 
@@ -2111,11 +2119,11 @@ msgid "Sharpness filtering"
 msgstr "鮮明度フィルタリング"
 
 #. placeholder {0}: issues.length
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show {0} source issues"
 msgstr "ソースの問題を {0} 件表示"
 
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show source issue"
 msgstr "ソースの問題を表示"
 
@@ -2202,7 +2210,7 @@ msgstr "ソースファイルが見つかりません"
 msgid "Source file was not found"
 msgstr "ソースファイルが見つかりません"
 
-#: src/components/source-media.tsx:113
+#: src/components/source-media.tsx:115
 msgid "Source inspection issues"
 msgstr "ソース検査の問題"
 
@@ -2595,7 +2603,7 @@ msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "プロジェクトルートを特定できません"
 
-#: src/components/source-media.tsx:191
+#: src/components/source-media.tsx:194
 #: src/lib/pipeline.ts:612
 msgid "Unable to generate a first-frame preview"
 msgstr "先頭フレームのプレビューを生成できません"

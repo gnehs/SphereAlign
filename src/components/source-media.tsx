@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CircleAlert, CircleDashed, Video, X, type LucideIcon } from "lucide-react";
 import { t } from "@lingui/core/macro";
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { localiseUserMessage, type SourceIssue, type SourceMedia } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +76,8 @@ function sourceIssueCopy(issue: SourceIssue) {
       return { title: t`IMU metadata is unavailable`, detail: t`No usable IMU or fused-attitude samples were found.` };
     case "fused-attitude-unavailable":
       return { title: t`Orientation metadata is unavailable`, detail: t`IMU samples were found, but fused-attitude samples were not available.` };
+    case "absolute-attitude-unavailable":
+      return { title: t`Ground reference is unavailable`, detail: t`Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction.` };
     default:
       return {
         title: localiseUserMessage(issue.message),
@@ -99,7 +101,7 @@ function SourceIssueIndicator({ source }: { source: SourceMedia }) {
               "inline-grid size-5 shrink-0 place-items-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               hasError
                 ? "text-destructive hover:bg-destructive/10"
-                : "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400",
+                : "text-muted-foreground hover:bg-muted",
             )}
             aria-label={issueLabel}
           />
@@ -107,34 +109,35 @@ function SourceIssueIndicator({ source }: { source: SourceMedia }) {
       >
         <CircleAlert className="size-4" strokeWidth={2} aria-hidden="true" />
       </PopoverTrigger>
-      <PopoverContent className="w-[min(380px,calc(100vw-32px))] max-h-[min(520px,calc(100vh-32px))] overflow-y-auto p-3" side="right" align="start" sideOffset={8}>
-        <PopoverTitle className="mb-2 flex items-center gap-2">
-          <CircleAlert className={cn("size-4", hasError ? "text-destructive" : "text-amber-600 dark:text-amber-400")} aria-hidden="true" />
-          {t`Source inspection issues`}
-        </PopoverTitle>
-        <div className="flex flex-col gap-2">
+      <PopoverContent className="w-[min(360px,calc(100vw-32px))] max-h-[min(520px,calc(100vh-32px))] overflow-y-auto p-0" side="right" align="start" sideOffset={8}>
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <CircleAlert className={cn("size-4.5", hasError ? "text-destructive" : "text-muted-foreground")} aria-hidden="true" />
+          <PopoverTitle>{t`Source inspection issues`}</PopoverTitle>
+        </div>
+        <Separator />
+        <div>
           {issues.map((issue, index) => {
             const impacts = issue.impacts.map(sourceIssueImpactLabel).filter(Boolean);
             const copy = sourceIssueCopy(issue);
             return (
-              <Alert key={`${issue.code}-${index}`} variant={issue.severity === "error" ? "destructive" : "default"} className={issue.severity === "warning" ? "border-amber-500/30 bg-amber-500/5 text-amber-950 dark:text-amber-100" : undefined}>
-                <CircleAlert aria-hidden="true" />
-                <AlertTitle className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="min-w-0 break-words">{copy.title}</span>
-                  <Badge variant={issue.severity === "error" ? "destructive" : "outline"} className={issue.severity === "warning" ? "border-amber-500/40 text-amber-700 dark:text-amber-300" : undefined}>{sourceIssueSeverityLabel(issue.severity)}</Badge>
-                </AlertTitle>
-                <AlertDescription>
-                  <p className="break-words">{copy.detail}</p>
+              <Fragment key={`${issue.code}-${index}`}>
+                {index > 0 && <Separator />}
+                <section className="px-4 py-3.5">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <h3 className="min-w-0 break-words text-sm font-medium text-foreground">{copy.title}</h3>
+                    <Badge variant={issue.severity === "error" ? "destructive" : "secondary"}>{sourceIssueSeverityLabel(issue.severity)}</Badge>
+                  </div>
+                  <p className="mt-1 break-words text-sm leading-relaxed text-muted-foreground">{copy.detail}</p>
                   {impacts.length > 0 && (
-                    <div className="mt-2 border-t border-current/15 pt-2">
-                      <p className="mb-1 text-xs font-medium text-current">{t`Possible impact`}</p>
-                      <ul className="list-disc space-y-0.5 pl-4 text-xs text-current/80">
+                    <div className="mt-3">
+                      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t`Possible impact`}</p>
+                      <ul className="flex list-disc flex-col gap-1 pl-4 text-xs leading-relaxed text-muted-foreground">
                         {impacts.map((impact, impactIndex) => <li key={`${impact}-${impactIndex}`}>{impact}</li>)}
                       </ul>
                     </div>
                   )}
-                </AlertDescription>
-              </Alert>
+                </section>
+              </Fragment>
             );
           })}
         </div>

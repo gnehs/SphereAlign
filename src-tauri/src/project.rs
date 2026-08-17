@@ -1,6 +1,6 @@
 //! Project discovery and resumable manifest handling.
 
-use crate::camera_adapter::{expand_related_sources, is_supported_source};
+use crate::camera_adapter::{expand_related_sources, insta_pair_sibling, is_supported_source};
 use crate::color;
 use crate::doctor;
 use crate::telemetry;
@@ -486,6 +486,20 @@ fn has_existing_insta_sibling(path: &Path) -> bool {
     related.iter().any(|candidate| candidate != path)
 }
 
+fn inspect_capture_telemetry(path: &Path) -> Result<telemetry::TelemetryInspection, String> {
+    let primary = telemetry::inspect_source(path);
+    let primary_is_usable = primary.as_ref().is_ok_and(|metadata| {
+        metadata.normalized_imu_sample_count > 0 || metadata.fused_attitude_sample_count > 0
+    });
+    if primary_is_usable || !is_insv(path) {
+        return primary;
+    }
+    let Some(sibling) = insta_pair_sibling(path).filter(|candidate| candidate.is_file()) else {
+        return primary;
+    };
+    telemetry::inspect_source(&sibling).or(primary)
+}
+
 fn collect_source_paths(path: &Path, output: &mut Vec<PathBuf>) {
     if path.is_file() {
         if locate_manifest(path).is_some() {
@@ -679,7 +693,7 @@ fn inspect_source(path: &Path) -> SourceInspection {
                         &["dual-fisheye-extraction"],
                     );
                 }
-                match telemetry::inspect_source(&path) {
+                match inspect_capture_telemetry(&path) {
                     Ok(metadata) if !metadata.samples_available => {
                         let message =
                             "Container metadata could not be decoded; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
@@ -703,9 +717,22 @@ fn inspect_source(path: &Path) -> SourceInspection {
                             &["ground-alignment", "reconstruction-acceleration"],
                         );
                     }
+                    Ok(metadata)
+                        if metadata.fused_attitude_sample_count == 0
+                            && metadata.gyro_attitude_available =>
+                    {
+                        let message =
+                            "Usable gyroscope samples were found and can be integrated for relative rotation calibration, but no absolute attitude reference is available; ground correction may be unavailable";
+                        inspection.warnings.push(message.to_owned());
+                        inspection.warning_issue(
+                            "absolute-attitude-unavailable",
+                            message,
+                            &["ground-alignment"],
+                        );
+                    }
                     Ok(metadata) if metadata.fused_attitude_sample_count == 0 => {
                         let message =
-                            "Usable IMU samples were found, but no fused-attitude metadata is available; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
+                            "IMU metadata was found, but there are not enough usable gyroscope samples for rotation calibration; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
                         inspection.warnings.push(message.to_owned());
                         inspection.warning_issue(
                             "fused-attitude-unavailable",

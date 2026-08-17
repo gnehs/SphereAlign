@@ -120,7 +120,7 @@ msgid "{0} progress"
 msgstr "{0} 進度"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:218
+#: src/components/source-media.tsx:221
 msgid "{0} source snapshot"
 msgstr "{0} 來源快照"
 
@@ -155,7 +155,7 @@ msgstr "{0} 來源快照"
 #~ msgstr "{0}：第一個鏡頭的第一影格預覽"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:182
+#: src/components/source-media.tsx:185
 msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}：第一個視訊串流的第一幀預覽"
 
@@ -1283,6 +1283,14 @@ msgstr "影格擷取：執行中"
 msgid "Ground correction may be unavailable"
 msgstr "地面校正可能無法使用"
 
+#: src/components/source-media.tsx:80
+msgid "Ground reference is unavailable"
+msgstr "地面參考方向無法使用"
+
+#: src/components/source-media.tsx:80
+msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+msgstr "陀螺儀樣本可用於相對旋轉校正，但無法提供絕對地面方向。"
+
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
 msgstr "硬體加速"
@@ -1821,7 +1829,7 @@ msgstr "平台尚未檢查"
 #~ msgid "Platform: {0}"
 #~ msgstr "平台：{0}"
 
-#: src/components/source-media.tsx:130
+#: src/components/source-media.tsx:133
 msgid "Possible impact"
 msgstr "可能的影響"
 
@@ -1850,7 +1858,7 @@ msgstr "準備工作"
 msgid "Preview"
 msgstr "預覽"
 
-#: src/components/source-media.tsx:211
+#: src/components/source-media.tsx:214
 msgid "Preview {alt}"
 msgstr "預覽 {alt}"
 
@@ -2111,11 +2119,11 @@ msgid "Sharpness filtering"
 msgstr "清晰度篩選"
 
 #. placeholder {0}: issues.length
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show {0} source issues"
 msgstr "顯示 {0} 個來源問題"
 
-#: src/components/source-media.tsx:91
+#: src/components/source-media.tsx:93
 msgid "Show source issue"
 msgstr "顯示來源問題"
 
@@ -2202,7 +2210,7 @@ msgstr "找不到來源檔案"
 msgid "Source file was not found"
 msgstr "找不到來源檔案"
 
-#: src/components/source-media.tsx:113
+#: src/components/source-media.tsx:115
 msgid "Source inspection issues"
 msgstr "來源檢查問題"
 
@@ -2595,7 +2603,7 @@ msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "無法判定專案根目錄"
 
-#: src/components/source-media.tsx:191
+#: src/components/source-media.tsx:194
 #: src/lib/pipeline.ts:612
 msgid "Unable to generate a first-frame preview"
 msgstr "無法產生第一影格預覽"

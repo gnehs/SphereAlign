@@ -2525,6 +2525,7 @@ fn run_extract(
                     "cameraModel": export.camera_model,
                     "normalizedImuSampleCount": export.normalized_imu_sample_count,
                     "fusedAttitudeSampleCount": export.fused_attitude_sample_count,
+                    "integratedGyroAttitudeSampleCount": export.integrated_gyro_attitude_sample_count,
                     "appliedToColmap": false
                 }));
                 match telemetry::read_normalized_telemetry(&normalized_path) {
@@ -5841,7 +5842,7 @@ fn calibrate_imu_sources(
                 continue;
             }
         };
-        let telemetry_sample_count = normalized.fused_attitude.len();
+        let telemetry_sample_count = normalized.attitude_samples().len();
         let (calibration_config, calibration_profile) = imu_calibration_config(
             normalized.camera_model.as_deref(),
             normalized.parser.as_str(),
@@ -5851,7 +5852,7 @@ fn calibrate_imu_sources(
             .map(|(visual_model, visual_samples)| {
                 let model = crate::imu_calibration::estimate_calibration(
                     &visual_samples,
-                    &normalized.fused_attitude,
+                    normalized.attitude_samples(),
                     calibration_config,
                 )
                 .unwrap_or_else(|error| {
@@ -6042,6 +6043,12 @@ fn build_orientation_and_gravity_priors(
                 .join("metadata")
                 .join(format!("{}_telemetry.json", source.source_id)),
         )?;
+        // A gyro-integrated timeline starts from an arbitrary identity. It is
+        // valid for relative hand-eye calibration and motion sampling, but it
+        // cannot define world-up or an absolute orientation prior.
+        if !normalized.attitude_source.has_absolute_reference() {
+            continue;
+        }
         let timeline = normalized.attitude_timeline();
         let frames = source_frames_with_timestamps(root, &source.source_id);
         if frames.is_empty() {
@@ -9127,7 +9134,7 @@ mod tests {
                 .unwrap();
         let relaxed = crate::imu_calibration::estimate_calibration(
             &visual,
-            &normalized.fused_attitude,
+            normalized.attitude_samples(),
             crate::imu_calibration::CalibrationConfig {
                 max_residual_deg: 180.0,
                 ..crate::imu_calibration::CalibrationConfig::default()
