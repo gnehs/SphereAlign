@@ -963,6 +963,12 @@ function formatTimestamp(value?: number, includeDate = false) {
     : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function timestampDateTime(value?: number) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 function formatDoctorCheckedAt(value: string) {
   if (value === "Not checked yet") return localiseUserMessage(value);
   const parsed = Date.parse(value);
@@ -3224,7 +3230,8 @@ function App() {
                 <TabsTrigger className="w-full min-w-0" value="summary"><Trans>Work summary</Trans></TabsTrigger>
                 <TabsTrigger className="w-full min-w-0" value="records"><Trans>Processing records</Trans></TabsTrigger>
               </TabsList>
-              <TabsContent className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6 pb-6" value="summary">
+              <TabsContent className="min-h-0 flex-1 overflow-hidden data-ending-style:hidden" value="summary">
+              <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto px-6 pb-6">
               {selectedStage && selectedStageDefinition && <section className="border-b py-5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 flex-col gap-1"><small className="text-sm text-muted-foreground"><Trans>Current work</Trans></small><strong className="text-base font-semibold text-foreground">{stageLabel(selectedStageDefinition)}</strong></span>
@@ -3263,19 +3270,25 @@ function App() {
                 </section>
               )}
 
+              </div>
               </TabsContent>
 
-              <TabsContent className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6 pb-6" value="records">
+              <TabsContent className="min-h-0 flex-1 overflow-hidden data-ending-style:hidden" value="records">
+              <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto px-6 pb-6">
               <section className="pt-5">
                 <DetailSectionHeading title={<Trans>Processing records</Trans>} meta={<Plural value={selectedTaskLogs.length} one="# entry" other="# entries" />} />
-                {selectedTaskLogs.length > 0 ? <ol className="relative flex list-none flex-col pt-0.5 before:absolute before:inset-y-2 before:left-1.75 before:w-px before:bg-border">{selectedTaskLogs.map((log) => {
+                {selectedTaskLogs.length > 0 ? <ol className="overflow-hidden rounded-md border bg-muted/20" aria-label={t`Processing records`}>{selectedTaskLogs.map((log) => {
                   const count = logCountLabel(log.completed, log.total);
-                  return <li className="relative flex min-w-0 gap-2 border-t py-2.5 pl-5 first:border-t-0" key={log.id}>
-                    <span className={cn("absolute top-3.5 left-0.75 z-10 size-2.25 rounded-full border-2 border-card bg-primary ring-1 ring-primary", log.level === "warning" && "bg-amber-500 ring-amber-500", log.level === "error" && "bg-destructive ring-destructive")} aria-hidden="true" />
-                    <div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"><span className="shrink-0 font-mono">{formatTimestamp(log.timestampMs, true)}</span><strong className="truncate text-sm font-semibold text-muted-foreground">{taskStageLabel(log.stage)}{log.phase ? ` · ${phaseLabel(log.phase)}` : ""}</strong></div><p className="mt-1 text-sm leading-relaxed break-anywhere text-foreground">{localiseUserMessage(log.message)}</p><div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground [&>span+span]:border-l [&>span+span]:pl-2">{count && <span>{count}</span>}{log.currentItem && <span>{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div></div>
+                  const scope = `${taskStageLabel(log.stage)}${log.phase ? `/${phaseLabel(log.phase)}` : ""}`;
+                  return <li className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-baseline gap-x-2 border-t px-3 py-2 font-mono text-xs first:border-t-0" key={log.id}>
+                    <time className="shrink-0 text-muted-foreground" dateTime={timestampDateTime(log.timestampMs)}>{formatTimestamp(log.timestampMs, true)}</time>
+                    <strong className={cn("font-semibold text-primary", log.level === "warning" && "text-amber-600", log.level === "error" && "text-destructive")}>{log.level === "warning" ? "WARN" : log.level.toUpperCase()}</strong>
+                    <p className="min-w-0 leading-relaxed break-anywhere whitespace-pre-wrap text-foreground"><span className="text-muted-foreground">[{scope}]</span>{" "}{localiseUserMessage(log.message)}</p>
+                    {(count || log.currentItem || log.durationMs !== undefined) && <div className="col-start-3 flex min-w-0 flex-wrap gap-x-3 text-muted-foreground">{count && <span>{count}</span>}{log.currentItem && <span className="break-anywhere">{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div>}
                   </li>;
                 })}</ol> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
               </section>
+              </div>
               </TabsContent>
             </Tabs>
             <SheetFooter className="border-t px-6 pt-4 pb-5.5">{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setTaskDetailOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
