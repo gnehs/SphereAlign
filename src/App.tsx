@@ -34,7 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, LayoutGroup } from "motion/react";
 import * as m from "motion/react-m";
 import { i18n, type I18n, type MessageDescriptor } from "@lingui/core";
 import { msg, plural, t } from "@lingui/core/macro";
@@ -85,8 +85,8 @@ import {
 } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { TASK_DETAIL_DRAWER_TRANSITION, TaskDetailPanel } from "@/components/task-detail-panel";
 import { useTheme, type Theme } from "@/components/theme-provider";
 import { getEnglishI18n, getLocale, localeLabels, setLocale, supportedLocales } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -102,9 +102,7 @@ function translate(descriptor: MessageDescriptor) {
 }
 
 const LANGUAGE_OPTIONS = supportedLocales.map((value) => ({ value, label: localeLabels[value] }));
-const TASK_DETAIL_DURATION_SECONDS = 0.28;
-const TASK_DETAIL_EASE = [0.22, 1, 0.36, 1] as const;
-const TASK_DETAIL_TRANSITION = { duration: TASK_DETAIL_DURATION_SECONDS, ease: TASK_DETAIL_EASE };
+const APP_NOTICE_EASE = [0.22, 1, 0.36, 1] as const;
 
 interface ColorInspection {
   shouldApply?: boolean;
@@ -1684,7 +1682,7 @@ function AppNotice({ message, onClose, avoidBottomAction = false }: { message: s
       initial={{ y: 8, opacity: 0, scale: 0.98 }}
       animate={{ y: 0, opacity: 1, scale: 1 }}
       exit={{ y: 6, opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.18, ease: TASK_DETAIL_EASE }}
+      transition={{ duration: 0.18, ease: APP_NOTICE_EASE }}
       className={cn("fixed bottom-5 left-5 z-60 flex w-[min(360px,calc(100vw-40px))] items-start gap-2.5 rounded-xl border bg-popover/95 p-3 text-sm text-popover-foreground shadow-md backdrop-blur-md", avoidBottomAction && "max-[760px]:bottom-18")}
       role="status"
       aria-atomic="true"
@@ -2017,6 +2015,8 @@ function App() {
   const [taskDetailTab, setTaskDetailTab] = useState<"summary" | "records">("summary");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const taskNameInputRef = useRef<HTMLInputElement>(null);
+  const taskDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeTaskDetail = useCallback(() => setTaskDetailOpen(false), []);
   const [nameDraft, setNameDraft] = useState("");
   const [sourcePaths, setSourcePaths] = useState<string[]>([]);
   const [outputDraft, setOutputDraft] = useState("");
@@ -2063,6 +2063,7 @@ function App() {
   const selectedStage = selectedTask && selectedStageDefinition ? selectedTask.stages[selectedStageDefinition.key] : undefined;
   const selectedRunningStageDefinition = selectedTask ? STAGES.find(({ key }) => selectedTask.stages[key].status === "running") : undefined;
   const selectedActiveProgressLog = selectedStageDefinition ? selectedTaskLogs.find((log) => log.kind === "progress" && log.stage === selectedStageDefinition.key && log.finishedAtMs === undefined) : undefined;
+
   const isWindowsPlatform = doctor.platform === "Windows";
   const doctorEssentialReady = ["COLMAP", "FFmpeg"].every((label) => doctor.items.find((item) => item.label === label)?.status === "ready");
   const uniqueDoctorWarnings = Array.from(new Set(doctor.warnings));
@@ -2639,7 +2640,6 @@ function App() {
     setTasks((current) => current.filter((item) => item.projectId !== task.projectId));
     if (selectedTaskId === task.projectId) {
       setTaskDetailOpen(false);
-      setSelectedTaskId(null);
     }
     setDeletingTaskId(null);
     setToast("Task removed from the queue; the output folder is kept");
@@ -3029,6 +3029,7 @@ function App() {
 
   return (
     <div className="flex size-full flex-col bg-background">
+      <LayoutGroup id="task-detail-workspace">
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
         <header className={cn(
@@ -3064,8 +3065,8 @@ function App() {
             </section>
           </section>
         ) : (
-          <m.section className={cn("mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5", taskDetailOpen && selectedTask && "max-w-none pr-[526px] max-[920px]:pr-8 max-[760px]:pr-3.5")} layout transition={{ layout: TASK_DETAIL_TRANSITION }}>
-            <div className="grid gap-7">
+          <m.section className={cn("mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5", taskDetailOpen && selectedTask && "max-w-none pr-[526px] max-[920px]:pr-8 max-[760px]:pr-3.5")} layout layoutDependency={taskDetailOpen && Boolean(selectedTask)} transition={{ layout: TASK_DETAIL_DRAWER_TRANSITION }}>
+            <m.div className="grid gap-7" layout transition={{ layout: TASK_DETAIL_DRAWER_TRANSITION }}>
               {([
                 { key: "active", title: t`In progress`, items: activeTasks },
                 { key: "completed", title: t`Completed`, items: completedTasks },
@@ -3091,7 +3092,7 @@ function App() {
                       <div className="flex shrink-0 items-center gap-1">
                         {waitingForEnqueue && <Button size="sm" onClick={() => enqueueQueuedTask(task)}><Play data-icon="inline-start" /><Trans context="queue action" comment="Add a queued task to the automatic execution queue.">Add to queue</Trans></Button>}
                         {editableQueued && <><Button variant="outline" size="sm" onClick={() => openEditTaskDialog(task)}><Pencil data-icon="inline-start" /><Trans context="task action" comment="Edit a task that has not started.">Edit</Trans></Button><Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeletingTaskId(task.projectId)}><Trash2 data-icon="inline-start" /><Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans></Button></>}
-                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={taskDetailOpen && selectedTaskId === task.projectId} onClick={() => { setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); setTaskDetailOpen(true); }}><Info /></Button>
+                        <Button variant="ghost" size="icon-sm" aria-label={t`View details for ${task.name}`} aria-haspopup="dialog" aria-expanded={taskDetailOpen && selectedTaskId === task.projectId} onClick={(event) => { taskDetailTriggerRef.current = event.currentTarget; setTaskDetailTab("summary"); setSelectedTaskId(task.projectId); setTaskDetailOpen(true); }}><Info /></Button>
                       </div>
                     </div>
                     {queued ? <div className="mt-4 ml-15 flex items-center justify-between text-sm text-muted-foreground max-[760px]:ml-0"><span><Trans comment="Queued tasks run automatically in creation order.">The queue runs automatically in creation order</Trans></span><small><Plural value={task.inputPaths.length} one="# source" other="# sources" /></small></div> : <><div className="mt-6.5 mb-4 ml-15 max-[760px]:ml-0 [&_[data-slot=progress-track]]:h-1.75 [&_[data-slot=progress-value]]:hidden">
@@ -3146,7 +3147,7 @@ function App() {
                   </Empty>}
                 </section>
               ))}
-            </div>
+            </m.div>
           </m.section>
         )}
       </main>
@@ -3202,106 +3203,86 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      <Sheet
+      <TaskDetailPanel
         open={taskDetailOpen && Boolean(selectedTask)}
-        modal={false}
-        onOpenChange={setTaskDetailOpen}
-      >
-        <AnimatePresence initial={false} onExitComplete={() => { if (!taskDetailOpen) setSelectedTaskId(null); }}>
-          {taskDetailOpen && selectedTask && (
-            <SheetContent
-            key="task-detail"
-            className="gap-0 overflow-hidden rounded-tl-xl border bg-card p-0 shadow-lg data-[side=right]:top-13 data-[side=right]:right-0 data-[side=right]:bottom-0 data-[side=right]:!h-[calc(100%-3.25rem)] data-[side=right]:w-[min(460px,100vw)] data-[side=right]:sm:max-w-[460px] max-[760px]:data-[side=right]:w-screen max-[760px]:data-[side=right]:max-w-none max-[760px]:rounded-none"
-            side="right"
-            showOverlay={false}
-            keepMounted
-            disableCssTransition
-            render={
-              <m.div
-                initial={{ x: 32, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: 32, opacity: 0 }}
-                transition={{
-                  x: TASK_DETAIL_TRANSITION,
-                  opacity: { duration: TASK_DETAIL_DURATION_SECONDS, ease: "linear" },
-                }}
-              />
-            }
-          >
-            <SheetHeader className="border-b px-6 pt-6 pb-4">
-              <div className="flex min-w-0 items-center gap-3.5 pr-7">{selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" size="compact" /> : <span className="grid size-10.5 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5"><FileStack /></span>}<span className="flex min-w-0 flex-1 flex-col gap-1"><SheetTitle className="text-base font-semibold text-foreground">{selectedTask.name}</SheetTitle><SheetDescription className="mt-0 truncate font-mono text-sm text-muted-foreground" title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</SheetDescription></span></div>
-            </SheetHeader>
-            <Tabs className="min-h-0 flex-1 gap-0" value={taskDetailTab} onValueChange={(value) => { if (value === "summary" || value === "records") setTaskDetailTab(value); }}>
-              <TabsList className="mx-5 grid w-auto shrink-0 grid-cols-2 border-b" variant="line">
-                <TabsTrigger className="w-full min-w-0" value="summary"><Trans>Work summary</Trans></TabsTrigger>
-                <TabsTrigger className="w-full min-w-0" value="records"><Trans>Processing records</Trans></TabsTrigger>
-              </TabsList>
-              <TabsContent className="min-h-0 flex-1 overflow-hidden data-ending-style:hidden" value="summary">
-              <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto px-6 pb-6">
-              {selectedStage && selectedStageDefinition && <section className="border-b py-5">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 flex-col gap-1"><small className="text-sm text-muted-foreground"><Trans>Current work</Trans></small><strong className="text-base font-semibold text-foreground">{stageLabel(selectedStageDefinition)}</strong></span>
-                  <StageStatusBadge status={selectedStage.status} />
-                </div>
-                <div className="mt-4 flex flex-col gap-1 text-sm">
-                  <strong className="font-semibold text-foreground">{phaseLabel(selectedStage.phase)}</strong>
-                  <p className="leading-relaxed break-anywhere text-muted-foreground">{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
-                  {selectedStage.currentItem && <small className="leading-relaxed break-anywhere text-muted-foreground">{t`Current item: ${selectedStage.currentItem}`}</small>}
-                </div>
-                {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="mt-4 flex flex-col gap-2 [&_[data-slot=progress-track]]:h-1.25 [&_[data-slot=progress-value]]:hidden">
-                  <div className="flex items-center justify-between gap-3 text-sm"><span className="text-muted-foreground">{t`${stageLabel(selectedStageDefinition)} progress`}</span><strong className="font-mono text-primary">{Math.round(selectedStage.progress)}%</strong></div>
-                  <Progress value={selectedStage.progress} aria-label={t`${stageLabel(selectedStageDefinition)} progress`}><ProgressValue /></Progress>
-                </div>}
-                <dl className="mt-4.5 grid grid-cols-2 border-t">
-                  <DetailMetric label={<Trans>Processed</Trans>} value={logCountLabel(selectedStage.completed, selectedStage.total) || t`Not reported yet`} />
-                  <DetailMetric label={<Trans>Elapsed</Trans>} value={formatDuration(taskStageDuration(selectedStage, clockMs))} />
-                  <DetailMetric label={<Trans>Estimated remaining</Trans>} value={selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"} />
-                  <DetailMetric label={<Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans>} value={selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"} />
-                  <DetailMetric icon={Cpu} label="CPU" value={<Trans>Not reported yet</Trans>} />
-                  <DetailMetric icon={Gauge} label="GPU" value={<Trans>Not reported yet</Trans>} />
-                  <DetailMetric icon={MemoryStick} label={<Trans>Memory</Trans>} value={<Trans>Not reported yet</Trans>} />
-                  <DetailMetric fullWidth label={<Trans context="output metric" comment="Output folder or artifact location.">Output</Trans>} value={selectedTask.outputPath || t`Not specified`} />
-                </dl>
-              </section>}
+        title={selectedTask?.name ?? ""}
+        description={selectedTask ? <span title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</span> : null}
+        leading={selectedTask ? (selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" size="compact" /> : <span className="grid size-10.5 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5"><FileStack /></span>) : null}
+        activeTab={taskDetailTab}
+        onTabChange={setTaskDetailTab}
+        summary={selectedTask ? (
+          <>
+            {selectedStage && selectedStageDefinition && <section className="border-b py-5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 flex-col gap-1"><small className="text-sm text-muted-foreground"><Trans>Current work</Trans></small><strong className="text-base font-semibold text-foreground">{stageLabel(selectedStageDefinition)}</strong></span>
+                <StageStatusBadge status={selectedStage.status} />
+              </div>
+              <div className="mt-4 flex flex-col gap-1 text-sm">
+                <strong className="font-semibold text-foreground">{phaseLabel(selectedStage.phase)}</strong>
+                <p className="leading-relaxed break-anywhere text-muted-foreground">{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
+                {selectedStage.currentItem && <small className="leading-relaxed break-anywhere text-muted-foreground">{t`Current item: ${selectedStage.currentItem}`}</small>}
+              </div>
+              {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="mt-4 flex flex-col gap-2 [&_[data-slot=progress-track]]:h-1.25 [&_[data-slot=progress-value]]:hidden">
+                <div className="flex items-center justify-between gap-3 text-sm"><span className="text-muted-foreground">{t`${stageLabel(selectedStageDefinition)} progress`}</span><strong className="font-mono text-primary">{Math.round(selectedStage.progress)}%</strong></div>
+                <Progress value={selectedStage.progress} aria-label={t`${stageLabel(selectedStageDefinition)} progress`}><ProgressValue /></Progress>
+              </div>}
+              <dl className="mt-4.5 grid grid-cols-2 border-t">
+                <DetailMetric label={<Trans>Processed</Trans>} value={logCountLabel(selectedStage.completed, selectedStage.total) || t`Not reported yet`} />
+                <DetailMetric label={<Trans>Elapsed</Trans>} value={formatDuration(taskStageDuration(selectedStage, clockMs))} />
+                <DetailMetric label={<Trans>Estimated remaining</Trans>} value={selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"} />
+                <DetailMetric label={<Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans>} value={selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"} />
+                <DetailMetric icon={Cpu} label="CPU" value={<Trans>Not reported yet</Trans>} />
+                <DetailMetric icon={Gauge} label="GPU" value={<Trans>Not reported yet</Trans>} />
+                <DetailMetric icon={MemoryStick} label={<Trans>Memory</Trans>} value={<Trans>Not reported yet</Trans>} />
+                <DetailMetric fullWidth label={<Trans context="output metric" comment="Output folder or artifact location.">Output</Trans>} value={selectedTask.outputPath || t`Not specified`} />
+              </dl>
+            </section>}
 
+            <section className="border-b py-5">
+              <DetailSectionHeading title={<Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans>} meta={<Plural value={selectedTask.inputPaths.length} one="# file" other="# files" />} />
+              {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-y">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}
+            </section>
+
+            {selectedTask.warnings.length > 0 && (
               <section className="border-b py-5">
-                <DetailSectionHeading title={<Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans>} meta={<Plural value={selectedTask.inputPaths.length} one="# file" other="# files" />} />
-                {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-y">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}
+                <DetailSectionHeading title={<Trans>Warnings</Trans>} meta={<Badge variant="destructive">{selectedTask.warnings.length}</Badge>} />
+                <div className="flex flex-col border-t">{selectedTask.warnings.map((warning, index) => <div className="flex min-w-0 items-start gap-2 border-t py-2.5 first:border-t-0" key={`${index}-${warning}`}><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" /><span className="min-w-0 text-sm leading-relaxed text-amber-700 dark:text-amber-400">{localiseUserMessage(warning)}</span></div>)}</div>
               </section>
+            )}
+          </>
+        ) : null}
+        records={selectedTask ? (
+          <section className="pt-5">
+            <DetailSectionHeading title={<Trans>Processing records</Trans>} meta={<Plural value={selectedTaskLogs.length} one="# entry" other="# entries" />} />
+            {selectedTaskLogs.length > 0 ? <ol className="overflow-hidden rounded-md border bg-muted/20" aria-label={t`Processing records`}>{selectedTaskLogs.map((log) => {
+              const count = logCountLabel(log.completed, log.total);
+              const scope = `${taskStageLabel(log.stage)}${log.phase ? `/${phaseLabel(log.phase)}` : ""}`;
+              return <li className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-baseline gap-x-2 border-t px-3 py-2 font-mono text-xs first:border-t-0" key={log.id}>
+                <time className="shrink-0 text-muted-foreground" dateTime={timestampDateTime(log.timestampMs)}>{formatTimestamp(log.timestampMs, true)}</time>
+                <strong className={cn("font-semibold text-primary", log.level === "warning" && "text-amber-600", log.level === "error" && "text-destructive")}>{log.level === "warning" ? "WARN" : log.level.toUpperCase()}</strong>
+                <p className="min-w-0 leading-relaxed break-anywhere whitespace-pre-wrap text-foreground"><span className="text-muted-foreground">[{scope}]</span>{" "}{localiseUserMessage(log.message)}</p>
+                {(count || log.currentItem || log.durationMs !== undefined) && <div className="col-start-3 flex min-w-0 flex-wrap gap-x-3 text-muted-foreground">{count && <span>{count}</span>}{log.currentItem && <span className="break-anywhere">{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div>}
+              </li>;
+            })}</ol> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
+          </section>
+        ) : null}
+        footer={selectedTask ? (
+          <>
+            {selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}
+            <Button variant="outline" onClick={closeTaskDetail}><Trans>Close</Trans></Button>
+          </>
+        ) : null}
+        onClose={closeTaskDetail}
+        restoreFocusRef={taskDetailTriggerRef}
+        escapeBlocked={taskDialogOpen || Boolean(deletingTaskId) || settingsOpen}
+        onExitComplete={() => {
+          if (taskDetailOpen) return;
+          setSelectedTaskId(null);
+          taskDetailTriggerRef.current = null;
+        }}
+      />
 
-              {selectedTask.warnings.length > 0 && (
-                <section className="border-b py-5">
-                  <DetailSectionHeading title={<Trans>Warnings</Trans>} meta={<Badge variant="destructive">{selectedTask.warnings.length}</Badge>} />
-                  <div className="flex flex-col border-t">{selectedTask.warnings.map((warning, index) => <div className="flex min-w-0 items-start gap-2 border-t py-2.5 first:border-t-0" key={`${index}-${warning}`}><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" /><span className="min-w-0 text-sm leading-relaxed text-amber-700 dark:text-amber-400">{localiseUserMessage(warning)}</span></div>)}</div>
-                </section>
-              )}
-
-              </div>
-              </TabsContent>
-
-              <TabsContent className="min-h-0 flex-1 overflow-hidden data-ending-style:hidden" value="records">
-              <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto px-6 pb-6">
-              <section className="pt-5">
-                <DetailSectionHeading title={<Trans>Processing records</Trans>} meta={<Plural value={selectedTaskLogs.length} one="# entry" other="# entries" />} />
-                {selectedTaskLogs.length > 0 ? <ol className="overflow-hidden rounded-md border bg-muted/20" aria-label={t`Processing records`}>{selectedTaskLogs.map((log) => {
-                  const count = logCountLabel(log.completed, log.total);
-                  const scope = `${taskStageLabel(log.stage)}${log.phase ? `/${phaseLabel(log.phase)}` : ""}`;
-                  return <li className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-baseline gap-x-2 border-t px-3 py-2 font-mono text-xs first:border-t-0" key={log.id}>
-                    <time className="shrink-0 text-muted-foreground" dateTime={timestampDateTime(log.timestampMs)}>{formatTimestamp(log.timestampMs, true)}</time>
-                    <strong className={cn("font-semibold text-primary", log.level === "warning" && "text-amber-600", log.level === "error" && "text-destructive")}>{log.level === "warning" ? "WARN" : log.level.toUpperCase()}</strong>
-                    <p className="min-w-0 leading-relaxed break-anywhere whitespace-pre-wrap text-foreground"><span className="text-muted-foreground">[{scope}]</span>{" "}{localiseUserMessage(log.message)}</p>
-                    {(count || log.currentItem || log.durationMs !== undefined) && <div className="col-start-3 flex min-w-0 flex-wrap gap-x-3 text-muted-foreground">{count && <span>{count}</span>}{log.currentItem && <span className="break-anywhere">{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div>}
-                  </li>;
-                })}</ol> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
-              </section>
-              </div>
-              </TabsContent>
-            </Tabs>
-            <SheetFooter className="border-t px-6 pt-4 pb-5.5">{selectedRunningStageDefinition && <Button variant="destructive" onClick={() => handleStageAction(selectedTask, selectedRunningStageDefinition.key)}><Square data-icon="inline-start" /><Trans context="task action" comment="Cancel the currently running stage for the whole selected task.">Cancel entire task</Trans></Button>}<Button variant="outline" onClick={() => setTaskDetailOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
-            </SheetContent>
-          )}
-        </AnimatePresence>
-      </Sheet>
+      </LayoutGroup>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="w-[min(420px,100vw)] gap-0 border-l bg-card p-0 data-[side=right]:sm:max-w-[420px]" side="right">
