@@ -71,7 +71,7 @@ pub fn run(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: gs360studio-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned]".to_owned()
+    "Usage: spherealign-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned]".to_owned()
 }
 
 fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {

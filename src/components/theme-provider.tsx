@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 export type Theme = "system" | "light" | "dark";
 
 const DEFAULT_THEME: Theme = "system";
-const DEFAULT_STORAGE_KEY = "gs360studio.theme";
+const DEFAULT_STORAGE_KEY = "spherealign.theme";
 const DARK_MODE_QUERY = "(prefers-color-scheme: dark)";
 
 type ThemeContextValue = {

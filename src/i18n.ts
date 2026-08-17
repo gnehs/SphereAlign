@@ -14,7 +14,7 @@ export type Locale = keyof typeof locales;
 
 export const defaultLocale: Locale = "en";
 export const DEFAULT_LOCALE = defaultLocale;
-export const localeStorageKey = "gs360studio.locale";
+export const localeStorageKey = "spherealign.locale";
 
 type CatalogModule = {
   messages: Messages;

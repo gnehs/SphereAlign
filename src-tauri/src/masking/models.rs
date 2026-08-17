@@ -276,7 +276,7 @@ fn download_to_partial(
         .get(spec.url)
         .header(
             "User-Agent",
-            concat!("gs360studio/", env!("CARGO_PKG_VERSION")),
+            concat!("spherealign/", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .map_err(|error| {

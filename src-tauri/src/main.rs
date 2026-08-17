@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    gs360studio_lib::run()
+    spherealign_lib::run()
 }

@@ -1446,7 +1446,7 @@ mod tests {
             .as_nanos();
         let counter = TEST_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "gs360studio-project-test-{}-{id}-{counter}",
+            "spherealign-project-test-{}-{id}-{counter}",
             std::process::id()
         ))
     }

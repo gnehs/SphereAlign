@@ -575,7 +575,7 @@ fn download_lut_to_partial(partial: &Path) -> Result<(), String> {
         .get(DJI_DLOG_M_LUT_URL)
         .header(
             "User-Agent",
-            concat!("gs360studio/", env!("CARGO_PKG_VERSION")),
+            concat!("spherealign/", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .map_err(|error| {
@@ -785,14 +785,14 @@ mod tests {
     #[test]
     fn filter_path_escapes_windows_drive_separator() {
         let lut = ValidatedLut {
-            path: PathBuf::from(r"C:\Users\test\AppData\Roaming\gs360studio\lut.cube"),
+            path: PathBuf::from(r"C:\Users\test\AppData\Roaming\SphereAlign\lut.cube"),
             sha256: "test".to_owned(),
             size: 1,
         };
 
         assert_eq!(
             lut3d_filter(&lut),
-            r"lut3d=file='C\:\\Users\\test\\AppData\\Roaming\\gs360studio\\lut.cube':interp=tetrahedral"
+            r"lut3d=file='C\:\\Users\\test\\AppData\\Roaming\\SphereAlign\\lut.cube':interp=tetrahedral"
         );
     }
 

@@ -21,7 +21,7 @@
     "sha256": "044874e23516a84e2a09510070d1413133394aabd605db02abbb1251fe992a9b"
   },
   "runnerBinary": {
-    "path": "gs360studio-cli.exe",
+    "path": "spherealign-cli.exe",
     "size": 42853376,
     "sha256": "2809e94b4bfcf1a10c1d7e95800088b08dfa34ad03eb3e78c9052c2b2301f82e"
   },

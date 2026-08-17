@@ -318,7 +318,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     gpuIndex: "-1",
   },
 };
-const COLMAP_PATH_STORAGE_KEY = "gs360studio.colmapPath";
+const COLMAP_PATH_STORAGE_KEY = "spherealign.colmapPath";
 
 function normaliseExtractColorMode(value: unknown): ExtractColorMode {
   const raw = String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");

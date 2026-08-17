@@ -1601,29 +1601,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gs360studio"
-version = "0.1.0"
-dependencies = [
- "image",
- "ndarray",
- "ort",
- "prost",
- "rayon",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "telemetry-parser",
- "tempfile",
- "ureq",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4046,6 +4023,29 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "spherealign"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "ndarray",
+ "ort",
+ "prost",
+ "rayon",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "telemetry-parser",
+ "tempfile",
+ "ureq",
 ]
 
 [[package]]

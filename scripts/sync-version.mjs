@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const PACKAGE_NAME = "gs360studio";
+const PACKAGE_NAME = "spherealign";
 
 const files = {
   packageJson: new URL("../package.json", import.meta.url),
