@@ -74,6 +74,7 @@ import { Input } from "@/components/ui/input";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -3035,11 +3036,16 @@ function App() {
           IS_MACOS_RUNTIME && "pl-[86px]",
           IS_WINDOWS_RUNTIME && "pr-0 py-0",
         )}>
-          <h1 className="sr-only"><Trans>Reconstruction tasks</Trans></h1>
-          <div className="flex min-h-9 w-full shrink-0 items-center gap-2 self-stretch max-[760px]:[&_[data-slot=button]]:flex-1" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
-            <Button size="sm" onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
-            <Button size="sm" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
-            <Button className="ml-auto" size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+          <div className="flex min-h-9 w-full shrink-0 items-center self-stretch" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
+            <h1 className="shrink-0 text-base font-semibold tracking-tight text-foreground">SphereAlign</h1>
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" onClick={openNewTaskDialog}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
+              <Button size="sm" variant="outline" onClick={() => void openProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
+              <div className="mx-1 flex h-5">
+                <Separator orientation="vertical" />
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+            </div>
             <WindowsWindowControls />
           </div>
         </header>
