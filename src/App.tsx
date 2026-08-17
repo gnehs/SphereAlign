@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   CircleDashed,
   CircleHelp,
-  Cpu,
   Film,
   FileVideoCamera,
   FileStack,
@@ -22,7 +21,6 @@ import {
   Settings2,
   Square,
   Gauge,
-  MemoryStick,
   Minus,
   CheckCircle2,
   Copy,
@@ -34,7 +32,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, LayoutGroup } from "motion/react";
+import { AnimatePresence, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { i18n, type I18n, type MessageDescriptor } from "@lingui/core";
 import { msg, plural, t } from "@lingui/core/macro";
@@ -1664,7 +1662,7 @@ function DetailMetric({
 }) {
   return (
     <div className={cn(
-      "flex min-w-0 flex-col gap-1 border-b py-2.5 odd:border-r odd:pr-3.5 even:pl-3.5",
+      "flex min-w-0 flex-col gap-1 border-b py-2.5 last:border-b-0 odd:border-r odd:pr-3.5 even:pl-3.5",
       fullWidth && "col-span-full border-r-0 px-0 odd:pr-0 even:pl-0",
     )}>
       <dt className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -2005,6 +2003,7 @@ function App() {
   // through localiseUserMessage and need the same rerender trigger.
   const { i18n: lingui } = useLingui();
   const { theme, setTheme } = useTheme();
+  const shouldReduceMotion = useReducedMotion();
   void lingui.locale;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -2014,6 +2013,7 @@ function App() {
   const [taskDetailOpen, setTaskDetailOpen] = useState(false);
   const [taskDetailTab, setTaskDetailTab] = useState<"summary" | "records">("summary");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [taskDetailUsesSplitView, setTaskDetailUsesSplitView] = useState(() => window.matchMedia("(min-width: 921px)").matches);
   const taskNameInputRef = useRef<HTMLInputElement>(null);
   const taskDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closeTaskDetail = useCallback(() => setTaskDetailOpen(false), []);
@@ -2047,6 +2047,12 @@ function App() {
     const timeoutId = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 921px)");
+    const updateSplitView = (event: MediaQueryListEvent) => setTaskDetailUsesSplitView(event.matches);
+    mediaQuery.addEventListener("change", updateSplitView);
+    return () => mediaQuery.removeEventListener("change", updateSplitView);
+  }, []);
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
   const taskSnapshot = useRef<Task[]>([]);
   const logSequence = useRef(0);
@@ -3029,7 +3035,6 @@ function App() {
 
   return (
     <div className="flex size-full flex-col bg-background">
-      <LayoutGroup id="task-detail-workspace">
       <main className="flex min-h-0 flex-1 flex-col overflow-auto">
         <input ref={fileInputRef} type="file" multiple accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts" hidden onChange={(event) => handleBrowserFiles(event.currentTarget.files)} />
         <header className={cn(
@@ -3065,8 +3070,14 @@ function App() {
             </section>
           </section>
         ) : (
-          <m.section className={cn("mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5", taskDetailOpen && selectedTask && "max-w-none pr-[526px] max-[920px]:pr-8 max-[760px]:pr-3.5")} layout layoutDependency={taskDetailOpen && Boolean(selectedTask)} transition={{ layout: TASK_DETAIL_DRAWER_TRANSITION }}>
-            <m.div className="grid gap-7" layout transition={{ layout: TASK_DETAIL_DRAWER_TRANSITION }}>
+          <m.div
+            className="mr-auto w-full"
+            initial={false}
+            animate={{ width: taskDetailOpen && selectedTask && taskDetailUsesSplitView ? "calc(100% - 460px)" : "100%" }}
+            transition={shouldReduceMotion ? { duration: 0 } : TASK_DETAIL_DRAWER_TRANSITION}
+          >
+          <section className="mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5">
+            <div className="grid gap-7">
               {([
                 { key: "active", title: t`In progress`, items: activeTasks },
                 { key: "completed", title: t`Completed`, items: completedTasks },
@@ -3115,7 +3126,7 @@ function App() {
                         const action = stageActionState(task, stage.key, hasRunningStage);
                         return (
                           <div className="relative flex min-w-0 items-center gap-2 border-t py-4 first:border-t-0 max-[760px]:flex-wrap max-[760px]:items-start max-[760px]:py-3" data-status={current.status} key={stage.key} role="listitem" aria-label={t`Stage ${stageIndex + 1} of ${STAGES.length}: ${stageLabel(stage)}`}>
-                            <span className="relative grid w-6 shrink-0 self-stretch place-items-start" aria-hidden="true"><span className={cn("relative z-10 grid size-5 place-items-center rounded-full border bg-card text-[0.72rem] font-semibold text-muted-foreground [&_svg]:size-3", current.status === "running" && "border-primary text-primary ring-3 ring-primary/10", current.status === "completed" && "border-emerald-600 bg-emerald-500/10 text-emerald-600")}>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span>{stageIndex < STAGES.length - 1 && <span className="absolute top-5 -bottom-3 left-1/2 w-px -translate-x-1/2 bg-border" />}</span>
+                            <span className="relative grid w-6 shrink-0 items-start justify-items-center self-stretch" aria-hidden="true"><span className={cn("relative z-10 grid size-5 place-items-center rounded-full border bg-card text-[0.72rem] font-semibold text-muted-foreground [&_svg]:size-3", current.status === "running" && "border-primary text-primary ring-3 ring-primary/10", current.status === "completed" && "border-emerald-600 bg-emerald-500/10 text-emerald-600")}>{current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}</span>{stageIndex < STAGES.length - 1 && <span className="absolute top-5 -bottom-3 left-1/2 w-px -translate-x-1/2 bg-border" />}</span>
                             <div className="flex min-w-0 flex-1 items-center gap-2">
                               <Icon className={cn("size-4 shrink-0 text-muted-foreground", current.status === "running" && "text-primary")} />
                               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -3147,8 +3158,9 @@ function App() {
                   </Empty>}
                 </section>
               ))}
-            </m.div>
-          </m.section>
+            </div>
+          </section>
+          </m.div>
         )}
       </main>
 
@@ -3231,16 +3243,13 @@ function App() {
                 <DetailMetric label={<Trans>Elapsed</Trans>} value={formatDuration(taskStageDuration(selectedStage, clockMs))} />
                 <DetailMetric label={<Trans>Estimated remaining</Trans>} value={selectedStage.status === "running" ? formatEta(estimatedRemainingMs(selectedStage, clockMs)) : "—"} />
                 <DetailMetric label={<Trans comment="Estimated processing throughput, not network speed.">Rate (estimated)</Trans>} value={selectedStage.status === "running" ? processingRateLabel(selectedActiveProgressLog?.completed, selectedActiveProgressLog?.startedAtMs, clockMs) : "—"} />
-                <DetailMetric icon={Cpu} label="CPU" value={<Trans>Not reported yet</Trans>} />
-                <DetailMetric icon={Gauge} label="GPU" value={<Trans>Not reported yet</Trans>} />
-                <DetailMetric icon={MemoryStick} label={<Trans>Memory</Trans>} value={<Trans>Not reported yet</Trans>} />
                 <DetailMetric fullWidth label={<Trans context="output metric" comment="Output folder or artifact location.">Output</Trans>} value={selectedTask.outputPath || t`Not specified`} />
               </dl>
             </section>}
 
             <section className="border-b py-5">
               <DetailSectionHeading title={<Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans>} meta={<Plural value={selectedTask.inputPaths.length} one="# file" other="# files" />} />
-              {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-y">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}
+              {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-t">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}
             </section>
 
             {selectedTask.warnings.length > 0 && (
@@ -3281,8 +3290,6 @@ function App() {
           taskDetailTriggerRef.current = null;
         }}
       />
-
-      </LayoutGroup>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent className="w-[min(420px,100vw)] gap-0 border-l bg-card p-0 data-[side=right]:sm:max-w-[420px]" side="right">

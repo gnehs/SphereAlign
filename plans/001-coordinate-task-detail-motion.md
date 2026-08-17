@@ -64,7 +64,7 @@ const panelVariants = {
 
 Reduced motion must remove translation and use `opacity: 0 -> 1` with the 0.2-second fade transition. Panel chrome may fade as one unit, but do not stagger the header, tabs, body, and footer; this is a crisp desktop workbench, not an onboarding flow.
 
-Wrap the main task canvas and task-detail panel in `LayoutGroup id="task-detail-workspace"`. The main-canvas `layout` transition and panel transform must both use `TASK_DETAIL_DRAWER_TRANSITION`. Add `layout` to the main canvas's immediate content wrapper so Motion can correct scale distortion during the width projection.
+Do not use Motion layout animation for the main task canvas. Wrap its static content in one left-anchored motion container and animate only its `width` between `100%` and `calc(100% - 460px)` with `TASK_DETAIL_DRAWER_TRANSITION`. At viewport widths of 920px or less, keep the canvas at `100%` and let the panel overlay it. Reduced motion must apply the width target immediately.
 
 The tab content may use directional transforms of `translateX(8px)` / `translateX(-8px)`, but both its opacity and transform must use `TASK_DETAIL_TAB_TRANSITION`. Use `AnimatePresence initial={false} mode="popLayout" propagate` and pass the tab direction through `custom` variants. The shared underline must use `TASK_DETAIL_TAB_TRANSITION`, not the drawer transition.
 
@@ -84,7 +84,7 @@ The tab content may use directional transforms of `translateX(8px)` / `translate
 5. Make the panel chrome a single variant child. Add `propagate` to the tab content `AnimatePresence`; use directional custom variants and `mode="popLayout"`.
 6. In `src/App.tsx`, remove task-detail motion tokens, panel refs, reduced-motion branching, Escape effect, and tab keyboard handler. Import the new component and shared drawer transition.
 7. Keep the task-domain summary and records markup in `App.tsx` as slot content so the refactor does not export internal `Task`, `StageState`, or formatting helpers.
-8. Wrap the non-empty task canvas and `TaskDetailPanel` in `LayoutGroup id="task-detail-workspace"`. Use the exported drawer transition for the canvas layout projection, and make its immediate grid wrapper a motion layout element with the same transition.
+8. Wrap the non-empty task canvas in one left-anchored motion container. Animate only its width with the exported drawer transition; keep the inner section and grid static, with no `layout`, `layoutDependency`, or `LayoutGroup`.
 9. Preserve selected-task cleanup only after `onExitComplete`; do not clear it in the ordinary close path. Preserve deletion behavior for a task that is removed from the underlying collection.
 
 ## Boundaries
@@ -104,6 +104,6 @@ The tab content may use directional transforms of `translateX(8px)` / `translate
   - panel header, tabs, body, and footer read as one rigid surface rather than four separate entrances;
   - rapidly close then reopen midway through exit and confirm the panel reverses from its current on-screen position without a jump;
   - switch summary/records repeatedly and confirm the content moves only 8px, the underline arrives on the same 200ms timeline, and no double-exposed scroll surface remains;
-  - inspect at 10% playback speed and confirm main-canvas cards do not stretch while layout width changes;
+  - inspect at 10% playback speed and confirm only the outer canvas width changes and individual cards are never transform-scaled;
   - enable reduced motion and confirm the panel cross-fades without positional movement.
 - **Done when**: task-detail presentation and lifecycle live in one component, all participating motion uses the shared tokens above, and the mechanical checks pass.

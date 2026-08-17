@@ -151,7 +151,7 @@ export function TaskDetailPanel({
         <m.aside
           ref={panelRef}
           key="task-detail"
-          className="fixed top-13 right-0 bottom-0 z-50 flex w-[min(460px,100vw)] flex-col gap-0 overflow-hidden rounded-tl-xl border bg-card p-0 text-sm text-foreground shadow-lg outline-none will-change-transform max-[760px]:w-screen max-[760px]:rounded-none"
+          className="fixed top-13 right-0 bottom-0 z-50 flex w-[min(460px,100vw)] flex-col gap-0 overflow-hidden border bg-card p-0 text-sm text-foreground shadow-lg outline-none will-change-transform max-[760px]:w-screen"
           role="dialog"
           aria-labelledby="task-detail-title"
           aria-describedby="task-detail-description"
