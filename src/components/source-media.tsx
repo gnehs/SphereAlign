@@ -77,7 +77,7 @@ function sourceIssueCopy(issue: SourceIssue) {
     case "fused-attitude-unavailable":
       return { title: t`Orientation metadata is unavailable`, detail: t`IMU samples were found, but fused-attitude samples were not available.` };
     case "absolute-attitude-unavailable":
-      return { title: t`Ground reference is unavailable`, detail: t`Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction.` };
+      return { title: t`Ground reference is unavailable`, detail: t`Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check.` };
     default:
       return {
         title: localiseUserMessage(issue.message),

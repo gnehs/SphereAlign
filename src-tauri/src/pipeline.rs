@@ -4662,7 +4662,8 @@ fn invalidate_calibrated_prior_artifacts(root: &Path) -> Result<(), String> {
                 continue;
             };
             if (name.starts_with("orientation_priors_source")
-                || name.starts_with("rolling_shutter_source"))
+                || name.starts_with("rolling_shutter_source")
+                || name.starts_with("gravity_estimates_source"))
                 && name.ends_with(".json")
             {
                 paths.push(path);
@@ -5926,7 +5927,7 @@ fn imu_calibration_version(
     }))
     .map_err(|error| error.to_string())?;
     let digest = sha256_hex(&version_payload);
-    Ok(format!("imu-hand-eye-v1-{}", &digest[..16]))
+    Ok(format!("imu-hand-eye-v2-{}", &digest[..16]))
 }
 
 fn invert_quaternion(value: [f64; 4]) -> Option<[f64; 4]> {
@@ -6043,13 +6044,6 @@ fn build_orientation_and_gravity_priors(
                 .join("metadata")
                 .join(format!("{}_telemetry.json", source.source_id)),
         )?;
-        // A gyro-integrated timeline starts from an arbitrary identity. It is
-        // valid for relative hand-eye calibration and motion sampling, but it
-        // cannot define world-up or an absolute orientation prior.
-        if !normalized.attitude_source.has_absolute_reference() {
-            continue;
-        }
-        let timeline = normalized.attitude_timeline();
         let frames = source_frames_with_timestamps(root, &source.source_id);
         if frames.is_empty() {
             continue;
@@ -6058,6 +6052,70 @@ fn build_orientation_and_gravity_priors(
             source.model.telemetry_orientation_convention,
             Some(crate::imu_calibration::TelemetryOrientationConvention::Inverted)
         );
+        if !normalized.attitude_source.has_absolute_reference() {
+            // Insta360's gyro timeline has arbitrary yaw, but its normalized
+            // accelerometer still observes gravity. Transport acceleration
+            // through the relative attitude, robustly average it, then apply
+            // the verified hand-eye and rig transforms. This yields the
+            // downward camera-frame vector COLMAP expects without inventing
+            // an absolute quaternion pose.
+            let Some(gravity_timeline) =
+                telemetry::build_gravity_direction_timeline(&normalized.normalized_imu)
+            else {
+                continue;
+            };
+            let mut source_estimates = Vec::new();
+            for (frame_id, timestamp_ms) in &frames {
+                let telemetry_timestamp_ms = *timestamp_ms + time_offset_ms;
+                let Some(gravity_sensor) = gravity_timeline.interpolate(telemetry_timestamp_ms)
+                else {
+                    continue;
+                };
+                source_estimates.push(json!({
+                    "frameId": frame_id,
+                    "rmsInnovationDeg": gravity_timeline.rms_innovation_deg,
+                }));
+                for (lens, cam_from_rig) in camera_rotations.iter().enumerate() {
+                    let camera_from_sensor = crate::orientation_constraints::multiply_quaternions(
+                        *cam_from_rig,
+                        sensor_to_rig,
+                    )
+                    .ok_or_else(|| {
+                        format!("{} lens{lens} camera-from-sensor 無效", source.source_id)
+                    })?;
+                    let gravity_camera =
+                        crate::visual_retrieval::rotate_vector(camera_from_sensor, gravity_sensor)
+                            .ok_or_else(|| {
+                                format!("{} lens{lens} gravity 無效", source.source_id)
+                            })?;
+                    gravity.push(crate::colmap_priors::GravityPriorInput {
+                        image_name: format!("lens{lens}/{frame_id}"),
+                        gravity: gravity_camera,
+                    });
+                }
+            }
+            write_json_atomic(
+                &root
+                    .join("metadata")
+                    .join(format!("gravity_estimates_{}.json", source.source_id)),
+                &json!({
+                    "schemaVersion": 1,
+                    "sourceId": source.source_id,
+                    "source": "insta360_gyro_accelerometer_fusion",
+                    "telemetrySha256": source.telemetry_sha256,
+                    "calibrationVersion": bundle.calibration_version,
+                    "timeOffsetMs": time_offset_ms,
+                    "telemetrySampleCount": gravity_timeline.sample_count(),
+                    "correctionSampleCount": gravity_timeline.correction_sample_count,
+                    "rmsInnovationDeg": gravity_timeline.rms_innovation_deg,
+                    "frameCount": frames.len(),
+                    "estimatedFrameCount": source_estimates.len(),
+                    "estimates": source_estimates,
+                }),
+            )?;
+            continue;
+        }
+        let timeline = normalized.attitude_timeline();
         let provenance = crate::orientation_constraints::OrientationProvenance {
             source: "dji_fused_attitude_calibrated".to_owned(),
             telemetry_sha256: Some(source.telemetry_sha256.clone()),
@@ -10894,6 +10952,7 @@ mod tests {
             "orientation_priors.json",
             "orientation_priors_source000.json",
             "rolling_shutter_source000.json",
+            "gravity_estimates_source000.json",
         ] {
             fs::write(metadata.join(name), b"derived").unwrap();
         }
@@ -10909,6 +10968,7 @@ mod tests {
         assert!(!metadata.join("orientation_priors.json").exists());
         assert!(!metadata.join("orientation_priors_source000.json").exists());
         assert!(!metadata.join("rolling_shutter_source000.json").exists());
+        assert!(!metadata.join("gravity_estimates_source000.json").exists());
     }
 
     #[test]

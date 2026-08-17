@@ -1288,8 +1288,8 @@ msgid "Ground reference is unavailable"
 msgstr "地面參考方向無法使用"
 
 #: src/components/source-media.tsx:80
-msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
-msgstr "陀螺儀樣本可用於相對旋轉校正，但無法提供絕對地面方向。"
+#~ msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+#~ msgstr "陀螺儀樣本可用於相對旋轉校正，但無法提供絕對地面方向。"
 
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
@@ -1972,6 +1972,10 @@ msgstr "繼續未完成的重建任務"
 #: src/lib/pipeline.ts:1710
 msgid "Retry"
 msgstr "重試"
+
+#: src/components/source-media.tsx:80
+msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
+msgstr "旋轉校正可用，但加速度樣本未通過地面方向品質檢查。"
 
 #: src/lib/pipeline.ts:1712
 msgid "Run"

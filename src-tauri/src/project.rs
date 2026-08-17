@@ -719,10 +719,18 @@ fn inspect_source(path: &Path) -> SourceInspection {
                     }
                     Ok(metadata)
                         if metadata.fused_attitude_sample_count == 0
+                            && metadata.gyro_attitude_available
+                            && metadata.gravity_estimation_available =>
+                    {
+                        // Raw Insta360 gyro + accelerometer can provide
+                        // relative rotation and a quality-gated gravity prior.
+                    }
+                    Ok(metadata)
+                        if metadata.fused_attitude_sample_count == 0
                             && metadata.gyro_attitude_available =>
                     {
                         let message =
-                            "Usable gyroscope samples were found and can be integrated for relative rotation calibration, but no absolute attitude reference is available; ground correction may be unavailable";
+                            "Usable gyroscope samples were found, but accelerometer-based gravity estimation did not pass its quality gate; ground correction may be unavailable";
                         inspection.warnings.push(message.to_owned());
                         inspection.warning_issue(
                             "absolute-attitude-unavailable",
@@ -2054,5 +2062,40 @@ mod tests {
             StageStatus::Cancelled
         ));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_INSTA_DIR and ffprobe"]
+    fn real_insta360_sources_do_not_report_imu_unavailable() {
+        fn collect_insv(path: &Path, output: &mut Vec<PathBuf>) {
+            let Ok(entries) = fs::read_dir(path) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_insv(&path, output);
+                } else if is_insv(&path) {
+                    output.push(path);
+                }
+            }
+        }
+        let root = PathBuf::from(
+            std::env::var("GS360_TEST_INSTA_DIR").expect("GS360_TEST_INSTA_DIR is required"),
+        );
+        let mut paths = Vec::new();
+        collect_insv(&root, &mut paths);
+        assert!(!paths.is_empty());
+        for path in paths {
+            let inspection = inspect_source(&path);
+            assert!(inspection.valid);
+            assert!(inspection.issues.iter().all(|issue| !matches!(
+                issue.code.as_str(),
+                "metadata-unavailable"
+                    | "imu-unavailable"
+                    | "fused-attitude-unavailable"
+                    | "absolute-attitude-unavailable"
+            )));
+        }
     }
 }

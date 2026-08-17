@@ -24,6 +24,15 @@ const PARSER_REVISION: &str =
 const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 4;
 const GYRO_INTEGRATION_GAP_WARNING_MS: f64 = 100.0;
 const MAX_GYRO_INTEGRATION_GAP_MS: f64 = 2_000.0;
+const MIN_GRAVITY_SAMPLES: usize = 16;
+const MIN_GRAVITY_MAGNITUDE: f64 = 2.0;
+const MAX_GRAVITY_MAGNITUDE: f64 = 50.0;
+const MIN_GRAVITY_MAGNITUDE_RATIO: f64 = 0.65;
+const MAX_GRAVITY_MAGNITUDE_RATIO: f64 = 1.35;
+const MAX_GRAVITY_INLIER_ANGLE_DEG: f64 = 35.0;
+const MAX_GRAVITY_RMS_ANGLE_DEG: f64 = 15.0;
+const ACCELERATION_LOWPASS_TIME_CONSTANT_SECONDS: f64 = 0.25;
+const GRAVITY_FILTER_WARMUP_SECONDS: f64 = 1.0;
 
 /// A quaternion in scalar-first `(w, x, y, z)` order.
 pub type Quaternion = [f64; 4];
@@ -131,6 +140,43 @@ pub struct QuaternionSample {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct GravityDirectionTimeline {
+    samples: Vec<(f64, [f64; 3])>,
+    pub rms_innovation_deg: f64,
+    pub correction_sample_count: usize,
+}
+
+impl GravityDirectionTimeline {
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn interpolate(&self, timestamp_ms: f64) -> Option<[f64; 3]> {
+        if !timestamp_ms.is_finite() {
+            return None;
+        }
+        let index = self
+            .samples
+            .binary_search_by(|sample| sample.0.total_cmp(&timestamp_ms));
+        let (left, right) = match index {
+            Ok(index) => return self.samples.get(index).map(|sample| sample.1),
+            Err(index) => (
+                self.samples.get(index.checked_sub(1)?)?,
+                self.samples.get(index)?,
+            ),
+        };
+        let duration_ms = right.0 - left.0;
+        if duration_ms <= 0.0 || duration_ms > GYRO_INTEGRATION_GAP_WARNING_MS {
+            return None;
+        }
+        let factor = (timestamp_ms - left.0) / duration_ms;
+        normalize_vector(std::array::from_fn(|axis| {
+            left.1[axis] * (1.0 - factor) + right.1[axis] * factor
+        }))
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -536,7 +582,9 @@ pub struct TelemetryInspection {
     pub samples_available: bool,
     pub normalized_imu_sample_count: usize,
     pub gyro_sample_count: usize,
+    pub accelerometer_sample_count: usize,
     pub gyro_attitude_available: bool,
+    pub gravity_estimation_available: bool,
     pub fused_attitude_sample_count: usize,
 }
 
@@ -572,8 +620,25 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
                     .is_some_and(|gyro| gyro.iter().all(|value| value.is_finite()))
         })
         .count();
-    let gyro_attitude_available = input.camera_type().eq_ignore_ascii_case("Insta360")
-        && integrate_normalized_gyro(&normalized_imu).is_ok();
+    let accelerometer_sample_count = normalized_imu
+        .iter()
+        .filter(|sample| {
+            sample.timestamp_ms.is_finite()
+                && sample
+                    .accl
+                    .is_some_and(|value| value.iter().all(|component| component.is_finite()))
+        })
+        .count();
+    let integrated = input
+        .camera_type()
+        .eq_ignore_ascii_case("Insta360")
+        .then(|| integrate_normalized_gyro(&normalized_imu))
+        .transpose()
+        .ok()
+        .flatten();
+    let gyro_attitude_available = integrated.is_some();
+    let gravity_estimation_available =
+        integrated.is_some() && build_gravity_direction_timeline(&normalized_imu).is_some();
     let mut fused_attitude_sample_count = 0usize;
     for sample in input.samples.iter().flatten() {
         let Some(groups) = sample.tag_map.as_ref() else {
@@ -612,7 +677,9 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
         samples_available,
         normalized_imu_sample_count,
         gyro_sample_count,
+        accelerometer_sample_count,
         gyro_attitude_available,
+        gravity_estimation_available,
         fused_attitude_sample_count,
     })
 }
@@ -977,6 +1044,230 @@ fn integrate_normalized_gyro(samples: &[IMUData]) -> Result<GyroIntegration, Str
         non_monotonic_timestamp_count,
         duplicate_timestamp_count,
     })
+}
+
+fn normalize_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
+    if vector.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let norm = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+    if !norm.is_finite() || norm <= f64::EPSILON {
+        return None;
+    }
+    Some(vector.map(|value| value / norm))
+}
+
+fn rotate_vector(quaternion: Quaternion, vector: [f64; 3]) -> Option<[f64; 3]> {
+    let [w, x, y, z] = normalize_quaternion(quaternion)?;
+    let [vx, vy, vz] = vector;
+    let uv = [y * vz - z * vy, z * vx - x * vz, x * vy - y * vx];
+    let uuv = [
+        y * uv[2] - z * uv[1],
+        z * uv[0] - x * uv[2],
+        x * uv[1] - y * uv[0],
+    ];
+    normalize_vector([
+        vx + 2.0 * (w * uv[0] + uuv[0]),
+        vy + 2.0 * (w * uv[1] + uuv[1]),
+        vz + 2.0 * (w * uv[2] + uuv[2]),
+    ])
+}
+
+fn vector_angle_deg(left: [f64; 3], right: [f64; 3]) -> Option<f64> {
+    let left = normalize_vector(left)?;
+    let right = normalize_vector(right)?;
+    let dot = left
+        .iter()
+        .zip(right.iter())
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    dot.is_finite()
+        .then(|| dot.clamp(-1.0, 1.0).acos().to_degrees())
+}
+
+fn fuse_gravity_candidate(
+    normalized_imu: &[IMUData],
+    gravity_magnitude: f64,
+    gyro_sign: f64,
+) -> Option<GravityDirectionTimeline> {
+    let mut ordered = normalized_imu
+        .iter()
+        .filter(|sample| sample.timestamp_ms.is_finite())
+        .collect::<Vec<_>>();
+    ordered.sort_by(|left, right| left.timestamp_ms.total_cmp(&right.timestamp_ms));
+
+    let mut state = None;
+    let mut filtered_acceleration: Option<[f64; 3]> = None;
+    let mut previous_timestamp_ms: Option<f64> = None;
+    let mut segment_elapsed_seconds = 0.0;
+    let mut samples = Vec::with_capacity(ordered.len());
+    let mut innovations = Vec::new();
+    for sample in ordered {
+        let dt_seconds = previous_timestamp_ms
+            .map(|previous| (sample.timestamp_ms - previous) / 1_000.0)
+            .filter(|dt| dt.is_finite() && *dt > 0.0);
+        if dt_seconds.is_some_and(|dt| dt * 1_000.0 > GYRO_INTEGRATION_GAP_WARNING_MS) {
+            state = None;
+            filtered_acceleration = None;
+            segment_elapsed_seconds = 0.0;
+        } else if let (Some(current), Some(dt), Some(gyro)) = (state, dt_seconds, sample.gyro) {
+            if gyro.iter().all(|value| value.is_finite()) {
+                let omega = gyro.map(f64::to_radians);
+                let speed = omega.iter().map(|value| value * value).sum::<f64>().sqrt();
+                if speed.is_finite() && speed > f64::EPSILON {
+                    let half_angle = gyro_sign * speed * dt * 0.5;
+                    let scale = half_angle.sin() / speed;
+                    let delta = [
+                        half_angle.cos(),
+                        omega[0] * scale,
+                        omega[1] * scale,
+                        omega[2] * scale,
+                    ];
+                    state = rotate_vector(delta, current);
+                }
+            }
+        }
+
+        let dt = dt_seconds.unwrap_or(0.001).clamp(0.000_1, 0.1);
+        if let Some(raw) = sample
+            .accl
+            .filter(|value| value.iter().all(|axis| axis.is_finite()))
+        {
+            let alpha =
+                (dt / (ACCELERATION_LOWPASS_TIME_CONSTANT_SECONDS + dt)).clamp(0.000_1, 1.0);
+            filtered_acceleration = Some(match filtered_acceleration {
+                Some(previous) => {
+                    std::array::from_fn(|axis| previous[axis] * (1.0 - alpha) + raw[axis] * alpha)
+                }
+                None => raw,
+            });
+        }
+        segment_elapsed_seconds += dt;
+        let measurement = filtered_acceleration.and_then(|acceleration| {
+            let magnitude = acceleration
+                .iter()
+                .map(|value| value * value)
+                .sum::<f64>()
+                .sqrt();
+            (segment_elapsed_seconds >= GRAVITY_FILTER_WARMUP_SECONDS
+                && magnitude.is_finite()
+                && (gravity_magnitude * MIN_GRAVITY_MAGNITUDE_RATIO
+                    ..=gravity_magnitude * MAX_GRAVITY_MAGNITUDE_RATIO)
+                    .contains(&magnitude))
+            .then(|| normalize_vector(acceleration.map(|value| -value)))
+            .flatten()
+        });
+
+        match (state, measurement) {
+            (None, Some(measurement)) => state = Some(measurement),
+            (Some(predicted), Some(measurement)) => {
+                let innovation = vector_angle_deg(predicted, measurement)?;
+                if innovation <= MAX_GRAVITY_INLIER_ANGLE_DEG {
+                    innovations.push(innovation);
+                    let correction = (dt / (1.5 + dt)).clamp(0.000_1, 0.08);
+                    state = normalize_vector(std::array::from_fn(|axis| {
+                        predicted[axis] * (1.0 - correction) + measurement[axis] * correction
+                    }));
+                }
+            }
+            _ => {}
+        }
+        previous_timestamp_ms = Some(sample.timestamp_ms);
+        if let Some(gravity_sensor) = state {
+            samples.push((sample.timestamp_ms, gravity_sensor));
+        }
+    }
+    if samples.len() < MIN_GRAVITY_SAMPLES || innovations.len() < MIN_GRAVITY_SAMPLES {
+        return None;
+    }
+    let rms_innovation_deg = (innovations.iter().map(|angle| angle * angle).sum::<f64>()
+        / innovations.len() as f64)
+        .sqrt();
+    if !rms_innovation_deg.is_finite() || rms_innovation_deg > MAX_GRAVITY_RMS_ANGLE_DEG {
+        return None;
+    }
+    Some(GravityDirectionTimeline {
+        samples,
+        rms_innovation_deg,
+        correction_sample_count: innovations.len(),
+    })
+}
+
+/// Fuse gyro propagation with accelerometer correction into a downward
+/// gravity direction in sensor coordinates. Both gyro sign conventions are
+/// evaluated; the one agreeing best with measured acceleration is retained.
+pub fn build_gravity_direction_timeline(
+    normalized_imu: &[IMUData],
+) -> Option<GravityDirectionTimeline> {
+    let gravity_magnitude = estimate_gravity_magnitude(normalized_imu)?;
+    [-1.0, 1.0]
+        .into_iter()
+        .filter_map(|gyro_sign| {
+            fuse_gravity_candidate(normalized_imu, gravity_magnitude, gyro_sign)
+        })
+        .max_by(|left, right| {
+            left.correction_sample_count
+                .cmp(&right.correction_sample_count)
+                .then_with(|| right.rms_innovation_deg.total_cmp(&left.rms_innovation_deg))
+        })
+}
+
+/// Estimate the recording's nominal gravity magnitude after low-pass
+/// filtering. Some Insta360 models report a different raw acceleration scale,
+/// so quality gates use this robust per-capture baseline instead of assuming
+/// exactly 9.80665 m/s².
+pub fn estimate_gravity_magnitude(normalized_imu: &[IMUData]) -> Option<f64> {
+    let mut ordered = normalized_imu
+        .iter()
+        .filter(|sample| sample.timestamp_ms.is_finite())
+        .collect::<Vec<_>>();
+    ordered.sort_by(|left, right| left.timestamp_ms.total_cmp(&right.timestamp_ms));
+    let stride = (ordered.len() / 4_096).max(1);
+    let mut filtered: Option<[f64; 3]> = None;
+    let mut previous_timestamp_ms: Option<f64> = None;
+    let mut segment_elapsed_seconds = 0.0;
+    let mut magnitudes = Vec::new();
+    for (index, sample) in ordered.into_iter().enumerate() {
+        let dt = previous_timestamp_ms
+            .map(|previous| (sample.timestamp_ms - previous) / 1_000.0)
+            .filter(|dt| dt.is_finite() && *dt > 0.0)
+            .unwrap_or(0.001);
+        if dt * 1_000.0 > GYRO_INTEGRATION_GAP_WARNING_MS {
+            filtered = None;
+            segment_elapsed_seconds = 0.0;
+        }
+        if let Some(raw) = sample
+            .accl
+            .filter(|value| value.iter().all(|axis| axis.is_finite()))
+        {
+            let alpha =
+                (dt / (ACCELERATION_LOWPASS_TIME_CONSTANT_SECONDS + dt)).clamp(0.000_1, 1.0);
+            filtered = Some(match filtered {
+                Some(previous) => {
+                    std::array::from_fn(|axis| previous[axis] * (1.0 - alpha) + raw[axis] * alpha)
+                }
+                None => raw,
+            });
+        }
+        segment_elapsed_seconds += dt;
+        previous_timestamp_ms = Some(sample.timestamp_ms);
+        if segment_elapsed_seconds < GRAVITY_FILTER_WARMUP_SECONDS || index % stride != 0 {
+            continue;
+        }
+        if let Some(magnitude) = filtered
+            .map(|value| value.iter().map(|axis| axis * axis).sum::<f64>().sqrt())
+            .filter(|value| {
+                value.is_finite() && (MIN_GRAVITY_MAGNITUDE..=MAX_GRAVITY_MAGNITUDE).contains(value)
+            })
+        {
+            magnitudes.push(magnitude);
+        }
+    }
+    if magnitudes.len() < MIN_GRAVITY_SAMPLES {
+        return None;
+    }
+    magnitudes.sort_by(f64::total_cmp);
+    magnitudes.get(magnitudes.len() / 2).copied()
 }
 
 /// Match telemetry-parser's DJI normalized-attitude convention. This is still
@@ -1758,6 +2049,46 @@ mod tests {
     }
 
     #[test]
+    fn fuses_acceleration_into_downward_sensor_gravity() {
+        let half = std::f64::consts::FRAC_PI_4;
+        let attitude = [half.cos(), half.sin(), 0.0, 0.0];
+        let inverse = [attitude[0], -attitude[1], -attitude[2], -attitude[3]];
+        let up_sensor = rotate_vector(inverse, [0.0, 0.0, 1.0]).unwrap();
+        let imu = (0..=200)
+            .map(|index| IMUData {
+                timestamp_ms: index as f64 * 10.0,
+                gyro: Some([0.0, 0.0, 0.0]),
+                accl: Some(up_sensor.map(|value| value * 9.80665)),
+                ..IMUData::default()
+            })
+            .collect::<Vec<_>>();
+        let timeline = build_gravity_direction_timeline(&imu).unwrap();
+        let estimate = timeline.interpolate(1_900.0).unwrap();
+        let expected_down = up_sensor.map(|value| -value);
+        assert!(vector_angle_deg(estimate, expected_down).unwrap() < 1e-8);
+        assert!(timeline.sample_count() >= 50);
+        assert!(timeline.rms_innovation_deg < 1e-8);
+    }
+
+    #[test]
+    fn gravity_fusion_lowpasses_high_frequency_acceleration_noise() {
+        let imu = (0..=2_000)
+            .map(|index| {
+                let sign = if index % 2 == 0 { 1.0 } else { -1.0 };
+                IMUData {
+                    timestamp_ms: index as f64,
+                    gyro: Some([0.0, 0.0, 0.0]),
+                    accl: Some([12.0 * sign, -8.0 * sign, 9.80665 + 5.0 * sign]),
+                    magn: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let timeline = build_gravity_direction_timeline(&imu).unwrap();
+        let gravity = timeline.interpolate(1_900.0).unwrap();
+        assert!(vector_angle_deg(gravity, [0.0, 0.0, -1.0]).unwrap() < 1.0);
+    }
+
+    #[test]
     fn gyro_integration_rejects_unbounded_gaps() {
         let imu = [
             IMUData {
@@ -2179,6 +2510,24 @@ mod tests {
             );
             assert_eq!(normalized.fused_attitude_sample_count, 0);
             assert!(!normalized.attitude_source.has_absolute_reference());
+            let mut acceleration_norms = normalized
+                .normalized_imu
+                .iter()
+                .filter_map(|sample| sample.accl)
+                .map(|value| value.iter().map(|axis| axis * axis).sum::<f64>().sqrt())
+                .filter(|value| value.is_finite())
+                .collect::<Vec<_>>();
+            acceleration_norms.sort_by(f64::total_cmp);
+            let acceleration_median = acceleration_norms
+                .get(acceleration_norms.len() / 2)
+                .copied();
+            assert!(
+                build_gravity_direction_timeline(&normalized.normalized_imu).is_some(),
+                "model {:?} did not produce a gravity estimate; accel count {}, median {:?}",
+                export.camera_model,
+                acceleration_norms.len(),
+                acceleration_median,
+            );
             assert!(!normalized.timebase.contains("DJI"));
             assert!(!normalized.coordinate_frame.contains("DJI"));
             parsed.push(export.camera_model);

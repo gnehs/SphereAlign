@@ -1288,8 +1288,8 @@ msgid "Ground reference is unavailable"
 msgstr "地面基準を利用できません"
 
 #: src/components/source-media.tsx:80
-msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
-msgstr "ジャイロスコープのサンプルは相対回転のキャリブレーションに使用できますが、絶対的な地面方向は得られません。"
+#~ msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+#~ msgstr "ジャイロスコープのサンプルは相対回転のキャリブレーションに使用できますが、絶対的な地面方向は得られません。"
 
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
@@ -1972,6 +1972,10 @@ msgstr "未完了の再構成タスクを再開"
 #: src/lib/pipeline.ts:1710
 msgid "Retry"
 msgstr "再試行"
+
+#: src/components/source-media.tsx:80
+msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
+msgstr "回転キャリブレーションは利用できますが、加速度サンプルが地面方向の品質チェックを通過しませんでした。"
 
 #: src/lib/pipeline.ts:1712
 msgid "Run"

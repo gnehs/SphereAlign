@@ -1288,8 +1288,8 @@ msgid "Ground reference is unavailable"
 msgstr "Ground reference is unavailable"
 
 #: src/components/source-media.tsx:80
-msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
-msgstr "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+#~ msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
+#~ msgstr "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
 
 #: src/lib/pipeline.ts:387
 msgid "Hardware acceleration"
@@ -1972,6 +1972,10 @@ msgstr "Resume an unfinished reconstruction task"
 #: src/lib/pipeline.ts:1710
 msgid "Retry"
 msgstr "Retry"
+
+#: src/components/source-media.tsx:80
+msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
+msgstr "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
 
 #: src/lib/pipeline.ts:1712
 msgid "Run"
