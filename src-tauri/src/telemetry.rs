@@ -21,7 +21,7 @@ use crate::fisheye::{LensOpticalOcclusions, OpticalOcclusion};
 
 const PARSER_REVISION: &str =
     "77a3b810a0e0f64688a90546c5aaf24c9dba00bd+spherealign-dji-protobuf-v1";
-const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 2;
+const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 3;
 
 /// A quaternion in scalar-first `(w, x, y, z)` order.
 pub type Quaternion = [f64; 4];
@@ -383,6 +383,81 @@ impl NormalizedTelemetry {
     }
 }
 
+fn telemetry_source_label(parser_name: &str, camera_type: &str) -> String {
+    let parser_name = parser_name.trim();
+    let camera_type = camera_type.trim();
+    match (camera_type.is_empty(), parser_name.is_empty()) {
+        (true, true) => "source telemetry".to_owned(),
+        (true, false) => format!("{parser_name} telemetry"),
+        (false, true) => format!("{camera_type} telemetry"),
+        (false, false) => format!("{camera_type} telemetry ({parser_name})"),
+    }
+}
+
+fn describe_timebase(parser_name: &str, camera_type: &str, timestamps_accurate: bool) -> String {
+    let origin = if camera_type.eq_ignore_ascii_case("Insta360") {
+        "the first frame/gyro timestamp reported by telemetry-parser"
+    } else if camera_type.eq_ignore_ascii_case("DJI") {
+        "the first metadata frame reported by telemetry-parser"
+    } else if timestamps_accurate {
+        "the source timestamp origin reported by telemetry-parser"
+    } else {
+        "the first sample on the parser-provided relative timeline"
+    };
+    let parser = if parser_name.trim().is_empty() {
+        "telemetry-parser"
+    } else {
+        parser_name.trim()
+    };
+    format!("milliseconds relative to {origin} ({parser}); leading samples may be negative")
+}
+
+fn describe_coordinate_frame(
+    parser_name: &str,
+    camera_type: &str,
+    normalized_imu_sample_count: usize,
+    fused_attitude_sample_count: usize,
+) -> String {
+    let source = telemetry_source_label(parser_name, camera_type);
+    if fused_attitude_sample_count > 0 {
+        format!(
+            "{source} fused attitude normalized by telemetry-parser; sensor-to-camera transform is unverified; not a COLMAP camera qvec"
+        )
+    } else if normalized_imu_sample_count > 0 {
+        format!(
+            "{source} normalized IMU axes; no fused-attitude samples were detected; not a camera pose or COLMAP qvec"
+        )
+    } else {
+        "No verified telemetry coordinate frame; not a camera pose or COLMAP qvec".to_owned()
+    }
+}
+
+fn base_telemetry_warnings(
+    parser_name: &str,
+    camera_type: &str,
+    normalized_imu_sample_count: usize,
+    fused_attitude_sample_count: usize,
+) -> Vec<String> {
+    let source = telemetry_source_label(parser_name, camera_type);
+    let mut warnings = vec![format!("Raw {source} streams remain the source of truth.")];
+    if fused_attitude_sample_count > 0 {
+        warnings.push(
+            "A verified sensor-to-camera transform is required before using fused attitude as a COLMAP prior."
+                .to_owned(),
+        );
+    } else if normalized_imu_sample_count > 0 {
+        warnings.push(
+            "Only normalized IMU samples were detected; no fused attitude is available as a COLMAP prior."
+                .to_owned(),
+        );
+    } else {
+        warnings.push(
+            "No usable IMU or fused-attitude samples are available as a COLMAP prior.".to_owned(),
+        );
+    }
+    warnings
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryExport {
@@ -390,6 +465,85 @@ pub struct TelemetryExport {
     pub camera_model: Option<String>,
     pub normalized_imu_sample_count: usize,
     pub fused_attitude_sample_count: usize,
+}
+
+/// Lightweight metadata capability probe used by source inspection.
+///
+/// This intentionally reports only decoded sample availability.  It does not
+/// claim that sensor coordinates are aligned with camera coordinates; that
+/// requires the later, verified hand-eye calibration path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelemetryInspection {
+    pub parser: String,
+    pub camera_type: String,
+    pub camera_model: Option<String>,
+    pub samples_available: bool,
+    pub normalized_imu_sample_count: usize,
+    pub fused_attitude_sample_count: usize,
+}
+
+/// Inspect source metadata without creating a normalized telemetry artifact.
+///
+/// telemetry-parser reads bounded beginning/end chunks for format detection
+/// and parses the embedded metadata stream.  A parser error means metadata
+/// could not be decoded; an identified input with zero samples is reported as
+/// available-but-empty so callers can distinguish those cases.
+pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> {
+    let mut stream = fs::File::open(input_path).map_err(|error| error.to_string())?;
+    let source_size = stream.metadata().map_err(|error| error.to_string())?.len();
+    let size = usize::try_from(source_size)
+        .map_err(|_| "source is too large for telemetry inspection".to_owned())?;
+    let input = telemetry_parser::Input::from_stream(
+        &mut stream,
+        size,
+        input_path,
+        |_| {},
+        Arc::new(AtomicBool::new(false)),
+    )
+    .map_err(|error| error.to_string())?;
+    let samples_available = input.samples.is_some();
+    let normalized_imu_sample_count = telemetry_parser::util::normalized_imu(&input, None)
+        .map_err(|error| error.to_string())?
+        .len();
+    let mut fused_attitude_sample_count = 0usize;
+    for sample in input.samples.iter().flatten() {
+        let Some(groups) = sample.tag_map.as_ref() else {
+            continue;
+        };
+        let Some(group) = groups.get(&GroupId::Quaternion) else {
+            continue;
+        };
+        let Some(tag) = group.get(&TagId::Data) else {
+            continue;
+        };
+        if let TagValue::Vec_TimeQuaternion_f64(values) = &tag.value {
+            fused_attitude_sample_count = fused_attitude_sample_count.saturating_add(
+                values
+                    .get()
+                    .iter()
+                    .filter(|value| {
+                        QuaternionSample {
+                            timestamp_ms: value.t,
+                            w: value.v.w,
+                            x: value.v.x,
+                            y: value.v.y,
+                            z: value.v.z,
+                        }
+                        .normalized()
+                        .is_some()
+                    })
+                    .count(),
+            );
+        }
+    }
+    Ok(TelemetryInspection {
+        parser: input.parser_name().to_owned(),
+        camera_type: input.camera_type(),
+        camera_model: input.camera_model().cloned(),
+        samples_available,
+        normalized_imu_sample_count,
+        fused_attitude_sample_count,
+    })
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -604,9 +758,7 @@ fn decode_dji_camera_attitude(
     }
 }
 
-fn decode_avata360_stabilized_camera_attitude(
-    payload: &[u8],
-) -> Option<DjiTelemetryQuaternion> {
+fn decode_avata360_stabilized_camera_attitude(payload: &[u8]) -> Option<DjiTelemetryQuaternion> {
     DjiAvata360ProductFrameMeta::decode(payload)
         .ok()?
         .stabilization_meta?
@@ -623,12 +775,10 @@ fn decode_dji_device_attitude(
             .ok()?
             .current_frame
     };
-    let decode_single_tag2 = || {
-        DjiTelemetryDeviceAttitude::decode(imu.attitude_tag2.as_deref()?).ok()
-    };
-    let decode_single_tag4 = || {
-        DjiTelemetryDeviceAttitude::decode(imu.attitude_tag4.as_deref()?).ok()
-    };
+    let decode_single_tag2 =
+        || DjiTelemetryDeviceAttitude::decode(imu.attitude_tag2.as_deref()?).ok();
+    let decode_single_tag4 =
+        || DjiTelemetryDeviceAttitude::decode(imu.attitude_tag4.as_deref()?).ok();
     let valid = |value: Option<DjiTelemetryDeviceAttitude>| {
         value.filter(|attitude| !attitude.attitude.is_empty())
     };
@@ -695,10 +845,7 @@ fn parse_dji_fused_attitude_fallback(
             let Ok(meta) = DjiTelemetryProductMeta::decode(data) else {
                 return;
             };
-            if let Some(header) = meta
-                .clip_meta
-                .and_then(|clip| clip.clip_meta_header)
-            {
+            if let Some(header) = meta.clip_meta.and_then(|clip| clip.clip_meta_header) {
                 if !header.proto_file_name.trim().is_empty() {
                     proto_file_name = header.proto_file_name;
                 }
@@ -712,8 +859,7 @@ fn parse_dji_fused_attitude_fallback(
             let frame_timestamp_ms = frame
                 .frame_meta_header
                 .map(|header| {
-                    let first = *first_frame_timestamp_us
-                        .get_or_insert(header.frame_timestamp_us);
+                    let first = *first_frame_timestamp_us.get_or_insert(header.frame_timestamp_us);
                     (i128::from(header.frame_timestamp_us) - i128::from(first)) as f64 / 1000.0
                 })
                 .unwrap_or(info.timestamp_ms);
@@ -734,8 +880,7 @@ fn parse_dji_fused_attitude_fallback(
             {
                 let quaternion = stabilized_camera_attitude.and_then(normalize_dji_attitude);
                 if let Some(quaternion) = quaternion {
-                    attitude_source =
-                        "product-frame/stabilization-meta/camera-attitude".to_owned();
+                    attitude_source = "product-frame/stabilization-meta/camera-attitude".to_owned();
                     samples.push(QuaternionSample {
                         timestamp_ms: frame_timestamp_ms,
                         w: quaternion[0],
@@ -759,8 +904,7 @@ fn parse_dji_fused_attitude_fallback(
                     let Some(quaternion) = normalize_dji_attitude(value) else {
                         continue;
                     };
-                    let offset = (index as f64 - f64::from(attitude.offset))
-                        / count.max(1) as f64
+                    let offset = (index as f64 - f64::from(attitude.offset)) / count.max(1) as f64
                         * duration_ms;
                     attitude_source = "imu-frame/fused-attitude".to_owned();
                     samples.push(QuaternionSample {
@@ -937,6 +1081,8 @@ pub fn parse_and_write(
     let mut normalized_imu =
         telemetry_parser::util::normalized_imu(&input, None).map_err(|error| error.to_string())?;
     let mut parser_name = input.parser_name().to_owned();
+    let camera_type = input.camera_type();
+    let timestamps_accurate = input.has_accurate_timestamps();
     let mut camera_model = input.camera_model().cloned();
     let mut fallback_proto = None;
     let mut fused_attitude = Vec::new();
@@ -971,16 +1117,15 @@ pub fn parse_and_write(
             }
         }
     }
-    let dji_fallback = if input.camera_type().eq_ignore_ascii_case("DJI") {
+    let dji_fallback = if camera_type.eq_ignore_ascii_case("DJI") {
         parse_dji_fused_attitude_fallback(input_path, size, cancel_flag.clone())?
     } else {
         None
     };
     if let Some(fallback) = dji_fallback {
         let schema = fallback.proto_file_name.to_ascii_lowercase();
-        let upstream_schema_supported = schema.contains("oq101")
-            || schema.contains("wm169")
-            || schema.contains("wa530");
+        let upstream_schema_supported =
+            schema.contains("oq101") || schema.contains("wm169") || schema.contains("wa530");
         if !upstream_schema_supported || (normalized_imu.is_empty() && fused_attitude.is_empty()) {
             // telemetry-parser's pinned DJI dispatcher defaults unknown product
             // schemas to WM169. Never accept that ambiguous result: use the
@@ -1008,11 +1153,12 @@ pub fn parse_and_write(
     let attitude_diagnostics = validate_attitude_samples(&fused_attitude);
     let fused_attitude_rate_hz = attitude_diagnostics.rate_hz;
     let normalized_imu_sample_count = normalized_imu.len();
-    let mut warnings = vec![
-        "Raw OSV data streams remain the source of truth.".to_owned(),
-        "A verified sensor-to-camera transform is required before using attitude as a COLMAP prior."
-            .to_owned(),
-    ];
+    let mut warnings = base_telemetry_warnings(
+        &parser_name,
+        &camera_type,
+        normalized_imu_sample_count,
+        fused_attitude.len(),
+    );
     if invalid_fused_attitude_samples > 0 {
         warnings.push("Invalid fused-attitude quaternion samples were dropped.".to_owned());
     }
@@ -1033,27 +1179,31 @@ pub fn parse_and_write(
             attitude_diagnostics.discontinuity_count, DEFAULT_ATTITUDE_DISCONTINUITY_DEG
         ));
     }
+    let timebase = describe_timebase(&parser_name, &camera_type, timestamps_accurate);
+    let coordinate_frame = describe_coordinate_frame(
+        &parser_name,
+        &camera_type,
+        normalized_imu_sample_count,
+        fused_attitude.len(),
+    );
     let normalized = NormalizedTelemetry {
         schema_version: NORMALIZED_TELEMETRY_SCHEMA_VERSION,
         parser: parser_name,
         parser_revision: PARSER_REVISION.to_owned(),
-        camera_type: input.camera_type(),
+        camera_type,
         camera_model: camera_model.clone(),
         source_size,
         source_modified_nanos,
-        timestamps_accurate: input.has_accurate_timestamps(),
+        timestamps_accurate,
         sensor_readout_time_ms: input.frame_readout_time(),
-        timebase:
-            "milliseconds relative to the first DJI metadata frame; leading samples may be negative"
-                .to_owned(),
+        timebase,
         normalized_imu_sample_count,
         normalized_imu,
         fused_attitude_sample_count: fused_attitude.len(),
         fused_attitude_rate_hz,
         fused_attitude,
         attitude_diagnostics,
-        coordinate_frame: "telemetry-parser DJI normalized attitude; not a COLMAP camera qvec"
-            .to_owned(),
+        coordinate_frame,
         applied_to_colmap: false,
         warnings,
     };
@@ -1154,6 +1304,24 @@ fn rename_replace(temporary: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn collect_insv(path: &Path, output: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(path) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_insv(&path, output);
+            } else if path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("insv"))
+            {
+                output.push(path);
+            }
+        }
+    }
 
     fn sample(timestamp_ms: f64, quaternion: Quaternion) -> QuaternionSample {
         QuaternionSample {
@@ -1327,6 +1495,39 @@ mod tests {
         )
         .unwrap();
         assert!(existing_export(&path, 42, Some("123")).is_some());
+    }
+
+    #[test]
+    fn insta360_descriptions_do_not_claim_dji_or_fused_attitude() {
+        let timebase = describe_timebase("Insta360", "Insta360", true);
+        let coordinate_frame = describe_coordinate_frame("Insta360", "Insta360", 10, 0);
+        let warnings = base_telemetry_warnings("Insta360", "Insta360", 10, 0);
+
+        assert!(timebase.contains("first frame/gyro timestamp"));
+        assert!(!timebase.contains("DJI"));
+        assert!(!timebase.contains("OSV"));
+        assert!(coordinate_frame.contains("normalized IMU axes"));
+        assert!(coordinate_frame.contains("no fused-attitude samples"));
+        assert!(!coordinate_frame.contains("DJI"));
+        assert!(!coordinate_frame.contains("OSV"));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("no fused attitude is available")));
+        assert!(warnings.iter().all(|warning| !warning.contains("DJI")));
+        assert!(warnings.iter().all(|warning| !warning.contains("OSV")));
+    }
+
+    #[test]
+    fn coordinate_frame_requires_transform_when_attitude_exists() {
+        let coordinate_frame = describe_coordinate_frame("dvtm_oq101", "DJI", 4, 2);
+        let warnings = base_telemetry_warnings("dvtm_oq101", "DJI", 4, 2);
+
+        assert!(coordinate_frame.contains("fused attitude"));
+        assert!(coordinate_frame.contains("sensor-to-camera transform is unverified"));
+        assert!(coordinate_frame.contains("not a COLMAP camera qvec"));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("fused attitude as a COLMAP prior")));
     }
 
     #[test]
@@ -1606,7 +1807,12 @@ mod tests {
             normalized.fused_attitude.first(),
             normalized.fused_attitude.last()
         );
-        assert_eq!(normalized.attitude_diagnostics.non_monotonic_timestamp_count, 0);
+        assert_eq!(
+            normalized
+                .attitude_diagnostics
+                .non_monotonic_timestamp_count,
+            0
+        );
         assert_eq!(normalized.attitude_diagnostics.invalid_quaternion_count, 0);
         assert!(normalized
             .attitude_diagnostics
@@ -1624,5 +1830,48 @@ mod tests {
             first.fused_attitude_sample_count,
             normalized.attitude_diagnostics
         );
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_INSTA_DIR"]
+    fn parses_real_insta360_imu_without_claiming_fused_attitude() {
+        let root = PathBuf::from(
+            std::env::var("GS360_TEST_INSTA_DIR").expect("GS360_TEST_INSTA_DIR is required"),
+        );
+        let mut sources = Vec::new();
+        collect_insv(&root, &mut sources);
+        sources.sort();
+        let temp = tempfile::tempdir().unwrap();
+        let mut parsed = Vec::new();
+        for (index, source) in sources.iter().enumerate() {
+            let output = temp.path().join(format!("telemetry-{index}.json"));
+            let Ok(export) = parse_and_write(source, &output, Arc::new(AtomicBool::new(false)))
+            else {
+                continue;
+            };
+            let normalized = read_normalized_telemetry(&output).unwrap();
+            assert_eq!(normalized.camera_type, "Insta360");
+            assert!(export.normalized_imu_sample_count > 0);
+            assert_eq!(export.fused_attitude_sample_count, 0);
+            assert!(!normalized.timebase.contains("DJI"));
+            assert!(!normalized.coordinate_frame.contains("DJI"));
+            parsed.push(export.camera_model);
+        }
+        assert!(parsed.len() >= 6, "parsed models: {parsed:?}");
+        assert!(parsed
+            .iter()
+            .any(|model| model.as_deref() == Some("Insta360 X3")));
+        assert!(parsed
+            .iter()
+            .any(|model| model.as_deref() == Some("Insta360 X4")));
+        assert!(parsed
+            .iter()
+            .any(|model| model.as_deref() == Some("Insta360 X5")));
+        assert!(parsed
+            .iter()
+            .any(|model| model.as_deref() == Some("Insta360 X6")));
+        assert!(parsed
+            .iter()
+            .any(|model| model.as_deref() == Some("Insta360 OneRS")));
     }
 }

@@ -1,5 +1,6 @@
 //! Lightweight source thumbnails for the task picker.
 
+use crate::camera_adapter::is_supported_source;
 use crate::doctor;
 use crate::process::silent_command;
 use std::path::{Path, PathBuf};
@@ -34,23 +35,7 @@ fn validate_source(path: &Path) -> Result<PathBuf, String> {
     if !path.is_file() {
         return Err("找不到來源檔案".to_owned());
     }
-    let supported = matches!(
-        path.extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase())
-            .as_deref(),
-        Some("osv")
-            | Some("mp4")
-            | Some("mov")
-            | Some("mkv")
-            | Some("avi")
-            | Some("webm")
-            | Some("m4v")
-            | Some("mts")
-            | Some("m2ts")
-            | Some("ts")
-    );
-    if !supported {
+    if !is_supported_source(path) {
         return Err("不支援此來源格式".to_owned());
     }
     Ok(path.to_path_buf())
@@ -102,6 +87,14 @@ mod tests {
         let error = validate_source(Path::new("private/missing.OSV")).unwrap_err();
         assert_eq!(error, "找不到來源檔案");
         assert!(!error.contains("private"));
+    }
+
+    #[test]
+    fn validation_accepts_existing_insv_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("capture.INSV");
+        std::fs::write(&source, b"placeholder").unwrap();
+        assert_eq!(validate_source(&source).unwrap(), source);
     }
 
     #[test]

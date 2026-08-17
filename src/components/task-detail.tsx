@@ -18,6 +18,7 @@ import {
   phaseLabel,
   processingRateLabel,
   sourceFromPath,
+  sourceInspectionForPath,
   stageDescription,
   stageLabel,
   stageStatusLabel,
@@ -25,7 +26,7 @@ import {
   taskStageLabel,
   taskCurrentStage,
   timestampDateTime,
-  type OsvSource,
+  type SourceMedia,
   type StageDefinition,
   type StageKey,
   type StageState,
@@ -45,7 +46,7 @@ export interface TaskDetailProps {
 
 interface TaskSummaryProps {
   selectedTask?: Task;
-  selectedTaskSources: OsvSource[];
+  selectedTaskSources: SourceMedia[];
   selectedStageDefinition?: StageDefinition;
   selectedStage?: StageState;
   selectedActiveProgressLog?: TaskLog;
@@ -209,7 +210,9 @@ export function TaskDetail({
     deletingTaskId: state.deletingTaskId,
     settingsOpen: state.settingsOpen,
   })));
-  const selectedTaskSources = selectedTask?.inputPaths.map(sourceFromPath) ?? [];
+  const selectedTaskSources = selectedTask
+    ? selectedTask.inputPaths.map((path, index) => sourceFromPath(path, index, sourceInspectionForPath(path, selectedTask.sourceInspections)))
+    : [];
   const selectedTaskLogs = selectedTask
     ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs)
     : [];

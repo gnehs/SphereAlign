@@ -201,7 +201,11 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
     let progress_listener = app.listen("pipeline-progress", move |event| {
         if let Ok(mut file) = progress_file.lock() {
             let payload = redact_event_payload(event.payload(), &progress_redactions);
-            let _ = writeln!(file, "{}", json!({ "event": "progress", "payload": payload }));
+            let _ = writeln!(
+                file,
+                "{}",
+                json!({ "event": "progress", "payload": payload })
+            );
             let _ = file.flush();
         }
     });
@@ -225,10 +229,7 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
         if !args.variants.iter().any(|variant| variant == name) {
             continue;
         }
-        let profile = args
-            .profile_override
-            .as_deref()
-            .unwrap_or(default_profile);
+        let profile = args.profile_override.as_deref().unwrap_or(default_profile);
         merge(
             &mut settings,
             json!({ "align": { "colmapQualityProfile": profile } }),
@@ -361,9 +362,12 @@ fn event_redactions(args: &AbcArgs) -> Vec<(String, String)> {
         ),
         (args.colmap.clone(), "$COLMAP".to_owned()),
     ];
-    redactions.extend(args.inputs.iter().enumerate().map(|(index, input)| {
-        (input.clone(), format!("$INPUT_{index}"))
-    }));
+    redactions.extend(
+        args.inputs
+            .iter()
+            .enumerate()
+            .map(|(index, input)| (input.clone(), format!("$INPUT_{index}"))),
+    );
     redactions
 }
 
@@ -507,7 +511,10 @@ fn verify_project_inputs(
         .map(fs::canonicalize)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("cannot verify project input provenance: {error}"))?;
-    let expected = expected_inputs.iter().map(PathBuf::from).collect::<Vec<_>>();
+    let expected = expected_inputs
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
     if actual != expected {
         return Err(format!(
             "project input provenance mismatch: expected {expected_inputs:?}, found {:?}",
@@ -582,8 +589,12 @@ fn load_benchmark_metrics(
     manifest: &project::ProjectManifest,
 ) -> Option<BenchmarkMetrics> {
     let benchmark: Value = serde_json::from_slice(&fs::read(benchmark_path).ok()?).ok()?;
-    let selected = benchmark.pointer("/capture/selectedRigFrameCount")?.as_u64()?;
-    let any_registered = benchmark.pointer("/colmap/registeredRigFrameCount")?.as_u64()?;
+    let selected = benchmark
+        .pointer("/capture/selectedRigFrameCount")?
+        .as_u64()?;
+    let any_registered = benchmark
+        .pointer("/colmap/registeredRigFrameCount")?
+        .as_u64()?;
     let complete_registered = benchmark
         .pointer("/colmap/completeRegisteredRigFrameCount")?
         .as_u64()?;
@@ -744,56 +755,65 @@ fn common_settings(gpu_index: &str, profile: &str) -> Value {
 
 fn settings_a(gpu_index: &str) -> Value {
     let mut settings = common_settings(gpu_index, "baseline");
-    merge(&mut settings, json!({
-        "extract": { "keyframePruning": false },
-        "align": {
-            "mapperMode": "incremental",
-            "useGravityPrior": false,
-            "autoCalibrateTelemetry": false,
-            "calibrateFocalPrior": false,
-            "useVisualRetrieval": false,
-            "useCalibratedFovPairs": false,
-            "exportRollingShutterTrajectory": false
-        }
-    }));
+    merge(
+        &mut settings,
+        json!({
+            "extract": { "keyframePruning": false },
+            "align": {
+                "mapperMode": "incremental",
+                "useGravityPrior": false,
+                "autoCalibrateTelemetry": false,
+                "calibrateFocalPrior": false,
+                "useVisualRetrieval": false,
+                "useCalibratedFovPairs": false,
+                "exportRollingShutterTrajectory": false
+            }
+        }),
+    );
     settings
 }
 
 fn settings_b(gpu_index: &str) -> Value {
     let mut settings = common_settings(gpu_index, "baseline");
-    merge(&mut settings, json!({
-        "extract": {
-            "keyframePruning": true,
-            "minRotationDeg": 5,
-            "minGapMs": 200,
-            "maxGapMs": 600,
-            "minVisualNovelty": 0.08
-        },
-        "align": {
-            "mapperMode": "incremental",
-            "useGravityPrior": false,
-            "autoCalibrateTelemetry": false,
-            "calibrateFocalPrior": false,
-            "useVisualRetrieval": true,
-            "useCalibratedFovPairs": false,
-            "exportRollingShutterTrajectory": false
-        }
-    }));
+    merge(
+        &mut settings,
+        json!({
+            "extract": {
+                "keyframePruning": true,
+                "minRotationDeg": 5,
+                "minGapMs": 200,
+                "maxGapMs": 600,
+                "minVisualNovelty": 0.08
+            },
+            "align": {
+                "mapperMode": "incremental",
+                "useGravityPrior": false,
+                "autoCalibrateTelemetry": false,
+                "calibrateFocalPrior": false,
+                "useVisualRetrieval": true,
+                "useCalibratedFovPairs": false,
+                "exportRollingShutterTrajectory": false
+            }
+        }),
+    );
     settings
 }
 
 fn settings_c(gpu_index: &str) -> Value {
     let mut settings = settings_b(gpu_index);
-    merge(&mut settings, json!({
-        "align": {
-            "mapperMode": "auto",
-            "useGravityPrior": true,
-            "autoCalibrateTelemetry": true,
-            "calibrateFocalPrior": true,
-            "useCalibratedFovPairs": true,
-            "exportRollingShutterTrajectory": true
-        }
-    }));
+    merge(
+        &mut settings,
+        json!({
+            "align": {
+                "mapperMode": "auto",
+                "useGravityPrior": true,
+                "autoCalibrateTelemetry": true,
+                "calibrateFocalPrior": true,
+                "useCalibratedFovPairs": true,
+                "exportRollingShutterTrajectory": true
+            }
+        }),
+    );
     settings
 }
 
@@ -811,9 +831,8 @@ fn merge(target: &mut Value, incoming: Value) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_empty_output_root, input_provenance, load_benchmark_metrics,
-        load_benchmark_variant, write_raw_artifacts_manifest,
-        redact_event_payload,
+        ensure_empty_output_root, input_provenance, load_benchmark_metrics, load_benchmark_variant,
+        redact_event_payload, write_raw_artifacts_manifest,
     };
     use crate::project::{self, CreateProjectRequest};
     use serde_json::json;

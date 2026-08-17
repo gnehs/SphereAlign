@@ -6,7 +6,7 @@
 </div>
 
 > [!WARNING]
-> **This project is still under development.** Only **Osmo 360** is currently supported. Other file formats have not yet been validated.
+> **This project is still under development.** The validated camera sources are **DJI Osmo 360** (`.OSV`) and **Insta360** (`.INSV`). Other file formats have not yet been validated as camera sources.
 
 ![SphereAlign selects frames from dual-fisheye panoramic video, masks distractions, aligns cameras, and builds a sparse 3D reconstruction](assets/readme/workflow-hero.png)
 

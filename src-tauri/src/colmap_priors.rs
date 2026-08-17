@@ -238,11 +238,13 @@ pub fn read_rig_camera_extrinsics(database_path: &Path) -> Result<Vec<RigCameraE
         rigs.entry(camera.rig_id).or_default().push(camera);
     }
     if rigs.is_empty()
-        || rigs.values().any(|rig| {
-            rig.len() < 2 || rig.iter().filter(|camera| camera.ref_sensor).count() != 1
-        })
+        || rigs
+            .values()
+            .any(|rig| rig.len() < 2 || rig.iter().filter(|camera| camera.ref_sensor).count() != 1)
     {
-        return Err("COLMAP database 未為每一個 rig 提供完整外參與唯一 reference sensor".to_owned());
+        return Err(
+            "COLMAP database 未為每一個 rig 提供完整外參與唯一 reference sensor".to_owned(),
+        );
     }
     Ok(cameras.into_values().collect())
 }

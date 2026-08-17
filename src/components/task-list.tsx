@@ -308,15 +308,16 @@ export function TaskWorkspace({
       >
         <div className={cn("mb-5.5 grid size-17.5 place-items-center rounded-[18px] border bg-card text-muted-foreground transition-[border-color,color,transform,background] duration-200 [&_svg]:size-7", dragOver && "scale-[1.03] border-primary/50 bg-primary/10 text-primary")} aria-hidden="true"><FileStack /></div>
         <h2 className="text-[28px] font-semibold tracking-[-0.045em] text-foreground"><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h2>
-        <p className="mt-3 text-base leading-relaxed text-muted-foreground"><Trans comment="Drop source media here or choose files below. Existing projects are opened separately.">Drop OSV or dual-fisheye media here,<br />or use Open project to resume an existing project.</Trans></p>
+        <p className="mt-3 text-base leading-relaxed text-muted-foreground"><Trans comment="Drop panoramic source media here or choose files below. Existing projects are opened separately.">Drop panoramic source media here,<br />or use Open project to resume an existing project.</Trans></p>
         <div className="mt-6 flex items-center gap-2.5 max-[760px]:w-[min(280px,100%)] max-[760px]:flex-col max-[760px]:items-stretch">
           <Button size="lg" onClick={() => void onOpenSourcePicker()}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button>
           <Button size="lg" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
         </div>
         <section className="mt-7 w-[min(520px,100%)] text-left max-[760px]:w-[min(320px,100%)]" aria-labelledby="supported-formats-title">
           <h2 id="supported-formats-title" className="mb-2.5 text-xs font-semibold tracking-wide text-muted-foreground"><Trans>Supported inputs</Trans></h2>
-          <div className="grid grid-cols-2 gap-2.5 max-[760px]:grid-cols-1">
+          <div className="grid grid-cols-3 gap-2.5 max-[920px]:grid-cols-2 max-[760px]:grid-cols-1">
             <SupportedFormatCard icon={Film} title={<Trans comment="DJI Osmo 360 source media files.">Osmo 360 source files</Trans>} detail="OSV" />
+            <SupportedFormatCard icon={Film} title={<Trans comment="Insta360 source media files.">Insta360 source files</Trans>} detail="INSV" />
             <SupportedFormatCard icon={Folder} title={<Trans comment="A project folder containing a resumable reconstruction.">Project folder</Trans>} detail={<Trans>Resume an unfinished reconstruction task</Trans>} />
           </div>
         </section>

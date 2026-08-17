@@ -2,6 +2,7 @@
 //! and COLMAP. External commands are always passed as argument arrays (never a
 //! shell string), so paths containing spaces cannot inject commands.
 
+use crate::camera_adapter::{self, CaptureBundle, LensStream, ProbedSource};
 use crate::colmap_feature_cache::{
     clear_matching_cache, database_has_nontrivial_rig, inspect_feature_cache,
 };
@@ -41,7 +42,7 @@ const CANDIDATE_STREAM_WIDTH: usize = CANDIDATE_PROXY_SIZE * 2;
 const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
-const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 3;
+const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
@@ -122,9 +123,7 @@ struct FeatureFingerprintPayload {
 #[serde(rename_all = "camelCase")]
 struct CandidateSelectionCheckpoint {
     schema_version: u32,
-    source_path: String,
-    source_size: u64,
-    source_modified_nanos: Option<String>,
+    source_files: Vec<SourceFileIdentity>,
     base_fps: f64,
     candidate_fps: f64,
     dense_fps: f64,
@@ -140,6 +139,14 @@ struct CandidateSelectionCheckpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color_lut_sha256: Option<String>,
     selection: SelectionMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct SourceFileIdentity {
+    path: String,
+    size: u64,
+    modified_nanos: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -347,6 +354,14 @@ fn probe_duration_seconds(probe: &Value) -> Option<f64> {
 fn expected_candidate_frames(probe: &Value, candidate_fps: f64) -> Option<u64> {
     let frames = (probe_duration_seconds(probe)? * candidate_fps).ceil();
     (frames.is_finite() && frames > 0.0 && frames <= u64::MAX as f64).then_some(frames as u64)
+}
+
+fn expected_capture_candidate_frames(capture: &CaptureBundle, candidate_fps: f64) -> Option<u64> {
+    capture
+        .source_probes
+        .iter()
+        .filter_map(|source| expected_candidate_frames(&source.probe, candidate_fps))
+        .min()
 }
 
 fn source_stage_progress(source_index: usize, total_sources: usize, source_fraction: f32) -> f32 {
@@ -654,10 +669,7 @@ fn replace_stage_settings(current: &mut Value, incoming: Option<Value>) {
     }
 }
 
-fn reset_capabilities_for_stage_start(
-    manifest: &mut project::ProjectManifest,
-    stage: &StageName,
-) {
+fn reset_capabilities_for_stage_start(manifest: &mut project::ProjectManifest, stage: &StageName) {
     // A previous successful Align must not remain visible while a retry is
     // running, cancelled, or failed. Successful output derives the new value
     // from the effective mapper and validated prior artifacts.
@@ -1200,31 +1212,31 @@ fn maybe_log_mapper_gpu_cpu_fallback(
 /// post-`fps` presentation timestamp for every candidate on stderr so the
 /// selector can align it with telemetry without a second decode.
 fn candidate_ffmpeg_args(
-    input: &Path,
-    stream0: usize,
-    stream1: usize,
+    lenses: &[LensStream; 2],
     candidate_fps: f64,
     lut: Option<&ValidatedLut>,
 ) -> Vec<String> {
-    let lens_filter = |stream: usize, label: &str| {
+    let (input_paths, input_indices) = ffmpeg_input_layout(lenses);
+    let lens_filter = |input_index: usize, stream: usize, label: &str| {
         let lut_filter = lut
             .map(color::lut3d_filter)
             .map(|filter| format!(",format=gbrp10le,{filter}"))
             .unwrap_or_default();
         format!(
-            "[0:{stream}]fps={candidate_fps}{lut_filter},scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
+            "[{input_index}:{stream}]setpts=PTS-STARTPTS,fps={candidate_fps}{lut_filter},scale=w='min(512,iw)':h='min(512,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,pad=512:512:(ow-iw)/2:(oh-ih)/2,format=gray[{label}]"
         )
     };
     let filter = format!(
         "{};{};[lens0][lens1]hstack=inputs=2:shortest=1,showinfo=checksum=0[out]",
-        lens_filter(stream0, "lens0"),
-        lens_filter(stream1, "lens1")
+        lens_filter(input_indices[0], lenses[0].ffmpeg_stream_index, "lens0"),
+        lens_filter(input_indices[1], lenses[1].ffmpeg_stream_index, "lens1")
     );
-    vec![
-        "-hide_banner".into(),
-        "-nostdin".into(),
-        "-i".into(),
-        input.to_string_lossy().into_owned(),
+    let mut args = vec!["-hide_banner".into(), "-nostdin".into()];
+    for path in input_paths {
+        args.push("-i".into());
+        args.push(path.to_string_lossy().into_owned());
+    }
+    args.extend([
         "-filter_complex".into(),
         filter,
         "-map".into(),
@@ -1241,7 +1253,22 @@ fn candidate_ffmpeg_args(
         "-f".into(),
         "rawvideo".into(),
         "pipe:1".into(),
-    ]
+    ]);
+    args
+}
+
+fn ffmpeg_input_layout(lenses: &[LensStream; 2]) -> (Vec<&Path>, [usize; 2]) {
+    if lenses[0].source_path == lenses[1].source_path {
+        (vec![lenses[0].source_path.as_path()], [0, 0])
+    } else {
+        (
+            vec![
+                lenses[0].source_path.as_path(),
+                lenses[1].source_path.as_path(),
+            ],
+            [0, 1],
+        )
+    }
 }
 
 /// Build a balanced addition tree of `eq(n, index)` predicates.  FFmpeg's
@@ -1283,29 +1310,28 @@ fn balanced_select_expression(indexes: &[u64]) -> String {
 /// `select`: the selected indexes are zero-based positions in the candidate
 /// stream produced by the first pass, after frame-rate conversion.
 fn selected_ffmpeg_args(
-    input: &Path,
-    stream0: usize,
-    stream1: usize,
+    lenses: &[LensStream; 2],
     candidate_fps: f64,
     selected_indexes: &[u64],
     lens0: &Path,
     lens1: &Path,
     lut: Option<&ValidatedLut>,
 ) -> Vec<String> {
+    let (input_paths, input_indices) = ffmpeg_input_layout(lenses);
     let select = balanced_select_expression(selected_indexes);
     let lut_filter = lut
         .map(color::lut3d_filter)
         .map(|filter| format!(",format=gbrp10le,{filter}"))
         .unwrap_or_default();
-    let filter = format!("fps={candidate_fps}{lut_filter},select={select}");
-    vec![
-        "-hide_banner".into(),
-        "-nostdin".into(),
-        "-y".into(),
-        "-i".into(),
-        input.to_string_lossy().into_owned(),
+    let filter = format!("setpts=PTS-STARTPTS,fps={candidate_fps}{lut_filter},select={select}");
+    let mut args = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
+    for path in input_paths {
+        args.push("-i".into());
+        args.push(path.to_string_lossy().into_owned());
+    }
+    args.extend([
         "-map".into(),
-        format!("0:{stream0}"),
+        format!("{}:{}", input_indices[0], lenses[0].ffmpeg_stream_index),
         "-vf".into(),
         filter.clone(),
         "-fps_mode".into(),
@@ -1314,7 +1340,7 @@ fn selected_ffmpeg_args(
         "2".into(),
         lens0.join("%08d.jpg").to_string_lossy().into_owned(),
         "-map".into(),
-        format!("0:{stream1}"),
+        format!("{}:{}", input_indices[1], lenses[1].ffmpeg_stream_index),
         "-vf".into(),
         filter,
         "-fps_mode".into(),
@@ -1322,21 +1348,22 @@ fn selected_ffmpeg_args(
         "-q:v".into(),
         "2".into(),
         lens1.join("%08d.jpg").to_string_lossy().into_owned(),
-    ]
+    ]);
+    args
 }
 
 /// Add FFmpeg's input-scoped automatic hardware decoder selection immediately
 /// before the corresponding `-i`.  Keeping this as a pure transformation makes
 /// the argument ordering easy to verify without requiring a hardware device.
 fn with_hwaccel_auto(args: &[String]) -> Vec<String> {
-    let mut accelerated = args.to_vec();
-    let Some(input_index) = accelerated.iter().position(|arg| arg == "-i") else {
-        return accelerated;
-    };
-    accelerated.splice(
-        input_index..input_index,
-        ["-hwaccel".to_owned(), "auto".to_owned()],
-    );
+    let mut accelerated = Vec::with_capacity(args.len() + 4);
+    for arg in args {
+        if arg == "-i" {
+            accelerated.push("-hwaccel".to_owned());
+            accelerated.push("auto".to_owned());
+        }
+        accelerated.push(arg.clone());
+    }
     accelerated
 }
 
@@ -2108,10 +2135,24 @@ fn source_modified_nanos(metadata: &fs::Metadata) -> Option<String> {
         .map(|duration| duration.as_nanos().to_string())
 }
 
+fn source_file_identities(paths: &[PathBuf]) -> Option<Vec<SourceFileIdentity>> {
+    paths
+        .iter()
+        .map(|path| {
+            let metadata = fs::metadata(path).ok()?;
+            Some(SourceFileIdentity {
+                path: path.to_string_lossy().into_owned(),
+                size: metadata.len(),
+                modified_nanos: source_modified_nanos(&metadata),
+            })
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn load_candidate_selection_checkpoint(
     path: &Path,
-    input: &Path,
+    source_paths: &[PathBuf],
     base_fps: f64,
     candidate_fps: f64,
     dense_fps: f64,
@@ -2123,7 +2164,7 @@ fn load_candidate_selection_checkpoint(
 ) -> Option<SelectionMetadata> {
     let checkpoint =
         serde_json::from_slice::<CandidateSelectionCheckpoint>(&fs::read(path).ok()?).ok()?;
-    let source_metadata = fs::metadata(input).ok()?;
+    let source_files = source_file_identities(source_paths)?;
     let selected_count = checkpoint
         .selection
         .selections
@@ -2145,9 +2186,7 @@ fn load_candidate_selection_checkpoint(
                     && record.pair_score.is_finite()
             });
     let matches = checkpoint.schema_version == CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION
-        && checkpoint.source_path == input.to_string_lossy()
-        && checkpoint.source_size == source_metadata.len()
-        && checkpoint.source_modified_nanos == source_modified_nanos(&source_metadata)
+        && checkpoint.source_files == source_files
         && (checkpoint.base_fps - base_fps).abs() < 1e-6
         && (checkpoint.candidate_fps - candidate_fps).abs() < 1e-6
         && (checkpoint.dense_fps - dense_fps).abs() < 1e-6
@@ -2185,7 +2224,7 @@ fn load_candidate_selection_checkpoint(
 #[allow(clippy::too_many_arguments)]
 fn write_candidate_selection_checkpoint(
     path: &Path,
-    input: &Path,
+    source_paths: &[PathBuf],
     base_fps: f64,
     candidate_fps: f64,
     dense_fps: f64,
@@ -2196,12 +2235,11 @@ fn write_candidate_selection_checkpoint(
     color_resolution: &ColorResolution,
     selection: &SelectionMetadata,
 ) -> Result<(), String> {
-    let source_metadata = fs::metadata(input).map_err(|error| error.to_string())?;
+    let source_files = source_file_identities(source_paths)
+        .ok_or_else(|| "無法讀取候選來源檔案資訊".to_owned())?;
     let checkpoint = CandidateSelectionCheckpoint {
         schema_version: CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION,
-        source_path: input.to_string_lossy().into_owned(),
-        source_size: source_metadata.len(),
-        source_modified_nanos: source_modified_nanos(&source_metadata),
+        source_files,
         base_fps,
         candidate_fps,
         dense_fps,
@@ -2366,18 +2404,67 @@ fn run_extract(
         .map(PathBuf::from);
     let app_data_dir = app.path().app_data_dir().ok();
     let candidate_fps = if skip_blurry { dense_fps } else { base_fps };
-    let total_sources = manifest.input_paths.len().max(1);
+    let probed_sources = manifest
+        .input_paths
+        .iter()
+        .map(|raw_input| {
+            let path = PathBuf::from(raw_input);
+            let probe = probe_streams(&ffprobe, &path)?;
+            Ok(ProbedSource { path, probe })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let captures = camera_adapter::resolve_capture_bundles(probed_sources)?;
+    if captures.is_empty() {
+        return Err("沒有可辨識的雙魚眼 capture bundle".to_owned());
+    }
+    let total_sources = captures.len();
+    let source_groups = captures
+        .iter()
+        .enumerate()
+        .map(|(source_index, capture)| {
+            let input_paths = capture
+                .source_paths
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let input_index_for = |path: &Path| {
+                capture
+                    .source_paths
+                    .iter()
+                    .position(|candidate| candidate == path)
+                    .unwrap_or_default()
+            };
+            json!({
+                "sourceIndex": source_index,
+                "adapter": capture.adapter,
+                "vendor": capture.vendor,
+                "model": capture.model,
+                "paths": input_paths,
+                "lenses": capture.lenses.iter().map(|lens| json!({
+                    "lensId": lens.lens_id,
+                    "inputIndex": input_index_for(&lens.source_path),
+                    "streamIndex": lens.ffmpeg_stream_index,
+                    "projection": "fisheye"
+                })).collect::<Vec<_>>(),
+                "capabilities": {
+                    "nativeFisheye": capture.native_fisheye,
+                    "factoryIntrinsics": capture.factory_intrinsics,
+                    "rigExtrinsics": capture.rig_extrinsics
+                }
+            })
+        })
+        .collect::<Vec<_>>();
     let mut telemetry_streams = Vec::new();
     let mut normalized_telemetry = Vec::new();
     let mut color_profiles = Vec::<Value>::new();
-    for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
-        let input = PathBuf::from(raw_input);
-        let current_source = input.to_string_lossy().into_owned();
-        let probe = probe_streams(&ffprobe, &input)?;
+    for (source_index, capture) in captures.iter().enumerate() {
+        let input = capture.primary_path().to_path_buf();
+        let current_source = capture.display_name();
+        let probe = &capture.probe;
         // Probe and resolve every source independently. A mixed capture may
         // contain a log source beside a display-referred source, so the first
         // source must never decide the transform for the rest of the job.
-        let color_detection = color::detect_from_probe(&input, &probe);
+        let color_detection = color::detect_from_probe(&input, probe);
         let (color_resolution, color_lut) = color::resolve_for_extract(
             color_mode,
             &color_detection,
@@ -2386,7 +2473,7 @@ fn run_extract(
         )?;
         let filter_lut = color_resolution
             .applied
-            .then(|| color_lut.as_ref())
+            .then_some(color_lut.as_ref())
             .flatten();
         for warning in &color_resolution.warnings {
             emit_log(
@@ -2405,21 +2492,21 @@ fn run_extract(
             "shouldApply": color_detection.should_apply,
             "resolution": color_resolution,
         }));
-        let streams = stream_indices(&probe, "video");
-        let candidate_total = expected_candidate_frames(&probe, candidate_fps);
-        if streams.len() < 2 {
-            return Err(format!(
-                "{} 未包含兩路可辨識的雙魚眼 video stream",
-                input.display()
-            ));
-        }
+        let candidate_total = expected_capture_candidate_frames(capture, candidate_fps);
         let metadata = output.join("metadata");
         fs::create_dir_all(&metadata).map_err(|error| error.to_string())?;
-        fs::write(
-            metadata.join(format!("source{source_index:03}_streams.json")),
-            serde_json::to_vec_pretty(&probe).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
+        for (input_index, source) in capture.source_probes.iter().enumerate() {
+            let file_name = if input_index == 0 {
+                format!("source{source_index:03}_streams.json")
+            } else {
+                format!("source{source_index:03}_input{input_index}_streams.json")
+            };
+            fs::write(
+                metadata.join(file_name),
+                serde_json::to_vec_pretty(&source.probe).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+        }
         // Parse/cache normalized telemetry before the candidate pass so fused
         // attitude can be SLERP-interpolated at each post-fps frame PTS. A
         // missing stream only disables the IMU term; visual novelty and the
@@ -2427,7 +2514,7 @@ fn run_extract(
         let normalized_path = metadata.join(format!("source{source_index:03}_telemetry.json"));
         let mut attitude_timeline = None;
         let telemetry_sha256 = match telemetry::parse_and_write(
-            &input,
+            &capture.telemetry_path,
             &normalized_path,
             control.cancelled.clone(),
         ) {
@@ -2498,7 +2585,7 @@ fn run_extract(
         let selection_checkpoint = candidate_root.join("selection.checkpoint.json");
         let selection_metadata = if let Some(selection) = load_candidate_selection_checkpoint(
             &selection_checkpoint,
-            &input,
+            &capture.source_paths,
             base_fps,
             candidate_fps,
             dense_fps,
@@ -2533,8 +2620,7 @@ fn run_extract(
                 Some(current_source.clone()),
                 None,
             );
-            let software_args =
-                candidate_ffmpeg_args(&input, streams[0], streams[1], candidate_fps, filter_lut);
+            let software_args = candidate_ffmpeg_args(&capture.lenses, candidate_fps, filter_lut);
             let accelerated_args = with_hwaccel_auto(&software_args);
             let mut candidate_progress = CandidateProgressReporter {
                 app,
@@ -2584,7 +2670,7 @@ fn run_extract(
             };
             write_candidate_selection_checkpoint(
                 &selection_checkpoint,
-                &input,
+                &capture.source_paths,
                 base_fps,
                 candidate_fps,
                 dense_fps,
@@ -2711,9 +2797,7 @@ fn run_extract(
                 None,
             );
             let software_args = selected_ffmpeg_args(
-                &input,
-                streams[0],
-                streams[1],
+                &capture.lenses,
                 candidate_fps,
                 &selected_indexes,
                 &decoded_lens0,
@@ -2862,57 +2946,62 @@ fn run_extract(
         // streams so long captures do not retain avoidable temporary storage.
         drop(transaction_cleanup);
 
-        for stream in stream_indices(&probe, "data") {
-            if control.cancelled.load(Ordering::Acquire) {
-                return Err("cancelled".to_owned());
-            }
-            let final_path = metadata.join(format!(
-                "source{source_index:03}_stream{stream}_telemetry.bin"
-            ));
-            if final_path.is_file() {
-                telemetry_streams.push(json!({
-                    "sourceIndex": source_index,
-                    "streamIndex": stream,
-                    "path": final_path.to_string_lossy(),
-                    "format": "ffmpeg-data-stream-copy"
-                }));
-                continue;
-            }
-            let partial_path = final_path.with_extension("bin.partial");
-            let args = vec![
-                "-hide_banner".into(),
-                "-nostdin".into(),
-                "-y".into(),
-                "-i".into(),
-                input.to_string_lossy().into_owned(),
-                "-map".into(),
-                format!("0:{stream}"),
-                "-c".into(),
-                "copy".into(),
-                "-f".into(),
-                "data".into(),
-                partial_path.to_string_lossy().into_owned(),
-            ];
-            match run_child(app, id, &ffmpeg, &args, control) {
-                Ok(()) => {
-                    fs::rename(&partial_path, &final_path).map_err(|error| error.to_string())?;
+        for (input_index, source) in capture.source_probes.iter().enumerate() {
+            for stream in stream_indices(&source.probe, "data") {
+                if control.cancelled.load(Ordering::Acquire) {
+                    return Err("cancelled".to_owned());
+                }
+                let final_path = metadata.join(format!(
+                    "source{source_index:03}_input{input_index}_stream{stream}_telemetry.bin"
+                ));
+                if final_path.is_file() {
                     telemetry_streams.push(json!({
                         "sourceIndex": source_index,
+                        "inputIndex": input_index,
                         "streamIndex": stream,
                         "path": final_path.to_string_lossy(),
                         "format": "ffmpeg-data-stream-copy"
                     }));
+                    continue;
                 }
-                Err(error) if !control.cancelled.load(Ordering::Acquire) => {
-                    let _ = fs::remove_file(&partial_path);
-                    emit_log(
-                        app,
-                        id,
-                        "warning",
-                        format!("無法封裝 telemetry stream {stream}: {error}"),
-                    );
+                let partial_path = final_path.with_extension("bin.partial");
+                let args = vec![
+                    "-hide_banner".into(),
+                    "-nostdin".into(),
+                    "-y".into(),
+                    "-i".into(),
+                    source.path.to_string_lossy().into_owned(),
+                    "-map".into(),
+                    format!("0:{stream}"),
+                    "-c".into(),
+                    "copy".into(),
+                    "-f".into(),
+                    "data".into(),
+                    partial_path.to_string_lossy().into_owned(),
+                ];
+                match run_child(app, id, &ffmpeg, &args, control) {
+                    Ok(()) => {
+                        fs::rename(&partial_path, &final_path)
+                            .map_err(|error| error.to_string())?;
+                        telemetry_streams.push(json!({
+                            "sourceIndex": source_index,
+                            "inputIndex": input_index,
+                            "streamIndex": stream,
+                            "path": final_path.to_string_lossy(),
+                            "format": "ffmpeg-data-stream-copy"
+                        }));
+                    }
+                    Err(error) if !control.cancelled.load(Ordering::Acquire) => {
+                        let _ = fs::remove_file(&partial_path);
+                        emit_log(
+                            app,
+                            id,
+                            "warning",
+                            format!("無法封裝 telemetry stream {stream}: {error}"),
+                        );
+                    }
+                    Err(error) => return Err(error),
                 }
-                Err(error) => return Err(error),
             }
         }
     }
@@ -2937,7 +3026,8 @@ fn run_extract(
         "raw-data-streams-preserved"
     };
     fs::write(metadata.join("capture.json"), serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 6, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "schemaVersion": 7, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "sourceGroups": source_groups,
         "lensCount": 2, "baseFps": base_fps, "candidateFps": candidate_fps,
         "requestedDenseFps": dense_fps, "skipBlurry": skip_blurry,
         "candidateImageFormat": CANDIDATE_IMAGE_FORMAT,
@@ -2957,7 +3047,7 @@ fn run_extract(
         "telemetryStreams": telemetry_streams,
         "normalizedTelemetry": normalized_telemetry,
         "imu": {"status": imu_status, "appliedToColmap":false},
-        "warnings":["DJI quaternion is not copied into COLMAP without a verified coordinate transform"]
+        "warnings":["Camera attitude is not copied into COLMAP without a verified sensor-to-camera coordinate transform"]
     })).unwrap()).map_err(|e| e.to_string())?;
     Ok(vec![
         output.join("images").to_string_lossy().into_owned(),
@@ -3716,7 +3806,9 @@ fn write_rig_and_pairs_with_options(
             );
             combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
             combined.source_pairs.extend(report.source_pairs);
-            combined.failed_descriptors.extend(report.failed_descriptors);
+            combined
+                .failed_descriptors
+                .extend(report.failed_descriptors);
         }
         combined.fallback_to_legacy =
             combined.source_pairs.is_empty() || !combined.failed_descriptors.is_empty();
@@ -4755,10 +4847,7 @@ fn select_best_bootstrap_candidate(
                 (
                     candidate.shared_frame_count,
                     candidate.registered_image_count,
-                ) > (
-                    current.shared_frame_count,
-                    current.registered_image_count,
-                )
+                ) > (current.shared_frame_count, current.registered_image_count)
             });
         if should_replace {
             best = Some(candidate);
@@ -5323,9 +5412,9 @@ fn matches_importer_args(
     ];
     if quality_profile == ColmapQualityProfile::Tuned {
         args.extend([
-        // Spend modest extra RANSAC work on retrieval/cross-source pairs instead of
-        // accepting a weaker model merely because the default trial budget ran
-        // out in repetitive indoor scenes.
+            // Spend modest extra RANSAC work on retrieval/cross-source pairs instead of
+            // accepting a weaker model merely because the default trial budget ran
+            // out in repetitive indoor scenes.
             "--TwoViewGeometry.confidence".into(),
             "0.999".into(),
             "--TwoViewGeometry.max_num_trials".into(),
@@ -5714,10 +5803,8 @@ fn calibrate_imu_sources(
     // Evaluate each source against every component independently, then select
     // the strongest valid calibration without mixing unrelated coordinates or
     // assuming the component used to derive rig extrinsics contains all sources.
-    let mut visual = BTreeMap::<
-        String,
-        Vec<(String, Vec<crate::imu_calibration::VisualRotationSample>)>,
-    >::new();
+    let mut visual =
+        BTreeMap::<String, Vec<(String, Vec<crate::imu_calibration::VisualRotationSample>)>>::new();
     for (model_name, text_model) in text_models {
         for (source_id, samples) in visual_samples_by_source(root, text_model) {
             visual
@@ -5792,7 +5879,11 @@ fn calibrate_imu_sources(
                             .total_cmp(&left.model.residual_deg.unwrap_or(f64::INFINITY))
                     })
             })
-            .or_else(|| candidates.iter().max_by_key(|candidate| candidate.visual_sample_count))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .max_by_key(|candidate| candidate.visual_sample_count)
+            })
             .ok_or_else(|| format!("{source_id} 沒有 visual calibration candidate"))?;
         let visual_model = selected.visual_model.clone();
         let visual_sample_count = selected.visual_sample_count;
@@ -6212,15 +6303,18 @@ fn sparse_model_identity_sha256(model: &Path) -> Result<String, String> {
 }
 
 fn gravity_alignment_audit(root: &Path) -> Option<Value> {
-    serde_json::from_slice::<Value>(
-        &fs::read(root.join("metadata/gravity_alignment.json")).ok()?,
-    )
-    .ok()
+    serde_json::from_slice::<Value>(&fs::read(root.join("metadata/gravity_alignment.json")).ok()?)
+        .ok()
 }
 
 fn gravity_alignment_claims_applied(root: &Path) -> bool {
     gravity_alignment_audit(root)
-        .and_then(|value| value.get("status").and_then(Value::as_str).map(str::to_owned))
+        .and_then(|value| {
+            value
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
         .is_some_and(|status| matches!(status.as_str(), "applied" | "already_aligned"))
 }
 
@@ -6261,12 +6355,17 @@ fn recover_gravity_alignment_transaction(root: &Path) -> Result<(), String> {
     });
     let backup_identity = sparse_model_identity_sha256(&backup.join("0"))?;
     if pending_input_identity != Some(backup_identity.as_str()) {
-        return Err("重力扶正交易備份與 pending audit 身分不一致，為避免覆寫模型已停止自動復原".to_owned());
+        return Err(
+            "重力扶正交易備份與 pending audit 身分不一致，為避免覆寫模型已停止自動復原".to_owned(),
+        );
     }
     if sparse.exists() {
         let sparse_identity = sparse_model_identity_sha256(&sparse.join("0"))?;
         if pending_candidate_identity != Some(sparse_identity.as_str()) {
-            return Err("重力扶正交易中的 sparse model 已被替換，為避免覆寫外部變更已停止自動復原".to_owned());
+            return Err(
+                "重力扶正交易中的 sparse model 已被替換，為避免覆寫外部變更已停止自動復原"
+                    .to_owned(),
+            );
         }
         remove_align_artifact(&sparse)?;
     }
@@ -6291,14 +6390,7 @@ fn align_sparse_model_to_gravity(
     control: &JobControl,
 ) -> Result<bool, String> {
     let text_model_dir = root.join("metadata/final-model-text");
-    export_colmap_text_model(
-        app,
-        id,
-        colmap,
-        &sparse.join("0"),
-        &text_model_dir,
-        control,
-    )?;
+    export_colmap_text_model(app, id, colmap, &sparse.join("0"), &text_model_dir, control)?;
     let model = crate::reconstruction_benchmark::read_colmap_text_model(&text_model_dir)?;
     let bundle = load_or_calibrate_imu_bundle_for_alignment(root, &model)?;
     if bundle.valid_source_count == 0 {
@@ -6356,14 +6448,7 @@ fn align_sparse_model_to_gravity(
         ],
         control,
     )?;
-    validate_colmap_configured_rig_model(
-        app,
-        id,
-        colmap,
-        root,
-        &candidate.join("0"),
-        control,
-    )?;
+    validate_colmap_configured_rig_model(app, id, colmap, root, &candidate.join("0"), control)?;
     export_colmap_text_model(
         app,
         id,
@@ -6394,30 +6479,43 @@ fn align_sparse_model_to_gravity(
         ));
     }
     let topology_preserved = model.cameras == transformed.cameras
-        && model.images.iter().zip(&transformed.images).all(|(before, after)| {
-            before.image_id == after.image_id
-                && before.name == after.name
-                && before.camera_id == after.camera_id
-                && before.observed_point_count == after.observed_point_count
-                && before.frame_id == after.frame_id
-        })
-        && model.frames.iter().zip(&transformed.frames).all(|(before, after)| {
-            before.frame_id == after.frame_id
-                && before.rig_id == after.rig_id
-                && before.data == after.data
-        })
-        && model.points3d.iter().zip(&transformed.points3d).all(|(before, after)| {
-            before.point3d_id == after.point3d_id
-                && before.rgb == after.rgb
-                && before.reprojection_error_px == after.reprojection_error_px
-                && before.track == after.track
-        });
+        && model
+            .images
+            .iter()
+            .zip(&transformed.images)
+            .all(|(before, after)| {
+                before.image_id == after.image_id
+                    && before.name == after.name
+                    && before.camera_id == after.camera_id
+                    && before.observed_point_count == after.observed_point_count
+                    && before.frame_id == after.frame_id
+            })
+        && model
+            .frames
+            .iter()
+            .zip(&transformed.frames)
+            .all(|(before, after)| {
+                before.frame_id == after.frame_id
+                    && before.rig_id == after.rig_id
+                    && before.data == after.data
+            })
+        && model
+            .points3d
+            .iter()
+            .zip(&transformed.points3d)
+            .all(|(before, after)| {
+                before.point3d_id == after.point3d_id
+                    && before.rgb == after.rgb
+                    && before.reprojection_error_px == after.reprojection_error_px
+                    && before.track == after.track
+            });
     if !topology_preserved {
         remove_align_artifact(&candidate)?;
         remove_align_artifact(&candidate_text)?;
         return Err("重力扶正候選改變相機內參、影像身分、rig frame 或 point tracks".to_owned());
     }
-    let verification = crate::gravity_alignment::estimate_gravity_alignment(&transformed, &gravity)?;
+    let verification =
+        crate::gravity_alignment::estimate_gravity_alignment(&transformed, &gravity)?;
     if !verification.already_aligned {
         remove_align_artifact(&candidate)?;
         remove_align_artifact(&candidate_text)?;
@@ -6442,13 +6540,10 @@ fn align_sparse_model_to_gravity(
             "candidateModelSha256": candidate_model_identity,
         }),
     )?;
-    fs::rename(sparse, &backup)
-        .map_err(|error| format!("無法建立重力扶正前模型備份：{error}"))?;
+    fs::rename(sparse, &backup).map_err(|error| format!("無法建立重力扶正前模型備份：{error}"))?;
     if let Err(error) = fs::rename(&candidate, sparse) {
         fs::rename(&backup, sparse).map_err(|restore_error| {
-            format!(
-                "重力扶正模型提交失敗：{error}；原模型還原也失敗：{restore_error}"
-            )
+            format!("重力扶正模型提交失敗：{error}；原模型還原也失敗：{restore_error}")
         })?;
         return Err(format!("重力扶正模型提交失敗：{error}"));
     }
@@ -6480,9 +6575,7 @@ fn align_sparse_model_to_gravity(
         }),
     ) {
         remove_align_artifact(sparse).map_err(|cleanup_error| {
-            format!(
-                "重力扶正 audit 寫入失敗：{error}；候選模型移除也失敗：{cleanup_error}"
-            )
+            format!("重力扶正 audit 寫入失敗：{error}；候選模型移除也失敗：{cleanup_error}")
         })?;
         fs::rename(&backup, sparse).map_err(|restore_error| {
             format!("重力扶正 audit 寫入失敗：{error}；原模型還原也失敗：{restore_error}")
@@ -6553,8 +6646,7 @@ fn refresh_calibrated_pair_matches(
     let result = clear_matching_cache(database)
         .map_err(|error| error.to_string())
         .and_then(|()| {
-            let args =
-                matches_importer_args(root, database, use_gpu, gpu_index, quality_profile);
+            let args = matches_importer_args(root, database, use_gpu, gpu_index, quality_profile);
             run_child(app, id, colmap, &args, control)
         });
     match result {
@@ -6606,8 +6698,8 @@ fn global_candidate_quality_metrics(
     text_model_dir: &Path,
 ) -> Result<GlobalCandidateQualityMetrics, String> {
     let model = crate::reconstruction_benchmark::read_colmap_text_model(text_model_dir)?;
-    let images_text = fs::read_to_string(text_model_dir.join("images.txt"))
-        .map_err(|error| error.to_string())?;
+    let images_text =
+        fs::read_to_string(text_model_dir.join("images.txt")).map_err(|error| error.to_string())?;
     Ok(GlobalCandidateQualityMetrics {
         complete_registered_rig_frames: complete_registered_dual_fisheye_frames(&images_text),
         model: crate::reconstruction_benchmark::colmap_model_quality_metrics(&model),
@@ -6738,7 +6830,11 @@ fn merge_pair_lists(first: &[u8], second: &[u8]) -> Result<Vec<u8>, String> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<BTreeSet<_>>();
-    let mut merged = pairs.into_iter().collect::<Vec<_>>().join("\n").into_bytes();
+    let mut merged = pairs
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes();
     if !merged.is_empty() {
         merged.push(b'\n');
     }
@@ -6932,13 +7028,12 @@ fn run_align(
     let use_calibrated_fov_pairs =
         setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", false);
     let pair_graph_started = Instant::now();
-    let rig_frame_count =
-        write_rig_and_pairs_with_options(
-            &root,
-            use_visual_retrieval,
-            use_calibrated_fov_pairs,
-            true,
-        )?;
+    let rig_frame_count = write_rig_and_pairs_with_options(
+        &root,
+        use_visual_retrieval,
+        use_calibrated_fov_pairs,
+        true,
+    )?;
     phase_durations_ms.insert(
         "pairGraph".to_owned(),
         pair_graph_started.elapsed().as_secs_f64() * 1000.0,
@@ -7107,9 +7202,10 @@ fn run_align(
             &sparse.join("0"),
             control,
         ) {
-            Ok(_) if setting_bool(&manifest.settings, "/align/autoAlignGravity", true)
-                && gravity_alignment_claims_applied(&root)
-                && !gravity_alignment_was_applied(&root) =>
+            Ok(_)
+                if setting_bool(&manifest.settings, "/align/autoAlignGravity", true)
+                    && gravity_alignment_claims_applied(&root)
+                    && !gravity_alignment_was_applied(&root) =>
             {
                 Some("重力扶正 audit 與目前 sparse model 身分不一致".to_owned())
             }
@@ -7156,10 +7252,10 @@ fn run_align(
             None,
         );
         let mut artifacts = vec![
-                db.to_string_lossy().into_owned(),
-                root.join("rig_config.json").to_string_lossy().into_owned(),
-                sparse.to_string_lossy().into_owned(),
-            ];
+            db.to_string_lossy().into_owned(),
+            root.join("rig_config.json").to_string_lossy().into_owned(),
+            sparse.to_string_lossy().into_owned(),
+        ];
         for path in [
             root.join("metadata/gravity_alignment.json"),
             root.join("metadata/gravity_alignment.sim3.txt"),
@@ -7539,10 +7635,8 @@ fn run_align(
     );
     let matching_progress = Cell::new(None::<ColmapFraction>);
     let highest_matching_fraction = Cell::new(0.0_f32);
-    let matching_gpu_args =
-        matches_importer_args(&root, &db, true, &gpu_index, quality_profile);
-    let matching_cpu_args =
-        matches_importer_args(&root, &db, false, &gpu_index, quality_profile);
+    let matching_gpu_args = matches_importer_args(&root, &db, true, &gpu_index, quality_profile);
+    let matching_cpu_args = matches_importer_args(&root, &db, false, &gpu_index, quality_profile);
     let matching_database_backup = root.join("metadata/.align-matching-database.backup");
     remove_align_artifact(&matching_database_backup)?;
     if feature_matching_gpu {
@@ -8037,12 +8131,9 @@ fn run_align(
         };
         rig_configs = persist_rig_config_from_database(&root, &db)?;
         let post_rig_focal_report = if calibrate_focal_prior {
-            crate::colmap_priors::read_focal_prior_report(
-                &db,
-                "view_graph_calibrator",
-            )
-            .ok()
-            .filter(|report| report.focal_prior_valid)
+            crate::colmap_priors::read_focal_prior_report(&db, "view_graph_calibrator")
+                .ok()
+                .filter(|report| report.focal_prior_valid)
         } else {
             None
         };
@@ -8077,10 +8168,7 @@ fn run_align(
                 control,
             )
             .and_then(|()| {
-                crate::colmap_priors::read_focal_prior_report(
-                    &db,
-                    "view_graph_calibrator",
-                )
+                crate::colmap_priors::read_focal_prior_report(&db, "view_graph_calibrator")
             });
             match retry_result {
                 Ok(report) if report.focal_prior_valid => {
@@ -8116,9 +8204,7 @@ fn run_align(
                         app,
                         id,
                         "warning",
-                        format!(
-                            "post-rig focal round-trip 驗證失敗，已還原資料庫：{error}"
-                        ),
+                        format!("post-rig focal round-trip 驗證失敗，已還原資料庫：{error}"),
                     );
                 }
             }
@@ -8173,166 +8259,174 @@ fn run_align(
     let mut effective_final_mapper_component = "bootstrap_mapper";
     if mapper_still_required_after_rig_setup(rig_mapping_plan) {
         emit_progress_detailed(
-        app,
-        id,
-        &StageName::Align,
-        "final-mapping",
-        4.0 / 5.0,
-        "正在重建最終模型",
-        "running",
-        false,
-        None,
-        None,
-        Some("final_mapper".to_owned()),
-        None,
-    );
-    if sparse.exists() {
-        fs::remove_dir_all(&sparse).map_err(|e| e.to_string())?;
-    }
-    fs::create_dir_all(&sparse).map_err(|e| e.to_string())?;
-    let highest_registered = Cell::new(0);
-    let last_final_mapper_emit = Cell::new(None);
-    let mut final_gpu_warning_emitted = false;
-    let final_total = rig_frame_total.max(1);
-    let final_mapper_gpu = if mapper_mode == MapperMode::Global {
-        requested_gpu
-            && colmap_capabilities.cuda_build
-            && colmap_capabilities.global_mapper_gp_gpu
-            && colmap_capabilities.global_mapper_ba_gpu
-    } else {
-        mapper_gpu
-    };
-    if mapper_mode == MapperMode::Global && requested_gpu && !final_mapper_gpu {
+            app,
+            id,
+            &StageName::Align,
+            "final-mapping",
+            4.0 / 5.0,
+            "正在重建最終模型",
+            "running",
+            false,
+            None,
+            None,
+            Some("final_mapper".to_owned()),
+            None,
+        );
+        if sparse.exists() {
+            fs::remove_dir_all(&sparse).map_err(|e| e.to_string())?;
+        }
+        fs::create_dir_all(&sparse).map_err(|e| e.to_string())?;
+        let highest_registered = Cell::new(0);
+        let last_final_mapper_emit = Cell::new(None);
+        let mut final_gpu_warning_emitted = false;
+        let final_total = rig_frame_total.max(1);
+        let final_mapper_gpu = if mapper_mode == MapperMode::Global {
+            requested_gpu
+                && colmap_capabilities.cuda_build
+                && colmap_capabilities.global_mapper_gp_gpu
+                && colmap_capabilities.global_mapper_ba_gpu
+        } else {
+            mapper_gpu
+        };
+        if mapper_mode == MapperMode::Global && requested_gpu && !final_mapper_gpu {
+            emit_log(
+                app,
+                id,
+                "warning",
+                "global_mapper 的 GPU positioning/Ceres option 不完整；改用 CPU global mapper",
+            );
+        }
+        let final_gpu_args = if mapper_mode == MapperMode::Global {
+            global_mapper_args(
+                &db,
+                &root.join("images"),
+                &sparse,
+                true,
+                &gpu_index,
+                GlobalMapperOptions {
+                    use_gravity_prior,
+                    fixed_rotation_ba,
+                    disable_sensor_refinement: rig_preconfigured,
+                    quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
+                },
+            )
+        } else {
+            mapper_args(
+                &db,
+                &root.join("images"),
+                &sparse,
+                final_mapper_gpu,
+                &mapper_gpu_index,
+                MapperOptions {
+                    multiple_models: false,
+                    initial_image_pair: None,
+                    disable_sensor_refinement: rig_preconfigured,
+                },
+            )
+        };
+        let final_cpu_args = if mapper_mode == MapperMode::Global {
+            global_mapper_args(
+                &db,
+                &root.join("images"),
+                &sparse,
+                false,
+                &gpu_index,
+                GlobalMapperOptions {
+                    use_gravity_prior,
+                    fixed_rotation_ba,
+                    disable_sensor_refinement: rig_preconfigured,
+                    quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
+                },
+            )
+        } else {
+            mapper_args(
+                &db,
+                &root.join("images"),
+                &sparse,
+                false,
+                &mapper_gpu_index,
+                MapperOptions {
+                    multiple_models: false,
+                    initial_image_pair: None,
+                    disable_sensor_refinement: rig_preconfigured,
+                },
+            )
+        };
+        let final_mapper_component = if mapper_mode == MapperMode::Global {
+            "global_mapper"
+        } else {
+            "final_mapper"
+        };
+        run_mapper_with_gpu_fallback(
+            app,
+            id,
+            &colmap,
+            &sparse,
+            &final_gpu_args,
+            &final_cpu_args,
+            final_mapper_gpu,
+            final_mapper_component,
+            control,
+            || {
+                highest_registered.set(0);
+                last_final_mapper_emit.set(None);
+            },
+            |line| {
+                maybe_log_mapper_gpu_cpu_fallback(
+                    app,
+                    id,
+                    final_mapper_component,
+                    final_mapper_gpu,
+                    &mut final_gpu_warning_emitted,
+                    line,
+                );
+                let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                    return;
+                };
+                highest_registered.set(highest_registered.get().max(registered).min(final_total));
+                let terminal = highest_registered.get() == final_total;
+                if !terminal
+                    && last_final_mapper_emit
+                        .get()
+                        .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
+                {
+                    return;
+                }
+                last_final_mapper_emit.set(Some(Instant::now()));
+                emit_colmap_progress(
+                    app,
+                    id,
+                    "final-mapping",
+                    4,
+                    highest_registered.get() as f32 / final_total as f32,
+                    format!(
+                        "正在重建最終模型，已註冊約 {} / {} 組影格",
+                        highest_registered.get(),
+                        final_total
+                    ),
+                    Some(format!("影像 #{image_id}")),
+                );
+            },
+        )?;
+        if !sparse_rig_model_exists(&sparse) {
+            return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
+        }
+        let final_calibrated_sensor_count = validate_colmap_configured_rig_model(
+            app,
+            id,
+            &colmap,
+            &root,
+            &sparse.join("0"),
+            control,
+        )?;
         emit_log(
             app,
             id,
-            "warning",
-            "global_mapper 的 GPU positioning/Ceres option 不完整；改用 CPU global mapper",
+            "info",
+            format!(
+                "已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"
+            ),
         );
-    }
-    let final_gpu_args = if mapper_mode == MapperMode::Global {
-        global_mapper_args(
-            &db,
-            &root.join("images"),
-            &sparse,
-            true,
-            &gpu_index,
-            GlobalMapperOptions {
-                use_gravity_prior,
-                fixed_rotation_ba,
-                disable_sensor_refinement: rig_preconfigured,
-                quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
-            },
-        )
-    } else {
-        mapper_args(
-            &db,
-            &root.join("images"),
-            &sparse,
-            final_mapper_gpu,
-            &mapper_gpu_index,
-            MapperOptions {
-                multiple_models: false,
-                initial_image_pair: None,
-                disable_sensor_refinement: rig_preconfigured,
-            },
-        )
-    };
-    let final_cpu_args = if mapper_mode == MapperMode::Global {
-        global_mapper_args(
-            &db,
-            &root.join("images"),
-            &sparse,
-            false,
-            &gpu_index,
-            GlobalMapperOptions {
-                use_gravity_prior,
-                fixed_rotation_ba,
-                disable_sensor_refinement: rig_preconfigured,
-                quality_refinement: quality_profile == ColmapQualityProfile::Tuned,
-            },
-        )
-    } else {
-        mapper_args(
-            &db,
-            &root.join("images"),
-            &sparse,
-            false,
-            &mapper_gpu_index,
-            MapperOptions {
-                multiple_models: false,
-                initial_image_pair: None,
-                disable_sensor_refinement: rig_preconfigured,
-            },
-        )
-    };
-    let final_mapper_component = if mapper_mode == MapperMode::Global {
-        "global_mapper"
-    } else {
-        "final_mapper"
-    };
-    run_mapper_with_gpu_fallback(
-        app,
-        id,
-        &colmap,
-        &sparse,
-        &final_gpu_args,
-        &final_cpu_args,
-        final_mapper_gpu,
-        final_mapper_component,
-        control,
-        || {
-            highest_registered.set(0);
-            last_final_mapper_emit.set(None);
-        },
-        |line| {
-            maybe_log_mapper_gpu_cpu_fallback(
-                app,
-                id,
-                final_mapper_component,
-                final_mapper_gpu,
-                &mut final_gpu_warning_emitted,
-                line,
-            );
-            let Some((image_id, registered)) = parse_mapper_registration(line) else {
-                return;
-            };
-            highest_registered.set(highest_registered.get().max(registered).min(final_total));
-            let terminal = highest_registered.get() == final_total;
-            if !terminal
-                && last_final_mapper_emit
-                    .get()
-                    .is_some_and(|last: Instant| last.elapsed() < COLMAP_PROGRESS_INTERVAL)
-            {
-                return;
-            }
-            last_final_mapper_emit.set(Some(Instant::now()));
-            emit_colmap_progress(
-                app,
-                id,
-                "final-mapping",
-                4,
-                highest_registered.get() as f32 / final_total as f32,
-                format!(
-                    "正在重建最終模型，已註冊約 {} / {} 組影格",
-                    highest_registered.get(),
-                    final_total
-                ),
-                Some(format!("影像 #{image_id}")),
-            );
-        },
-    )?;
-    if !sparse_rig_model_exists(&sparse) {
-        return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
-    }
-    let final_calibrated_sensor_count =
-        validate_colmap_configured_rig_model(app, id, &colmap, &root, &sparse.join("0"), control)?;
-    emit_log(
-        app,
-        id,
-        "info",
-        format!("已驗證最終模型與 {final_calibrated_sensor_count} 個 non-reference sensor 外參"),
-    );
         effective_final_mapper_component = final_mapper_component;
     } else {
         if !sparse_rig_model_exists(&sparse) {
@@ -8487,9 +8581,8 @@ fn run_align(
                     );
                 }
                 let global_candidate = root.join("sparse_global_candidate");
-                let seed_quality = global_candidate_quality_metrics(
-                    &root.join("metadata/final-model-text"),
-                )?;
+                let seed_quality =
+                    global_candidate_quality_metrics(&root.join("metadata/final-model-text"))?;
                 let seed_complete_rigs = seed_quality.complete_registered_rig_frames;
                 write_json_atomic(
                     &candidate_audit,
@@ -8570,10 +8663,8 @@ fn run_align(
                         control,
                     )?;
                     let candidate_quality = global_candidate_quality_metrics(&candidate_text)?;
-                    let quality_gate = evaluate_global_candidate_quality(
-                        seed_quality.clone(),
-                        candidate_quality,
-                    );
+                    let quality_gate =
+                        evaluate_global_candidate_quality(seed_quality.clone(), candidate_quality);
                     let accepted = quality_gate.accepted;
                     let issues = quality_gate.issues.clone();
                     quality_gate_audit = Some(quality_gate.clone());
@@ -8887,11 +8978,11 @@ fn run_align(
         && use_gravity_prior
         && has_valid_global_mapper_priors(&root, true);
     let mut artifacts = vec![
-            db.to_string_lossy().into_owned(),
-            root.join("rig_config.json").to_string_lossy().into_owned(),
-            sparse.to_string_lossy().into_owned(),
-            benchmark_path.to_string_lossy().into_owned(),
-        ];
+        db.to_string_lossy().into_owned(),
+        root.join("rig_config.json").to_string_lossy().into_owned(),
+        sparse.to_string_lossy().into_owned(),
+        benchmark_path.to_string_lossy().into_owned(),
+    ];
     for path in [
         root.join("metadata/gravity_alignment.json"),
         root.join("metadata/gravity_alignment.sim3.txt"),
@@ -8917,11 +9008,11 @@ mod tests {
     use super::{
         balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
         calibrate_focal_before_bootstrap, calibrate_imu_sources,
-        calibrated_pair_refresh_requires_fail_closed,
-        can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
-        candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
-        cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_quality_profile,
-        colmap_step_progress, commit_configured_rig_model, complete_registered_dual_fisheye_frames,
+        calibrated_pair_refresh_requires_fail_closed, can_reuse_align_result,
+        can_reuse_feature_database, candidate_ffmpeg_args, candidate_image_names,
+        cleanup_align_artifacts, cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs,
+        colmap_image_pair_id, colmap_quality_profile, colmap_step_progress,
+        commit_configured_rig_model, complete_registered_dual_fisheye_frames,
         create_colmap_database_backup, cross_source_pair_lines, dual_fisheye_registration_totals,
         effective_mapper_matches_checkpoint, evaluate_global_candidate_quality,
         expected_candidate_frames, extract_frame_settings, extraction_completed_count,
@@ -8948,9 +9039,10 @@ mod tests {
         RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
         RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
         CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
-        CANDIDATE_STREAM_WIDTH, DJI_DRONE_CALIBRATION_PROFILE,
-        DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG, STANDARD_IMU_CALIBRATION_PROFILE,
+        CANDIDATE_STREAM_WIDTH, DJI_DRONE_CALIBRATION_PROFILE, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG,
+        STANDARD_IMU_CALIBRATION_PROFILE,
     };
+    use crate::camera_adapter::LensStream;
     use crate::color;
     use crate::color::ValidatedLut;
     use crate::doctor::ColmapCapabilities;
@@ -8961,6 +9053,36 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
+
+    fn test_lenses(path: &str, stream0: usize, stream1: usize) -> [LensStream; 2] {
+        [
+            LensStream {
+                lens_id: "lens0",
+                source_path: PathBuf::from(path),
+                ffmpeg_stream_index: stream0,
+            },
+            LensStream {
+                lens_id: "lens1",
+                source_path: PathBuf::from(path),
+                ffmpeg_stream_index: stream1,
+            },
+        ]
+    }
+
+    fn paired_test_lenses() -> [LensStream; 2] {
+        [
+            LensStream {
+                lens_id: "lens0",
+                source_path: PathBuf::from("lens0.insv"),
+                ffmpeg_stream_index: 0,
+            },
+            LensStream {
+                lens_id: "lens1",
+                source_path: PathBuf::from("lens1.insv"),
+                ffmpeg_stream_index: 0,
+            },
+        ]
+    }
     use tempfile::TempDir;
 
     #[test]
@@ -8982,7 +9104,11 @@ mod tests {
             metadata.join("source000_frame_motion.json"),
         )
         .unwrap();
-        fs::copy(project.join("rig_config.json"), temp.path().join("rig_config.json")).unwrap();
+        fs::copy(
+            project.join("rig_config.json"),
+            temp.path().join("rig_config.json"),
+        )
+        .unwrap();
         crate::telemetry::parse_and_write(
             &source,
             &metadata.join("source000_telemetry.json"),
@@ -8996,10 +9122,9 @@ mod tests {
         let visual = super::visual_samples_by_source(temp.path(), &model)
             .remove("source000")
             .unwrap();
-        let normalized = crate::telemetry::read_normalized_telemetry(
-            &metadata.join("source000_telemetry.json"),
-        )
-        .unwrap();
+        let normalized =
+            crate::telemetry::read_normalized_telemetry(&metadata.join("source000_telemetry.json"))
+                .unwrap();
         let relaxed = crate::imu_calibration::estimate_calibration(
             &visual,
             &normalized.fused_attitude,
@@ -9039,20 +9164,12 @@ mod tests {
         let (avata, avata_profile) =
             super::imu_calibration_config(Some("DJI Avata360"), "spherealign-dji-protobuf");
         assert_eq!(avata_profile, DJI_DRONE_CALIBRATION_PROFILE);
-        assert_eq!(
-            avata.max_residual_deg,
-            DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG
-        );
+        assert_eq!(avata.max_residual_deg, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG);
 
-        let (wa530, wa530_profile) = super::imu_calibration_config(
-            None,
-            "spherealign-dji-protobuf:dvtm_eagle4_wa530.proto",
-        );
+        let (wa530, wa530_profile) =
+            super::imu_calibration_config(None, "spherealign-dji-protobuf:dvtm_eagle4_wa530.proto");
         assert_eq!(wa530_profile, DJI_DRONE_CALIBRATION_PROFILE);
-        assert_eq!(
-            wa530.max_residual_deg,
-            DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG
-        );
+        assert_eq!(wa530.max_residual_deg, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG);
 
         let (osmo, osmo_profile) = super::imu_calibration_config(
             Some("DJI Osmo 360"),
@@ -9068,8 +9185,11 @@ mod tests {
     fn write_sparse_identity_fixture(model: &Path, marker: &str) {
         fs::create_dir_all(model).unwrap();
         for name in ["rigs", "cameras", "frames", "images", "points3D"] {
-            fs::write(model.join(format!("{name}.txt")), format!("{marker}-{name}"))
-                .unwrap();
+            fs::write(
+                model.join(format!("{name}.txt")),
+                format!("{marker}-{name}"),
+            )
+            .unwrap();
         }
     }
 
@@ -9250,7 +9370,10 @@ mod tests {
         let gate = evaluate_global_candidate_quality(seed, candidate);
 
         assert!(!gate.accepted);
-        assert!(gate.issues.iter().any(|issue| issue.contains("point support")));
+        assert!(gate
+            .issues
+            .iter()
+            .any(|issue| issue.contains("point support")));
         assert!(gate
             .issues
             .iter()
@@ -9291,13 +9414,8 @@ mod tests {
         fs::create_dir(&backup).unwrap();
         fs::write(backup.join("database.db"), b"original database").unwrap();
 
-        rollback_calibrated_pair_transaction(
-            &database,
-            &backup,
-            &pairs,
-            b"original pairs\n",
-        )
-        .unwrap();
+        rollback_calibrated_pair_transaction(&database, &backup, &pairs, b"original pairs\n")
+            .unwrap();
 
         assert_eq!(fs::read(database).unwrap(), b"original database");
         assert_eq!(fs::read(pairs).unwrap(), b"original pairs\n");
@@ -9421,14 +9539,8 @@ mod tests {
         let db = root.join("database.db");
         let images = root.join("images");
         let sparse = root.join("sparse");
-        let feature = feature_extractor_args(
-            root,
-            &db,
-            true,
-            "0,1",
-            true,
-            ColmapQualityProfile::Tuned,
-        );
+        let feature =
+            feature_extractor_args(root, &db, true, "0,1", true, ColmapQualityProfile::Tuned);
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--FeatureExtraction.use_gpu", "1"] }));
@@ -9452,18 +9564,12 @@ mod tests {
             .any(|args| { args == ["--ImageReader.camera_model", "OPENCV_FISHEYE"] }));
         assert!(feature.contains(&"--ImageReader.mask_path".to_owned()));
         let expected_mask_path = root.join("masks").to_string_lossy().into_owned();
-        assert!(feature.windows(2).any(|args| {
-            args == ["--ImageReader.mask_path", expected_mask_path.as_str()]
-        }));
+        assert!(feature
+            .windows(2)
+            .any(|args| { args == ["--ImageReader.mask_path", expected_mask_path.as_str()] }));
 
-        let baseline_feature = feature_extractor_args(
-            root,
-            &db,
-            true,
-            "0",
-            false,
-            ColmapQualityProfile::Baseline,
-        );
+        let baseline_feature =
+            feature_extractor_args(root, &db, true, "0", false, ColmapQualityProfile::Baseline);
         assert!(baseline_feature
             .windows(2)
             .any(|args| args == ["--SiftExtraction.max_num_features", "8192"]));
@@ -9471,13 +9577,7 @@ mod tests {
             .iter()
             .any(|arg| arg == "--SiftExtraction.peak_threshold"));
 
-        let matching = matches_importer_args(
-            root,
-            &db,
-            true,
-            "0,1",
-            ColmapQualityProfile::Tuned,
-        );
+        let matching = matches_importer_args(root, &db, true, "0,1", ColmapQualityProfile::Tuned);
         assert!(matching
             .windows(2)
             .any(|args| { args == ["--FeatureMatching.use_gpu", "1"] }));
@@ -9493,13 +9593,8 @@ mod tests {
         assert!(matching
             .windows(2)
             .any(|args| { args == ["--TwoViewGeometry.max_num_trials", "15000"] }));
-        let baseline_matching = matches_importer_args(
-            root,
-            &db,
-            true,
-            "0",
-            ColmapQualityProfile::Baseline,
-        );
+        let baseline_matching =
+            matches_importer_args(root, &db, true, "0", ColmapQualityProfile::Baseline);
         assert!(baseline_matching
             .windows(2)
             .any(|args| args == ["--FeatureMatching.max_num_matches", "8192"]));
@@ -9582,9 +9677,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|args| args == ["--Mapper.ba_global_backend", "CERES"]));
-        assert!(!args
-            .iter()
-            .any(|arg| arg == "--Mapper.ba_local_num_images"));
+        assert!(!args.iter().any(|arg| arg == "--Mapper.ba_local_num_images"));
         assert!(!args
             .iter()
             .any(|arg| arg == "--Mapper.filter_max_reproj_error"));
@@ -10665,25 +10758,21 @@ mod tests {
             ColmapQualityProfile::Baseline
         );
         assert_eq!(
-            colmap_quality_profile(&json!({"align": {"colmapQualityProfile": "tuned"}}))
-                .unwrap(),
+            colmap_quality_profile(&json!({"align": {"colmapQualityProfile": "tuned"}})).unwrap(),
             ColmapQualityProfile::Tuned
         );
-        assert!(colmap_quality_profile(
-            &json!({"align": {"colmapQualityProfile": "aggressive"}})
-        )
-        .is_err());
+        assert!(
+            colmap_quality_profile(&json!({"align": {"colmapQualityProfile": "aggressive"}}))
+                .is_err()
+        );
     }
 
     #[test]
     fn refreshed_pair_graph_preserves_only_old_cross_source_retrieval_pairs() {
         let original = b"lens0/source000_a.png lens1/source000_b.png\nlens0/source000_c.png lens1/source001_c.png\n";
         let preserved = cross_source_pair_lines(original).unwrap();
-        let merged = merge_pair_lists(
-            &preserved,
-            b"lens0/source000_a.png lens0/source000_d.png\n",
-        )
-        .unwrap();
+        let merged =
+            merge_pair_lists(&preserved, b"lens0/source000_a.png lens0/source000_d.png\n").unwrap();
         assert_eq!(
             std::str::from_utf8(&merged).unwrap(),
             "lens0/source000_a.png lens0/source000_d.png\nlens0/source000_c.png lens1/source001_c.png\n"
@@ -10692,14 +10781,12 @@ mod tests {
 
     #[test]
     fn database_rig_groups_remain_separate_in_json_config() {
-        let camera = |rig_id, prefix: &str, reference| {
-            crate::colmap_priors::RigCameraExtrinsic {
-                rig_id,
-                image_prefix: prefix.to_owned(),
-                ref_sensor: reference,
-                cam_from_rig_rotation: [1.0, 0.0, 0.0, 0.0],
-                cam_from_rig_translation: [0.0, 0.0, 0.0],
-            }
+        let camera = |rig_id, prefix: &str, reference| crate::colmap_priors::RigCameraExtrinsic {
+            rig_id,
+            image_prefix: prefix.to_owned(),
+            ref_sensor: reference,
+            cam_from_rig_rotation: [1.0, 0.0, 0.0, 0.0],
+            cam_from_rig_translation: [0.0, 0.0, 0.0],
         };
         let configs = rig_configs_from_camera_extrinsics(vec![
             camera(2, "rig2/lens1/", false),
@@ -10952,7 +11039,7 @@ mod tests {
 
     #[test]
     fn hardware_acceleration_is_inserted_before_input_only() {
-        let software = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, None);
+        let software = candidate_ffmpeg_args(&test_lenses("input.osv", 0, 1), 8.0, None);
         assert!(!software.iter().any(|arg| arg == "-hwaccel"));
 
         let accelerated = with_hwaccel_auto(&software);
@@ -10970,7 +11057,7 @@ mod tests {
 
     #[test]
     fn hardware_acceleration_helper_does_not_mutate_fallback_command() {
-        let software = candidate_ffmpeg_args(Path::new("input.osv"), 3, 4, 2.0, None);
+        let software = candidate_ffmpeg_args(&test_lenses("input.osv", 3, 4), 2.0, None);
         let accelerated = with_hwaccel_auto(&software);
 
         assert_eq!(software[2], "-i");
@@ -10982,15 +11069,53 @@ mod tests {
     }
 
     #[test]
+    fn paired_insv_uses_two_inputs_for_both_decode_passes() {
+        let lenses = paired_test_lenses();
+        let candidate = candidate_ffmpeg_args(&lenses, 8.0, None);
+        assert_eq!(candidate.iter().filter(|arg| *arg == "-i").count(), 2);
+        let filter = &candidate[candidate
+            .iter()
+            .position(|arg| arg == "-filter_complex")
+            .unwrap()
+            + 1];
+        assert!(filter.contains("[0:0]setpts=PTS-STARTPTS"));
+        assert!(filter.contains("[1:0]setpts=PTS-STARTPTS"));
+
+        let accelerated = with_hwaccel_auto(&candidate);
+        assert_eq!(
+            accelerated.iter().filter(|arg| *arg == "-hwaccel").count(),
+            2
+        );
+        assert!(
+            accelerated
+                .windows(3)
+                .filter(|window| *window == ["-hwaccel", "auto", "-i"])
+                .count()
+                == 2
+        );
+
+        let selected = selected_ffmpeg_args(
+            &lenses,
+            8.0,
+            &[0, 1],
+            Path::new("capture/lens0"),
+            Path::new("capture/lens1"),
+            None,
+        );
+        assert!(selected.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(selected.windows(2).any(|pair| pair == ["-map", "1:0"]));
+    }
+
+    #[test]
     fn candidate_pass_scales_after_fps_without_changing_fallback_arguments() {
-        let args = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, None);
+        let args = candidate_ffmpeg_args(&test_lenses("input.osv", 0, 1), 8.0, None);
         let filter_index = args
             .iter()
             .position(|value| value == "-filter_complex")
             .unwrap();
         let filter = &args[filter_index + 1];
         assert_eq!(filter.matches("fps=8").count(), 2);
-        assert!(!filter.contains("setpts="));
+        assert_eq!(filter.matches("setpts=PTS-STARTPTS").count(), 2);
         assert_eq!(filter.matches("scale=").count(), 2);
         assert_eq!(filter.matches("pad=512:512").count(), 2);
         assert!(filter.contains("hstack=inputs=2:shortest=1,showinfo=checksum=0[out]"));
@@ -11013,7 +11138,7 @@ mod tests {
             sha256: "test".to_owned(),
             size: 1,
         };
-        let candidate = candidate_ffmpeg_args(Path::new("input.osv"), 0, 1, 8.0, Some(&lut));
+        let candidate = candidate_ffmpeg_args(&test_lenses("input.osv", 0, 1), 8.0, Some(&lut));
         let filter = &candidate[candidate
             .iter()
             .position(|value| value == "-filter_complex")
@@ -11024,9 +11149,7 @@ mod tests {
         assert!(filter.contains("interp=tetrahedral"));
 
         let selected = selected_ffmpeg_args(
-            Path::new("input.osv"),
-            0,
-            1,
+            &test_lenses("input.osv", 0, 1),
             8.0,
             &[0],
             Path::new("capture/lens0"),
@@ -11194,9 +11317,7 @@ mod tests {
         assert!(max_depth <= 10, "select tree should remain balanced");
 
         let args = selected_ffmpeg_args(
-            Path::new("input.osv"),
-            0,
-            1,
+            &test_lenses("input.osv", 0, 1),
             8.0,
             &[0, 127],
             Path::new("capture/lens0"),
@@ -11211,7 +11332,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(filters.len(), 2);
         assert!(filters.iter().all(|filter| {
-            filter.starts_with("fps=8,select='")
+            filter.starts_with("setpts=PTS-STARTPTS,fps=8,select='")
                 && filter.contains("eq(n,0)")
                 && filter.contains("eq(n,127)")
         }));
@@ -11333,7 +11454,7 @@ mod tests {
         let thresholds = crate::extraction::KeyframePruningConfig::default();
         write_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
             2.0,
             8.0,
             8.0,
@@ -11348,7 +11469,7 @@ mod tests {
 
         assert!(load_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
             2.0,
             8.0,
             8.0,
@@ -11361,7 +11482,7 @@ mod tests {
         .is_some());
         assert!(load_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
             1.0,
             8.0,
             8.0,
@@ -11374,7 +11495,7 @@ mod tests {
         .is_none());
         assert!(load_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
             2.0,
             8.0,
             8.0,
@@ -11387,7 +11508,7 @@ mod tests {
         .is_none());
         assert!(load_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
             2.0,
             8.0,
             8.0,
@@ -11401,7 +11522,52 @@ mod tests {
         fs::write(&input, b"video-v2-longer").unwrap();
         assert!(load_candidate_selection_checkpoint(
             &checkpoint,
-            &input,
+            std::slice::from_ref(&input),
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1"),
+            &color_resolution,
+        )
+        .is_none());
+
+        let secondary = temp.path().join("input_10.insv");
+        fs::write(&secondary, b"lens1-v1").unwrap();
+        let paired_sources = vec![input.clone(), secondary.clone()];
+        write_candidate_selection_checkpoint(
+            &checkpoint,
+            &paired_sources,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1".to_owned()),
+            &color_resolution,
+            &selection,
+        )
+        .unwrap();
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &paired_sources,
+            2.0,
+            8.0,
+            8.0,
+            false,
+            true,
+            thresholds,
+            Some("telemetry-v1"),
+            &color_resolution,
+        )
+        .is_some());
+        fs::write(&secondary, b"lens1-v2-changed").unwrap();
+        assert!(load_candidate_selection_checkpoint(
+            &checkpoint,
+            &paired_sources,
             2.0,
             8.0,
             8.0,

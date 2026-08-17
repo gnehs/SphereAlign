@@ -10,6 +10,7 @@ import {
   type StageKey,
   type StageState,
   type Task,
+  type SourceInspection,
 } from "@/lib/pipeline";
 
 export type TaskDetailTab = "summary" | "records";
@@ -31,6 +32,7 @@ interface AppState {
   settingsDraft: PipelineSettings;
   colmapPath: string;
   sourceInspection: string;
+  sourceInspections: Record<string, SourceInspection>;
   sourceColorInspection: ColorInspectionSummary | null;
   doctor: DoctorReport;
   doctorLoading: boolean;
@@ -55,6 +57,7 @@ interface AppActions {
   setSettingsDraft: (update: StateUpdater<PipelineSettings>) => void;
   setColmapPath: (path: string) => void;
   setSourceInspection: (inspection: string) => void;
+  setSourceInspections: (update: StateUpdater<Record<string, SourceInspection>>) => void;
   setSourceColorInspection: (inspection: ColorInspectionSummary | null) => void;
   setDoctor: (report: DoctorReport) => void;
   setDoctorLoading: (loading: boolean) => void;
@@ -93,6 +96,7 @@ export const useAppStore = create<AppStore>()((set) => ({
   settingsDraft: normalisePipelineSettings(DEFAULT_SETTINGS),
   colmapPath: readStoredColmapPath(),
   sourceInspection: "",
+  sourceInspections: {},
   sourceColorInspection: null,
   doctor: emptyDoctor(),
   doctorLoading: false,
@@ -131,6 +135,7 @@ export const useAppStore = create<AppStore>()((set) => ({
   setSettingsDraft: (update) => set((state) => ({ settingsDraft: resolveUpdate(update, state.settingsDraft) })),
   setColmapPath: (colmapPath) => set({ colmapPath }),
   setSourceInspection: (sourceInspection) => set({ sourceInspection }),
+  setSourceInspections: (update) => set((state) => ({ sourceInspections: resolveUpdate(update, state.sourceInspections) })),
   setSourceColorInspection: (sourceColorInspection) => set({ sourceColorInspection }),
   setDoctor: (doctor) => set({ doctor }),
   setDoctorLoading: (doctorLoading) => set({ doctorLoading }),

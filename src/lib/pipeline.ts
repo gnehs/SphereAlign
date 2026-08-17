@@ -65,12 +65,38 @@ interface PipelineSettings {
   };
 }
 
-interface OsvSource {
+type SourceIssueSeverity = "warning" | "error";
+
+interface SourceIssue {
+  code: string;
+  severity: SourceIssueSeverity;
+  message: string;
+  detail: string;
+  impacts: string[];
+}
+
+interface SourceInspection {
+  path: string;
+  name?: string;
+  size?: number;
+  valid?: boolean;
+  duration?: number;
+  fps?: number;
+  width?: number;
+  height?: number;
+  lensCount?: number;
+  colorProfile?: string | Record<string, unknown>;
+  warnings: string[];
+  issues: SourceIssue[];
+}
+
+interface SourceMedia {
   id: string;
   path: string;
   label: string;
   detail: string;
   status?: "ready" | "warning" | "unknown";
+  issues?: SourceIssue[];
 }
 
 interface ProjectManifest {
@@ -83,6 +109,10 @@ interface ProjectManifest {
   stages: Record<StageKey, StageState>;
   logs: TaskLog[];
   warnings: string[];
+  /** Per-source inspection results are kept in the client task state so the
+   * task detail view can explain issues after the editor closes. The backend
+   * manifest may not contain this optional field on older projects. */
+  sourceInspections?: Record<string, SourceInspection>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -192,8 +222,8 @@ const STAGES: StageDefinition[] = [
   },
   {
     key: "align",
-    label: msg({ message: "Alignment", context: "pipeline stage label", comment: "The stage that aligns multiple OSV sources and camera rigs." }),
-    description: msg({ message: "Multi-source OSV and camera-rig alignment", context: "pipeline stage description", comment: "Technical description of the alignment stage; keep OSV as the product format acronym." }),
+    label: msg({ message: "Alignment", context: "pipeline stage label", comment: "The stage that aligns multiple panoramic sources and camera rigs." }),
+    description: msg({ message: "Multi-source panoramic camera-rig alignment", context: "pipeline stage description", comment: "Technical description of the alignment stage for multiple panoramic source formats." }),
     icon: Workflow,
   },
 ];
@@ -599,7 +629,7 @@ const APP_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
   "The COLMAP path is used by the local Windows runtime": msg({ message: "The COLMAP path is used by the local Windows runtime" }),
   "Browser preview does not read local LUT files; paste a .cube path directly": msg({ message: "Browser preview does not read local LUT files; paste a .cube path directly" }),
   "Unable to start the stage automatically; check the runtime message": msg({ message: "Unable to start the stage automatically; check the runtime message" }),
-  "Select at least one OSV or dual-fisheye source first": msg({ message: "Select at least one OSV or dual-fisheye source first" }),
+  "Select at least one panoramic source first": msg({ message: "Select at least one panoramic source first" }),
   "The custom LUT must be a .cube file": msg({ message: "The custom LUT must be a .cube file" }),
   "Failed to create the task; check the runtime message": msg({ message: "Failed to create the task; check the runtime message" }),
   "Keep at least one source": msg({ message: "Keep at least one source" }),
@@ -660,9 +690,9 @@ function localiseUserMessage(value: string): string {
       });
     })
     .replace(/^(.+) 未包含兩路可辨識的雙魚眼 video stream$/g, (_match, source) => t({
-      message: `${source} does not contain two recognizable dual-fisheye video streams`,
+      message: `${source} does not contain the video streams required by its source adapter`,
       context: "source validation error",
-      comment: "A source must expose two recognizable video streams for the dual-fisheye workflow.",
+      comment: "A source adapter must expose the video streams required by the panoramic workflow.",
     }))
     .replace(/^無法讀回來源 (\d+) 的標準化 telemetry，IMU keyframe term 已停用：(.+)$/g, (_match, source, error) => t({
       message: `Unable to read normalized telemetry for source ${source}; the IMU keyframe term was disabled: ${localiseTechnicalErrorDetail(error)}`,
@@ -1081,6 +1111,115 @@ function toProgress(value: unknown) {
   return Math.round(Math.max(0, Math.min(1, number <= 1 ? number : number / 100)) * 100);
 }
 
+function finiteNumber(value: unknown) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function nonNegativeNumber(value: unknown) {
+  const number = finiteNumber(value);
+  return number !== undefined && number >= 0 ? number : undefined;
+}
+
+function normaliseSourceIssue(value: unknown, fallbackCode = "source-warning"): SourceIssue | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const message = typeof body.message === "string" && body.message.trim()
+    ? body.message.trim()
+    : typeof body.title === "string" && body.title.trim()
+      ? body.title.trim()
+      : "Source inspection reported a problem";
+  const detail = typeof body.detail === "string" && body.detail.trim()
+    ? body.detail.trim()
+    : typeof body.description === "string" && body.description.trim()
+      ? body.description.trim()
+      : message;
+  const severity = String(body.severity ?? "warning").trim().toLowerCase() === "error"
+    ? "error"
+    : "warning";
+  const impacts = Array.isArray(body.impacts)
+    ? body.impacts.filter((impact): impact is string => typeof impact === "string" && impact.trim().length > 0).map((impact) => impact.trim())
+    : [];
+  return {
+    code: typeof body.code === "string" && body.code.trim() ? body.code.trim() : fallbackCode,
+    severity,
+    message,
+    detail,
+    impacts,
+  };
+}
+
+function normaliseSourceInspection(value: unknown, fallbackPath = ""): SourceInspection | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as Record<string, unknown>;
+  const path = typeof body.path === "string" && body.path.trim() ? body.path : fallbackPath;
+  if (!path) return null;
+  const warnings = Array.isArray(body.warnings)
+    ? body.warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim().length > 0).map((warning) => warning.trim())
+    : [];
+  const issues = Array.isArray(body.issues)
+    ? body.issues.flatMap((issue, index) => {
+        const normalised = normaliseSourceIssue(issue, `source-issue-${index + 1}`);
+        return normalised ? [normalised] : [];
+      })
+    : [];
+  const issueMessages = new Set(issues.map((issue) => issue.message));
+  warnings.forEach((warning, index) => {
+    if (issueMessages.has(warning)) return;
+    issues.push({
+      code: `legacy-warning-${index + 1}`,
+      severity: "warning",
+      message: warning,
+      detail: warning,
+      impacts: [],
+    });
+  });
+  if (body.valid === false && issues.length === 0) {
+    issues.push({
+      code: "invalid-source",
+      severity: "error",
+      message: "This source cannot be used",
+      detail: "The source did not pass inspection.",
+      impacts: [],
+    });
+  }
+  const colorProfile = typeof body.colorProfile === "string"
+    ? body.colorProfile
+    : body.colorProfile && typeof body.colorProfile === "object"
+      ? body.colorProfile as Record<string, unknown>
+      : undefined;
+  return {
+    path,
+    name: typeof body.name === "string" ? body.name : undefined,
+    size: nonNegativeNumber(body.size),
+    valid: typeof body.valid === "boolean" ? body.valid : undefined,
+    duration: nonNegativeNumber(body.duration),
+    fps: nonNegativeNumber(body.fps),
+    width: nonNegativeNumber(body.width),
+    height: nonNegativeNumber(body.height),
+    lensCount: nonNegativeNumber(body.lensCount ?? body.lens_count),
+    colorProfile,
+    warnings,
+    issues,
+  };
+}
+
+function normaliseSourceInspectionMap(value: unknown): Record<string, SourceInspection> {
+  if (!value || typeof value !== "object") return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, SourceInspection>>((result, [path, inspection]) => {
+    const normalised = normaliseSourceInspection(inspection, path);
+    if (normalised) result[path] = normalised;
+    return result;
+  }, {});
+}
+
+function sourceStatusForInspection(inspection?: SourceInspection): SourceMedia["status"] {
+  if (!inspection) return "unknown";
+  if (inspection.issues.some((issue) => issue.severity === "error") || inspection.valid === false) return "warning";
+  if (inspection.issues.length > 0) return "warning";
+  return "ready";
+}
+
 function cloneStages(raw: unknown): Record<StageKey, StageState> {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return STAGES.reduce((result, stage) => {
@@ -1112,6 +1251,7 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
   const outputPath = typeof body.outputPath === "string" ? body.outputPath : typeof body.rootPath === "string" ? body.rootPath : "";
   if (!outputPath && !inputPaths.length) return null;
   const stages = cloneStages(body.stages);
+  const sourceInspections = normaliseSourceInspectionMap(body.sourceInspections ?? body.source_inspections);
   return {
     projectId: typeof body.projectId === "string" ? body.projectId : `project-${Date.now()}`,
     name: typeof body.name === "string" && body.name ? body.name : outputPath.split(/[\\/]/).filter(Boolean).pop() || "Unnamed reconstruction",
@@ -1122,6 +1262,7 @@ function manifestFromUnknown(value: unknown): ProjectManifest | null {
     stages,
     logs: parseTaskLogs(body.logs ?? body.pipelineLogs, stages),
     warnings: Array.isArray(body.warnings) ? body.warnings.map((warning) => String(warning)) : [],
+    sourceInspections: Object.keys(sourceInspections).length > 0 ? sourceInspections : undefined,
     createdAt: typeof body.createdAt === "string" ? body.createdAt : undefined,
     updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : undefined,
   };
@@ -1377,9 +1518,23 @@ function deriveOutputPath(path: string) {
   return `${parent}${separator}colmap-${name}`;
 }
 
-function sourceFromPath(path: string, index: number): OsvSource {
-  const label = path.split(/[\\/]/).filter(Boolean).pop() || `OSV ${index + 1}`;
-  return { id: `${index}-${path}`, path, label: `OSV ${String(index + 1).padStart(2, "0")}`, detail: label };
+function sourceFromPath(path: string, index: number, inspection?: SourceInspection): SourceMedia {
+  const label = path.split(/[\\/]/).filter(Boolean).pop() || `Source ${index + 1}`;
+  return {
+    id: `${index}-${path}`,
+    path,
+    label: `Source ${String(index + 1).padStart(2, "0")}`,
+    detail: label,
+    status: sourceStatusForInspection(inspection),
+    issues: inspection?.issues,
+  };
+}
+
+function sourceInspectionForPath(path: string, inspections?: Record<string, SourceInspection>) {
+  if (!inspections) return undefined;
+  return inspections[path]
+    ?? inspections[path.split("\\").join("/")]
+    ?? inspections[path.split("/").join("\\")];
 }
 
 function normaliseColorInspection(value: unknown): ColorInspection | null {
@@ -1680,9 +1835,12 @@ export type {
   ExtractColorMode,
   ColorInspection,
   ColorInspectionSummary,
+  SourceIssueSeverity,
+  SourceIssue,
+  SourceInspection,
   StageState,
   PipelineSettings,
-  OsvSource,
+  SourceMedia,
   ProjectManifest,
   Task,
   DiagnosticItem,
@@ -1772,6 +1930,9 @@ export {
   invokeSafely,
   deriveOutputPath,
   sourceFromPath,
+  sourceInspectionForPath,
+  normaliseSourceInspection,
+  normaliseSourceInspectionMap,
   normaliseColorInspection,
   normaliseColorInspectionSummary,
   MAX_SOURCE_PREVIEW_CACHE_ENTRIES,

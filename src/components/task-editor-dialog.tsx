@@ -29,6 +29,7 @@ import {
   customLutPathIsInvalid,
   localiseUserMessage,
   sourceFromPath,
+  sourceInspectionForPath,
 } from "@/lib/pipeline";
 import { useAppStore } from "@/stores/app-store";
 
@@ -67,6 +68,7 @@ export function TaskEditorDialog({
     sourcePaths,
     setSourcePaths,
     sourceInspection,
+    sourceInspections,
     sourceColorInspection,
     setSourceColorInspection,
     doctor,
@@ -82,11 +84,12 @@ export function TaskEditorDialog({
     sourcePaths: state.sourcePaths,
     setSourcePaths: state.setSourcePaths,
     sourceInspection: state.sourceInspection,
+    sourceInspections: state.sourceInspections,
     sourceColorInspection: state.sourceColorInspection,
     setSourceColorInspection: state.setSourceColorInspection,
     doctor: state.doctor,
   })));
-  const selectedSources = sourcePaths.map(sourceFromPath);
+  const selectedSources = sourcePaths.map((path, index) => sourceFromPath(path, index, sourceInspectionForPath(path, sourceInspections)));
   const removeSource = (path: string) => {
     setSourcePaths((current) => current.filter((sourcePath) => sourcePath !== path));
     setSourceColorInspection(null);
@@ -99,12 +102,12 @@ export function TaskEditorDialog({
       <DialogContent className="grid h-[min(880px,calc(100vh-32px))] max-h-[min(880px,calc(100vh-32px))] w-[min(960px,calc(100vw-32px))] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[960px] max-[760px]:h-[calc(100vh-24px)] max-[760px]:max-h-[calc(100vh-24px)] max-[760px]:w-[calc(100vw-24px)]" showCloseButton={false} initialFocus={taskNameInputRef}>
         <DialogHeader className="relative border-b px-7 py-5 max-[760px]:px-5 max-[760px]:py-4">
           <DialogTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</DialogTitle>
-          <DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription>
+          <DialogDescription>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.">Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</DialogDescription>
           <Popover>
             <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="absolute top-4 right-5" aria-label={t`Task creation help`} />}><CircleHelp /></PopoverTrigger>
             <PopoverContent className="max-w-80 [&>p]:mt-2 [&>p]:text-sm [&>p]:leading-relaxed [&>p]:text-muted-foreground" side="bottom" sideOffset={8}>
               <PopoverTitle>{editingTaskId ? <Trans context="queued task dialog" comment="Dialog for editing a task before it starts.">Edit queued task</Trans> : <Trans context="new task dialog" comment="Dialog for creating a new reconstruction task.">New reconstruction task</Trans>}</PopoverTitle>
-              <p>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add media captured in one scene; separate media from different scenes into separate tasks.">Add only OSV or dual-fisheye media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</p>
+              <p>{editingTaskId ? <Trans>Adjust the task name, sources, and processing settings before it starts.</Trans> : <Trans comment="Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.">Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes.</Trans>}</p>
             </PopoverContent>
           </Popover>
         </DialogHeader>
@@ -127,11 +130,11 @@ export function TaskEditorDialog({
                         onDrop={(event) => { setDragOver(false); onDrop(event); }}
                       >
                         <FileStack className="size-4.5 shrink-0" />
-                        <span className="flex-1 text-sm"><Trans>Drop OSV or dual-fisheye media</Trans></span>
+                        <span className="flex-1 text-sm"><Trans>Drop panoramic source media</Trans></span>
                         <Button type="button" variant="outline" size="sm" onClick={() => void onSourcePicker()}>{t`Choose sources`}</Button>
                       </div>
                       {selectedSources.length > 0 && <div className="mt-2 overflow-hidden rounded-lg border">{selectedSources.map((source) => <SourceListItem key={source.id} source={source} title={source.label} detail={source.detail} removeLabel={t`Remove ${source.label}`} onRemove={() => removeSource(source.path)} />)}</div>}
-                      <p className="mt-2 text-sm text-muted-foreground">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple OSV or dual-fisheye media files.`}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose one or more panoramic source files.`}</p>
                     </FieldContent>
                   </Field>
                   <Field><FieldLabel htmlFor="output-path"><Trans context="output destination" comment="Folder where project metadata and reconstruction output are saved.">Output folder</Trans></FieldLabel><FieldContent><div className="flex items-center gap-2"><Input className="flex-1" id="output-path" value={outputDraft} disabled={Boolean(editingTaskId)} placeholder={t`Defaults beside the first source: colmap-file-name`} onChange={(event) => setOutputDraft(event.currentTarget.value)} />{!editingTaskId && <Button type="button" variant="outline" size="sm" onClick={() => void onOutputPicker()}><Trans context="output folder picker action" comment="Button opens a folder picker to choose a different output location.">Choose another</Trans></Button>}</div><FieldDescription>{editingTaskId ? t`Saving a new task name also renames the output folder; unsupported filename characters become hyphens.` : t`After creation, project information is saved in the output folder so the task can resume after an interruption.`}</FieldDescription></FieldContent></Field>

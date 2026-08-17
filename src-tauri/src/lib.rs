@@ -1,5 +1,6 @@
-mod colmap_feature_cache;
+mod camera_adapter;
 mod cli;
+mod colmap_feature_cache;
 mod colmap_priors;
 mod color;
 mod doctor;

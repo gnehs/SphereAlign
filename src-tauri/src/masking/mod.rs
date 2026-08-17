@@ -1323,11 +1323,9 @@ mod tests {
         let error = process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})
             .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("map to the same mask lens0/frame.png")
-        );
+        assert!(error
+            .to_string()
+            .contains("map to the same mask lens0/frame.png"));
         assert_eq!(engine.calls.load(Ordering::Relaxed), 0);
         Ok(())
     }

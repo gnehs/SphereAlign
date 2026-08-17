@@ -932,7 +932,10 @@ mod tests {
         assert!(report.source_pairs.is_empty());
         assert_eq!(report.failed_descriptors.len(), 1);
         report.make_paths_relative_to(directory.path());
-        assert_eq!(report.failed_descriptors[0].path, PathBuf::from("missing.jpg"));
+        assert_eq!(
+            report.failed_descriptors[0].path,
+            PathBuf::from("missing.jpg")
+        );
     }
 
     #[test]

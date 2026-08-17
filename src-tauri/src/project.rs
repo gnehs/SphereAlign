@@ -1,7 +1,9 @@
 //! Project discovery and resumable manifest handling.
 
+use crate::camera_adapter::{expand_related_sources, is_supported_source};
 use crate::color;
 use crate::doctor;
+use crate::telemetry;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -232,6 +234,23 @@ pub struct UpdateQueuedProjectRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SourceIssue {
+    /// Stable machine-readable identifier for frontend localization and
+    /// feature gating.  Keep this independent from the human-readable text.
+    pub code: String,
+    /// Either `warning` (the source may still be usable) or `error` (the
+    /// source cannot be decoded/used by the current pipeline).
+    pub severity: String,
+    pub message: String,
+    /// Pipeline capabilities that may be unavailable because of this issue.
+    /// These are deliberately descriptive rather than claims that an
+    /// unverified sensor frame can be used as a COLMAP prior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub impacts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceInspection {
     pub path: String,
     pub name: String,
@@ -250,6 +269,43 @@ pub struct SourceInspection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color_profile: Option<color::ColorDetection>,
     pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub issues: Vec<SourceIssue>,
+}
+
+impl SourceInspection {
+    fn issue(
+        &mut self,
+        code: impl Into<String>,
+        severity: &str,
+        message: impl Into<String>,
+        impacts: &[&str],
+    ) {
+        self.issues.push(SourceIssue {
+            code: code.into(),
+            severity: severity.to_owned(),
+            message: message.into(),
+            impacts: impacts.iter().map(|impact| (*impact).to_owned()).collect(),
+        });
+    }
+
+    fn warning_issue(
+        &mut self,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        impacts: &[&str],
+    ) {
+        self.issue(code, "warning", message, impacts);
+    }
+
+    fn error_issue(
+        &mut self,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        impacts: &[&str],
+    ) {
+        self.issue(code, "error", message, impacts);
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -418,30 +474,27 @@ fn rename_project_directory(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn source_extension(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_ascii_lowercase())
-            .as_deref(),
-        Some("osv")
-            | Some("mp4")
-            | Some("mov")
-            | Some("mkv")
-            | Some("avi")
-            | Some("webm")
-            | Some("m4v")
-            | Some("mts")
-            | Some("m2ts")
-            | Some("ts")
-    )
+fn is_insv(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("insv"))
+}
+
+fn has_existing_insta_sibling(path: &Path) -> bool {
+    let mut related = vec![path.to_path_buf()];
+    expand_related_sources(&mut related);
+    related.iter().any(|candidate| candidate != path)
 }
 
 fn collect_source_paths(path: &Path, output: &mut Vec<PathBuf>) {
     if path.is_file() {
-        if source_extension(path) {
-            output.push(path.to_path_buf());
+        if locate_manifest(path).is_some() {
+            return;
         }
+        // A directly selected file is kept even when the extension is not in
+        // the supported set.  The caller needs a per-file diagnostic instead
+        // of silently losing the selection before inspection can explain it.
+        output.push(path.to_path_buf());
         return;
     }
     if !path.is_dir() {
@@ -455,7 +508,7 @@ fn collect_source_paths(path: &Path, output: &mut Vec<PathBuf>) {
     // those folders explicitly when they are intended inputs.
     for entry in entries.flatten() {
         let candidate = entry.path();
-        if candidate.is_file() && source_extension(&candidate) {
+        if candidate.is_file() && is_supported_source(&candidate) {
             output.push(candidate);
         }
     }
@@ -501,7 +554,8 @@ fn probe_source(path: &Path) -> io::Result<Value> {
 
 fn inspect_source(path: &Path) -> SourceInspection {
     let path = absolute_path(path);
-    let metadata = fs::metadata(&path).ok();
+    let metadata_result = fs::metadata(&path);
+    let metadata = metadata_result.as_ref().ok();
     let size = metadata.as_ref().map_or(0, |m| m.len());
     let name = path
         .file_name()
@@ -512,7 +566,7 @@ fn inspect_source(path: &Path) -> SourceInspection {
         path: path.to_string_lossy().into_owned(),
         name,
         size,
-        valid: metadata.is_some() && path.is_file() && source_extension(&path),
+        valid: metadata.is_some() && path.is_file() && is_supported_source(&path),
         duration: None,
         fps: None,
         width: None,
@@ -520,11 +574,54 @@ fn inspect_source(path: &Path) -> SourceInspection {
         lens_count: None,
         color_profile: None,
         warnings: Vec::new(),
+        issues: Vec::new(),
     };
-    if !inspection.valid {
+
+    if let Some(error) = metadata_result.as_ref().err() {
+        let (code, message) = if error.kind() == io::ErrorKind::NotFound {
+            (
+                "file-not-found",
+                format!("Source file does not exist: {error}"),
+            )
+        } else {
+            (
+                "file-unreadable",
+                format!("Source file metadata is not readable: {error}"),
+            )
+        };
+        inspection
+            .warnings
+            .push("Expected a readable supported video/OSV file".to_owned());
+        inspection.error_issue(code, message, &["source-decode"]);
+        return inspection;
+    }
+
+    if !metadata.is_some_and(|value| value.is_file()) {
+        inspection
+            .warnings
+            .push("Expected a readable supported video/OSV file".to_owned());
+        inspection.error_issue(
+            "file-unreadable",
+            "Selected source is not a regular file".to_owned(),
+            &["source-decode"],
+        );
+        return inspection;
+    }
+
+    if !is_supported_source(&path) {
         inspection
             .warnings
             .push("Expected a supported video/OSV file".to_owned());
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| format!(".{value}"))
+            .unwrap_or_else(|| "(none)".to_owned());
+        inspection.error_issue(
+            "unsupported-format",
+            format!("Unsupported source format: {extension}"),
+            &["source-decode"],
+        );
         return inspection;
     }
 
@@ -565,21 +662,98 @@ fn inspect_source(path: &Path) -> SourceInspection {
                 inspection
                     .warnings
                     .push("No video stream was found by ffprobe".to_owned());
-            } else if path
-                .extension()
-                .and_then(|s| s.to_str())
-                .is_some_and(|s| s.eq_ignore_ascii_case("osv"))
-                && videos.len() < 2
-            {
-                inspection.warnings.push("OSV input has fewer than two video streams; dual-fisheye extraction may be unavailable".to_owned());
+                inspection.error_issue(
+                    "no-video-stream",
+                    "No decodable video stream was found by ffprobe".to_owned(),
+                    &["source-decode", "dual-fisheye-extraction"],
+                );
+            } else {
+                if is_insv(&path) && videos.len() == 1 && !has_existing_insta_sibling(&path) {
+                    let warning =
+                        "INSV input has one video stream; select the matching _00_/_10_ sibling for dual-fisheye extraction"
+                            .to_owned();
+                    inspection.warnings.push(warning.clone());
+                    inspection.warning_issue(
+                        "incomplete-dual-fisheye",
+                        warning,
+                        &["dual-fisheye-extraction"],
+                    );
+                }
+                match telemetry::inspect_source(&path) {
+                    Ok(metadata) if !metadata.samples_available => {
+                        let message =
+                            "Container metadata could not be decoded; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
+                        inspection.warnings.push(message.to_owned());
+                        inspection.warning_issue(
+                            "metadata-unavailable",
+                            message,
+                            &["ground-alignment", "reconstruction-acceleration"],
+                        );
+                    }
+                    Ok(metadata)
+                        if metadata.normalized_imu_sample_count == 0
+                            && metadata.fused_attitude_sample_count == 0 =>
+                    {
+                        let message =
+                            "No usable IMU or fused-attitude metadata was found; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
+                        inspection.warnings.push(message.to_owned());
+                        inspection.warning_issue(
+                            "imu-unavailable",
+                            message,
+                            &["ground-alignment", "reconstruction-acceleration"],
+                        );
+                    }
+                    Ok(metadata) if metadata.fused_attitude_sample_count == 0 => {
+                        let message =
+                            "Usable IMU samples were found, but no fused-attitude metadata is available; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
+                        inspection.warnings.push(message.to_owned());
+                        inspection.warning_issue(
+                            "fused-attitude-unavailable",
+                            message,
+                            &["ground-alignment", "reconstruction-acceleration"],
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        let message = format!(
+                            "Source metadata is unavailable: {error}; ground correction and IMU-assisted reconstruction acceleration may be unavailable"
+                        );
+                        inspection.warnings.push(message.clone());
+                        inspection.warning_issue(
+                            "metadata-unavailable",
+                            message,
+                            &["ground-alignment", "reconstruction-acceleration"],
+                        );
+                    }
+                }
             }
         }
         Err(error) => {
-            // Keep the file selectable when ffprobe is not installed.  The
-            // extract stage will produce a precise tool error later.
-            inspection
-                .warnings
-                .push(format!("ffprobe metadata unavailable: {error}"));
+            let is_ffprobe_missing = error.kind() == io::ErrorKind::NotFound
+                && error.to_string().contains("ffprobe not found");
+            if !is_ffprobe_missing {
+                inspection.valid = false;
+            }
+            let message = if is_ffprobe_missing {
+                format!("ffprobe is unavailable; source decodability cannot be verified: {error}")
+            } else {
+                format!("Source could not be decoded by ffprobe: {error}")
+            };
+            inspection.warnings.push(message.clone());
+            inspection.issue(
+                if is_ffprobe_missing {
+                    "ffprobe-unavailable"
+                } else {
+                    "decode-failed"
+                },
+                if is_ffprobe_missing {
+                    "warning"
+                } else {
+                    "error"
+                },
+                message,
+                &["source-decode"],
+            );
         }
     }
     inspection
@@ -814,8 +988,14 @@ pub fn inspect(paths: Vec<String>) -> InspectPathsResponse {
         collect_source_paths(&path, &mut source_paths);
         if !path.exists() {
             warnings.push(format!("Path does not exist: {}", path.display()));
+            // Preserve a directly selected, file-like path so the UI can
+            // attach a not-found diagnostic to the original row.
+            if path.extension().is_some() {
+                source_paths.push(path);
+            }
         }
     }
+    expand_related_sources(&mut source_paths);
     source_paths.sort();
     source_paths.dedup();
     let sources: Vec<_> = source_paths
@@ -982,11 +1162,12 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
     if request.input_paths.is_empty() {
         return Err("At least one input path is required".to_owned());
     }
-    let input_paths: Vec<PathBuf> = request
+    let mut input_paths: Vec<PathBuf> = request
         .input_paths
         .iter()
         .map(|path| absolute_path(Path::new(path)))
         .collect();
+    expand_related_sources(&mut input_paths);
     let first = input_paths
         .first()
         .ok_or_else(|| "At least one input path is required".to_owned())?;
@@ -1072,10 +1253,10 @@ pub fn create(request: CreateProjectRequest) -> Result<ProjectManifest, String> 
 pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManifest, String> {
     let _mutation_guard = lock_project_mutation()?;
     let requested_path = absolute_path(Path::new(&request.project_path));
-    let manifest_path = locate_manifest(&requested_path)
-        .ok_or_else(|| "找不到可修改的專案資訊".to_owned())?;
-    let discovered_root = root_for_manifest_path(&manifest_path)
-        .ok_or_else(|| "無法確認專案根目錄".to_owned())?;
+    let manifest_path =
+        locate_manifest(&requested_path).ok_or_else(|| "找不到可修改的專案資訊".to_owned())?;
+    let discovered_root =
+        root_for_manifest_path(&manifest_path).ok_or_else(|| "無法確認專案根目錄".to_owned())?;
     let mut manifest = load(&request.project_path)?;
     if manifest.stages.values().any(|stage| {
         !matches!(stage.status, StageStatus::Pending)
@@ -1090,6 +1271,12 @@ pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManif
     if request.input_paths.is_empty() {
         return Err("At least one input path is required".to_owned());
     }
+    let mut input_paths: Vec<PathBuf> = request
+        .input_paths
+        .iter()
+        .map(|path| absolute_path(Path::new(path)))
+        .collect();
+    expand_related_sources(&mut input_paths);
     let name = request.name.trim();
     if name.is_empty() {
         return Err("任務名稱不能是空白".to_owned());
@@ -1118,8 +1305,8 @@ pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManif
             rename_reservations = Some((source_reservation, destination_reservation));
             let canonical_root = fs::canonicalize(&original_root)
                 .map_err(|error| format!("無法確認專案根目錄：{error}"))?;
-            let source_inside_output = request.input_paths.iter().any(|input| {
-                let input = absolute_path(Path::new(input));
+            let source_inside_output = input_paths.iter().any(|input| {
+                let input = absolute_path(input);
                 input.starts_with(&original_root)
                     || fs::canonicalize(&input)
                         .is_ok_and(|canonical| canonical.starts_with(&canonical_root))
@@ -1134,14 +1321,9 @@ pub fn update_queued(request: UpdateQueuedProjectRequest) -> Result<ProjectManif
         }
         manifest.name = name.to_owned();
     }
-    manifest.input_paths = request
-        .input_paths
+    manifest.input_paths = input_paths
         .iter()
-        .map(|path| {
-            absolute_path(Path::new(path))
-                .to_string_lossy()
-                .into_owned()
-        })
+        .map(|path| path.to_string_lossy().into_owned())
         .collect();
     manifest.settings = request.settings;
     manifest.updated_at = now_timestamp();
@@ -1600,6 +1782,129 @@ mod tests {
         let result = inspect(vec![root.to_string_lossy().into_owned()]);
         assert_eq!(result.kind, "sources");
         assert_eq!(result.sources.len(), 2);
+        assert!(result.sources.iter().all(|source| {
+            source
+                .issues
+                .iter()
+                .any(|issue| issue.code == "decode-failed")
+        }));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn inspect_reports_unsupported_selected_file() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("notes.txt");
+        fs::write(&source, b"not a video").unwrap();
+
+        let result = inspect(vec![source.to_string_lossy().into_owned()]);
+        assert_eq!(result.sources.len(), 1);
+        let inspection = &result.sources[0];
+        assert!(!inspection.valid);
+        assert!(inspection
+            .issues
+            .iter()
+            .any(|issue| issue.code == "unsupported-format" && issue.severity == "error"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn inspect_reports_missing_selected_file() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("missing.insv");
+
+        let result = inspect(vec![source.to_string_lossy().into_owned()]);
+        assert_eq!(result.sources.len(), 1);
+        let inspection = &result.sources[0];
+        assert!(!inspection.valid);
+        assert!(inspection
+            .issues
+            .iter()
+            .any(|issue| issue.code == "file-not-found" && issue.severity == "error"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn inspect_and_create_expand_existing_insta360_pair() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let lens0 = root.join("VID_20240414_135506_00_088.insv");
+        let lens1 = root.join("VID_20240414_135506_10_088.insv");
+        fs::write(&lens0, b"lens0").unwrap();
+        fs::write(&lens1, b"lens1").unwrap();
+
+        let inspected = inspect(vec![lens1.to_string_lossy().into_owned()]);
+        let inspected_paths = inspected
+            .sources
+            .iter()
+            .map(|source| PathBuf::from(&source.path))
+            .collect::<Vec<_>>();
+        assert_eq!(inspected_paths, vec![lens0.clone(), lens1.clone()]);
+
+        let output = root.join("project");
+        let manifest = create(CreateProjectRequest {
+            input_paths: vec![lens1.to_string_lossy().into_owned()],
+            output_path: Some(output.to_string_lossy().into_owned()),
+            name: Some("Insta pair".to_owned()),
+            settings: None,
+        })
+        .unwrap();
+        assert_eq!(
+            manifest.input_paths,
+            vec![
+                lens0.to_string_lossy().into_owned(),
+                lens1.to_string_lossy().into_owned()
+            ]
+        );
+        let persisted: ProjectManifest =
+            serde_json::from_slice(&fs::read(output.join(MANIFEST_FILE)).unwrap()).unwrap();
+        assert_eq!(persisted.input_paths, manifest.input_paths);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn inspect_keeps_single_track_insv_valid_and_suggests_pairing() {
+        let Some(ffmpeg) = doctor::find_executable("ffmpeg") else {
+            return;
+        };
+        let root = temp_dir();
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("VID_20240414_135506_00_088.insv");
+        let generated = silent_command(ffmpeg)
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x64:d=0.1",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "mpeg4",
+                "-f",
+                "mp4",
+                "-y",
+            ])
+            .arg(&source)
+            .status()
+            .unwrap();
+        if !generated.success() {
+            let _ = fs::remove_dir_all(root);
+            return;
+        }
+
+        let inspected = inspect(vec![source.to_string_lossy().into_owned()]);
+        assert_eq!(inspected.sources.len(), 1);
+        assert!(inspected.sources[0].valid);
+        assert!(inspected.sources[0]
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("_00_") && warning.contains("_10_")));
         let _ = fs::remove_dir_all(root);
     }
 

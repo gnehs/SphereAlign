@@ -36,6 +36,8 @@ import {
   manifestFromUnknown,
   mergeProgressLog,
   normaliseColorInspectionSummary,
+  normaliseSourceInspection,
+  sourceInspectionForPath,
   normalisePipelineSettings,
   parseDoctor,
   readLogEvent,
@@ -54,8 +56,17 @@ import {
   type Task,
   type TaskLog,
   type TaskLogLevel,
+  type SourceInspection,
 } from "@/lib/pipeline";
 import "./App.css";
+
+function sourceInspectionsForPaths(paths: string[], inspections: Record<string, SourceInspection>) {
+  return paths.reduce<Record<string, SourceInspection>>((result, path) => {
+    const inspection = sourceInspectionForPath(path, inspections);
+    if (inspection) result[path] = inspection;
+    return result;
+  }, {});
+}
 
  function App() {
   // Subscribe the whole screen to Lingui's locale-change event. Most of the
@@ -74,6 +85,7 @@ import "./App.css";
     outputDraft,
     settingsDraft,
     colmapPath,
+    sourceInspections,
     doctor,
     toast,
   } = useAppStore(useShallow((state) => ({
@@ -87,6 +99,7 @@ import "./App.css";
     outputDraft: state.outputDraft,
     settingsDraft: state.settingsDraft,
     colmapPath: state.colmapPath,
+    sourceInspections: state.sourceInspections,
     doctor: state.doctor,
     toast: state.toast,
   })));
@@ -108,6 +121,7 @@ import "./App.css";
     setSettingsDraft,
     setColmapPath,
     setSourceInspection,
+    setSourceInspections,
     setSourceColorInspection,
     setDoctor,
     setDoctorLoading,
@@ -130,6 +144,7 @@ import "./App.css";
     setSettingsDraft: state.setSettingsDraft,
     setColmapPath: state.setColmapPath,
     setSourceInspection: state.setSourceInspection,
+    setSourceInspections: state.setSourceInspections,
     setSourceColorInspection: state.setSourceColorInspection,
     setDoctor: state.setDoctor,
     setDoctorLoading: state.setDoctorLoading,
@@ -249,9 +264,21 @@ import "./App.css";
       sources?: Array<{
         path?: string;
         name?: string;
+        valid?: boolean;
+        size?: number;
         duration?: number;
         fps?: number;
+        width?: number;
+        height?: number;
+        lensCount?: number;
         warnings?: string[];
+        issues?: Array<{
+          code?: string;
+          severity?: string;
+          message?: string;
+          detail?: string;
+          impacts?: string[];
+        }>;
         colorProfile?: string | Record<string, unknown>;
         shouldApply?: boolean;
       }>;
@@ -272,7 +299,22 @@ import "./App.css";
     if (result?.sources?.length) {
       const inspectedPaths = result.sources.flatMap((source) => source.path ? [source.path] : []);
       if (inspectedPaths.length) setSourcePaths(inspectedPaths);
-      const valid = result.sources.filter((source) => !source.warnings?.length).length;
+      const inspectedEntries = result.sources.flatMap((source): Array<[string, SourceInspection]> => {
+        if (!source.path) return [];
+        const inspection = normaliseSourceInspection(source, source.path);
+        return inspection ? [[source.path, inspection]] : [];
+      });
+      if (inspectedEntries.length) {
+        setSourceInspections((current) => {
+          const next = { ...current };
+          inspectedEntries.forEach(([path, inspection]) => {
+            next[path] = inspection;
+            next[inspection.path] = inspection;
+          });
+          return next;
+        });
+      }
+      const valid = inspectedEntries.filter(([, inspection]) => inspection.valid !== false && !inspection.issues.some((issue) => issue.severity === "error")).length;
       setSourceInspection(`${result.sources.length} sources · ${valid} passed inspection`);
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     } else if (result?.suggestedOutputPath) {
@@ -286,12 +328,13 @@ import "./App.css";
       setSourceInspection("Source inspection results are not available yet");
       setSourceColorInspection(normaliseColorInspectionSummary(result));
     }
-  }, [loadProjectPath]);
+  }, [loadProjectPath, setSourceInspections]);
 
   const applySourcePaths = useCallback((paths: string[], openDialogAfter = true) => {
     const actual = paths.filter(Boolean);
     if (!actual.length) return;
     setSourcePaths(actual);
+    setSourceInspections({});
     setSourceColorInspection(null);
     if (!editingTaskId) {
       setOutputDraft(deriveOutputPath(actual[0]));
@@ -299,12 +342,13 @@ import "./App.css";
     }
     if (openDialogAfter) setTaskDialogOpen(true);
     void inspectSourcePaths(actual);
-  }, [editingTaskId, inspectSourcePaths]);
+  }, [editingTaskId, inspectSourcePaths, setSourceInspections]);
 
   const openNewTaskDialog = useCallback(() => {
     setEditingTaskId(null);
     setNameDraft("");
     setSourcePaths([]);
+    setSourceInspections({});
     setOutputDraft("");
     setSourceInspection("");
     setSourceColorInspection(null);
@@ -315,7 +359,7 @@ import "./App.css";
     }, doctor.gpuDevices));
     setDragOver(false);
     setTaskDialogOpen(true);
-  }, [doctor.gpuAvailable, doctor.gpuDevices]);
+  }, [doctor.gpuAvailable, doctor.gpuDevices, setSourceInspections]);
 
   const canChangeQueuedTask = useCallback((task: Task) => {
     const run = autoPipelineRuns.current[task.projectId];
@@ -335,14 +379,15 @@ import "./App.css";
     setEditingTaskId(task.projectId);
     setNameDraft(task.name);
     setSourcePaths(task.inputPaths);
+    setSourceInspections(task.sourceInspections ?? {});
     setOutputDraft(task.outputPath);
     setSettingsDraft(selectAvailableGpu(normalisePipelineSettings(task.settings), doctor.gpuDevices));
-      setSourceInspection(`${task.inputPaths.length} sources`);
+    setSourceInspection(`${task.inputPaths.length} sources`);
     setSourceColorInspection(null);
     setDragOver(false);
     setTaskDialogOpen(true);
     void inspectSourcePaths(task.inputPaths);
-  }, [canChangeQueuedTask, doctor.gpuDevices, inspectSourcePaths]);
+  }, [canChangeQueuedTask, doctor.gpuDevices, inspectSourcePaths, setSourceInspections]);
 
   const handleBrowserFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -359,7 +404,7 @@ import "./App.css";
       return;
     }
     try {
-      const result = await openDialog({ directory: false, multiple: true, filters: [{ name: t`OSV / dual-fisheye video`, extensions: ["osv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
+      const result = await openDialog({ directory: false, multiple: true, filters: [{ name: t`Panoramic source video`, extensions: ["osv", "insv", "mp4", "mov", "mkv", "avi", "webm", "m4v", "mts", "m2ts", "ts"] }] });
       const paths = result === null ? [] : Array.isArray(result) ? result : [result];
       applySourcePaths(paths);
     } catch (error) {
@@ -623,7 +668,7 @@ import "./App.css";
   }, [colmapPath]);
 
   const createTask = useCallback(async () => {
-    if (!sourcePaths.length) { setToast("Select at least one OSV or dual-fisheye source first"); return; }
+    if (!sourcePaths.length) { setToast("Select at least one panoramic source first"); return; }
     if (customLutPathIsInvalid(settingsDraft.extract.lutPath)) {
       setToast("The custom LUT must be a .cube file");
       return;
@@ -633,11 +678,14 @@ import "./App.css";
     const manifest = manifestFromUnknown(result);
     let createdTask: Task | null = null;
     if (manifest) {
-      createdTask = manifest;
+      createdTask = {
+        ...manifest,
+        sourceInspections: sourceInspectionsForPaths(sourcePaths, sourceInspections),
+      };
       const logPayload: LogEventPayload = { level: "info", message: `Created ${manifest.name}`, timestampMs: Date.now() };
-      upsertTask({ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) });
+      upsertTask({ ...createdTask, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) });
     } else if (!IS_TAURI_RUNTIME) {
-      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || BROWSER_PREVIEW_TASK_SOURCE, rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: [BROWSER_PREVIEW_NOT_CONNECTED_SOURCE], createdAt: new Date().toISOString(), previewOnly: true };
+      const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || BROWSER_PREVIEW_TASK_SOURCE, rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: [BROWSER_PREVIEW_NOT_CONNECTED_SOURCE], sourceInspections: sourceInspectionsForPaths(sourcePaths, sourceInspections), createdAt: new Date().toISOString(), previewOnly: true };
       createdTask = preview;
       const logPayload: LogEventPayload = { level: "info", message: `Preview task added: ${preview.name}`, timestampMs: Date.now() };
       upsertTask({ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) });
@@ -650,7 +698,7 @@ import "./App.css";
     setSourceInspection("");
     setSourceColorInspection(null);
     if (createdTask) startAutoPipeline(createdTask);
-  }, [nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
+  }, [nameDraft, outputDraft, settingsDraft, sourceInspections, sourcePaths, startAutoPipeline]);
 
   const saveEditedTask = useCallback(async () => {
     const task = useAppStore.getState().tasks.find((item) => item.projectId === editingTaskId);
@@ -669,6 +717,7 @@ import "./App.css";
         ...item,
         name: nameDraft || item.name,
         inputPaths: sourcePaths,
+        sourceInspections: sourceInspectionsForPaths(sourcePaths, sourceInspections),
         settings,
       }));
       setTaskDialogOpen(false);
@@ -688,7 +737,11 @@ import "./App.css";
     }
     const manifest = manifestFromUnknown(result);
     if (!manifest) { setToast("Failed to save task changes; check the runtime message"); return; }
-    updateTask(task.projectId, (item) => ({ ...manifest, logs: item.logs }));
+    updateTask(task.projectId, (item) => ({
+      ...manifest,
+      sourceInspections: sourceInspectionsForPaths(sourcePaths, sourceInspections),
+      logs: item.logs,
+    }));
     const run = autoPipelineRuns.current[task.projectId];
     if (run) {
       run.task = { rootPath: manifest.rootPath, outputPath: manifest.outputPath, settings: manifest.settings };
@@ -698,7 +751,7 @@ import "./App.css";
     setEditingTaskId(null);
     setToast("Queued task updated");
     queueMicrotask(() => pumpAutoPipelineRef.current());
-  }, [canChangeQueuedTask, editingTaskId, nameDraft, settingsDraft, sourcePaths]);
+  }, [canChangeQueuedTask, editingTaskId, nameDraft, settingsDraft, sourceInspections, sourcePaths]);
 
   const deleteQueuedTask = useCallback(() => {
     const task = useAppStore.getState().tasks.find((item) => item.projectId === deletingTaskId);
@@ -900,7 +953,7 @@ import "./App.css";
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".osv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts"
+          accept=".osv,.insv,.mp4,.mov,.mkv,.avi,.webm,.m4v,.mts,.m2ts,.ts"
           hidden
           onChange={(event) => handleBrowserFiles(event.currentTarget.files)}
         />

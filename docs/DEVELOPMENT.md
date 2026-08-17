@@ -3,7 +3,7 @@
 本文件收錄 SphereAlign 的開發環境、建置方式、處理管線、輸出結構與目前技術界線。產品定位與功能特色請回到 [README](../README.md)。
 
 > [!WARNING]
-> 專案仍在開發中，目前只以 DJI Osmo 360 作為正式支援與驗證範圍。程式雖能辨識部分其他影片容器，但不代表這些來源具有相同的雙影像串流、校正資訊或相容性保證。
+> 專案仍在開發中，目前以 DJI Osmo 360 與 Insta360 作為正式支援與驗證範圍。程式雖能辨識部分其他影片容器，但不代表這些來源具有相同的雙影像串流、校正資訊或相容性保證。
 
 ## 技術棧
 
@@ -79,9 +79,9 @@ pnpm version:check
 
 ## 輸入契約
 
-正式支援的來源是 DJI Osmo 360 `.OSV`。來源必須至少包含兩路 video stream；Extract 取前兩路分別作為 `lens0` 與 `lens1`。兩側鏡頭位於相機正反兩面，輸出必須保持同名、同數量的同步影格。
+正式支援的來源是 DJI Osmo 360 `.OSV` 與 Insta360 `.INSV`。來源會先經由相機 adapter 正規化成兩顆實體鏡頭：單檔雙 track 的 INSV 取前兩路 video stream；較舊的 Insta360 雙檔素材則配對檔名中的 `_00_` 與 `_10_`，各自取唯一的 video stream。Extract 輸出分別作為 `lens0` 與 `lens1`，兩側鏡頭必須保持同名、同數量的同步影格。
 
-檔案選擇器與來源檢查器也能辨識 `.mp4`、`.mov`、`.mkv`、`.avi`、`.webm`、`.m4v`、`.mts`、`.m2ts` 與 `.ts`。這些格式只代表容器可被檢查。Extract 目前只確認來源至少有兩路 video stream，接著直接使用前兩路，並不驗證鏡頭模型；少於兩路時會失敗，兩路以上則可能執行但產生不相容的結果，因此都不視為正式支援來源。
+檔案選擇器與來源檢查器也能辨識 `.mp4`、`.mov`、`.mkv`、`.avi`、`.webm`、`.m4v`、`.mts`、`.m2ts` 與 `.ts`。這些格式只代表容器可被檢查，仍不視為正式支援的相機來源；未提供相機 adapter 的一般容器必須自行確保雙鏡頭串流、同步與校正語意。
 
 選擇資料夾時只掃描第一層檔案，避免意外把巢狀 proxy 或先前輸出重新加入來源。
 
@@ -89,7 +89,7 @@ pnpm version:check
 
 ### Extract
 
-- 透過系統 `ffmpeg` / `ffprobe` 找出前兩路 video stream，保留 native fisheye，不先轉為 equirectangular。
+- 透過相機 adapter 與系統 `ffmpeg` / `ffprobe` 找出兩顆實體鏡頭的 video stream，保留 native fisheye，不先轉為 equirectangular。
 - 第一遍把雙鏡候選縮成 512 px 灰階影格，透過 stdout 串流進 Rust 記憶體，不編碼或保存候選圖片。
 - 一般擷取預設使用 3 FPS。啟用清晰度過濾時，候選密度是基準的 2–10 倍。
 - 清晰度評分結合 Gaussian pre-blur、Laplacian variance 與 Tenengrad，並只在魚眼有效圓內計算。
@@ -98,14 +98,14 @@ pnpm version:check
 - 最終檔名固定為 `sourceNNN_########.jpg`，兩側鏡頭使用完全相同的檔名。
 - FFmpeg 會先嘗試自動硬體解碼；失敗時清理未完成輸出，再回退 CPU 軟體解碼。
 - 候選 checkpoint 只保存分數與選擇結果，不保存候選影像。最終影格使用 partial file、雙鏡配對回滾與原子 metadata commit。
-- OSV data stream 以 stream copy 保存；支援的 DJI metadata 另輸出標準化摘要與融合姿態。
+- 原始來源 data stream 以 stream copy 保存；來源 adapter 提供的 metadata 另輸出標準化摘要與融合姿態。DJI metadata 目前可產生較完整的 telemetry，Insta360 若素材未提供可驗證的相機校正或 IMU 欄位，會保留明確的 unavailable/unknown 狀態。
 
 ### Mask
 
 - 使用 ONNX Runtime 執行 YOLO11 segmentation 與可選的 SkySeg。
 - YOLO 可遮除 `person`、`bicycle`、`car`、`motorcycle`、`bus`、`truck`；天空遮罩可以獨立啟用。
 - 物件與天空皆關閉時，pipeline 會直接略過 Mask stage，不產生遮罩輸出。
-- 物件、天空、魚眼圓外，以及 DJI metadata 標記的固定光學遮擋區為黑色；其餘區域為白色。
+- 物件、天空、魚眼圓外，以及來源 adapter 提供且已驗證的固定光學遮擋區為黑色；其餘區域為白色。
 - 推論工作解析度的最長邊限制為 640，再以 nearest-neighbor 放回來源尺寸；不要宣稱模型直接以原始 8K 解析度推論。
 - 原生鏡頭超過 180° 的重疊區仍保留。optical mask 只表示無法成像或固定遮擋，不把邊緣畫質下降當成硬裁切。
 - 每張 mask 先寫 partial file 再原子替換；既有 canonical mask 能解碼、且尺寸與來源一致時才會略過。
@@ -185,7 +185,7 @@ colmap-{filename}/
 
 ## Telemetry 原則
 
-- OSV data stream 的原始副本是 source of truth。
+- 各來源 data stream 的原始副本是 source of truth。
 - 可解析時另輸出 normalized IMU 與 fused attitude 摘要。
 - 在 sensor-to-camera 座標轉換、時間同步與尺度尚未驗證前，quaternion 會標記為未套用，不會當作 COLMAP pose prior。
 - `denseFps` 目前只控制清晰度候選密度，不宣稱已實作基於 motion 或 IMU 的 adaptive cadence。
@@ -199,7 +199,7 @@ colmap-{filename}/
 
 ## 目前界線
 
-- 正式支援範圍只有 DJI Osmo 360；其他相機、鏡頭配置與一般雙串流影片尚未驗證。
+- 正式支援範圍是 DJI Osmo 360 `.OSV` 與 Insta360 `.INSV`（包含單檔雙 track，以及可依 `_00_`／`_10_` 配對的雙檔素材）；其他相機、鏡頭配置與一般雙串流影片尚未驗證。
 - 不提供 equirectangular 預覽器或拼接輸出；核心輸出是原生雙魚眼 COLMAP 專案。
 - 不會自動安裝 FFmpeg、ffprobe 或 COLMAP。
 - 首次使用 Mask 時可能需要網路下載所需模型；素材本身不會為此上傳。
