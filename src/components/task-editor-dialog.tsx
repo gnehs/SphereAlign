@@ -2,6 +2,7 @@ import { useRef, type Dispatch, type DragEvent, type SetStateAction } from "reac
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { CircleHelp, FileStack, Trash2 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { ProcessingSettingsFields } from "@/components/processing-settings-fields";
 import { SourceListItem } from "@/components/source-media";
@@ -27,61 +28,69 @@ import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/compone
 import {
   customLutPathIsInvalid,
   localiseUserMessage,
-  type ColorInspectionSummary,
-  type DoctorReport,
-  type OsvSource,
-  type PipelineSettings,
+  sourceFromPath,
 } from "@/lib/pipeline";
+import { useAppStore } from "@/stores/app-store";
 
  export interface TaskEditorDialogProps {
-  open: boolean;
-  editingTaskId: string | null;
   onOpenChange: (open: boolean) => void;
-  nameDraft: string;
-  setNameDraft: Dispatch<SetStateAction<string>>;
-  outputDraft: string;
-  setOutputDraft: Dispatch<SetStateAction<string>>;
-  settingsDraft: PipelineSettings;
-  setSettingsDraft: Dispatch<SetStateAction<PipelineSettings>>;
-  selectedSources: OsvSource[];
-  sourceInspection: string;
-  sourceColorInspection: ColorInspectionSummary | null;
   dragOver: boolean;
   setDragOver: Dispatch<SetStateAction<boolean>>;
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
-  onRemoveSource: (path: string) => void;
   onSourcePicker: () => void | Promise<void>;
   onOutputPicker: () => void | Promise<void>;
   onLutPicker: () => void | Promise<void>;
   onGpuPreferenceTouched: () => void;
   onSubmit: () => void | Promise<void>;
-  doctor: DoctorReport;
 }
 
 export function TaskEditorDialog({
-  open,
-  editingTaskId,
   onOpenChange,
-  nameDraft,
-  setNameDraft,
-  outputDraft,
-  setOutputDraft,
-  settingsDraft,
-  setSettingsDraft,
-  selectedSources,
-  sourceInspection,
-  sourceColorInspection,
   dragOver,
   setDragOver,
   onDrop,
-  onRemoveSource,
   onSourcePicker,
   onOutputPicker,
   onLutPicker,
   onGpuPreferenceTouched,
   onSubmit,
-  doctor,
 }: TaskEditorDialogProps) {
+  const {
+    open,
+    editingTaskId,
+    nameDraft,
+    setNameDraft,
+    outputDraft,
+    setOutputDraft,
+    settingsDraft,
+    setSettingsDraft,
+    sourcePaths,
+    setSourcePaths,
+    sourceInspection,
+    sourceColorInspection,
+    setSourceColorInspection,
+    doctor,
+  } = useAppStore(useShallow((state) => ({
+    open: state.taskDialogOpen,
+    editingTaskId: state.editingTaskId,
+    nameDraft: state.nameDraft,
+    setNameDraft: state.setNameDraft,
+    outputDraft: state.outputDraft,
+    setOutputDraft: state.setOutputDraft,
+    settingsDraft: state.settingsDraft,
+    setSettingsDraft: state.setSettingsDraft,
+    sourcePaths: state.sourcePaths,
+    setSourcePaths: state.setSourcePaths,
+    sourceInspection: state.sourceInspection,
+    sourceColorInspection: state.sourceColorInspection,
+    setSourceColorInspection: state.setSourceColorInspection,
+    doctor: state.doctor,
+  })));
+  const selectedSources = sourcePaths.map(sourceFromPath);
+  const removeSource = (path: string) => {
+    setSourcePaths((current) => current.filter((sourcePath) => sourcePath !== path));
+    setSourceColorInspection(null);
+  };
   const taskNameInputRef = useRef<HTMLInputElement>(null);
   const lutPathInvalid = customLutPathIsInvalid(settingsDraft.extract.lutPath);
 
@@ -121,7 +130,7 @@ export function TaskEditorDialog({
                         <span className="flex-1 text-sm"><Trans>Drop OSV or dual-fisheye media</Trans></span>
                         <Button type="button" variant="outline" size="sm" onClick={() => void onSourcePicker()}>{t`Choose sources`}</Button>
                       </div>
-                      {selectedSources.length > 0 && <div className="mt-2 overflow-hidden rounded-lg border">{selectedSources.map((source) => <SourceListItem key={source.id} source={source} title={source.label} detail={source.detail} removeLabel={t`Remove ${source.label}`} onRemove={() => onRemoveSource(source.path)} />)}</div>}
+                      {selectedSources.length > 0 && <div className="mt-2 overflow-hidden rounded-lg border">{selectedSources.map((source) => <SourceListItem key={source.id} source={source} title={source.label} detail={source.detail} removeLabel={t`Remove ${source.label}`} onRemove={() => removeSource(source.path)} />)}</div>}
                       <p className="mt-2 text-sm text-muted-foreground">{sourceInspection ? localiseUserMessage(sourceInspection) : t`Choose multiple OSV or dual-fisheye media files.`}</p>
                     </FieldContent>
                   </Field>
@@ -151,14 +160,14 @@ export function TaskEditorDialog({
 }
 
 export interface RemoveTaskDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
 
-export function RemoveTaskDialog({ open, onOpenChange, onConfirm }: RemoveTaskDialogProps) {
+export function RemoveTaskDialog({ onConfirm }: RemoveTaskDialogProps) {
+  const deletingTaskId = useAppStore((state) => state.deletingTaskId);
+  const setDeletingTaskId = useAppStore((state) => state.setDeletingTaskId);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={Boolean(deletingTaskId)} onOpenChange={(open) => { if (!open) setDeletingTaskId(null); }}>
       <DialogContent showCloseButton={false}>
         <DialogHeader><DialogTitle><Trans context="remove task confirmation" comment="Confirmation dialog for removing a queued task.">Remove task from queue?</Trans></DialogTitle><DialogDescription><Trans>Only the task and queue state are removed; the existing output folder is not deleted.</Trans></DialogDescription></DialogHeader>
         <DialogFooter><DialogClose render={<Button variant="ghost" />}><Trans>Cancel</Trans></DialogClose><Button variant="destructive" onClick={onConfirm}><Trash2 /><Trans context="task action" comment="Remove the queued task, while keeping its output folder.">Remove task</Trans></Button></DialogFooter>

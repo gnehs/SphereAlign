@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
+import { useShallow } from "zustand/react/shallow";
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,14 +14,12 @@ import { SettingsSheet } from "@/components/settings-sheet";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskEditorDialog, RemoveTaskDialog } from "@/components/task-editor-dialog";
 import { TaskWorkspace } from "@/components/task-list";
-import { useTheme } from "@/components/theme-provider";
+import { useAppStore } from "@/stores/app-store";
 import {
   BROWSER_PREVIEW_NOT_CONNECTED_SOURCE,
   BROWSER_PREVIEW_TASK_SOURCE,
-  COLMAP_CUDA_DIAGNOSTIC_LABEL,
   COLMAP_PATH_STORAGE_KEY,
   DEFAULT_SETTINGS,
-  HARDWARE_ACCELERATION_LABEL,
   IS_TAURI_RUNTIME,
   IS_WINDOWS_RUNTIME,
   PREPARING_WORK_SOURCE,
@@ -42,21 +41,12 @@ import {
   readLogEvent,
   readProgress,
   selectAvailableGpu,
-  sourceFromPath,
   stagePrerequisiteKey,
-  taskCreatedAtMs,
-  taskCurrentStage,
   taskHasNotStarted,
-  taskIsCompleted,
   taskProgress,
   taskStageDuration,
-  warningAffectsProcessingSpeed,
   type AutoPipelineRun,
-  type ColorInspectionSummary,
-  type DiagnosticStatus,
-  type DoctorReport,
   type LogEventPayload,
-  type PipelineSettings,
   type ProgressEventPayload,
   type StageKey,
   type StageState,
@@ -72,36 +62,82 @@ import "./App.css";
   // app uses the macro helpers directly, but raw backend messages are rendered
   // through localiseUserMessage and need the same rerender trigger.
   const { i18n: lingui } = useLingui();
-  const { theme, setTheme } = useTheme();
   void lingui.locale;
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [taskDetailOpen, setTaskDetailOpen] = useState(false);
-  const [taskDetailTab, setTaskDetailTab] = useState<"summary" | "records">("summary");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const {
+    tasks,
+    editingTaskId,
+    deletingTaskId,
+    selectedTaskId,
+    taskDetailOpen,
+    nameDraft,
+    sourcePaths,
+    outputDraft,
+    settingsDraft,
+    colmapPath,
+    doctor,
+    toast,
+  } = useAppStore(useShallow((state) => ({
+    tasks: state.tasks,
+    editingTaskId: state.editingTaskId,
+    deletingTaskId: state.deletingTaskId,
+    selectedTaskId: state.selectedTaskId,
+    taskDetailOpen: state.taskDetailOpen,
+    nameDraft: state.nameDraft,
+    sourcePaths: state.sourcePaths,
+    outputDraft: state.outputDraft,
+    settingsDraft: state.settingsDraft,
+    colmapPath: state.colmapPath,
+    doctor: state.doctor,
+    toast: state.toast,
+  })));
+  const {
+    upsertTask,
+    updateTask,
+    updateTaskStage,
+    removeTask,
+    setTaskDialogOpen,
+    setEditingTaskId,
+    setDeletingTaskId,
+    setSelectedTaskId,
+    setTaskDetailOpen,
+    setTaskDetailTab,
+    setSettingsOpen,
+    setNameDraft,
+    setSourcePaths,
+    setOutputDraft,
+    setSettingsDraft,
+    setColmapPath,
+    setSourceInspection,
+    setSourceColorInspection,
+    setDoctor,
+    setDoctorLoading,
+    setToast,
+  } = useAppStore(useShallow((state) => ({
+    upsertTask: state.upsertTask,
+    updateTask: state.updateTask,
+    updateTaskStage: state.updateTaskStage,
+    removeTask: state.removeTask,
+    setTaskDialogOpen: state.setTaskDialogOpen,
+    setEditingTaskId: state.setEditingTaskId,
+    setDeletingTaskId: state.setDeletingTaskId,
+    setSelectedTaskId: state.setSelectedTaskId,
+    setTaskDetailOpen: state.setTaskDetailOpen,
+    setTaskDetailTab: state.setTaskDetailTab,
+    setSettingsOpen: state.setSettingsOpen,
+    setNameDraft: state.setNameDraft,
+    setSourcePaths: state.setSourcePaths,
+    setOutputDraft: state.setOutputDraft,
+    setSettingsDraft: state.setSettingsDraft,
+    setColmapPath: state.setColmapPath,
+    setSourceInspection: state.setSourceInspection,
+    setSourceColorInspection: state.setSourceColorInspection,
+    setDoctor: state.setDoctor,
+    setDoctorLoading: state.setDoctorLoading,
+    setToast: state.setToast,
+  })));
   const [taskDetailUsesSplitView, setTaskDetailUsesSplitView] = useState(() => window.matchMedia("(min-width: 921px)").matches);
   const taskDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const closeTaskDetail = useCallback(() => setTaskDetailOpen(false), []);
-  const [nameDraft, setNameDraft] = useState("");
-  const [sourcePaths, setSourcePaths] = useState<string[]>([]);
-  const [outputDraft, setOutputDraft] = useState("");
-  const [settingsDraft, setSettingsDraft] = useState<PipelineSettings>(DEFAULT_SETTINGS);
-  const [colmapPath, setColmapPath] = useState(() => {
-    try {
-      return window.localStorage.getItem(COLMAP_PATH_STORAGE_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [sourceInspection, setSourceInspection] = useState<string>("");
-  const [sourceColorInspection, setSourceColorInspection] = useState<ColorInspectionSummary | null>(null);
-  const [doctor, setDoctor] = useState<DoctorReport>(() => emptyDoctor());
-  const [doctorLoading, setDoctorLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeJobIds = useRef<Record<string, string>>({});
@@ -122,54 +158,17 @@ import "./App.css";
     return () => mediaQuery.removeEventListener("change", updateSplitView);
   }, []);
   const pendingLogsByJobId = useRef<Record<string, TaskLog[]>>({});
-  const taskSnapshot = useRef<Task[]>([]);
   const logSequence = useRef(0);
   const doctorRunId = useRef(0);
   const gpuPreferenceTouched = useRef(false);
   const autoPipelineRuns = useRef<Record<string, AutoPipelineRun>>({});
   const pumpAutoPipelineRef = useRef<() => void>(() => undefined);
 
-  const selectedSources = useMemo(() => sourcePaths.map(sourceFromPath), [sourcePaths]);
-  const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
-  const selectedTaskSources = useMemo(() => selectedTask?.inputPaths.map(sourceFromPath) ?? [], [selectedTask]);
-  const selectedTaskLogs = useMemo(() => selectedTask ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs) : [], [selectedTask]);
-  const selectedStageDefinition = selectedTask ? taskCurrentStage(selectedTask) : undefined;
-  const selectedStage = selectedTask && selectedStageDefinition ? selectedTask.stages[selectedStageDefinition.key] : undefined;
-  const selectedRunningStageDefinition = selectedTask ? STAGES.find(({ key }) => selectedTask.stages[key].status === "running") : undefined;
-  const selectedActiveProgressLog = selectedStageDefinition ? selectedTaskLogs.find((log) => log.kind === "progress" && log.stage === selectedStageDefinition.key && log.finishedAtMs === undefined) : undefined;
-
-  const isWindowsPlatform = doctor.platform === "Windows";
-  const doctorEssentialReady = ["COLMAP", "FFmpeg"].every((label) => doctor.items.find((item) => item.label === label)?.status === "ready");
-  const uniqueDoctorWarnings = Array.from(new Set(doctor.warnings));
-  const performanceWarnings = uniqueDoctorWarnings.filter(warningAffectsProcessingSpeed);
-  const generalDoctorWarnings = uniqueDoctorWarnings.filter((warning) => !warningAffectsProcessingSpeed(warning));
-  const gpuDiagnostic = doctor.items.find((item) => item.label === COLMAP_CUDA_DIAGNOSTIC_LABEL);
-  const hardwareDiagnostic = doctor.items.find((item) => item.label === HARDWARE_ACCELERATION_LABEL);
-  const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
-    || hardwareDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
-    || t`Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU.`;
-  const performanceStatus: DiagnosticStatus = performanceWarnings.length > 0 || gpuDiagnostic?.status === "warning" || hardwareDiagnostic?.status === "warning"
-    ? "warning"
-    : gpuDiagnostic?.status === "unknown" || hardwareDiagnostic?.status === "unknown"
-      ? "unknown"
-      : "ready";
-  const orderedTasks = useMemo(() => tasks
-    .map((task, index) => ({ task, index }))
-    // New tasks are prepended to state, so reverse the original index for
-    // manifests created within the backend's same timestamp resolution.
-    .sort((left, right) => taskCreatedAtMs(left.task) - taskCreatedAtMs(right.task) || right.index - left.index)
-    .map(({ task }) => task), [tasks]);
-  const activeTasks = useMemo(() => orderedTasks.filter((task) => !taskIsCompleted(task)), [orderedTasks]);
-  const completedTasks = useMemo(() => orderedTasks.filter(taskIsCompleted), [orderedTasks]);
   const hasRunningStage = useMemo(() => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")), [tasks]);
   const taskbarProgress = useMemo(() => {
     const runningTasks = tasks.filter((task) => STAGES.some(({ key }) => task.stages[key].status === "running"));
     if (runningTasks.length === 0) return null;
     return Math.round(runningTasks.reduce((total, task) => total + taskProgress(task), 0) / runningTasks.length);
-  }, [tasks]);
-
-  useEffect(() => {
-    taskSnapshot.current = tasks;
   }, [tasks]);
 
   useEffect(() => {
@@ -201,9 +200,10 @@ import "./App.css";
   }, [taskbarProgress]);
 
   const appendTaskLog = useCallback((taskId: string, payload: LogEventPayload, stage?: StageKey, phase?: string) => {
-    setTasks((current) => current.map((task) => task.projectId === taskId
-      ? { ...task, logs: appendMessageLog(task.logs, taskId, payload, stage, phase) }
-      : task));
+    updateTask(taskId, (task) => ({
+      ...task,
+      logs: appendMessageLog(task.logs, taskId, payload, stage, phase),
+    }));
   }, []);
 
   const bindJobToTask = useCallback((taskId: string, jobId: string) => {
@@ -213,9 +213,10 @@ import "./App.css";
     const pending = pendingLogsByJobId.current[jobId];
     if (!pending?.length) return;
     delete pendingLogsByJobId.current[jobId];
-    setTasks((current) => current.map((task) => task.projectId === taskId
-      ? { ...task, logs: [...task.logs, ...pending].slice(-100) }
-      : task));
+    updateTask(taskId, (task) => ({
+      ...task,
+      logs: [...task.logs, ...pending].slice(-100),
+    }));
   }, []);
 
   const addTaskMessage = useCallback((taskId: string, message: string, level: TaskLogLevel = "info") => {
@@ -235,7 +236,7 @@ import "./App.css";
       setToast("No loadable project information was found");
       return false;
     }
-    setTasks((current) => [manifest, ...current.filter((task) => task.projectId !== manifest.projectId)]);
+    upsertTask(manifest);
     addTaskMessage(manifest.projectId, `Opened ${manifest.name}`);
     setToast(manifest.warnings.length ? `Loaded unfinished project with ${manifest.warnings.length} warnings` : `Loaded unfinished project: ${manifest.name}`);
     return true;
@@ -489,16 +490,12 @@ import "./App.css";
     return () => { disposed = true; unlisten?.(); };
   }, [applySourcePaths]);
 
-  const updateTaskStage = useCallback((taskId: string, stageKey: StageKey, patch: Partial<StageState>) => {
-    setTasks((current) => current.map((task) => task.projectId === taskId ? { ...task, stages: { ...task.stages, [stageKey]: { ...task.stages[stageKey], ...patch } } } : task));
-  }, []);
-
   const resolveTaskForJob = useCallback((jobId?: string, stageKey?: StageKey) => {
     if (jobId && jobTaskIds.current[jobId]) return jobTaskIds.current[jobId];
     if (jobId) {
       const active = Object.entries(activeJobIds.current).find(([, value]) => value === jobId)?.[0];
       if (active) return active;
-      const staged = taskSnapshot.current.find((task) => STAGES.some(({ key }) => (!stageKey || key === stageKey) && task.stages[key].jobId === jobId));
+      const staged = useAppStore.getState().tasks.find((task) => STAGES.some(({ key }) => (!stageKey || key === stageKey) && task.stages[key].jobId === jobId));
       if (staged) return staged.projectId;
     }
     const pending = Object.entries(pendingStageStarts.current).filter(([, key]) => !stageKey || key === stageKey).map(([taskId]) => taskId);
@@ -506,7 +503,7 @@ import "./App.css";
     const candidates = Array.from(new Set([...pending, ...auto]));
     if (candidates.length === 1) return candidates[0];
     if (!stageKey) {
-      const running = taskSnapshot.current.filter((task) => STAGES.some(({ key }) => task.stages[key].status === "running"));
+      const running = useAppStore.getState().tasks.filter((task) => STAGES.some(({ key }) => task.stages[key].status === "running"));
       if (running.length === 1) return running[0].projectId;
     }
     return undefined;
@@ -516,8 +513,7 @@ import "./App.css";
     const stageKey = payload.stage;
     if (!stageKey) return;
     const eventTime = payload.timestampMs ?? Date.now();
-    setTasks((current) => current.map((task) => {
-      if (task.projectId !== taskId) return task;
+    updateTask(taskId, (task) => {
       const previous = task.stages[stageKey];
       const replacingPendingJob = pendingStageStarts.current[taskId] === stageKey;
       if (payload.jobId && previous.jobId && payload.jobId !== previous.jobId && !replacingPendingJob) return task;
@@ -556,7 +552,7 @@ import "./App.css";
         stages: { ...task.stages, [stageKey]: nextStage },
         logs: mergeProgressLog(task.logs, task.projectId, stageKey, previous, payload, status, eventTime),
       };
-    }));
+    });
   }, []);
 
   const startAutoStage = useCallback(async (taskId: string, stageKey: StageKey) => {
@@ -639,12 +635,12 @@ import "./App.css";
     if (manifest) {
       createdTask = manifest;
       const logPayload: LogEventPayload = { level: "info", message: `Created ${manifest.name}`, timestampMs: Date.now() };
-      setTasks((current) => [{ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) }, ...current]);
+      upsertTask({ ...manifest, logs: appendMessageLog(manifest.logs, manifest.projectId, logPayload) });
     } else if (!IS_TAURI_RUNTIME) {
       const preview: Task = { projectId: `preview-${Date.now()}`, name: nameDraft || BROWSER_PREVIEW_TASK_SOURCE, rootPath: outputDraft, inputPaths: sourcePaths, outputPath: outputDraft, settings: request.settings, stages: cloneStages({}), logs: [], warnings: [BROWSER_PREVIEW_NOT_CONNECTED_SOURCE], createdAt: new Date().toISOString(), previewOnly: true };
       createdTask = preview;
       const logPayload: LogEventPayload = { level: "info", message: `Preview task added: ${preview.name}`, timestampMs: Date.now() };
-      setTasks((current) => [{ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) }, ...current]);
+      upsertTask({ ...preview, logs: appendMessageLog(preview.logs, preview.projectId, logPayload) });
     } else {
       setToast("Failed to create the task; check the runtime message");
       return;
@@ -657,7 +653,7 @@ import "./App.css";
   }, [nameDraft, outputDraft, settingsDraft, sourcePaths, startAutoPipeline]);
 
   const saveEditedTask = useCallback(async () => {
-    const task = taskSnapshot.current.find((item) => item.projectId === editingTaskId);
+    const task = useAppStore.getState().tasks.find((item) => item.projectId === editingTaskId);
     if (!task || !canChangeQueuedTask(task)) {
       setToast("This task has started and can no longer be edited");
       return;
@@ -669,9 +665,12 @@ import "./App.css";
     }
     const settings = normalisePipelineSettings(settingsDraft);
     if (task.previewOnly) {
-      setTasks((current) => current.map((item) => item.projectId === task.projectId
-        ? { ...item, name: nameDraft || item.name, inputPaths: sourcePaths, settings }
-        : item));
+      updateTask(task.projectId, (item) => ({
+        ...item,
+        name: nameDraft || item.name,
+        inputPaths: sourcePaths,
+        settings,
+      }));
       setTaskDialogOpen(false);
       setEditingTaskId(null);
       setToast("Preview task updated");
@@ -689,7 +688,7 @@ import "./App.css";
     }
     const manifest = manifestFromUnknown(result);
     if (!manifest) { setToast("Failed to save task changes; check the runtime message"); return; }
-    setTasks((current) => current.map((item) => item.projectId === task.projectId ? { ...manifest, logs: item.logs } : item));
+    updateTask(task.projectId, (item) => ({ ...manifest, logs: item.logs }));
     const run = autoPipelineRuns.current[task.projectId];
     if (run) {
       run.task = { rootPath: manifest.rootPath, outputPath: manifest.outputPath, settings: manifest.settings };
@@ -702,7 +701,7 @@ import "./App.css";
   }, [canChangeQueuedTask, editingTaskId, nameDraft, settingsDraft, sourcePaths]);
 
   const deleteQueuedTask = useCallback(() => {
-    const task = taskSnapshot.current.find((item) => item.projectId === deletingTaskId);
+    const task = useAppStore.getState().tasks.find((item) => item.projectId === deletingTaskId);
     if (!task || !canChangeQueuedTask(task)) {
       setDeletingTaskId(null);
       setToast("This task has started and cannot be removed");
@@ -711,7 +710,7 @@ import "./App.css";
     delete autoPipelineRuns.current[task.projectId];
     delete pendingStageStarts.current[task.projectId];
     delete activeJobIds.current[task.projectId];
-    setTasks((current) => current.filter((item) => item.projectId !== task.projectId));
+    removeTask(task.projectId);
     if (selectedTaskId === task.projectId) {
       setTaskDetailOpen(false);
     }
@@ -742,7 +741,7 @@ import "./App.css";
       if (terminalJobIds.current.delete(result.jobId)) return;
       bindJobToTask(task.projectId, result.jobId);
       const receivedEarlyProgress = jobTaskIds.current[result.jobId] === task.projectId
-        || taskSnapshot.current.some((currentTask) => currentTask.projectId === task.projectId && currentTask.stages[stageKey].jobId === result.jobId);
+        || useAppStore.getState().tasks.some((currentTask) => currentTask.projectId === task.projectId && currentTask.stages[stageKey].jobId === result.jobId);
       updateTaskStage(task.projectId, stageKey, receivedEarlyProgress
         ? { status: "running", jobId: result.jobId }
         : { status: "running", progress: task.stages[stageKey].progress, message: PREPARING_WORK_SOURCE, phase: "starting", jobId: result.jobId, startedAtMs: Date.now(), finishedAtMs: undefined, durationMs: undefined, completed: undefined, total: undefined, currentItem: undefined });
@@ -842,7 +841,7 @@ import "./App.css";
             return;
           }
           if (payload.jobId) bindJobToTask(targetProjectId, payload.jobId);
-          const targetTask = taskSnapshot.current.find((task) => task.projectId === targetProjectId);
+          const targetTask = useAppStore.getState().tasks.find((task) => task.projectId === targetProjectId);
           const inferredStage = payload.stage || STAGES.find(({ key }) => targetTask?.stages[key].jobId === payload.jobId)?.key || STAGES.find(({ key }) => targetTask?.stages[key].status === "running")?.key;
           const inferredPhase = payload.phase || (inferredStage ? targetTask?.stages[inferredStage].phase : undefined);
           appendTaskLog(targetProjectId, payload, inferredStage, inferredPhase);
@@ -884,11 +883,6 @@ import "./App.css";
     applySourcePaths(paths);
   };
 
-  const taskGroups = [
-    { key: "active", title: t`In progress`, items: activeTasks },
-    { key: "completed", title: t`Completed`, items: completedTasks },
-  ] as const;
-
   const handleTaskDialogOpenChange = (open: boolean) => {
     setTaskDialogOpen(open);
     if (!open && editingTaskId) {
@@ -916,16 +910,11 @@ import "./App.css";
           onOpenSettings={() => setSettingsOpen(true)}
         />
         <TaskWorkspace
-          groups={taskGroups}
           clockMs={clockMs}
-          hasRunningStage={hasRunningStage}
-          taskDetailOpen={taskDetailOpen}
-          selectedTask={selectedTask}
           taskDetailUsesSplitView={taskDetailUsesSplitView}
           dragOver={dragOver}
           canChangeQueuedTask={canChangeQueuedTask}
           isWaitingForEnqueue={(task) => !autoPipelineRuns.current[task.projectId]}
-          localiseUserMessage={localiseUserMessage}
           onOpenSourcePicker={openSourcePicker}
           onOpenProject={openProject}
           onDragEnter={() => setDragOver(true)}
@@ -933,7 +922,6 @@ import "./App.css";
           onDrop={handleDrop}
           onEnqueueTask={enqueueQueuedTask}
           onEditTask={openEditTaskDialog}
-          onRemoveTask={(task) => setDeletingTaskId(task.projectId)}
           onOpenTaskDetail={(task, trigger) => {
             taskDetailTriggerRef.current = trigger;
             setTaskDetailTab("summary");
@@ -956,55 +944,25 @@ import "./App.css";
       </AnimatePresence>
 
       <TaskEditorDialog
-        open={taskDialogOpen}
-        editingTaskId={editingTaskId}
         onOpenChange={handleTaskDialogOpenChange}
-        nameDraft={nameDraft}
-        setNameDraft={setNameDraft}
-        outputDraft={outputDraft}
-        setOutputDraft={setOutputDraft}
-        settingsDraft={settingsDraft}
-        setSettingsDraft={setSettingsDraft}
-        selectedSources={selectedSources}
-        sourceInspection={sourceInspection}
-        sourceColorInspection={sourceColorInspection}
         dragOver={dragOver}
         setDragOver={setDragOver}
         onDrop={handleDrop}
-        onRemoveSource={(path) => {
-          setSourcePaths((current) => current.filter((sourcePath) => sourcePath !== path));
-          setSourceColorInspection(null);
-        }}
         onSourcePicker={openSourcePicker}
         onOutputPicker={openOutputPicker}
         onLutPicker={openLutPicker}
         onGpuPreferenceTouched={() => { gpuPreferenceTouched.current = true; }}
         onSubmit={editingTaskId ? saveEditedTask : createTask}
-        doctor={doctor}
       />
 
       <RemoveTaskDialog
-        open={Boolean(deletingTaskId)}
-        onOpenChange={(open) => { if (!open) setDeletingTaskId(null); }}
         onConfirm={deleteQueuedTask}
       />
 
       <TaskDetail
-        open={taskDetailOpen && Boolean(selectedTask)}
-        selectedTask={selectedTask}
-        selectedTaskSources={selectedTaskSources}
-        selectedTaskLogs={selectedTaskLogs}
-        selectedStageDefinition={selectedStageDefinition}
-        selectedStage={selectedStage}
-        selectedRunningStageDefinition={selectedRunningStageDefinition}
-        selectedActiveProgressLog={selectedActiveProgressLog}
         clockMs={clockMs}
-        activeTab={taskDetailTab}
-        onTabChange={setTaskDetailTab}
         onStageAction={handleStageAction}
-        onClose={closeTaskDetail}
         restoreFocusRef={taskDetailTriggerRef}
-        escapeBlocked={taskDialogOpen || Boolean(deletingTaskId) || settingsOpen}
         onExitComplete={() => {
           if (taskDetailOpen) return;
           setSelectedTaskId(null);
@@ -1013,20 +971,6 @@ import "./App.css";
       />
 
       <SettingsSheet
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        theme={theme}
-        setTheme={setTheme}
-        doctor={doctor}
-        doctorEssentialReady={doctorEssentialReady}
-        performanceWarnings={performanceWarnings}
-        generalDoctorWarnings={generalDoctorWarnings}
-        performanceFallback={performanceFallback}
-        performanceStatus={performanceStatus}
-        isWindowsPlatform={isWindowsPlatform}
-        colmapPath={colmapPath}
-        setColmapPath={setColmapPath}
-        doctorLoading={doctorLoading}
         runDoctor={runDoctor}
         copyDoctorReport={copyDoctorReport}
         openColmapPicker={openColmapPicker}

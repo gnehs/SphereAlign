@@ -6,6 +6,7 @@ import {
   MonitorCog,
   RefreshCw,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -31,61 +32,68 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { type Theme } from "@/components/theme-provider";
+import { type Theme, useTheme } from "@/components/theme-provider";
 import { getLocale, setLocale } from "@/i18n";
 import {
+  COLMAP_CUDA_DIAGNOSTIC_LABEL,
+  HARDWARE_ACCELERATION_LABEL,
   LANGUAGE_OPTIONS,
   diagnosticItemLabel,
   diagnosticStatusLabel,
   formatDoctorCheckedAt,
   iconForDiagnostic,
   localiseUserMessage,
+  warningAffectsProcessingSpeed,
   type DiagnosticStatus,
-  type DoctorReport,
 } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/app-store";
 
 export interface SettingsSheetProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  doctor: DoctorReport;
-  doctorEssentialReady: boolean;
-  performanceWarnings: string[];
-  generalDoctorWarnings: string[];
-  performanceFallback: string;
-  performanceStatus: DiagnosticStatus;
-  isWindowsPlatform: boolean;
-  colmapPath: string;
-  setColmapPath: (value: string) => void;
-  doctorLoading: boolean;
   runDoctor: (customColmapPath: string) => void | Promise<void>;
   copyDoctorReport: () => void | Promise<void>;
   openColmapPicker: () => void | Promise<void>;
 }
 
 export function SettingsSheet({
-  open,
-  onOpenChange,
-  theme,
-  setTheme,
-  doctor,
-  doctorEssentialReady,
-  performanceWarnings,
-  generalDoctorWarnings,
-  performanceFallback,
-  performanceStatus,
-  isWindowsPlatform,
-  colmapPath,
-  setColmapPath,
-  doctorLoading,
   runDoctor,
   copyDoctorReport,
   openColmapPicker,
 }: SettingsSheetProps) {
+  const { theme, setTheme } = useTheme();
+  const {
+    settingsOpen,
+    setSettingsOpen,
+    doctor,
+    doctorLoading,
+    colmapPath,
+    setColmapPath,
+  } = useAppStore(useShallow((state) => ({
+    settingsOpen: state.settingsOpen,
+    setSettingsOpen: state.setSettingsOpen,
+    doctor: state.doctor,
+    doctorLoading: state.doctorLoading,
+    colmapPath: state.colmapPath,
+    setColmapPath: state.setColmapPath,
+  })));
+  const isWindowsPlatform = doctor.platform === "Windows";
+  const doctorEssentialReady = ["COLMAP", "FFmpeg"].every((label) => doctor.items.find((item) => item.label === label)?.status === "ready");
+  const uniqueDoctorWarnings = Array.from(new Set(doctor.warnings));
+  const performanceWarnings = uniqueDoctorWarnings.filter(warningAffectsProcessingSpeed);
+  const generalDoctorWarnings = uniqueDoctorWarnings.filter((warning) => !warningAffectsProcessingSpeed(warning));
+  const gpuDiagnostic = doctor.items.find((item) => item.label === COLMAP_CUDA_DIAGNOSTIC_LABEL);
+  const hardwareDiagnostic = doctor.items.find((item) => item.label === HARDWARE_ACCELERATION_LABEL);
+  const performanceFallback = gpuDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
+    || hardwareDiagnostic?.details?.find((detail) => /(CPU|Unsupported|Not confirmed|unavailable)/i.test(detail))
+    || t`Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU.`;
+  const performanceStatus: DiagnosticStatus = performanceWarnings.length > 0 || gpuDiagnostic?.status === "warning" || hardwareDiagnostic?.status === "warning"
+    ? "warning"
+    : gpuDiagnostic?.status === "unknown" || hardwareDiagnostic?.status === "unknown"
+      ? "unknown"
+      : "ready";
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
       <SheetContent className="w-[min(420px,100vw)] gap-0 border-l bg-card p-0 data-[side=right]:sm:max-w-[420px]" side="right">
         <SheetHeader className="border-b px-6 pt-6 pb-4"><SheetTitle className="text-base font-semibold"><Trans>Settings</Trans></SheetTitle><SheetDescription className="mt-2 text-sm leading-relaxed"><Trans>Choose English, Simplified Chinese, Traditional Chinese, or Japanese.</Trans></SheetDescription></SheetHeader>
         <div className="scroll-fade-y scroll-fade-8 flex-1 overflow-y-auto px-6">
@@ -161,7 +169,7 @@ export function SettingsSheet({
             {generalDoctorWarnings.length > 0 && <Alert variant="destructive"><AlertTriangle /><AlertTitle><Trans>Needs attention</Trans></AlertTitle><AlertDescription>{generalDoctorWarnings.map((warning) => <p key={warning}>{localiseUserMessage(warning)}</p>)}</AlertDescription></Alert>}
           </section>
         </div>
-        <SheetFooter className="border-t px-6 pt-4 pb-5.5"><Button variant="outline" onClick={() => onOpenChange(false)}><Trans>Close</Trans></Button></SheetFooter>
+        <SheetFooter className="border-t px-6 pt-4 pb-5.5"><Button variant="outline" onClick={() => setSettingsOpen(false)}><Trans>Close</Trans></Button></SheetFooter>
       </SheetContent>
     </Sheet>
   );

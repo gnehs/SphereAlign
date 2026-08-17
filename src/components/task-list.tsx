@@ -13,25 +13,29 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { type DragEvent, type ReactNode } from "react";
+import { type DragEvent, type ReactNode, useMemo } from "react";
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
+import { useShallow } from "zustand/react/shallow";
 import {
   STAGES,
   estimatedRemainingMs,
   formatDuration,
   formatEta,
   logCountLabel,
+  localiseUserMessage,
   phaseLabel,
   stageActionState,
   stageDescription,
   stageLabel,
   stageStatusLabel,
   sourceFromPath,
+  taskCreatedAtMs,
   taskCurrentStage,
   taskHasNotStarted,
+  taskIsCompleted,
   taskProgress,
   taskProgressSummary,
   taskStageDuration,
@@ -46,6 +50,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/app-store";
 
 export interface TaskGroup {
   key: "active" | "completed";
@@ -54,17 +59,11 @@ export interface TaskGroup {
 }
 
 export interface TaskWorkspaceProps {
-  /** The active and completed task groups, in display order. */
-  groups: readonly TaskGroup[];
   clockMs: number;
-  hasRunningStage: boolean;
-  taskDetailOpen: boolean;
-  selectedTask?: Task;
   taskDetailUsesSplitView: boolean;
   dragOver: boolean;
   canChangeQueuedTask: (task: Task) => boolean;
   isWaitingForEnqueue: (task: Task) => boolean;
-  localiseUserMessage: (value: string) => string;
   onOpenSourcePicker: () => void | Promise<void>;
   onOpenProject: () => void | Promise<void>;
   onDragEnter: () => void;
@@ -72,7 +71,6 @@ export interface TaskWorkspaceProps {
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   onEnqueueTask: (task: Task) => void;
   onEditTask: (task: Task) => void;
-  onRemoveTask: (task: Task) => void;
   onOpenTaskDetail: (task: Task, trigger: HTMLButtonElement) => void;
   onStageAction: (task: Task, stageKey: StageKey) => void;
 }
@@ -107,12 +105,10 @@ function TaskCard({
   hasRunningStage,
   canChangeQueuedTask,
   isWaitingForEnqueue,
-  localiseUserMessage,
   taskDetailOpen,
   selectedTask,
   onEnqueueTask,
   onEditTask,
-  onRemoveTask,
   onOpenTaskDetail,
   onStageAction,
 }: {
@@ -123,13 +119,12 @@ function TaskCard({
   selectedTask?: Task;
   canChangeQueuedTask: (task: Task) => boolean;
   isWaitingForEnqueue: (task: Task) => boolean;
-  localiseUserMessage: (value: string) => string;
   onEnqueueTask: (task: Task) => void;
   onEditTask: (task: Task) => void;
-  onRemoveTask: (task: Task) => void;
   onOpenTaskDetail: (task: Task, trigger: HTMLButtonElement) => void;
   onStageAction: (task: Task, stageKey: StageKey) => void;
 }) {
+  const setDeletingTaskId = useAppStore((state) => state.setDeletingTaskId);
   const overall = taskProgress(task);
   const queued = taskHasNotStarted(task);
   const editableQueued = queued && canChangeQueuedTask(task);
@@ -172,7 +167,7 @@ function TaskCard({
                 <Pencil data-icon="inline-start" />
                 <Trans context="task action" comment="Edit a task that has not started.">Edit</Trans>
               </Button>
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => onRemoveTask(task)}>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeletingTaskId(task.projectId)}>
                 <Trash2 data-icon="inline-start" />
                 <Trans context="task action" comment="Remove a queued task without deleting its output folder.">Remove</Trans>
               </Button>
@@ -262,16 +257,11 @@ function TaskCard({
 }
 
 export function TaskWorkspace({
-  groups,
   clockMs,
-  hasRunningStage,
-  taskDetailOpen,
-  selectedTask,
   taskDetailUsesSplitView,
   dragOver,
   canChangeQueuedTask,
   isWaitingForEnqueue,
-  localiseUserMessage,
   onOpenSourcePicker,
   onOpenProject,
   onDragEnter,
@@ -279,10 +269,31 @@ export function TaskWorkspace({
   onDrop,
   onEnqueueTask,
   onEditTask,
-  onRemoveTask,
   onOpenTaskDetail,
   onStageAction,
 }: TaskWorkspaceProps) {
+  const { tasks, selectedTaskId, taskDetailOpen } = useAppStore(useShallow((state) => ({
+    tasks: state.tasks,
+    selectedTaskId: state.selectedTaskId,
+    taskDetailOpen: state.taskDetailOpen,
+  })));
+  const selectedTask = useMemo(() => tasks.find((task) => task.projectId === selectedTaskId), [selectedTaskId, tasks]);
+  const hasRunningStage = useMemo(
+    () => tasks.some((task) => STAGES.some(({ key }) => task.stages[key].status === "running")),
+    [tasks],
+  );
+  const orderedTasks = useMemo(() => tasks
+    .map((task, index) => ({ task, index }))
+    // New tasks are prepended to state, so reverse the original index for
+    // manifests created within the backend's same timestamp resolution.
+    .sort((left, right) => taskCreatedAtMs(left.task) - taskCreatedAtMs(right.task) || right.index - left.index)
+    .map(({ task }) => task), [tasks]);
+  const activeTasks = useMemo(() => orderedTasks.filter((task) => !taskIsCompleted(task)), [orderedTasks]);
+  const completedTasks = useMemo(() => orderedTasks.filter(taskIsCompleted), [orderedTasks]);
+  const groups: readonly TaskGroup[] = [
+    { key: "active", title: t`In progress`, items: activeTasks },
+    { key: "completed", title: t`Completed`, items: completedTasks },
+  ];
   const shouldReduceMotion = useReducedMotion();
   const hasTasks = groups.some((group) => group.items.length > 0);
 
@@ -337,10 +348,8 @@ export function TaskWorkspace({
                       selectedTask={selectedTask}
                       canChangeQueuedTask={canChangeQueuedTask}
                       isWaitingForEnqueue={isWaitingForEnqueue}
-                      localiseUserMessage={localiseUserMessage}
                       onEnqueueTask={onEnqueueTask}
                       onEditTask={onEditTask}
-                      onRemoveTask={onRemoveTask}
                       onOpenTaskDetail={onOpenTaskDetail}
                       onStageAction={onStageAction}
                     />

@@ -2,11 +2,13 @@ import { AlertTriangle, FileStack, LoaderCircle, Square, type LucideIcon } from 
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { type ReactNode, type RefObject } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { SourceListItem, SourceThumbnail } from "@/components/source-media";
 import {
+  STAGES,
   estimatedRemainingMs,
   formatDuration,
   formatEta,
@@ -15,11 +17,13 @@ import {
   logCountLabel,
   phaseLabel,
   processingRateLabel,
+  sourceFromPath,
   stageDescription,
   stageLabel,
   stageStatusLabel,
   taskStageDuration,
   taskStageLabel,
+  taskCurrentStage,
   timestampDateTime,
   type OsvSource,
   type StageDefinition,
@@ -30,24 +34,27 @@ import {
 } from "@/lib/pipeline";
 import { TaskDetailPanel, type TaskDetailTab } from "@/components/task-detail-panel";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/app-store";
 
 export interface TaskDetailProps {
-  open: boolean;
+  clockMs: number;
+  onStageAction: (task: Task, stageKey: StageKey) => void;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
+  onExitComplete?: () => void;
+}
+
+interface TaskSummaryProps {
   selectedTask?: Task;
   selectedTaskSources: OsvSource[];
-  selectedTaskLogs: TaskLog[];
   selectedStageDefinition?: StageDefinition;
   selectedStage?: StageState;
-  selectedRunningStageDefinition?: StageDefinition;
   selectedActiveProgressLog?: TaskLog;
   clockMs: number;
-  activeTab: TaskDetailTab;
-  onTabChange: (tab: TaskDetailTab) => void;
-  onStageAction: (task: Task, stageKey: StageKey) => void;
-  onClose: () => void;
-  restoreFocusRef?: RefObject<HTMLElement | null>;
-  escapeBlocked?: boolean;
-  onExitComplete?: () => void;
+}
+
+interface TaskRecordsProps {
+  selectedTask?: Task;
+  selectedTaskLogs: TaskLog[];
 }
 
 function StageStatusBadge({ status }: { status: StageState["status"] }) {
@@ -115,15 +122,7 @@ function TaskSummary({
   selectedStage,
   selectedActiveProgressLog,
   clockMs,
-}: Pick<
-  TaskDetailProps,
-  | "selectedTask"
-  | "selectedTaskSources"
-  | "selectedStageDefinition"
-  | "selectedStage"
-  | "selectedActiveProgressLog"
-  | "clockMs"
->) {
+}: TaskSummaryProps) {
   if (!selectedTask) return null;
 
   return (
@@ -166,7 +165,7 @@ function TaskSummary({
   );
 }
 
-function TaskRecords({ selectedTask, selectedTaskLogs }: Pick<TaskDetailProps, "selectedTask" | "selectedTaskLogs">) {
+function TaskRecords({ selectedTask, selectedTaskLogs }: TaskRecordsProps) {
   if (!selectedTask) return null;
 
   return (
@@ -187,31 +186,53 @@ function TaskRecords({ selectedTask, selectedTaskLogs }: Pick<TaskDetailProps, "
 }
 
 export function TaskDetail({
-  open,
-  selectedTask,
-  selectedTaskSources,
-  selectedTaskLogs,
-  selectedStageDefinition,
-  selectedStage,
-  selectedRunningStageDefinition,
-  selectedActiveProgressLog,
   clockMs,
-  activeTab,
-  onTabChange,
   onStageAction,
-  onClose,
   restoreFocusRef,
-  escapeBlocked = false,
   onExitComplete,
 }: TaskDetailProps) {
+  const selectedTask = useAppStore((state) => state.tasks.find((task) => task.projectId === state.selectedTaskId));
+  const {
+    taskDetailOpen,
+    activeTab,
+    setTaskDetailOpen,
+    setTaskDetailTab,
+    taskDialogOpen,
+    deletingTaskId,
+    settingsOpen,
+  } = useAppStore(useShallow((state) => ({
+    taskDetailOpen: state.taskDetailOpen,
+    activeTab: state.taskDetailTab,
+    setTaskDetailOpen: state.setTaskDetailOpen,
+    setTaskDetailTab: state.setTaskDetailTab,
+    taskDialogOpen: state.taskDialogOpen,
+    deletingTaskId: state.deletingTaskId,
+    settingsOpen: state.settingsOpen,
+  })));
+  const selectedTaskSources = selectedTask?.inputPaths.map(sourceFromPath) ?? [];
+  const selectedTaskLogs = selectedTask
+    ? selectedTask.logs.slice().sort((left, right) => right.timestampMs - left.timestampMs)
+    : [];
+  const selectedStageDefinition = selectedTask ? taskCurrentStage(selectedTask) : undefined;
+  const selectedStage = selectedTask && selectedStageDefinition
+    ? selectedTask.stages[selectedStageDefinition.key]
+    : undefined;
+  const selectedRunningStageDefinition = selectedTask
+    ? STAGES.find(({ key }) => selectedTask.stages[key].status === "running")
+    : undefined;
+  const selectedActiveProgressLog = selectedStageDefinition
+    ? selectedTaskLogs.find((log) => log.kind === "progress" && log.stage === selectedStageDefinition.key && log.finishedAtMs === undefined)
+    : undefined;
+  const onClose = () => setTaskDetailOpen(false);
+
   return (
     <TaskDetailPanel
-      open={open && Boolean(selectedTask)}
+      open={taskDetailOpen && Boolean(selectedTask)}
       title={selectedTask?.name ?? ""}
       description={selectedTask ? <span title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</span> : null}
       leading={selectedTask ? (selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" size="compact" /> : <span className="grid size-10.5 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5"><FileStack /></span>) : null}
       activeTab={activeTab}
-      onTabChange={onTabChange}
+      onTabChange={setTaskDetailTab}
       summary={<TaskSummary
         selectedTask={selectedTask}
         selectedTaskSources={selectedTaskSources}
@@ -229,7 +250,7 @@ export function TaskDetail({
       ) : null}
       onClose={onClose}
       restoreFocusRef={restoreFocusRef}
-      escapeBlocked={escapeBlocked}
+      escapeBlocked={taskDialogOpen || Boolean(deletingTaskId) || settingsOpen}
       onExitComplete={onExitComplete}
     />
   );
