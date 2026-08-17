@@ -19,7 +19,8 @@ use telemetry_parser::util::IMUData;
 
 use crate::fisheye::{LensOpticalOcclusions, OpticalOcclusion};
 
-const PARSER_REVISION: &str = "77a3b810a0e0f64688a90546c5aaf24c9dba00bd";
+const PARSER_REVISION: &str =
+    "77a3b810a0e0f64688a90546c5aaf24c9dba00bd+spherealign-dji-protobuf-v1";
 const NORMALIZED_TELEMETRY_SCHEMA_VERSION: u32 = 2;
 
 /// A quaternion in scalar-first `(w, x, y, z)` order.
@@ -397,6 +398,412 @@ struct DjiProductMeta {
     stream_meta: Option<DjiStreamMeta>,
 }
 
+/// DJI product schemas share a stable protobuf envelope even when a new
+/// camera ships before telemetry-parser has added its generated product
+/// module.  Keep this deliberately partial: prost ignores unknown fields and
+/// we only decode the timestamped fused-attitude fields that the downstream
+/// hand-eye validator can independently verify.
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryProductMeta {
+    #[prost(message, optional, tag = "1")]
+    clip_meta: Option<DjiTelemetryClipMeta>,
+    #[prost(message, optional, tag = "3")]
+    frame_meta: Option<DjiTelemetryFrameMeta>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryClipMeta {
+    #[prost(message, optional, tag = "1")]
+    clip_meta_header: Option<DjiTelemetryClipMetaHeader>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryClipMetaHeader {
+    #[prost(string, tag = "1")]
+    proto_file_name: String,
+    #[prost(string, tag = "10")]
+    product_name: String,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryFrameMeta {
+    #[prost(message, optional, tag = "1")]
+    frame_meta_header: Option<DjiTelemetryFrameMetaHeader>,
+    // Camera-frame fields vary significantly between DJI products. Keep the
+    // payload opaque so an unrelated field-number reuse cannot reject the
+    // entire frame before the IMU message is reached.
+    #[prost(bytes = "vec", optional, tag = "2")]
+    camera_frame_meta: Option<Vec<u8>>,
+    #[prost(message, optional, tag = "3")]
+    imu_frame_meta: Option<DjiTelemetryImuFrameMeta>,
+    #[prost(bytes = "vec", optional, tag = "4")]
+    product_frame_meta: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct DjiTelemetryFrameMetaHeader {
+    #[prost(uint64, tag = "1")]
+    frame_sequence: u64,
+    #[prost(uint64, tag = "2")]
+    frame_timestamp_us: u64,
+    #[prost(uint32, tag = "3")]
+    stream_id: u32,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiOq101CameraFrameMeta {
+    #[prost(message, optional, tag = "9")]
+    camera_attitude: Option<DjiTelemetryQuaternion>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiAvata360CameraFrameMeta {
+    #[prost(message, optional, tag = "5")]
+    camera_attitude: Option<DjiTelemetryQuaternion>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiAvata360ProductFrameMeta {
+    #[prost(message, optional, tag = "4")]
+    gps: Option<DjiTelemetryGpsBasic>,
+    #[prost(message, optional, tag = "5")]
+    relative_altitude: Option<DjiTelemetryRelativeAltitude>,
+    #[prost(message, optional, tag = "14")]
+    stabilization_meta: Option<DjiAvata360StabilizationMeta>,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct DjiTelemetryPositionCoord {
+    #[prost(enumeration = "DjiTelemetryPositionCoordUnit", tag = "1")]
+    unit: i32,
+    #[prost(double, tag = "2")]
+    latitude: f64,
+    #[prost(double, tag = "3")]
+    longitude: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, prost::Enumeration)]
+enum DjiTelemetryPositionCoordUnit {
+    Radians = 0,
+    Degrees = 1,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryGpsBasic {
+    #[prost(message, optional, tag = "1")]
+    coordinates: Option<DjiTelemetryPositionCoord>,
+    #[prost(int32, tag = "2")]
+    altitude_mm: i32,
+    #[prost(int32, tag = "3")]
+    status: i32,
+    #[prost(int32, tag = "4")]
+    altitude_type: i32,
+    #[prost(bool, tag = "5")]
+    has_gps_time: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct DjiTelemetryRelativeAltitude {
+    #[prost(float, tag = "1")]
+    altitude_mm: f32,
+    #[prost(bool, tag = "2")]
+    valid: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct DjiAvata360StabilizationMeta {
+    #[prost(message, optional, tag = "4")]
+    camera_attitude: Option<DjiTelemetryQuaternion>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryImuFrameMeta {
+    // WM169 stores DeviceAttitude here; OQ101 and AVATA360 store
+    // DeviceMultiAttitude. Decode the length-delimited payload after the
+    // product schema is known instead of assigning the wrong generated type.
+    #[prost(bytes = "vec", optional, tag = "2")]
+    attitude_tag2: Option<Vec<u8>>,
+    // WA530 exposes its single-frame fused attitude at field 4.
+    #[prost(bytes = "vec", optional, tag = "4")]
+    attitude_tag4: Option<Vec<u8>>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryDeviceMultiAttitude {
+    #[prost(message, optional, tag = "1")]
+    current_frame: Option<DjiTelemetryDeviceAttitude>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryDeviceAttitude {
+    #[prost(uint32, tag = "1")]
+    timestamp: u32,
+    #[prost(uint32, tag = "2")]
+    vsync: u32,
+    #[prost(message, repeated, tag = "3")]
+    attitude: Vec<DjiTelemetryQuaternion>,
+    #[prost(float, tag = "4")]
+    offset: f32,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct DjiTelemetryQuaternion {
+    #[prost(float, tag = "1")]
+    w: f32,
+    #[prost(float, tag = "2")]
+    x: f32,
+    #[prost(float, tag = "3")]
+    y: f32,
+    #[prost(float, tag = "4")]
+    z: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DjiAttitudeLayout {
+    MultiTag2,
+    SingleTag2,
+    SingleTag4,
+    Auto,
+}
+
+fn dji_attitude_layout(proto_file_name: &str) -> DjiAttitudeLayout {
+    let schema = proto_file_name.to_ascii_lowercase();
+    if schema.contains("oq101") || schema.contains("avata360") {
+        DjiAttitudeLayout::MultiTag2
+    } else if schema.contains("wa530") {
+        DjiAttitudeLayout::SingleTag4
+    } else if schema.contains("wm169") {
+        DjiAttitudeLayout::SingleTag2
+    } else {
+        DjiAttitudeLayout::Auto
+    }
+}
+
+fn decode_dji_camera_attitude(
+    payload: &[u8],
+    proto_file_name: &str,
+) -> Option<DjiTelemetryQuaternion> {
+    let schema = proto_file_name.to_ascii_lowercase();
+    if schema.contains("avata360") {
+        DjiAvata360CameraFrameMeta::decode(payload)
+            .ok()?
+            .camera_attitude
+    } else if schema.contains("oq101") {
+        DjiOq101CameraFrameMeta::decode(payload)
+            .ok()?
+            .camera_attitude
+    } else {
+        DjiAvata360CameraFrameMeta::decode(payload)
+            .ok()
+            .and_then(|camera| camera.camera_attitude)
+            .or_else(|| {
+                DjiOq101CameraFrameMeta::decode(payload)
+                    .ok()
+                    .and_then(|camera| camera.camera_attitude)
+            })
+    }
+}
+
+fn decode_avata360_stabilized_camera_attitude(
+    payload: &[u8],
+) -> Option<DjiTelemetryQuaternion> {
+    DjiAvata360ProductFrameMeta::decode(payload)
+        .ok()?
+        .stabilization_meta?
+        .camera_attitude
+}
+
+fn decode_dji_device_attitude(
+    imu: &DjiTelemetryImuFrameMeta,
+    layout: DjiAttitudeLayout,
+) -> Option<DjiTelemetryDeviceAttitude> {
+    let decode_multi_tag2 = || {
+        let payload = imu.attitude_tag2.as_deref()?;
+        DjiTelemetryDeviceMultiAttitude::decode(payload)
+            .ok()?
+            .current_frame
+    };
+    let decode_single_tag2 = || {
+        DjiTelemetryDeviceAttitude::decode(imu.attitude_tag2.as_deref()?).ok()
+    };
+    let decode_single_tag4 = || {
+        DjiTelemetryDeviceAttitude::decode(imu.attitude_tag4.as_deref()?).ok()
+    };
+    let valid = |value: Option<DjiTelemetryDeviceAttitude>| {
+        value.filter(|attitude| !attitude.attitude.is_empty())
+    };
+
+    match layout {
+        DjiAttitudeLayout::MultiTag2 => valid(decode_multi_tag2()),
+        DjiAttitudeLayout::SingleTag2 => valid(decode_single_tag2()),
+        DjiAttitudeLayout::SingleTag4 => valid(decode_single_tag4()),
+        DjiAttitudeLayout::Auto => valid(decode_multi_tag2())
+            .or_else(|| valid(decode_single_tag4()))
+            .or_else(|| valid(decode_single_tag2())),
+    }
+}
+
+fn multiply_quaternions(left: Quaternion, right: Quaternion) -> Quaternion {
+    let [lw, lx, ly, lz] = left;
+    let [rw, rx, ry, rz] = right;
+    [
+        lw * rw - lx * rx - ly * ry - lz * rz,
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+    ]
+}
+
+/// Match telemetry-parser's DJI normalized-attitude convention. This is still
+/// not a COLMAP camera qvec; rotational hand-eye calibration remains mandatory.
+fn normalize_dji_attitude(value: DjiTelemetryQuaternion) -> Option<Quaternion> {
+    let raw = [
+        f64::from(value.w),
+        f64::from(value.x),
+        f64::from(value.y),
+        f64::from(value.z),
+    ];
+    let camera_basis = multiply_quaternions(raw, [0.5, -0.5, -0.5, 0.5]);
+    normalize_quaternion(multiply_quaternions([0.0, 0.0, 1.0, 0.0], camera_basis))
+}
+
+#[derive(Debug)]
+struct DjiFallbackAttitude {
+    proto_file_name: String,
+    camera_model: Option<String>,
+    attitude_source: String,
+    samples: Vec<QuaternionSample>,
+}
+
+fn parse_dji_fused_attitude_fallback(
+    input_path: &Path,
+    source_size: usize,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<Option<DjiFallbackAttitude>, String> {
+    let mut stream = fs::File::open(input_path).map_err(|error| error.to_string())?;
+    let mut proto_file_name = String::new();
+    let mut camera_model = None;
+    let mut attitude_source = String::new();
+    let mut samples = Vec::new();
+    let mut first_frame_timestamp_us = None;
+
+    telemetry_parser::util::get_metadata_track_samples(
+        &mut stream,
+        source_size,
+        true,
+        |info, data, _, _| {
+            let Ok(meta) = DjiTelemetryProductMeta::decode(data) else {
+                return;
+            };
+            if let Some(header) = meta
+                .clip_meta
+                .and_then(|clip| clip.clip_meta_header)
+            {
+                if !header.proto_file_name.trim().is_empty() {
+                    proto_file_name = header.proto_file_name;
+                }
+                if !header.product_name.trim().is_empty() {
+                    camera_model = Some(header.product_name);
+                }
+            }
+            let Some(frame) = meta.frame_meta else {
+                return;
+            };
+            let frame_timestamp_ms = frame
+                .frame_meta_header
+                .map(|header| {
+                    let first = *first_frame_timestamp_us
+                        .get_or_insert(header.frame_timestamp_us);
+                    (i128::from(header.frame_timestamp_us) - i128::from(first)) as f64 / 1000.0
+                })
+                .unwrap_or(info.timestamp_ms);
+            let layout = dji_attitude_layout(&proto_file_name);
+            let camera_attitude = frame
+                .camera_frame_meta
+                .as_deref()
+                .and_then(|payload| decode_dji_camera_attitude(payload, &proto_file_name));
+            let stabilized_camera_attitude = frame
+                .product_frame_meta
+                .as_deref()
+                .and_then(decode_avata360_stabilized_camera_attitude);
+            // Avata360 carries a body/IMU high-rate attitude and a distinct
+            // camera attitude. A fixed hand-eye transform cannot absorb gimbal
+            // motion, so the per-frame camera attitude must take precedence.
+            if proto_file_name.to_ascii_lowercase().contains("avata360")
+                && stabilized_camera_attitude.is_some()
+            {
+                let quaternion = stabilized_camera_attitude.and_then(normalize_dji_attitude);
+                if let Some(quaternion) = quaternion {
+                    attitude_source =
+                        "product-frame/stabilization-meta/camera-attitude".to_owned();
+                    samples.push(QuaternionSample {
+                        timestamp_ms: frame_timestamp_ms,
+                        w: quaternion[0],
+                        x: quaternion[1],
+                        y: quaternion[2],
+                        z: quaternion[3],
+                    });
+                }
+            } else if let Some(attitude) = frame
+                .imu_frame_meta
+                .as_ref()
+                .and_then(|imu| decode_dji_device_attitude(imu, layout))
+            {
+                let count = attitude.attitude.len();
+                let duration_ms = if info.duration_ms.is_finite() && info.duration_ms > 0.0 {
+                    info.duration_ms
+                } else {
+                    0.0
+                };
+                for (index, value) in attitude.attitude.into_iter().enumerate() {
+                    let Some(quaternion) = normalize_dji_attitude(value) else {
+                        continue;
+                    };
+                    let offset = (index as f64 - f64::from(attitude.offset))
+                        / count.max(1) as f64
+                        * duration_ms;
+                    attitude_source = "imu-frame/fused-attitude".to_owned();
+                    samples.push(QuaternionSample {
+                        timestamp_ms: frame_timestamp_ms + offset,
+                        w: quaternion[0],
+                        x: quaternion[1],
+                        y: quaternion[2],
+                        z: quaternion[3],
+                    });
+                }
+            } else if let Some(value) = camera_attitude {
+                if let Some(quaternion) = normalize_dji_attitude(value) {
+                    attitude_source = "camera-frame/camera-attitude".to_owned();
+                    samples.push(QuaternionSample {
+                        timestamp_ms: frame_timestamp_ms,
+                        w: quaternion[0],
+                        x: quaternion[1],
+                        y: quaternion[2],
+                        z: quaternion[3],
+                    });
+                }
+            }
+        },
+        cancel_flag.clone(),
+    )
+    .map_err(|error| error.to_string())?;
+    if cancel_flag.load(Ordering::Acquire) {
+        return Err("cancelled".to_owned());
+    }
+
+    if samples.is_empty() && proto_file_name.trim().is_empty() {
+        return Ok(None);
+    }
+    samples.sort_by(|left, right| left.timestamp_ms.total_cmp(&right.timestamp_ms));
+    samples.dedup_by(|left, right| left.timestamp_ms == right.timestamp_ms);
+    Ok(Some(DjiFallbackAttitude {
+        proto_file_name,
+        camera_model,
+        attitude_source,
+        samples,
+    }))
+}
+
 #[derive(Clone, PartialEq, Message)]
 struct DjiStreamMeta {
     #[prost(message, optional, tag = "6")]
@@ -527,8 +934,11 @@ pub fn parse_and_write(
         return Err("cancelled".to_owned());
     }
 
-    let normalized_imu =
+    let mut normalized_imu =
         telemetry_parser::util::normalized_imu(&input, None).map_err(|error| error.to_string())?;
+    let mut parser_name = input.parser_name().to_owned();
+    let mut camera_model = input.camera_model().cloned();
+    let mut fallback_proto = None;
     let mut fused_attitude = Vec::new();
     let mut invalid_fused_attitude_samples = 0usize;
     for sample in input.samples.iter().flatten() {
@@ -561,13 +971,42 @@ pub fn parse_and_write(
             }
         }
     }
+    let dji_fallback = if input.camera_type().eq_ignore_ascii_case("DJI") {
+        parse_dji_fused_attitude_fallback(input_path, size, cancel_flag.clone())?
+    } else {
+        None
+    };
+    if let Some(fallback) = dji_fallback {
+        let schema = fallback.proto_file_name.to_ascii_lowercase();
+        let upstream_schema_supported = schema.contains("oq101")
+            || schema.contains("wm169")
+            || schema.contains("wa530");
+        if !upstream_schema_supported || (normalized_imu.is_empty() && fused_attitude.is_empty()) {
+            // telemetry-parser's pinned DJI dispatcher defaults unknown product
+            // schemas to WM169. Never accept that ambiguous result: use the
+            // schema-aware partial decoder and let hand-eye validation decide
+            // whether its attitude is safe for COLMAP.
+            if !upstream_schema_supported {
+                normalized_imu.clear();
+            }
+            parser_name = format!(
+                "spherealign-dji-protobuf:{}:{}",
+                fallback.proto_file_name, fallback.attitude_source
+            );
+            fallback_proto = Some(fallback.proto_file_name);
+            camera_model = fallback.camera_model.or(camera_model);
+            fused_attitude = fallback.samples;
+        }
+    }
     if normalized_imu.is_empty() && fused_attitude.is_empty() {
-        return Err("supported container was detected, but it contained no usable IMU or fused-attitude samples".to_owned());
+        return Err(
+            "supported container was detected, but it contained no usable IMU or fused-attitude samples; no compatible DJI protobuf attitude layout was found"
+                .to_owned(),
+        );
     }
 
     let attitude_diagnostics = validate_attitude_samples(&fused_attitude);
     let fused_attitude_rate_hz = attitude_diagnostics.rate_hz;
-    let camera_model = input.camera_model().cloned();
     let normalized_imu_sample_count = normalized_imu.len();
     let mut warnings = vec![
         "Raw OSV data streams remain the source of truth.".to_owned(),
@@ -576,6 +1015,11 @@ pub fn parse_and_write(
     ];
     if invalid_fused_attitude_samples > 0 {
         warnings.push("Invalid fused-attitude quaternion samples were dropped.".to_owned());
+    }
+    if let Some(proto) = fallback_proto {
+        warnings.push(format!(
+            "Fused attitude was decoded through SphereAlign's schema-aware DJI protobuf fallback ({proto}); rotational hand-eye calibration is still required before COLMAP use."
+        ));
     }
     if !attitude_diagnostics.is_monotonic() {
         warnings.push(
@@ -591,7 +1035,7 @@ pub fn parse_and_write(
     }
     let normalized = NormalizedTelemetry {
         schema_version: NORMALIZED_TELEMETRY_SCHEMA_VERSION,
-        parser: input.parser_name().to_owned(),
+        parser: parser_name,
         parser_revision: PARSER_REVISION.to_owned(),
         camera_type: input.camera_type(),
         camera_model: camera_model.clone(),
@@ -886,6 +1330,77 @@ mod tests {
     }
 
     #[test]
+    fn dji_schema_dispatch_covers_known_product_families() {
+        assert_eq!(
+            dji_attitude_layout("dvtm_oq101.proto"),
+            DjiAttitudeLayout::MultiTag2
+        );
+        assert_eq!(
+            dji_attitude_layout("dvtm_AVATA360.proto"),
+            DjiAttitudeLayout::MultiTag2
+        );
+        assert_eq!(
+            dji_attitude_layout("dvtm_eagle4_wa530.proto"),
+            DjiAttitudeLayout::SingleTag4
+        );
+        assert_eq!(
+            dji_attitude_layout("dvtm_wm169.proto"),
+            DjiAttitudeLayout::SingleTag2
+        );
+        assert_eq!(
+            dji_attitude_layout("dvtm_future_camera.proto"),
+            DjiAttitudeLayout::Auto
+        );
+    }
+
+    #[test]
+    fn dji_multi_attitude_payload_decodes_without_product_generated_code() {
+        let expected = DjiTelemetryQuaternion {
+            w: 1.0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let payload = DjiTelemetryDeviceMultiAttitude {
+            current_frame: Some(DjiTelemetryDeviceAttitude {
+                timestamp: 1,
+                vsync: 2,
+                attitude: vec![expected],
+                offset: 0.0,
+            }),
+        }
+        .encode_to_vec();
+        let imu = DjiTelemetryImuFrameMeta {
+            attitude_tag2: Some(payload),
+            attitude_tag4: None,
+        };
+        let decoded = decode_dji_device_attitude(&imu, DjiAttitudeLayout::MultiTag2).unwrap();
+        assert_eq!(decoded.attitude, vec![expected]);
+    }
+
+    #[test]
+    fn avata360_stabilized_camera_attitude_decodes_from_product_frame() {
+        let expected = DjiTelemetryQuaternion {
+            w: 0.5,
+            x: -0.5,
+            y: 0.5,
+            z: -0.5,
+        };
+        let payload = DjiAvata360ProductFrameMeta {
+            gps: None,
+            relative_altitude: None,
+            stabilization_meta: Some(DjiAvata360StabilizationMeta {
+                camera_attitude: Some(expected),
+            }),
+        }
+        .encode_to_vec();
+        assert_eq!(
+            decode_avata360_stabilized_camera_attitude(&payload),
+            Some(expected)
+        );
+    }
+
+    #[test]
     #[ignore = "requires GS360_TEST_OSV"]
     fn parses_real_osmo_optical_occlusions() {
         let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
@@ -893,22 +1408,221 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires GS360_TEST_OSV to point to a real supported capture"]
-    fn parses_real_osmo_360_capture_and_resumes() {
+    #[ignore = "requires GS360_TEST_OSV; diagnostic for new DJI product schemas"]
+    fn inspects_real_dji_proto_layout() {
+        fn read_varint(data: &[u8], cursor: &mut usize) -> Option<u64> {
+            let mut value = 0u64;
+            for shift in (0..64).step_by(7) {
+                let byte = *data.get(*cursor)?;
+                *cursor += 1;
+                value |= u64::from(byte & 0x7f) << shift;
+                if byte & 0x80 == 0 {
+                    return Some(value);
+                }
+            }
+            None
+        }
+
+        fn collect_quaternion_paths(
+            data: &[u8],
+            prefix: &str,
+            depth: usize,
+            paths: &mut std::collections::BTreeMap<String, usize>,
+        ) {
+            if depth == 0 {
+                return;
+            }
+            let mut cursor = 0usize;
+            while cursor < data.len() {
+                let Some(key) = read_varint(data, &mut cursor) else {
+                    return;
+                };
+                let field = (key >> 3) as u32;
+                match key & 7 {
+                    0 => {
+                        if read_varint(data, &mut cursor).is_none() {
+                            return;
+                        }
+                    }
+                    1 => cursor = cursor.saturating_add(8),
+                    2 => {
+                        let Some(length) = read_varint(data, &mut cursor) else {
+                            return;
+                        };
+                        let end = cursor.saturating_add(length as usize);
+                        let Some(payload) = data.get(cursor..end) else {
+                            return;
+                        };
+                        let path = if prefix.is_empty() {
+                            field.to_string()
+                        } else {
+                            format!("{prefix}.{field}")
+                        };
+                        if let Ok(value) = DjiTelemetryQuaternion::decode(payload) {
+                            let norm = (value.w * value.w
+                                + value.x * value.x
+                                + value.y * value.y
+                                + value.z * value.z)
+                                .sqrt();
+                            if norm.is_finite() && (0.9..=1.1).contains(&norm) {
+                                *paths.entry(path.clone()).or_default() += 1;
+                            }
+                        }
+                        collect_quaternion_paths(payload, &path, depth - 1, paths);
+                        cursor = end;
+                    }
+                    5 => cursor = cursor.saturating_add(4),
+                    _ => return,
+                }
+            }
+        }
+
+        let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
+        let mut stream = fs::File::open(&source).unwrap();
+        let size = stream.metadata().unwrap().len() as usize;
+        let mut clip_count = 0usize;
+        let mut frame_count = 0usize;
+        let mut callback_count = 0usize;
+        let mut decode_error_count = 0usize;
+        let mut imu_tag2_count = 0usize;
+        let mut imu_tag4_count = 0usize;
+        let mut camera_attitude_count = 0usize;
+        let mut gps_count = 0usize;
+        let mut relative_altitude_count = 0usize;
+        let mut camera_quaternion_paths = std::collections::BTreeMap::new();
+        telemetry_parser::util::get_metadata_track_samples(
+            &mut stream,
+            size,
+            true,
+            |_, data, _, _| {
+                callback_count += 1;
+                collect_quaternion_paths(
+                    data,
+                    "root",
+                    6,
+                    &mut camera_quaternion_paths,
+                );
+                let meta = match DjiTelemetryProductMeta::decode(data) {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        decode_error_count += 1;
+                        if decode_error_count == 1 {
+                            println!("first decode error={error}; bytes={:02x?}", &data[..data.len().min(32)]);
+                        }
+                        return;
+                    }
+                };
+                if let Some(header) = meta.clip_meta.and_then(|clip| clip.clip_meta_header) {
+                    clip_count += 1;
+                    println!("schema={} model={}", header.proto_file_name, header.product_name);
+                }
+                if let Some(frame) = meta.frame_meta {
+                    frame_count += 1;
+                    if let Some(camera) = frame.camera_frame_meta {
+                        collect_quaternion_paths(
+                            &camera,
+                            "camera",
+                            3,
+                            &mut camera_quaternion_paths,
+                        );
+                        camera_attitude_count += usize::from(
+                            decode_dji_camera_attitude(camera.as_slice(), "dvtm_AVATA360.proto")
+                                .is_some(),
+                        );
+                    }
+                    if let Some(imu) = frame.imu_frame_meta {
+                        imu_tag2_count += usize::from(imu.attitude_tag2.is_some());
+                        imu_tag4_count += usize::from(imu.attitude_tag4.is_some());
+                    }
+                    if let Some(product) = frame.product_frame_meta {
+                        if let Ok(product) = DjiAvata360ProductFrameMeta::decode(product.as_slice())
+                        {
+                            if let Some(gps) = product.gps {
+                                if gps_count == 0 {
+                                    println!(
+                                        "first gps coordinates={:?} altitudeMm={} status={} altitudeType={} hasTime={}",
+                                        gps.coordinates.map(|coordinates| (
+                                            coordinates.unit,
+                                            coordinates.latitude,
+                                            coordinates.longitude
+                                        )),
+                                        gps.altitude_mm,
+                                        gps.status,
+                                        gps.altitude_type,
+                                        gps.has_gps_time
+                                    );
+                                }
+                                gps_count += 1;
+                            }
+                            if let Some(relative) = product.relative_altitude {
+                                if relative_altitude_count == 0 {
+                                    println!(
+                                        "first relative altitude={}mm valid={}",
+                                        relative.altitude_mm, relative.valid
+                                    );
+                                }
+                                relative_altitude_count += 1;
+                            }
+                        }
+                    }
+                }
+            },
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        println!(
+            "callbacks={callback_count} decodeErrors={decode_error_count} clip={clip_count} frame={frame_count} imu2={imu_tag2_count} imu4={imu_tag4_count} cameraQ={camera_attitude_count} gps={gps_count} relativeAltitude={relative_altitude_count}"
+        );
+        println!("camera quaternion paths={camera_quaternion_paths:?}");
+        assert!(clip_count > 0);
+        assert!(frame_count > 0);
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_OSV to point to a real supported DJI capture"]
+    fn parses_real_dji_capture_and_resumes() {
         let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
         let temp = tempfile::tempdir().unwrap();
         let output = temp.path().join("telemetry.json");
         let first = parse_and_write(&source, &output, Arc::new(AtomicBool::new(false))).unwrap();
-        assert_eq!(first.camera_model.as_deref(), Some("Osmo 360"));
+        assert!(first
+            .camera_model
+            .as_deref()
+            .is_some_and(|model| !model.is_empty()));
         assert!(first.fused_attitude_sample_count > 0);
+        let normalized = read_normalized_telemetry(&output).unwrap();
+        if normalized
+            .camera_model
+            .as_deref()
+            .is_some_and(|model| model.contains("Avata360"))
+        {
+            assert!(normalized.parser.contains("dvtm_AVATA360.proto"));
+            assert!(normalized
+                .parser
+                .contains("stabilization-meta/camera-attitude"));
+        }
+        println!(
+            "first attitude={:?}, last attitude={:?}",
+            normalized.fused_attitude.first(),
+            normalized.fused_attitude.last()
+        );
+        assert_eq!(normalized.attitude_diagnostics.non_monotonic_timestamp_count, 0);
+        assert_eq!(normalized.attitude_diagnostics.invalid_quaternion_count, 0);
+        assert!(normalized
+            .attitude_diagnostics
+            .coverage_duration_ms
+            .is_some_and(|duration| duration > 1_000.0));
         let second = parse_and_write(&source, &output, Arc::new(AtomicBool::new(false))).unwrap();
         assert_eq!(
             first.fused_attitude_sample_count,
             second.fused_attitude_sample_count
         );
         println!(
-            "normalized IMU: {}, fused attitude: {}",
-            first.normalized_imu_sample_count, first.fused_attitude_sample_count
+            "model: {:?}, normalized IMU: {}, fused attitude: {}, diagnostics: {:?}",
+            first.camera_model,
+            first.normalized_imu_sample_count,
+            first.fused_attitude_sample_count,
+            normalized.attitude_diagnostics
         );
     }
 }

@@ -2,6 +2,21 @@
 
 SphereAlign 不會把 DJI quaternion 直接寫成 COLMAP `qvec`。流程先使用不依賴座標校正的相對旋轉縮小問題，再用成功的視覺模型估時間偏移與 rotational hand-eye；只有通過驗證的結果才可建立 gravity prior 或進入 global mapper。
 
+## DJI schema 解碼
+
+標準化 telemetry 先交給鎖定版本的 `telemetry-parser`。若容器可辨識為 DJI、但上游尚未為新產品產生專用 protobuf module，SphereAlign 會以 DJI 共通 envelope 做部分解碼，只讀取 clip header、frame timestamp 與姿態欄位，其他未知欄位一律忽略。已知分派如下：
+
+- `dvtm_oq101.proto`：`DeviceMultiAttitude.current_frame`，用於 Osmo 360。
+- `dvtm_wm169.proto`：field 2 的 `DeviceAttitude`。
+- `dvtm_eagle4_wa530.proto`：field 4 的 single-frame `DeviceAttitude`。
+- `dvtm_AVATA360.proto`：優先使用 product-frame stabilization metadata 內逐影格 camera attitude；高頻 body/IMU fused attitude 只作 fallback，避免把雲台相對機身運動誤當成固定 hand-eye transform。
+
+未知產品不會再默認成 WM169。只有 wire layout 能解出有限、單位化且時間軸有效的 quaternion 才會輸出；輸出的 `parser` 欄位會記錄實際 protobuf schema 與 attitude source。這個 fallback 只解碼姿態，不代表已驗證 DJI 座標系；後續仍必須通過時間相關、rotational hand-eye、激發、axis diversity 與 residual gates，失敗時不得寫入 COLMAP gravity prior。
+
+明確辨識為 DJI 無人機的 telemetry 使用有界的 `dji-drone` 校正 profile：hand-eye RMS residual 上限由一般相機的 8° 放寬為 15°，以容納飛行振動、rolling shutter、雲台／機身差異與較稀疏的視覺姿態。其餘最低相關、樣本數、旋轉激發、axis diversity、候選模型防退步及最終 gravity alignment gate 不會放寬；實際 profile 與門檻會寫入 `metadata/imu_calibration.json`。
+
+DJI drone schema 也可能攜帶 WGS-84 GPS、海拔、狀態及相對起飛高度。現階段 normalized telemetry 尚未輸出這些欄位，因此 COLMAP position prior 仍保持 NaN；在 GPS decoder 驗證時間戳、座標單位、高度類型、fix 狀態與 camera/body lever arm 前，不會把未知定位資料寫入重建。GPS 通過驗證後適合約束軌跡方向、尺度與全域位置，但不取代 IMU 的高頻姿態約束。
+
 ## 執行順序
 
 1. Extract 以 FFmpeg 真實 PTS 對齊 fused attitude，使用相對角度、32×32 雙鏡 gradient novelty、最小／最大時間間隔挑選 keyframe。telemetry 缺失時保留 visual novelty 與 max-gap fallback。

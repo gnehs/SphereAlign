@@ -5567,6 +5567,10 @@ struct SourceImuCalibration {
     source_id: String,
     visual_model: String,
     telemetry_sha256: String,
+    #[serde(default = "standard_imu_calibration_profile")]
+    calibration_profile: String,
+    #[serde(default = "standard_max_hand_eye_residual_deg")]
+    max_hand_eye_residual_deg: f64,
     visual_sample_count: usize,
     telemetry_sample_count: usize,
     model: crate::imu_calibration::CalibrationModel,
@@ -5589,6 +5593,41 @@ struct ImuCalibrationBundle {
     valid_source_count: usize,
     source_count: usize,
     sources: Vec<SourceImuCalibration>,
+}
+
+const DJI_DRONE_CALIBRATION_PROFILE: &str = "dji-drone";
+const STANDARD_IMU_CALIBRATION_PROFILE: &str = "standard";
+const DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG: f64 = 15.0;
+
+fn standard_imu_calibration_profile() -> String {
+    STANDARD_IMU_CALIBRATION_PROFILE.to_owned()
+}
+
+fn standard_max_hand_eye_residual_deg() -> f64 {
+    crate::imu_calibration::CalibrationConfig::default().max_residual_deg
+}
+
+fn dji_drone_telemetry(camera_model: Option<&str>, parser: &str) -> bool {
+    let model = camera_model.unwrap_or_default().to_ascii_lowercase();
+    let parser = parser.to_ascii_lowercase();
+    model.contains("avata")
+        || model.contains("dji neo")
+        || model.contains("air unit")
+        || parser.contains("dvtm_avata360.proto")
+        || parser.contains("dvtm_eagle4_wa530.proto")
+}
+
+fn imu_calibration_config(
+    camera_model: Option<&str>,
+    parser: &str,
+) -> (crate::imu_calibration::CalibrationConfig, &'static str) {
+    let mut config = crate::imu_calibration::CalibrationConfig::default();
+    if dji_drone_telemetry(camera_model, parser) {
+        config.max_residual_deg = DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG;
+        (config, DJI_DRONE_CALIBRATION_PROFILE)
+    } else {
+        (config, STANDARD_IMU_CALIBRATION_PROFILE)
+    }
 }
 
 fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
@@ -5705,6 +5744,8 @@ fn calibrate_imu_sources(
                     source_id,
                     visual_model,
                     telemetry_sha256,
+                    calibration_profile: standard_imu_calibration_profile(),
+                    max_hand_eye_residual_deg: standard_max_hand_eye_residual_deg(),
                     visual_sample_count,
                     telemetry_sample_count: 0,
                     model: crate::imu_calibration::CalibrationModel::invalid(error),
@@ -5714,13 +5755,17 @@ fn calibrate_imu_sources(
             }
         };
         let telemetry_sample_count = normalized.fused_attitude.len();
+        let (calibration_config, calibration_profile) = imu_calibration_config(
+            normalized.camera_model.as_deref(),
+            normalized.parser.as_str(),
+        );
         let candidates = visual_candidates
             .into_iter()
             .map(|(visual_model, visual_samples)| {
                 let model = crate::imu_calibration::estimate_calibration(
                     &visual_samples,
                     &normalized.fused_attitude,
-                    crate::imu_calibration::CalibrationConfig::default(),
+                    calibration_config,
                 )
                 .unwrap_or_else(|error| {
                     crate::imu_calibration::CalibrationModel::invalid(error.to_string())
@@ -5756,6 +5801,8 @@ fn calibrate_imu_sources(
             source_id,
             visual_model,
             telemetry_sha256,
+            calibration_profile: calibration_profile.to_owned(),
+            max_hand_eye_residual_deg: calibration_config.max_residual_deg,
             visual_sample_count,
             telemetry_sample_count,
             model,
@@ -8869,7 +8916,8 @@ fn run_align(
 mod tests {
     use super::{
         balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
-        calibrate_focal_before_bootstrap, calibrated_pair_refresh_requires_fail_closed,
+        calibrate_focal_before_bootstrap, calibrate_imu_sources,
+        calibrated_pair_refresh_requires_fail_closed,
         can_reuse_align_result, can_reuse_feature_database, candidate_ffmpeg_args,
         candidate_image_names, cleanup_align_artifacts, cleanup_obsolete_candidate_cache,
         cleanup_stale_full_res_dirs, colmap_image_pair_id, colmap_quality_profile,
@@ -8900,7 +8948,8 @@ mod tests {
         RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
         RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
         CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
-        CANDIDATE_STREAM_WIDTH,
+        CANDIDATE_STREAM_WIDTH, DJI_DRONE_CALIBRATION_PROFILE,
+        DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG, STANDARD_IMU_CALIBRATION_PROFILE,
     };
     use crate::color;
     use crate::color::ValidatedLut;
@@ -8913,6 +8962,108 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
     use tempfile::TempDir;
+
+    #[test]
+    #[ignore = "requires GS360_TEST_OSV and GS360_TEST_PROJECT"]
+    fn audits_real_dji_telemetry_against_existing_visual_model() {
+        let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
+        let project =
+            PathBuf::from(std::env::var("GS360_TEST_PROJECT").expect("GS360_TEST_PROJECT"));
+        let temp = TempDir::new().unwrap();
+        let metadata = temp.path().join("metadata");
+        fs::create_dir_all(&metadata).unwrap();
+        fs::copy(
+            project.join("metadata/source000_selection.json"),
+            metadata.join("source000_selection.json"),
+        )
+        .unwrap();
+        fs::copy(
+            project.join("metadata/source000_frame_motion.json"),
+            metadata.join("source000_frame_motion.json"),
+        )
+        .unwrap();
+        fs::copy(project.join("rig_config.json"), temp.path().join("rig_config.json")).unwrap();
+        crate::telemetry::parse_and_write(
+            &source,
+            &metadata.join("source000_telemetry.json"),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let model = crate::reconstruction_benchmark::read_colmap_text_model(
+            &project.join("metadata/final-model-text"),
+        )
+        .unwrap();
+        let visual = super::visual_samples_by_source(temp.path(), &model)
+            .remove("source000")
+            .unwrap();
+        let normalized = crate::telemetry::read_normalized_telemetry(
+            &metadata.join("source000_telemetry.json"),
+        )
+        .unwrap();
+        let relaxed = crate::imu_calibration::estimate_calibration(
+            &visual,
+            &normalized.fused_attitude,
+            crate::imu_calibration::CalibrationConfig {
+                max_residual_deg: 180.0,
+                ..crate::imu_calibration::CalibrationConfig::default()
+            },
+        )
+        .unwrap();
+        println!(
+            "relaxed calibration={}",
+            serde_json::to_string_pretty(&relaxed).unwrap()
+        );
+        let calibration =
+            calibrate_imu_sources(temp.path(), &[("accepted-model".to_owned(), model)]).unwrap();
+        println!("{}", serde_json::to_string_pretty(&calibration).unwrap());
+        assert_eq!(calibration.source_count, 1);
+        assert_eq!(calibration.sources[0].telemetry_sample_count, 8_146);
+        assert_eq!(calibration.valid_source_count, 1);
+        assert_eq!(
+            calibration.sources[0].calibration_profile,
+            DJI_DRONE_CALIBRATION_PROFILE
+        );
+        assert_eq!(
+            calibration.sources[0].max_hand_eye_residual_deg,
+            DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG
+        );
+        assert!(calibration.sources[0].model.valid);
+        assert!(calibration.sources[0]
+            .model
+            .residual_deg
+            .is_some_and(|residual| residual <= DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG));
+    }
+
+    #[test]
+    fn drone_telemetry_uses_bounded_hand_eye_tolerance() {
+        let (avata, avata_profile) =
+            super::imu_calibration_config(Some("DJI Avata360"), "spherealign-dji-protobuf");
+        assert_eq!(avata_profile, DJI_DRONE_CALIBRATION_PROFILE);
+        assert_eq!(
+            avata.max_residual_deg,
+            DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG
+        );
+
+        let (wa530, wa530_profile) = super::imu_calibration_config(
+            None,
+            "spherealign-dji-protobuf:dvtm_eagle4_wa530.proto",
+        );
+        assert_eq!(wa530_profile, DJI_DRONE_CALIBRATION_PROFILE);
+        assert_eq!(
+            wa530.max_residual_deg,
+            DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG
+        );
+
+        let (osmo, osmo_profile) = super::imu_calibration_config(
+            Some("DJI Osmo 360"),
+            "spherealign-dji-protobuf:dvtm_oq101.proto",
+        );
+        assert_eq!(osmo_profile, STANDARD_IMU_CALIBRATION_PROFILE);
+        assert_eq!(
+            osmo.max_residual_deg,
+            crate::imu_calibration::CalibrationConfig::default().max_residual_deg
+        );
+    }
 
     fn write_sparse_identity_fixture(model: &Path, marker: &str) {
         fs::create_dir_all(model).unwrap();
