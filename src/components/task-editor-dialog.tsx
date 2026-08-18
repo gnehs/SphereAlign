@@ -153,7 +153,7 @@ export function TaskEditorDialog({
           </div>
         </div>
 
-        <DialogFooter className="border-t px-5 py-4">
+        <DialogFooter className="mx-0 mb-0 border-t px-5 py-4">
           <DialogClose render={<Button variant="outline" />}><Trans>Cancel</Trans></DialogClose>
           <Button onClick={() => void onSubmit()} disabled={!selectedSources.length || lutPathInvalid}>{editingTaskId ? <Trans context="task action" comment="Save changes to a queued task.">Save changes</Trans> : <Trans context="task action" comment="Create the reconstruction task.">Create task</Trans>}</Button>
         </DialogFooter>
