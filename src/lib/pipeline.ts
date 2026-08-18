@@ -758,6 +758,7 @@ function localiseUserMessage(value: string): string {
     .replace(/影格擷取需要系統已安裝 FFmpeg 與 ffprobe/g, () => t`Frame extraction requires both system FFmpeg and ffprobe`)
     .replace(/找不到 COLMAP；對齊階段會維持可繼續的待執行狀態/g, () => t`COLMAP was not found; alignment will remain pending and resumable`)
     .replace(/FFmpeg 候選影格已安全回退至 CPU 軟體解碼/g, () => t`FFmpeg candidate frames fell back safely to CPU software decoding`)
+    .replace(/COLMAP\.bat 無法直接使用；請選擇官方可攜版 bin\\COLMAP\.exe/g, () => t`COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build`)
     .replace(/指定的 COLMAP 路徑不存在或不是檔案/g, () => t`The selected COLMAP path does not exist or is not a file`)
     .replace(/指定的 COLMAP 未在 version\/help banner 標示 CUDA；將使用 CPU 特徵擷取與配對/g, () => t`The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used`)
     .replace(/未偵測到可供 COLMAP 使用的 NVIDIA GPU；將使用 CPU/g, () => t`No NVIDIA GPU usable by COLMAP was detected; the CPU will be used`)

@@ -487,7 +487,7 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
       const result = await openDialog({
         directory: false,
         multiple: false,
-        filters: [{ name: t`COLMAP launcher`, extensions: ["bat", "exe", "cmd"] }],
+        filters: [{ name: t`COLMAP executable`, extensions: ["exe"] }],
       });
       if (typeof result === "string") {
         setColmapPath(result);

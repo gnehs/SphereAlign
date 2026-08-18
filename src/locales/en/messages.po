@@ -1206,8 +1206,8 @@ msgid "For example: mountain route / 2026-08"
 msgstr "For example: mountain route / 2026-08"
 
 #: src/components/settings-sheet.tsx:166
-msgid "For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe."
-msgstr "For the official Windows portable build, select COLMAP.bat in the root folder; you can also specify a self-built colmap.exe."
+msgid "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
+msgstr "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
 
 #: src/lib/pipeline.ts:575
 msgid "Frame extraction"
@@ -2492,6 +2492,9 @@ msgstr "The selected COLMAP is missing feature_extractor, matches_importer, mapp
 #: src/lib/pipeline.ts:761
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "The selected COLMAP path does not exist or is not a file"
+
+msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
+msgstr "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
 #: src/lib/pipeline.ts:520

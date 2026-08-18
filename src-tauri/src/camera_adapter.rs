@@ -47,6 +47,35 @@ pub struct CaptureBundle {
     pub rig_extrinsics: bool,
 }
 
+/// A camera-family initialization pose used only when the two physical lenses
+/// cannot bootstrap independently. This is deliberately separate from
+/// `rig_extrinsics`: it is a nominal bootstrap prior rather than factory
+/// calibration. The unobservable zero baseline must remain fixed during the
+/// initial reconstruction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RigBootstrapPoseHint {
+    pub cam_from_rig_rotation: [f64; 4],
+    pub cam_from_rig_translation: [f64; 3],
+    pub provenance: &'static str,
+}
+
+/// Return the nominal back-to-back layout defined by an adapter. Insta360's
+/// native dual-fisheye tracks use opposite optical axes with the reference
+/// lens convention represented by a 180-degree Y rotation. The physical lens
+/// baseline is intentionally initialized at zero because monocular SfM has no
+/// metric scale at this point.
+pub fn rig_bootstrap_pose_hint(adapter: &str) -> Option<RigBootstrapPoseHint> {
+    matches!(
+        adapter,
+        "Insta360DualTrackAdapter" | "Insta360PairedInsvAdapter"
+    )
+    .then_some(RigBootstrapPoseHint {
+        cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
+        cam_from_rig_translation: [0.0, 0.0, 0.0],
+        provenance: "insta360-adapter-nominal-back-to-back-v1",
+    })
+}
+
 impl CaptureBundle {
     pub fn primary_path(&self) -> &Path {
         &self.lenses[0].source_path
@@ -428,6 +457,24 @@ mod tests {
         assert_eq!(captures[0].adapter, "Insta360DualTrackAdapter");
         assert_eq!(captures[0].lenses[0].source_path, path);
         assert_eq!(captures[0].lenses[1].ffmpeg_stream_index, 1);
+    }
+
+    #[test]
+    fn insta360_adapters_expose_only_a_nominal_bootstrap_pose() {
+        let expected = RigBootstrapPoseHint {
+            cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
+            cam_from_rig_translation: [0.0, 0.0, 0.0],
+            provenance: "insta360-adapter-nominal-back-to-back-v1",
+        };
+        assert_eq!(
+            rig_bootstrap_pose_hint("Insta360DualTrackAdapter"),
+            Some(expected)
+        );
+        assert_eq!(
+            rig_bootstrap_pose_hint("Insta360PairedInsvAdapter"),
+            Some(expected)
+        );
+        assert_eq!(rig_bootstrap_pose_hint("DjiOsmo360Adapter"), None);
     }
 
     #[test]

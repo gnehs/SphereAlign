@@ -153,18 +153,43 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     direct.is_file().then_some(direct)
 }
 
+/// Replace the root launcher from an official Windows portable build with the
+/// real executable. Running the batch file through `Command` can corrupt
+/// localized stderr and has failed to launch some COLMAP subcommands.
+fn prefer_windows_colmap_executable(path: PathBuf) -> Result<PathBuf, String> {
+    if !cfg!(windows)
+        || !path
+            .file_name()
+            .is_some_and(|name| name.eq_ignore_ascii_case("COLMAP.bat"))
+    {
+        return Ok(path);
+    }
+
+    let executable = path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join("bin")
+        .join("COLMAP.exe");
+    executable.is_file().then_some(executable).ok_or_else(|| {
+        "COLMAP.bat 無法直接使用；請選擇官方可攜版 bin\\COLMAP.exe".to_owned()
+    })
+}
+
 /// Resolve COLMAP from an explicit local preference or, when it is empty, the
-/// host PATH. Windows pre-built releases are expected to use `COLMAP.bat`
-/// because that launcher prepares the required library search path.
+/// host PATH. On Windows this always prefers the actual `COLMAP.exe` over the
+/// portable build's batch launcher.
 pub fn resolve_colmap(custom_path: Option<&str>) -> Result<PathBuf, String> {
     match custom_path.map(str::trim).filter(|path| !path.is_empty()) {
         Some(path) => {
             let path = PathBuf::from(path);
-            path.is_file()
-                .then_some(path)
-                .ok_or_else(|| "指定的 COLMAP 路徑不存在或不是檔案".to_owned())
+            if !path.is_file() {
+                return Err("指定的 COLMAP 路徑不存在或不是檔案".to_owned());
+            }
+            prefer_windows_colmap_executable(path)
         }
-        None => find_executable("colmap").ok_or_else(|| "在系統 PATH 中找不到 COLMAP".to_owned()),
+        None => find_executable("colmap")
+            .ok_or_else(|| "在系統 PATH 中找不到 COLMAP".to_owned())
+            .and_then(prefer_windows_colmap_executable),
     }
 }
 
@@ -1711,16 +1736,41 @@ esac
         let temp = tempfile::tempdir().expect("temporary directory");
         let directory = temp.path().join("COLMAP portable");
         fs::create_dir_all(&directory).expect("portable directory");
-        let path = directory.join(if cfg!(windows) {
-            "COLMAP.bat"
-        } else {
-            "colmap"
-        });
-        fs::write(&path, b"test launcher").expect("test launcher");
+        let path = directory.join(if cfg!(windows) { "COLMAP.exe" } else { "colmap" });
+        fs::write(&path, b"test executable").expect("test executable");
 
         assert_eq!(
             resolve_colmap(Some(path.to_string_lossy().as_ref())),
             Ok(path)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_colmap_redirects_portable_batch_launcher_to_bin_executable() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let launcher = temp.path().join("COLMAP.bat");
+        let executable = temp.path().join("bin/COLMAP.exe");
+        fs::create_dir_all(executable.parent().unwrap()).expect("portable bin directory");
+        fs::write(&launcher, b"launcher").expect("batch launcher");
+        fs::write(&executable, b"executable").expect("COLMAP executable");
+
+        assert_eq!(
+            resolve_colmap(Some(launcher.to_string_lossy().as_ref())),
+            Ok(executable)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_colmap_rejects_batch_launcher_without_bin_executable() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let launcher = temp.path().join("COLMAP.bat");
+        fs::write(&launcher, b"launcher").expect("batch launcher");
+
+        assert_eq!(
+            resolve_colmap(Some(launcher.to_string_lossy().as_ref())),
+            Err("COLMAP.bat 無法直接使用；請選擇官方可攜版 bin\\COLMAP.exe".to_owned())
         );
     }
 }
