@@ -1,9 +1,10 @@
-//! Color-profile detection and safe D-Log M LUT resolution.
+//! Camera-specific color-profile detection and safe Log LUT resolution.
 //!
 //! The camera's transfer curve is not reliably inferable from image appearance
 //! alone.  Detection therefore gives precedence to explicit container/stream
-//! metadata and treats a DJI filename hint as weak evidence only.  Extraction
-//! remains fail-safe: an `unknown` profile never receives a LUT in `auto` mode.
+//! metadata and treats a DJI filename hint as weak evidence only. Extraction
+//! remains fail-safe: an `unknown` profile, an ambiguous camera model, or a
+//! mismatched Log curve never receives a LUT in `auto` mode.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -33,6 +34,83 @@ pub const INSTA360_X5_ILOG_LUT_SHA256: &str =
     "edba4055614bb2c3e8fa66435998aa18fc9ed8da4dbf2de23ce57038670f2e56";
 pub const INSTA360_X5_ILOG_LUT_SIZE: u64 = 4_792_092;
 pub const INSTA360_X5_ILOG_LUT_FILE_NAME: &str = "insta360-x5-i-log-to-rec709-v1.cube";
+
+#[derive(Debug, Clone, Copy)]
+struct Insta360ArchiveLutSpec {
+    id: &'static str,
+    display_name: &'static str,
+    file_name: &'static str,
+    entry: &'static str,
+    size: u64,
+    sha256: &'static str,
+    input_profile: ColorProfile,
+}
+
+const INSTA360_ARCHIVE_LUTS: &[Insta360ArchiveLutSpec] = &[
+    Insta360ArchiveLutSpec {
+        id: "insta360-x5-ilog-rec709-v1",
+        display_name: "Insta360 X5 I-Log to Rec.709 V1.0",
+        file_name: INSTA360_X5_ILOG_LUT_FILE_NAME,
+        entry: INSTA360_X5_ILOG_LUT_ENTRY,
+        size: INSTA360_X5_ILOG_LUT_SIZE,
+        sha256: INSTA360_X5_ILOG_LUT_SHA256,
+        input_profile: ColorProfile::Ilog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-one-x-log-rec709-v1",
+        display_name: "Insta360 ONE X LOG LUT V1.0.0",
+        file_name: "insta360-one-x-log-lut-v1.cube",
+        entry: "Insta360-LUT/ONE-X-LUT/ONE-X-LUT-Final-V1.0.0.cube",
+        size: 10_223_660,
+        sha256: "bab317aa511787c484b9e721955c43747ef4a6f6ad8ff8f77cd8fcaf76d9f098",
+        input_profile: ColorProfile::InstaLog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-one-x2-log-rec709-v1",
+        display_name: "Insta360 ONE X2 LOG LUT V1.0.0",
+        file_name: "insta360-one-x2-log-lut-v1.cube",
+        entry: "Insta360-LUT/ONE-X2-LUT/ONE-X2-LUT-Final-V1.0.0.cube",
+        size: 7_415_049,
+        sha256: "1e540e964333eb984481b95fffb3178dd08abc4c210644ca810d21a535c62b3e",
+        input_profile: ColorProfile::InstaLog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-x3-log-rec709-v1",
+        display_name: "Insta360 X3 LOG LUT V1.0.0",
+        file_name: "insta360-x3-log-lut-v1.cube",
+        entry: "Insta360-LUT/X3-LUT/X3-LUT-V1.0.0.cube",
+        size: 7_415_049,
+        sha256: "1e540e964333eb984481b95fffb3178dd08abc4c210644ca810d21a535c62b3e",
+        input_profile: ColorProfile::InstaLog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-one-r-dual-lens-360-log-rec709-v1",
+        display_name: "Insta360 ONE R Dual-Lens 360 LOG LUT",
+        file_name: "insta360-one-r-dual-lens-360-log-lut.cube",
+        entry: "Insta360-LUT/ONE-R-LUT/DUAL-LENS-360.CUBE",
+        size: 6_409_805,
+        sha256: "d8b3c80d53ff850dd23f546f1b6f8f8ccf4d302f7d4a471f5b06fc60bc926e89",
+        input_profile: ColorProfile::InstaLog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-one-rs-dual-lens-360-log-rec709-v1",
+        display_name: "Insta360 ONE RS Dual-Lens 360 LOG LUT (65-grid)",
+        file_name: "insta360-one-rs-dual-lens-360-log-lut-65.cube",
+        entry: "Insta360-LUT/ONE-RS-LUT/DUAL-LENS-360_65.CUBE",
+        size: 6_409_867,
+        sha256: "09329898ac27ac3a1a9edcae57386725e751643e781c1c608bfed153b4e923f1",
+        input_profile: ColorProfile::InstaLog,
+    },
+    Insta360ArchiveLutSpec {
+        id: "insta360-sphere-log-rec709-v1",
+        display_name: "Insta360 Sphere Dual-Lens 360 LOG LUT (65-grid)",
+        file_name: "insta360-sphere-dual-lens-360-log-lut-65.cube",
+        entry: "Insta360-LUT/Sphere-LUT/DUAL-LENS-360_65.CUBE",
+        size: 6_409_867,
+        sha256: "09329898ac27ac3a1a9edcae57386725e751643e781c1c608bfed153b4e923f1",
+        input_profile: ColorProfile::InstaLog,
+    },
+];
 const MAX_CUSTOM_LUT_SIZE: u64 = 64 * 1024 * 1024;
 const MAX_OFFICIAL_ARCHIVE_SIZE: u64 = 96 * 1024 * 1024;
 const AUTO_APPLY_CONFIDENCE: f64 = 0.80;
@@ -45,6 +123,8 @@ pub enum ColorProfile {
     DlogM,
     #[serde(rename = "iLog")]
     Ilog,
+    #[serde(rename = "instaLog")]
+    InstaLog,
     #[serde(rename = "rec709")]
     Rec709,
     #[serde(rename = "unknown")]
@@ -56,6 +136,7 @@ impl ColorProfile {
         match self {
             Self::DlogM => "dlogM",
             Self::Ilog => "iLog",
+            Self::InstaLog => "instaLog",
             Self::Rec709 => "rec709",
             Self::Unknown => "unknown",
         }
@@ -218,13 +299,13 @@ pub fn detect_from_probe_with_camera(
         .as_deref()
         .map(normalize_marker)
         .unwrap_or_default();
-    let is_dji_osmo_360 = normalized_model.contains("djiosmo360")
-        || normalized_model == "osmo360"
-        || path
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|value| value.eq_ignore_ascii_case("osv"));
-    let is_insta360_x5 = normalized_model.contains("insta360x5") || normalized_model == "x5";
+    let is_dji_osmo_360 = normalized_model.contains("djiosmo360") || normalized_model == "osmo360";
+    let insta360_lut = insta360_lut_spec_for_model(&normalized_model);
+    let model_recommendation = if is_dji_osmo_360 {
+        Some(dji_lut_recommendation())
+    } else {
+        insta360_lut.map(insta360_lut_recommendation)
+    };
     let filename_dlog = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -266,7 +347,8 @@ pub fn detect_from_probe_with_camera(
         .filter(|(key, value)| is_ilog_marker(key, value))
         .count();
     if ilog_count > 0 {
-        let confidence = if is_insta360_x5 { 0.99 } else { 0.92 };
+        let matching_lut = insta360_lut.filter(|spec| spec.input_profile == ColorProfile::Ilog);
+        let confidence = if matching_lut.is_some() { 0.99 } else { 0.92 };
         return ColorDetection {
             detected_profile: ColorProfile::Ilog,
             confidence,
@@ -274,9 +356,47 @@ pub fn detect_from_probe_with_camera(
                 "ffprobe/Insta360 metadata contains explicit I-Log marker ({ilog_count} evidence{})",
                 if ilog_count == 1 { "" } else { "s" }
             )],
-            should_apply: is_insta360_x5 && confidence >= AUTO_APPLY_CONFIDENCE,
+            should_apply: matching_lut.is_some() && confidence >= AUTO_APPLY_CONFIDENCE,
             camera_model,
-            recommended_lut: is_insta360_x5.then(insta360_x5_lut_recommendation),
+            recommended_lut: matching_lut.map(insta360_lut_recommendation),
+        };
+    }
+
+    let insta_log_count = metadata
+        .iter()
+        .filter(|(key, value)| is_insta_log_marker(key, value))
+        .count();
+    if insta_log_count > 0 {
+        let matching_lut = insta360_lut.filter(|spec| spec.input_profile == ColorProfile::InstaLog);
+        let confidence = if matching_lut.is_some() { 0.99 } else { 0.90 };
+        return ColorDetection {
+            detected_profile: ColorProfile::InstaLog,
+            confidence,
+            reasons: vec![format!(
+                "ffprobe/Insta360 metadata contains explicit LOG marker ({insta_log_count} evidence{})",
+                if insta_log_count == 1 { "" } else { "s" }
+            )],
+            should_apply: matching_lut.is_some() && confidence >= AUTO_APPLY_CONFIDENCE,
+            camera_model,
+            recommended_lut: matching_lut.map(insta360_lut_recommendation),
+        };
+    }
+
+    let non_log_profile_count = metadata
+        .iter()
+        .filter(|(key, value)| is_explicit_non_log_profile_marker(key, value))
+        .count();
+    if non_log_profile_count > 0 {
+        return ColorDetection {
+            detected_profile: ColorProfile::Unknown,
+            confidence: 0.90,
+            reasons: vec![
+                "camera metadata explicitly selects a non-Log picture profile; no restoration LUT is applicable"
+                    .to_owned(),
+            ],
+            should_apply: false,
+            camera_model,
+            recommended_lut: None,
         };
     }
 
@@ -323,13 +443,7 @@ pub fn detect_from_probe_with_camera(
             ],
             should_apply: false,
             camera_model,
-            recommended_lut: if is_insta360_x5 {
-                Some(insta360_x5_lut_recommendation())
-            } else if is_dji_osmo_360 {
-                Some(dji_lut_recommendation())
-            } else {
-                None
-            },
+            recommended_lut: model_recommendation,
         };
     }
 
@@ -358,13 +472,7 @@ pub fn detect_from_probe_with_camera(
         "ffprobe metadata did not declare D-Log M or BT.709; auto mode keeps native pixels",
     );
     detection.camera_model = camera_model;
-    detection.recommended_lut = if is_insta360_x5 {
-        Some(insta360_x5_lut_recommendation())
-    } else if is_dji_osmo_360 {
-        Some(dji_lut_recommendation())
-    } else {
-        None
-    };
+    detection.recommended_lut = model_recommendation;
     detection
 }
 
@@ -402,13 +510,16 @@ pub fn resolve_for_extract(
                 let app_data_dir = app_data_dir.ok_or_else(|| {
                     "Log restoration needs an application data directory for the official LUT; select a valid extract.lutPath or retry after granting app-data access".to_owned()
                 })?;
-                let recommendation = if matches!(mode, ColorMode::DlogMRec709) {
-                    dji_lut_recommendation()
-                } else {
-                    detection.recommended_lut.clone().ok_or_else(|| {
+                let recommendation = detection
+                    .recommended_lut
+                    .clone()
+                    .filter(|recommendation| {
+                        !matches!(mode, ColorMode::DlogMRec709)
+                            || recommendation.id == "dji-osmo-360-dlogm-rec709-v1"
+                    })
+                    .ok_or_else(|| {
                         "No verified built-in LUT is available for the detected camera/profile; choose a model-specific .cube file or keep native color".to_owned()
-                    })?
-                };
+                    })?;
                 lut_id = Some(recommendation.id.clone());
                 lut_source_url = Some(recommendation.source_url.clone());
                 download_or_reuse_official_lut(app_data_dir, &recommendation.id)?
@@ -503,23 +614,41 @@ fn normalize_marker(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn infer_camera_model(path: &Path, metadata: &[(String, String)]) -> Option<String> {
+fn infer_camera_model(_path: &Path, metadata: &[(String, String)]) -> Option<String> {
     let joined = metadata
         .iter()
         .map(|(key, value)| format!("{key} {value}"))
         .collect::<Vec<_>>()
         .join(" ");
     let normalized = normalize_marker(&joined);
+    if normalized.contains("djiavata360") || normalized.contains("avata360") {
+        return Some("DJI Avata 360".to_owned());
+    }
     if normalized.contains("insta360x5") {
         return Some("Insta360 X5".to_owned());
+    }
+    if normalized.contains("insta360onex2") || normalized.contains("insta360x2") {
+        return Some("Insta360 ONE X2".to_owned());
+    }
+    if normalized.contains("insta360onex") {
+        return Some("Insta360 ONE X".to_owned());
+    }
+    if normalized.contains("insta360x3") {
+        return Some("Insta360 X3".to_owned());
+    }
+    if normalized.contains("insta360oners") {
+        return Some("Insta360 ONE RS".to_owned());
+    }
+    if normalized.contains("insta360oner") {
+        return Some("Insta360 ONE R".to_owned());
+    }
+    if normalized.contains("insta360sphere") {
+        return Some("Insta360 Sphere".to_owned());
     }
     if normalized.contains("djiosmo360") || normalized.contains("osmo360") {
         return Some("DJI Osmo 360".to_owned());
     }
-    path.extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case("osv"))
-        .then(|| "DJI Osmo 360".to_owned())
+    None
 }
 
 fn dji_lut_recommendation() -> LutRecommendation {
@@ -531,13 +660,38 @@ fn dji_lut_recommendation() -> LutRecommendation {
     }
 }
 
-fn insta360_x5_lut_recommendation() -> LutRecommendation {
+fn insta360_lut_recommendation(spec: &Insta360ArchiveLutSpec) -> LutRecommendation {
     LutRecommendation {
-        id: "insta360-x5-ilog-rec709-v1".to_owned(),
-        display_name: "Insta360 X5 I-Log to Rec.709 V1.0".to_owned(),
-        file_name: INSTA360_X5_ILOG_LUT_FILE_NAME.to_owned(),
+        id: spec.id.to_owned(),
+        display_name: spec.display_name.to_owned(),
+        file_name: spec.file_name.to_owned(),
         source_url: INSTA360_LUT_ARCHIVE_URL.to_owned(),
     }
+}
+
+fn insta360_lut_spec_for_model(normalized_model: &str) -> Option<&'static Insta360ArchiveLutSpec> {
+    let id = if normalized_model.contains("insta360x5") || normalized_model == "x5" {
+        "insta360-x5-ilog-rec709-v1"
+    } else if normalized_model.contains("insta360onex2")
+        || normalized_model.contains("insta360x2")
+        || normalized_model == "onex2"
+        || normalized_model == "x2"
+    {
+        "insta360-one-x2-log-rec709-v1"
+    } else if normalized_model.contains("insta360onex") || normalized_model == "onex" {
+        "insta360-one-x-log-rec709-v1"
+    } else if normalized_model.contains("insta360x3") || normalized_model == "x3" {
+        "insta360-x3-log-rec709-v1"
+    } else if normalized_model.contains("insta360oners") || normalized_model == "oners" {
+        "insta360-one-rs-dual-lens-360-log-rec709-v1"
+    } else if normalized_model.contains("insta360oner") || normalized_model == "oner" {
+        "insta360-one-r-dual-lens-360-log-rec709-v1"
+    } else if normalized_model.contains("insta360sphere") || normalized_model == "sphere" {
+        "insta360-sphere-log-rec709-v1"
+    } else {
+        return None;
+    };
+    INSTA360_ARCHIVE_LUTS.iter().find(|spec| spec.id == id)
 }
 
 fn is_ilog_marker(key: &str, value: &str) -> bool {
@@ -549,6 +703,31 @@ fn is_ilog_marker(key: &str, value: &str) -> bool {
         || key.contains("transfer")
         || key.contains("logcurve");
     value.contains("ilog") && (profile_key || value == "ilog")
+}
+
+fn is_insta_log_marker(key: &str, value: &str) -> bool {
+    let key = normalize_marker(key);
+    let value = normalize_marker(value);
+    let profile_key = key.contains("colorprofile")
+        || key.contains("pictureprofile")
+        || key.contains("gammamode")
+        || key.contains("transfer")
+        || key.contains("logcurve");
+    profile_key && matches!(value.as_str(), "log" | "instalog")
+}
+
+fn is_explicit_non_log_profile_marker(key: &str, value: &str) -> bool {
+    let key = normalize_marker(key);
+    let value = normalize_marker(value);
+    let profile_key = key.contains("colorprofile")
+        || key.contains("pictureprofile")
+        || key.contains("gammamode")
+        || key.contains("filter");
+    profile_key
+        && matches!(
+            value.as_str(),
+            "flat" | "stand" | "standard" | "vivid" | "vividbright"
+        )
 }
 
 fn is_dlog_marker(key: &str, value: &str) -> bool {
@@ -697,11 +876,14 @@ fn download_or_reuse_official_lut(
     app_data_dir: &Path,
     lut_id: &str,
 ) -> Result<ValidatedLut, String> {
-    match lut_id {
-        "dji-osmo-360-dlogm-rec709-v1" => download_or_reuse_dji_lut(app_data_dir),
-        "insta360-x5-ilog-rec709-v1" => download_or_reuse_insta360_x5_lut(app_data_dir),
-        _ => Err(format!("unknown built-in LUT id: {lut_id}")),
+    if lut_id == "dji-osmo-360-dlogm-rec709-v1" {
+        return download_or_reuse_dji_lut(app_data_dir);
     }
+    let spec = INSTA360_ARCHIVE_LUTS
+        .iter()
+        .find(|spec| spec.id == lut_id)
+        .ok_or_else(|| format!("unknown built-in LUT id: {lut_id}"))?;
+    download_or_reuse_insta360_lut(app_data_dir, spec)
 }
 
 fn download_or_reuse_dji_lut(app_data_dir: &Path) -> Result<ValidatedLut, String> {
@@ -766,15 +948,14 @@ fn download_or_reuse_dji_lut(app_data_dir: &Path) -> Result<ValidatedLut, String
     })
 }
 
-fn download_or_reuse_insta360_x5_lut(app_data_dir: &Path) -> Result<ValidatedLut, String> {
-    let destination = app_data_dir
-        .join("luts")
-        .join(INSTA360_X5_ILOG_LUT_FILE_NAME);
+fn download_or_reuse_insta360_lut(
+    app_data_dir: &Path,
+    spec: &Insta360ArchiveLutSpec,
+) -> Result<ValidatedLut, String> {
+    let destination = app_data_dir.join("luts").join(spec.file_name);
     if destination.is_file() {
         if let Ok(lut) = validate_lut_path(&destination) {
-            if lut.size == INSTA360_X5_ILOG_LUT_SIZE
-                && lut.sha256.eq_ignore_ascii_case(INSTA360_X5_ILOG_LUT_SHA256)
-            {
+            if lut.size == spec.size && lut.sha256.eq_ignore_ascii_case(spec.sha256) {
                 return Ok(lut);
             }
         }
@@ -804,72 +985,83 @@ fn download_or_reuse_insta360_x5_lut(app_data_dir: &Path) -> Result<ValidatedLut
         "official Insta360 LUT archive",
         MAX_OFFICIAL_ARCHIVE_SIZE,
     )
-    .and_then(|_| extract_verified_x5_lut(&archive_path, &destination));
+    .and_then(|_| extract_verified_insta360_lut(&archive_path, &destination, spec));
     let _ = fs::remove_file(&archive_path);
     result?;
     validate_lut_path(&destination).and_then(|lut| {
-        if lut.size != INSTA360_X5_ILOG_LUT_SIZE
-            || !lut.sha256.eq_ignore_ascii_case(INSTA360_X5_ILOG_LUT_SHA256)
-        {
-            return Err("official Insta360 X5 LUT verification failed after commit".to_owned());
+        if lut.size != spec.size || !lut.sha256.eq_ignore_ascii_case(spec.sha256) {
+            return Err(format!(
+                "official Insta360 LUT verification failed after commit: {}",
+                spec.id
+            ));
         }
         Ok(lut)
     })
 }
 
-fn extract_verified_x5_lut(archive_path: &Path, destination: &Path) -> Result<(), String> {
+fn extract_verified_insta360_lut(
+    archive_path: &Path,
+    destination: &Path,
+    spec: &Insta360ArchiveLutSpec,
+) -> Result<(), String> {
     let archive_file = File::open(archive_path)
         .map_err(|error| format!("cannot open Insta360 LUT archive: {error}"))?;
     let mut archive = zip::ZipArchive::new(archive_file)
         .map_err(|error| format!("cannot read Insta360 LUT archive: {error}"))?;
-    let mut entry = archive
-        .by_name(INSTA360_X5_ILOG_LUT_ENTRY)
-        .map_err(|error| format!("official X5 LUT entry is missing: {error}"))?;
-    if entry.size() != INSTA360_X5_ILOG_LUT_SIZE {
+    let mut entry = archive.by_name(spec.entry).map_err(|error| {
+        format!(
+            "official Insta360 LUT entry is missing ({}): {error}",
+            spec.id
+        )
+    })?;
+    if entry.size() != spec.size {
         return Err(format!(
-            "official X5 LUT entry size mismatch: expected {}, got {}",
-            INSTA360_X5_ILOG_LUT_SIZE,
+            "official Insta360 LUT entry size mismatch for {}: expected {}, got {}",
+            spec.id,
+            spec.size,
             entry.size()
         ));
     }
     let parent = destination
         .parent()
-        .ok_or_else(|| "official X5 LUT destination has no parent".to_owned())?;
+        .ok_or_else(|| "official Insta360 LUT destination has no parent".to_owned())?;
     let partial = parent.join(format!(
         ".{}.partial-{}",
-        INSTA360_X5_ILOG_LUT_FILE_NAME,
+        spec.file_name,
         std::process::id()
     ));
     let write_result = (|| {
         let mut output = File::create(&partial)
-            .map_err(|error| format!("cannot create X5 LUT cache file: {error}"))?;
+            .map_err(|error| format!("cannot create Insta360 LUT cache file: {error}"))?;
         let mut hasher = Sha256::new();
         let mut copied = 0_u64;
         let mut buffer = [0_u8; 128 * 1024];
         loop {
             let count = entry
                 .read(&mut buffer)
-                .map_err(|error| format!("cannot extract official X5 LUT: {error}"))?;
+                .map_err(|error| format!("cannot extract official Insta360 LUT: {error}"))?;
             if count == 0 {
                 break;
             }
             copied = copied.saturating_add(count as u64);
-            if copied > INSTA360_X5_ILOG_LUT_SIZE {
-                return Err("official X5 LUT exceeded its pinned size".to_owned());
+            if copied > spec.size {
+                return Err(format!(
+                    "official Insta360 LUT exceeded its pinned size: {}",
+                    spec.id
+                ));
             }
             hasher.update(&buffer[..count]);
             output
                 .write_all(&buffer[..count])
-                .map_err(|error| format!("cannot write X5 LUT cache file: {error}"))?;
+                .map_err(|error| format!("cannot write Insta360 LUT cache file: {error}"))?;
         }
         output.flush().map_err(|error| error.to_string())?;
         output.sync_all().map_err(|error| error.to_string())?;
         let actual = format!("{:x}", hasher.finalize());
-        if copied != INSTA360_X5_ILOG_LUT_SIZE
-            || !actual.eq_ignore_ascii_case(INSTA360_X5_ILOG_LUT_SHA256)
-        {
+        if copied != spec.size || !actual.eq_ignore_ascii_case(spec.sha256) {
             return Err(format!(
-                "official X5 LUT checksum/size mismatch: got {copied} bytes / {actual}"
+                "official Insta360 LUT checksum/size mismatch for {}: got {copied} bytes / {actual}",
+                spec.id
             ));
         }
         Ok(())
@@ -883,7 +1075,7 @@ fn extract_verified_x5_lut(archive_path: &Path, destination: &Path) -> Result<()
     }
     fs::rename(&partial, destination).map_err(|error| {
         let _ = fs::remove_file(&partial);
-        format!("cannot commit official X5 LUT: {error}")
+        format!("cannot commit official Insta360 LUT: {error}")
     })
 }
 
@@ -1055,7 +1247,8 @@ mod tests {
             "format": {"tags": {"DJI_ColorProfile": "D-Log M"}},
             "streams": [{"color_space": "bt709", "color_transfer": "bt709"}]
         });
-        let result = detect_from_probe(Path::new("CAM_D.OSV"), &probe);
+        let result =
+            detect_from_probe_with_model(Path::new("CAM_D.OSV"), &probe, Some("DJI Osmo 360"));
         assert_eq!(result.detected_profile, ColorProfile::DlogM);
         assert!(result.should_apply);
         assert!(result.confidence > 0.9);
@@ -1074,9 +1267,36 @@ mod tests {
 
     #[test]
     fn filename_suffix_d_enables_dlog_restoration() {
-        let result = detect_from_probe(Path::new("capture_D.OSV"), &json!({}));
+        let result = detect_from_probe_with_model(
+            Path::new("capture_D.OSV"),
+            &json!({}),
+            Some("DJI Osmo 360"),
+        );
         assert_eq!(result.detected_profile, ColorProfile::DlogM);
         assert!(result.should_apply);
+    }
+
+    #[test]
+    fn osv_extension_alone_never_selects_the_osmo_lut() {
+        let result = detect_from_probe(Path::new("capture_D.OSV"), &json!({}));
+        assert_eq!(result.detected_profile, ColorProfile::DlogM);
+        assert!(!result.should_apply);
+        assert!(result.camera_model.is_none());
+        assert!(result.recommended_lut.is_none());
+    }
+
+    #[test]
+    fn avata_360_dlog_never_selects_the_osmo_lut() {
+        let result = detect_from_probe_with_camera(
+            Path::new("capture_D.OSV"),
+            &json!({"format": {"tags": {"DJI_ColorProfile": "D-Log M"}}}),
+            Some("DJI Avata 360"),
+            Some("D-Log M"),
+        );
+        assert_eq!(result.detected_profile, ColorProfile::DlogM);
+        assert!(!result.should_apply);
+        assert!(result.recommended_lut.is_none());
+        assert_eq!(result.camera_model.as_deref(), Some("DJI Avata 360"));
     }
 
     #[test]
@@ -1125,6 +1345,71 @@ mod tests {
             result.recommended_lut.as_ref().map(|lut| lut.id.as_str()),
             Some("insta360-x5-ilog-rec709-v1")
         );
+    }
+
+    #[test]
+    fn legacy_insta360_log_models_select_their_own_official_luts() {
+        let cases = [
+            ("Insta360 ONE X", "insta360-one-x-log-rec709-v1"),
+            ("Insta360 ONE X2", "insta360-one-x2-log-rec709-v1"),
+            ("Insta360 X3", "insta360-x3-log-rec709-v1"),
+            (
+                "Insta360 ONE R",
+                "insta360-one-r-dual-lens-360-log-rec709-v1",
+            ),
+            (
+                "Insta360 ONE RS",
+                "insta360-one-rs-dual-lens-360-log-rec709-v1",
+            ),
+            ("Insta360 Sphere", "insta360-sphere-log-rec709-v1"),
+        ];
+        for (model, expected_lut) in cases {
+            let result = detect_from_probe_with_camera(
+                Path::new("capture.insv"),
+                &json!({}),
+                Some(model),
+                Some("LOG"),
+            );
+            assert_eq!(result.detected_profile, ColorProfile::InstaLog, "{model}");
+            assert!(result.should_apply, "{model}");
+            assert_eq!(
+                result.recommended_lut.as_ref().map(|lut| lut.id.as_str()),
+                Some(expected_lut),
+                "{model}"
+            );
+        }
+    }
+
+    #[test]
+    fn insta360_luts_require_the_matching_explicit_profile() {
+        for (model, profile) in [
+            ("Insta360 X5", "LOG"),
+            ("Insta360 X5", "FLAT"),
+            ("Insta360 X3", "I-Log"),
+            ("Insta360 X3", "FLAT"),
+            ("Insta360 X4", "FLAT"),
+            ("Insta360 X4 Air", "FLAT"),
+        ] {
+            let result = detect_from_probe_with_camera(
+                Path::new("capture.insv"),
+                &json!({}),
+                Some(model),
+                Some(profile),
+            );
+            assert!(!result.should_apply, "{model} {profile}");
+            assert!(result.recommended_lut.is_none(), "{model} {profile}");
+        }
+    }
+
+    #[test]
+    fn official_insta360_lut_catalog_has_unique_ids_and_cache_names() {
+        let mut ids = std::collections::BTreeSet::new();
+        let mut file_names = std::collections::BTreeSet::new();
+        for spec in INSTA360_ARCHIVE_LUTS {
+            assert!(ids.insert(spec.id));
+            assert!(file_names.insert(spec.file_name));
+            assert!(spec.entry.starts_with("Insta360-LUT/"));
+        }
     }
 
     #[test]
@@ -1193,16 +1478,18 @@ mod tests {
 
     #[test]
     #[ignore = "requires GS360_TEST_INSTA_LUT_ARCHIVE"]
-    fn extracts_the_pinned_x5_lut_from_the_official_archive() {
+    fn extracts_all_pinned_insta360_luts_from_the_official_archive() {
         let archive = PathBuf::from(
             std::env::var("GS360_TEST_INSTA_LUT_ARCHIVE")
                 .expect("GS360_TEST_INSTA_LUT_ARCHIVE is required"),
         );
         let directory = tempdir().unwrap();
-        let destination = directory.path().join(INSTA360_X5_ILOG_LUT_FILE_NAME);
-        extract_verified_x5_lut(&archive, &destination).unwrap();
-        let lut = validate_lut_path(&destination).unwrap();
-        assert_eq!(lut.size, INSTA360_X5_ILOG_LUT_SIZE);
-        assert_eq!(lut.sha256, INSTA360_X5_ILOG_LUT_SHA256);
+        for spec in INSTA360_ARCHIVE_LUTS {
+            let destination = directory.path().join(spec.file_name);
+            extract_verified_insta360_lut(&archive, &destination, spec).unwrap();
+            let lut = validate_lut_path(&destination).unwrap();
+            assert_eq!(lut.size, spec.size, "{}", spec.id);
+            assert_eq!(lut.sha256, spec.sha256, "{}", spec.id);
+        }
     }
 }

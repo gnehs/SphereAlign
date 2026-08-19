@@ -641,26 +641,39 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
     let gravity_estimation_available =
         integrated.is_some() && build_gravity_direction_timeline(&normalized_imu).is_some();
     let mut fused_attitude_sample_count = 0usize;
-    let mut color_profile = None;
+    let mut color_profiles = Vec::new();
     for sample in input.samples.iter().flatten() {
         let Some(groups) = sample.tag_map.as_ref() else {
             continue;
         };
-        if color_profile.is_none() {
-            color_profile = groups
-                .get(&GroupId::Default)
-                .and_then(|tags| tags.get(&TagId::Metadata))
-                .and_then(|tag| match &tag.value {
-                    TagValue::Json(value) => {
-                        let metadata = value.get();
-                        metadata
-                            .get("gamma_mode")
-                            .or_else(|| metadata.get("gammaMode"))
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::to_owned)
-                    }
-                    _ => None,
-                });
+        if let Some(profile) = groups
+            .get(&GroupId::Default)
+            .and_then(|tags| tags.get(&TagId::Metadata))
+            .and_then(|tag| match &tag.value {
+                TagValue::Json(value) => {
+                    let metadata = value.get();
+                    metadata
+                        .get("gamma_mode")
+                        .or_else(|| metadata.get("gammaMode"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|profile| !profile.is_empty())
+                        .map(str::to_owned)
+                }
+                _ => None,
+            })
+        {
+            let normalized = profile
+                .chars()
+                .filter(|character| character.is_ascii_alphanumeric())
+                .collect::<String>()
+                .to_ascii_lowercase();
+            if !color_profiles
+                .iter()
+                .any(|(_, existing): &(String, String)| existing == &normalized)
+            {
+                color_profiles.push((profile, normalized));
+            }
         }
         let Some(group) = groups.get(&GroupId::Quaternion) else {
             continue;
@@ -688,6 +701,7 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
             );
         }
     }
+    let color_profile = (color_profiles.len() == 1).then(|| color_profiles.remove(0).0);
     Ok(TelemetryInspection {
         parser: input.parser_name().to_owned(),
         camera_type: input.camera_type(),
