@@ -669,7 +669,7 @@ msgstr "選擇淺色、深色，或自動遵循系統外觀。"
 
 #: src/components/task-editor-dialog.tsx:164
 msgid "Choose one or more panoramic source files."
-msgstr "選擇一個或多個全景來源檔案。"
+msgstr "選擇一個或多個全景原始檔。"
 
 #: src/components/task-editor-dialog.tsx:161
 msgid "Choose sources"
@@ -1358,7 +1358,7 @@ msgstr "進行中"
 #. Insta360 source media files.
 #: src/components/task-list.tsx:335
 msgid "Insta360 source files"
-msgstr "Insta360 來源檔案"
+msgstr "Insta360 原始檔"
 
 #: src/components/settings-sheet.tsx:109
 msgid "Interface language"
@@ -1789,7 +1789,7 @@ msgstr "方向中繼資料無法使用"
 #. DJI Osmo 360 source media files.
 #: src/components/task-list.tsx:334
 msgid "Osmo 360 source files"
-msgstr "Osmo 360 來源檔案"
+msgstr "Osmo 360 原始檔"
 
 #: src/App.tsx:2251
 #~ msgid "OSV / dual-fisheye video"
@@ -2235,16 +2235,16 @@ msgstr "尚未驗證來源是否可解碼"
 
 #: src/components/source-media.tsx:64
 msgid "Source file cannot be read"
-msgstr "來源檔案無法讀取"
+msgstr "原始檔無法讀取"
 
 #: src/components/source-media.tsx:62
 msgid "Source file not found"
-msgstr "找不到來源檔案"
+msgstr "找不到原始檔"
 
 #. Media preview error when the requested source file does not exist.
 #: src/lib/pipeline.ts:490
 msgid "Source file was not found"
-msgstr "找不到來源檔案"
+msgstr "找不到原始檔"
 
 #: src/components/source-media.tsx:115
 #: src/components/task-editor-dialog.tsx:107
@@ -2596,7 +2596,7 @@ msgstr "此任務已經開始"
 
 #: src/components/task-detail.tsx:157
 msgid "This task has no recorded source files."
-msgstr "此任務沒有已記錄的來源檔案。"
+msgstr "此任務沒有已記錄的原始檔。"
 
 #: src/lib/pipeline.ts:621
 msgid "This task has started and can no longer be edited"
