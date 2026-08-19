@@ -5,19 +5,65 @@
 </div>
 
 > [!WARNING]
-> **目前還在開發階段。** 目前已驗證的相機來源包括 **DJI Osmo 360**（`.OSV`）與 **Insta360**（`.INSV`）；其他檔案格式尚未以相機來源完成驗證。
+> **目前還在開發階段。** 目前已支援 **DJI Osmo 360**（`.OSV`）與 **Insta360**（`.INSV`）部分型號，其他的可能會動，但是我沒有相關裝置或是檔案，因此沒有詳細測試過。
 
 ![SphereAlign 從雙魚眼全景影片挑選畫面、遮掉干擾、對齊相機並建立稀疏的三維重建結果](assets/readme/workflow-hero.png)
 
-## 將原始檔案變成 Colmap 資料集
+## 將原始檔案直接變成 Colmap 資料集
 
 過去要完成這件事，通常得在好幾個軟體和 CLI 工具之間來回切換，不只要手動整理檔案，還得記一堆指令、參數和執行順序，出錯時甚至得自己翻 log 找問題，整套流程既繁瑣又容易卡住。
 
-這套工具把這些步驟整合到同一個介面裡。只要加入一段或多段在同一場景拍攝的全景影片，就能依序完成：
+這套工具把這些步驟整合到同一個介面裡，只需加入一段或多段在同一場景拍攝的全景影片，就能依序自動完成：
 
-| 挑選畫面 | 遮掉干擾 | 對齊相機 |
+| 挑選畫面 | 產生遮罩 | 3D 重建 |
 | --- | --- | --- |
-| 自動排除模糊影格，並從原始素材中挑選適合訓練的影格。 | 自動偵測並遮罩人物、腳踏車與常見車輛，減少移動物體對訓練結果的干擾。 | 將雙鏡頭作為 Rig 進行配對，並由 COLMAP 計算相機位置。 |
+| 自動排除模糊影格，並從原始素材中挑選適合訓練的影格。 | 自動偵測並遮罩人物、腳踏車與常見車輛，減少移動物體對訓練結果的干擾。 | 將雙鏡頭作為 Rig 進行配對，並由 COLMAP 計算並推測相機位置。 |
+
+## 如何使用 / 下載
+
+SphereAlign 目前仍處於 **Beta 階段**。如果使用過程中遇到任何問題，歡迎開 Issue 告訴我，也請盡量附上完整的錯誤訊息與執行紀錄！
+
+> [!TIP]
+> **強烈建議使用支援 CUDA 的 NVIDIA GPU。**
+>
+> COLMAP 的 Bundle Adjustment 在沒有 CUDA 加速的環境下可能會非常慢。
+>
+> 實際測試中，同一份資料原本約半小時可以完成的重建，在沒有 CUDA 的機器上可能延長到數天。
+
+<details>
+<summary>macOS</summary>
+
+1. 使用 Homebrew 安裝 COLMAP 與 FFmpeg
+2. 到 Releases 下載 SphereAlign
+3. 打開 DMG，將 SphereAlign 拖入「應用程式」
+4. 如果 macOS 阻止程式執行，請使用 `xattr -c` 移除隔離屬性
+
+</details>
+
+<details>
+<summary>Windows</summary>
+
+1. 安裝 FFmpeg
+2. 下載 COLMAP。推薦使用已經編譯好、包含 CUDA 支援的 [COLMAP Windows Build](https://github.com/lyehe/build_gpu_colmap)
+3. 到 Releases 下載並安裝 SphereAlign
+4. 開啟 SphereAlign 設定，指定剛剛下載的 COLMAP 執行檔，例如：
+
+   `bin\colmap.exe`
+
+</details>
+
+<details>
+<summary>Linux</summary>
+
+1. 安裝 COLMAP 與 FFmpeg
+2. 到 Releases 下載並安裝 SphereAlign
+3. 執行 SphereAlign
+
+> [!WARNING]
+> Linux 版本目前沒有經過完整測試，我也不能保證所有環境都能正常執行 
+> 如果遇到問題，歡迎開 Issue，並附上系統環境、完整錯誤訊息與執行紀錄，謝謝！
+
+</details>
 
 ## 主要特點
 

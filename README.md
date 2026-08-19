@@ -6,19 +6,65 @@
 </div>
 
 > [!WARNING]
-> **This project is still under development.** The validated camera sources are **DJI Osmo 360** (`.OSV`) and **Insta360** (`.INSV`). Other file formats have not yet been validated as camera sources.
+> **This project is still under development.** SphereAlign currently supports some **DJI Osmo 360** (`.OSV`) and **Insta360** (`.INSV`) models. Other models or formats may work, but I do not have the corresponding devices or files, so they have not been thoroughly tested.
 
 ![SphereAlign selects frames from dual-fisheye panoramic video, masks distractions, aligns cameras, and builds a sparse 3D reconstruction](assets/readme/workflow-hero.png)
 
-## Turn raw footage into a COLMAP dataset
+## Turn raw footage directly into a COLMAP dataset
 
 This workflow used to require switching between several applications and CLI tools. You had to organize files manually, remember a long list of commands, parameters, and their execution order, and dig through logs yourself whenever something went wrong. The entire process was cumbersome and easy to get stuck on.
 
-SphereAlign brings all these steps into a single interface. Add one or more panoramic videos captured in the same scene, then work through the following stages:
+SphereAlign brings all these steps into a single interface. Simply add one or more panoramic videos captured in the same scene, and it automatically completes the following stages in order:
 
-| Select frames | Mask distractions | Align cameras |
+| Select frames | Generate masks | 3D reconstruction |
 | --- | --- | --- |
-| Automatically discard blurry frames and select footage suitable for training. | Automatically detect and mask people, bicycles, and common vehicles to reduce interference from moving objects in the training results. | Pair the two lenses as a rig and let COLMAP calculate the camera positions. |
+| Automatically discard blurry frames and select footage suitable for training. | Automatically detect and mask people, bicycles, and common vehicles to reduce interference from moving objects in the training results. | Pair the two lenses as a rig and let COLMAP calculate and infer the camera positions. |
+
+## How to use and download
+
+SphereAlign is currently in **beta**. If you encounter any problems, please open an issue and include the complete error message and execution logs whenever possible.
+
+> [!TIP]
+> **An NVIDIA GPU with CUDA support is strongly recommended.**
+>
+> COLMAP's bundle adjustment can be extremely slow without CUDA acceleration.
+>
+> In testing, the same reconstruction that took about half an hour on a CUDA-enabled machine could take several days without CUDA.
+
+<details>
+<summary>macOS</summary>
+
+1. Install COLMAP and FFmpeg with Homebrew.
+2. Download SphereAlign from Releases.
+3. Open the DMG and drag SphereAlign into Applications.
+4. If macOS prevents the app from running, use `xattr -c` to remove the quarantine attribute.
+
+</details>
+
+<details>
+<summary>Windows</summary>
+
+1. Install FFmpeg.
+2. Download COLMAP. The precompiled, CUDA-enabled [COLMAP Windows Build](https://github.com/lyehe/build_gpu_colmap) is recommended.
+3. Download and install SphereAlign from Releases.
+4. Open SphereAlign's settings and select the COLMAP executable you just downloaded, for example:
+
+   `bin\colmap.exe`
+
+</details>
+
+<details>
+<summary>Linux</summary>
+
+1. Install COLMAP and FFmpeg.
+2. Download and install SphereAlign from Releases.
+3. Run SphereAlign.
+
+> [!WARNING]
+> The Linux version has not been thoroughly tested, and I cannot guarantee that it will work in every environment.
+> If you encounter a problem, please open an issue and include details about your system environment, the complete error message, and execution logs. Thank you!
+
+</details>
 
 ## Key features
 
