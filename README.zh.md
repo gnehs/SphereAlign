@@ -45,6 +45,7 @@ SphereAlign 目前仍處於 **Beta 階段**。如果使用過程中遇到任何�
 
 1. 安裝 FFmpeg
 2. 下載 COLMAP。推薦使用已經編譯好、包含 CUDA 支援的 [COLMAP Windows Build](https://github.com/lyehe/build_gpu_colmap)
+  - 請下載 `COLMAP-x.x.x-windows-2022-CUDA-cuDSS-Caspar-GUI.zip` 版本
 3. 到 Releases 下載並安裝 SphereAlign
 4. 開啟 SphereAlign 設定，指定剛剛下載的 COLMAP 執行檔，例如：
 
@@ -93,3 +94,9 @@ SphereAlign 目前仍處於 **Beta 階段**。如果使用過程中遇到任何�
 ![SphereAlign 的影格擷取、遮罩與對齊階段可獨立取消、重試，並從本機檢查點繼續](assets/readme/resumable-workflow.png)
 
 挑選畫面、遮罩和對齊都能分開執行、取消、重試或重跑。已經完成的結果會保留在專案裡；再次開啟任務時，程式會檢查並復用既有進度，而不用從頭開始。
+
+## 授權
+
+SphereAlign is licensed under AGPL-3.0-only.
+
+SphereAlign 自行開發的原始碼採用 `AGPL-3.0-only` 授權；第三方程式與模型則依各自的授權條款使用。詳細資訊請見 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

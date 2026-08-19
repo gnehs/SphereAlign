@@ -3,6 +3,7 @@ name = "spherealign"
 version = "0.1.0"
 description = "Resumable native-fisheye OSV to COLMAP studio"
 authors = ["SphereAlign contributors"]
+license = "AGPL-3.0-only"
 edition = "2021"
 default-run = "spherealign"
 

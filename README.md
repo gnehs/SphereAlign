@@ -94,3 +94,9 @@ SphereAlign is currently in **beta**. If you encounter any problems, please open
 ![SphereAlign lets you cancel or retry frame extraction, masking, and alignment independently, then resume from local checkpoints](assets/readme/resumable-workflow.png)
 
 Frame selection, masking, and alignment can each be run, canceled, retried, or rerun independently. Completed results remain in the project. When you reopen a task, the app checks and reuses existing progress instead of starting over.
+
+## License
+
+SphereAlign is licensed under AGPL-3.0-only.
+
+Third-party programs and models are used under their respective license terms. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.

@@ -195,7 +195,7 @@ colmap-{filename}/
 - YOLO11 segmentation 權重沿用 `gs360masker` 已驗證的 `yolo11s-seg.onnx`。Ultralytics 權重預設採 AGPL-3.0，另有 Enterprise License；執行時下載不會免除授權義務。
 - SkySeg 固定至 Hugging Face `JianyuanWang/skyseg` 的指定 revision，模型頁標示為 MIT。
 
-專案本身目前尚未提供根目錄 `LICENSE`。在授權策略確定前，不應把儲存庫描述為已採用特定開源授權。
+SphereAlign 自行開發的原始碼採用 `AGPL-3.0-only` 授權。第三方程式、函式庫、模型與其他資產仍適用各自的原始授權；完整說明與來源請見根目錄的 `THIRD_PARTY_LICENSES.md`。
 
 ## 目前界線
 
