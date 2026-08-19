@@ -25,6 +25,9 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-button-primary: var(--button-primary);
+    --color-button-destructive: var(--button-destructive);
     --color-success: var(--success);
     --color-warning: var(--warning);
     --color-overlay: var(--overlay);
@@ -67,6 +70,7 @@
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
     --success: oklch(0.47 0.14 145);
     --warning: oklch(0.52 0.13 70);
     --overlay: oklch(0 0 0 / 32%);
@@ -87,6 +91,13 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    --button-primary: color-mix(in oklch, var(--primary), var(--foreground) 8%);
+    --button-destructive: color-mix(in oklch, var(--destructive), var(--foreground) 8%);
+    --button-highlight: oklch(1 0 0 / 6%);
+    --button-shade: oklch(0.145 0 0 / 4%);
+    --button-shadow: oklch(0.145 0 0 / 10%);
+    --button-edge: oklch(0.145 0 0 / 10%);
+    --button-outline-shadow: oklch(0.145 0 0 / 4%);
 }
 
 .dark {
@@ -105,6 +116,7 @@
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.145 0 0);
     --success: oklch(0.76 0.14 145);
     --warning: oklch(0.8 0.13 78);
     --overlay: oklch(0 0 0 / 56%);
@@ -124,6 +136,11 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+    --button-highlight: oklch(1 0 0 / 10%);
+    --button-shade: oklch(0 0 0 / 10%);
+    --button-shadow: oklch(0 0 0 / 28%);
+    --button-edge: oklch(0 0 0 / 24%);
+    --button-outline-shadow: oklch(0 0 0 / 16%);
 }
 
 @layer base {
