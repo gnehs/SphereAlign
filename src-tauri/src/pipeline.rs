@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 25;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 26;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
 const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
@@ -61,6 +61,10 @@ const COLMAP_MAX_IMAGE_ID: i64 = 2_147_483_647;
 const MAX_BOOTSTRAP_INITIAL_PAIR_RETRIES: usize = 4;
 const MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS: usize = 100;
 const PREFERRED_RIG_BOOTSTRAP_SHARED_FRAMES: usize = 3;
+const MAX_AUTO_SEED_RECOVERY_ATTEMPTS: usize = 4;
+const MAX_AUTO_SEED_FRAME_GAP: usize = 16;
+const AUTO_SEED_RECOVERY_TRIGGER_RATIO: f64 = 0.45;
+const MIN_HEALTHY_REGISTRATION_RATIO: f64 = 0.50;
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
 
@@ -206,6 +210,7 @@ struct StageRunOutput {
     artifacts: Vec<String>,
     registration: Option<RegistrationSummary>,
     capability_updates: BTreeMap<String, bool>,
+    warnings: Vec<String>,
 }
 
 impl StageRunOutput {
@@ -214,6 +219,7 @@ impl StageRunOutput {
             artifacts,
             registration: None,
             capability_updates: BTreeMap::new(),
+            warnings: Vec::new(),
         }
     }
 }
@@ -225,12 +231,27 @@ struct RegistrationSummary {
 }
 
 impl RegistrationSummary {
+    fn ratio(self) -> f64 {
+        registration_ratio(self.registered, self.total)
+    }
+
     fn completion_message(self) -> String {
-        let percentage = self.registered as f64 / self.total as f64 * 100.0;
+        let percentage = self.ratio() * 100.0;
         format!(
             "對齊處理完成：已註冊 {} / {} 組相機組影格（{percentage:.1}%）",
             self.registered, self.total
         )
+    }
+
+    fn low_coverage_warning(self) -> Option<String> {
+        (self.ratio() < MIN_HEALTHY_REGISTRATION_RATIO).then(|| {
+            format!(
+                "對齊覆蓋偏低：只註冊 {} / {} 個完整相機組影格（{:.1}%）。APP 已自動嘗試不同起始位置；建議避免長時間原地旋轉，並確認畫面有足夠平移視差。",
+                self.registered,
+                self.total,
+                self.ratio() * 100.0
+            )
+        })
     }
 }
 
@@ -607,7 +628,7 @@ pub fn start_stage(
                         1.0,
                         &completed_message,
                         output.artifacts,
-                        Vec::new(),
+                        output.warnings,
                         Some(stage_started_at),
                     );
                     // A terminal event is the UI scheduler's signal to start
@@ -4722,7 +4743,13 @@ fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), S
         root.join("metadata/.align-matching-database.backup.partial"),
         root.join("metadata/.align-unconfigured-database.backup"),
         root.join("metadata/.align-unconfigured-database.backup.partial"),
+        root.join("metadata/.align-auto-seed-text"),
+        root.join("metadata/.align-auto-seed-original"),
+        root.join("metadata/auto_seed_recovery.json"),
     ];
+    for attempt in 1..=MAX_AUTO_SEED_RECOVERY_ATTEMPTS {
+        paths.push(root.join(format!("metadata/.align-auto-seed-retry-{attempt}")));
+    }
     if !preserve_database {
         invalidate_calibrated_prior_artifacts(root)?;
         paths.extend([
@@ -4784,6 +4811,18 @@ struct VerifiedBootstrapInitialPair {
     inlier_count: usize,
     image_names: String,
     same_frame: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AutoSeedInitialPair {
+    image_id1: i64,
+    image_id2: i64,
+    inlier_count: usize,
+    geometry_config: i64,
+    frame_gap: usize,
+    timeline_segment: usize,
+    image_names: String,
 }
 
 fn colmap_image_pair_id(image_id1: i64, image_id2: i64) -> i64 {
@@ -4915,6 +4954,126 @@ fn verified_bootstrap_initial_pairs(
             }) {
                 selected.push(candidate);
             }
+        }
+    }
+    Ok(selected)
+}
+
+fn auto_seed_initial_pairs(
+    database: &Path,
+    configs: &[RigBootstrapConfig],
+) -> Result<Vec<AutoSeedInitialPair>, String> {
+    let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("無法唯讀開啟 COLMAP 資料庫 {}：{error}", database.display()))?;
+    let mut image_statement = connection
+        .prepare("SELECT image_id, name FROM images")
+        .map_err(|error| format!("無法讀取 COLMAP images：{error}"))?;
+    let images = image_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP images：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("無法解析 COLMAP images：{error}"))?;
+
+    let prefixes = configs
+        .iter()
+        .flat_map(|config| &config.cameras)
+        .map(|camera| camera.image_prefix.as_str())
+        .collect::<Vec<_>>();
+    let mut image_metadata = HashMap::new();
+    for (camera_index, prefix) in prefixes.iter().enumerate() {
+        let mut camera_images = images
+            .iter()
+            .filter(|(_, name)| name.starts_with(prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        camera_images.sort_by(|left, right| left.1.cmp(&right.1));
+        let camera_image_count = camera_images.len();
+        for (ordinal, (image_id, name)) in camera_images.into_iter().enumerate() {
+            image_metadata.insert(
+                image_id,
+                (camera_index, ordinal, camera_image_count, name),
+            );
+        }
+    }
+
+    let mut geometry_statement = connection
+        .prepare("SELECT pair_id, rows, config FROM two_view_geometries")
+        .map_err(|error| format!("無法讀取 COLMAP two_view_geometries：{error}"))?;
+    let mut candidates = geometry_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP two_view_geometries：{error}"))?
+        .filter_map(Result::ok)
+        .filter_map(|(pair_id, rows, geometry_config)| {
+            // Exclude planar, panoramic, planar-or-panoramic, degenerate, and
+            // watermark geometries. They can have thousands of inliers while
+            // still providing no translational baseline for SfM startup.
+            if !matches!(geometry_config, 2 | 3 | 9)
+                || rows < MIN_BOOTSTRAP_INITIAL_PAIR_INLIERS as i64
+            {
+                return None;
+            }
+            let image_id1 = pair_id / COLMAP_MAX_IMAGE_ID;
+            let image_id2 = pair_id % COLMAP_MAX_IMAGE_ID;
+            let (camera1, ordinal1, image_count1, name1) = image_metadata.get(&image_id1)?;
+            let (camera2, ordinal2, image_count2, name2) = image_metadata.get(&image_id2)?;
+            if camera1 != camera2 || image_count1 != image_count2 {
+                return None;
+            }
+            let frame_gap = ordinal1.abs_diff(*ordinal2);
+            if frame_gap == 0 || frame_gap > MAX_AUTO_SEED_FRAME_GAP {
+                return None;
+            }
+            let midpoint = (ordinal1 + ordinal2) / 2;
+            let timeline_segment = midpoint
+                .saturating_mul(MAX_AUTO_SEED_RECOVERY_ATTEMPTS)
+                .checked_div((*image_count1).max(1))
+                .unwrap_or(0)
+                .min(MAX_AUTO_SEED_RECOVERY_ATTEMPTS - 1);
+            Some(AutoSeedInitialPair {
+                image_id1,
+                image_id2,
+                inlier_count: rows as usize,
+                geometry_config,
+                frame_gap,
+                timeline_segment,
+                image_names: format!("{name1} ↔ {name2}"),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    candidates.sort_by(|left, right| {
+        left
+            .timeline_segment
+            .cmp(&right.timeline_segment)
+            .then_with(|| {
+                let rank = |config| if matches!(config, 2 | 9) { 2 } else { 1 };
+                rank(right.geometry_config).cmp(&rank(left.geometry_config))
+            })
+            .then_with(|| {
+                right
+                    .frame_gap
+                    .min(8)
+                    .cmp(&left.frame_gap.min(8))
+            })
+            .then_with(|| right.inlier_count.cmp(&left.inlier_count))
+            .then_with(|| left.image_names.cmp(&right.image_names))
+    });
+
+    let mut selected = Vec::new();
+    for segment in 0..MAX_AUTO_SEED_RECOVERY_ATTEMPTS {
+        if let Some(candidate) = candidates
+            .iter()
+            .find(|candidate| candidate.timeline_segment == segment)
+        {
+            selected.push(candidate.clone());
         }
     }
     Ok(selected)
@@ -6864,6 +7023,34 @@ fn global_candidate_quality_metrics(
     })
 }
 
+fn registration_ratio(registered: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        registered as f64 / total as f64
+    }
+}
+
+fn mapper_quality_is_better(
+    candidate: &GlobalCandidateQualityMetrics,
+    current: &GlobalCandidateQualityMetrics,
+) -> bool {
+    if candidate.complete_registered_rig_frames != current.complete_registered_rig_frames {
+        return candidate.complete_registered_rig_frames > current.complete_registered_rig_frames;
+    }
+    if candidate.model.points3d_count != current.model.points3d_count {
+        return candidate.model.points3d_count > current.model.points3d_count;
+    }
+    match (
+        candidate.model.median_reprojection_error_px,
+        current.model.median_reprojection_error_px,
+    ) {
+        (Some(candidate_error), Some(current_error)) => candidate_error < current_error,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
 fn evaluate_global_candidate_quality(
     seed: GlobalCandidateQualityMetrics,
     candidate: GlobalCandidateQualityMetrics,
@@ -7423,14 +7610,20 @@ fn run_align(
         for path in [
             root.join("metadata/gravity_alignment.json"),
             root.join("metadata/gravity_alignment.sim3.txt"),
+            root.join("metadata/auto_seed_recovery.json"),
         ] {
             if path.is_file() {
                 artifacts.push(path.to_string_lossy().into_owned());
             }
         }
+        let registration = registration_summary_from_text_model(&root, rig_frame_count);
+        let warnings = registration
+            .and_then(RegistrationSummary::low_coverage_warning)
+            .into_iter()
+            .collect();
         return Ok(StageRunOutput {
             artifacts,
-            registration: registration_summary_from_text_model(&root, rig_frame_count),
+            registration,
             capability_updates: BTreeMap::from([(
                 "imuApplied".to_owned(),
                 (reused_effective_mapper == "global_mapper"
@@ -7439,6 +7632,7 @@ fn run_align(
                     || reused_effective_mapper == "external_orientation_ba"
                     || gravity_alignment_was_applied(&root),
             )]),
+            warnings,
         });
     }
     if let Some(error) = &cached_validation_error {
@@ -8596,7 +8790,7 @@ fn run_align(
         if !sparse_rig_model_exists(&sparse) {
             return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
         }
-        let final_calibrated_sensor_count = validate_colmap_configured_rig_model(
+        let mut final_calibrated_sensor_count = validate_colmap_configured_rig_model(
             app,
             id,
             &colmap,
@@ -8604,6 +8798,211 @@ fn run_align(
             &sparse.join("0"),
             control,
         )?;
+        if mapper_mode == MapperMode::Incremental {
+            let recovery_report_path = root.join("metadata/auto_seed_recovery.json");
+            let scratch_text = root.join("metadata/.align-auto-seed-text");
+            export_colmap_text_model(
+                app,
+                id,
+                &colmap,
+                &sparse.join("0"),
+                &scratch_text,
+                control,
+            )?;
+            let initial_quality = global_candidate_quality_metrics(&scratch_text)?;
+            remove_align_artifact(&scratch_text)?;
+            let initial_ratio = registration_ratio(
+                initial_quality.complete_registered_rig_frames,
+                rig_frame_total,
+            );
+            if initial_ratio < AUTO_SEED_RECOVERY_TRIGGER_RATIO {
+                let seed_pairs = auto_seed_initial_pairs(&db, &rig_configs)?;
+                let mut best_quality = initial_quality.clone();
+                let mut best_root = None;
+                let mut attempts = Vec::new();
+                emit_log(
+                    app,
+                    id,
+                    "warning",
+                    format!(
+                        "初次對齊只註冊 {} / {} 個完整相機組影格（{:.1}%）；正在自動避開低視差起始片段並重試 {} 組 seed",
+                        initial_quality.complete_registered_rig_frames,
+                        rig_frame_total,
+                        initial_ratio * 100.0,
+                        seed_pairs.len()
+                    ),
+                );
+                for (attempt_index, seed) in seed_pairs.iter().enumerate() {
+                    let retry_root = root.join(format!(
+                        "metadata/.align-auto-seed-retry-{}",
+                        attempt_index + 1
+                    ));
+                    remove_align_artifact(&retry_root)?;
+                    fs::create_dir_all(&retry_root).map_err(|error| error.to_string())?;
+                    emit_progress_detailed(
+                        app,
+                        id,
+                        &StageName::Align,
+                        "auto-seed-recovery",
+                        4.0 / 5.0,
+                        format!(
+                            "初始模型覆蓋不足，正在自動嘗試較可靠的起始位置（{} / {}）",
+                            attempt_index + 1,
+                            seed_pairs.len()
+                        ),
+                        "running",
+                        false,
+                        None,
+                        None,
+                        Some(seed.image_names.clone()),
+                        None,
+                    );
+                    let retry_options = MapperOptions {
+                        multiple_models: false,
+                        initial_image_pair: Some((seed.image_id1, seed.image_id2)),
+                        disable_sensor_refinement,
+                    };
+                    let retry_gpu_args = mapper_args(
+                        &db,
+                        &root.join("images"),
+                        &retry_root,
+                        final_mapper_gpu,
+                        &mapper_gpu_index,
+                        retry_options,
+                    );
+                    let retry_cpu_args = mapper_args(
+                        &db,
+                        &root.join("images"),
+                        &retry_root,
+                        false,
+                        &mapper_gpu_index,
+                        retry_options,
+                    );
+                    let run_result = run_mapper_with_gpu_fallback(
+                        app,
+                        id,
+                        &colmap,
+                        &retry_root,
+                        &retry_gpu_args,
+                        &retry_cpu_args,
+                        final_mapper_gpu,
+                        "auto_seed_mapper",
+                        control,
+                        || {},
+                        |_| {},
+                    );
+                    if let Err(error) = run_result {
+                        if cancelled_error(&error, control) {
+                            return Err(error);
+                        }
+                        attempts.push(json!({
+                            "seed": seed,
+                            "status": "mapper-failed",
+                            "error": error,
+                        }));
+                        remove_align_artifact(&retry_root)?;
+                        continue;
+                    }
+                    if !sparse_rig_model_exists(&retry_root) {
+                        attempts.push(json!({
+                            "seed": seed,
+                            "status": "no-rig-model",
+                        }));
+                        remove_align_artifact(&retry_root)?;
+                        continue;
+                    }
+                    let validation = validate_colmap_configured_rig_model(
+                        app,
+                        id,
+                        &colmap,
+                        &root,
+                        &retry_root.join("0"),
+                        control,
+                    );
+                    if let Err(error) = validation {
+                        attempts.push(json!({
+                            "seed": seed,
+                            "status": "validation-failed",
+                            "error": error,
+                        }));
+                        remove_align_artifact(&retry_root)?;
+                        continue;
+                    }
+                    export_colmap_text_model(
+                        app,
+                        id,
+                        &colmap,
+                        &retry_root.join("0"),
+                        &scratch_text,
+                        control,
+                    )?;
+                    let quality = global_candidate_quality_metrics(&scratch_text)?;
+                    remove_align_artifact(&scratch_text)?;
+                    attempts.push(json!({
+                        "seed": seed,
+                        "status": "completed",
+                        "quality": quality,
+                    }));
+                    if mapper_quality_is_better(&quality, &best_quality) {
+                        if let Some(previous) = best_root.replace(retry_root.clone()) {
+                            remove_align_artifact(&previous)?;
+                        }
+                        best_quality = quality;
+                    } else {
+                        remove_align_artifact(&retry_root)?;
+                    }
+                }
+
+                let recovered = best_root.is_some();
+                if let Some(selected_root) = best_root {
+                    let original_root = root.join("metadata/.align-auto-seed-original");
+                    remove_align_artifact(&original_root)?;
+                    fs::rename(&sparse, &original_root).map_err(|error| {
+                        format!("無法暫存原始低覆蓋 sparse model：{error}")
+                    })?;
+                    if let Err(error) = fs::rename(&selected_root, &sparse) {
+                        let rollback = fs::rename(&original_root, &sparse)
+                            .err()
+                            .map(|rollback_error| format!("；回復也失敗：{rollback_error}"))
+                            .unwrap_or_default();
+                        return Err(format!("無法提交自動 seed recovery 模型：{error}{rollback}"));
+                    }
+                    remove_align_artifact(&original_root)?;
+                    final_calibrated_sensor_count = validate_colmap_configured_rig_model(
+                        app,
+                        id,
+                        &colmap,
+                        &root,
+                        &sparse.join("0"),
+                        control,
+                    )?;
+                    emit_log(
+                        app,
+                        id,
+                        "info",
+                        format!(
+                            "自動 seed recovery 已將完整相機組註冊從 {} 提升到 {} / {}",
+                            initial_quality.complete_registered_rig_frames,
+                            best_quality.complete_registered_rig_frames,
+                            rig_frame_total
+                        ),
+                    );
+                }
+                write_json_atomic(
+                    &recovery_report_path,
+                    &json!({
+                        "schemaVersion": 1,
+                        "triggerRatio": AUTO_SEED_RECOVERY_TRIGGER_RATIO,
+                        "initialQuality": initial_quality,
+                        "selectedQuality": best_quality,
+                        "recovered": recovered,
+                        "attempts": attempts,
+                    }),
+                )?;
+            } else {
+                remove_align_artifact(&recovery_report_path)?;
+            }
+        }
         emit_log(
             app,
             id,
@@ -9176,6 +9575,14 @@ fn run_align(
             artifacts.push(path.to_string_lossy().into_owned());
         }
     }
+    let recovery_report_path = root.join("metadata/auto_seed_recovery.json");
+    if recovery_report_path.is_file() {
+        artifacts.push(recovery_report_path.to_string_lossy().into_owned());
+    }
+    let warnings = registration
+        .and_then(RegistrationSummary::low_coverage_warning)
+        .into_iter()
+        .collect();
     Ok(StageRunOutput {
         artifacts,
         registration,
@@ -9185,13 +9592,15 @@ fn run_align(
                 || effective_final_mapper_component == "external_orientation_ba"
                 || gravity_alignment_applied,
         )]),
+        warnings,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        balanced_select_expression, build_align_fingerprint, build_feature_fingerprint,
+        auto_seed_initial_pairs, balanced_select_expression, build_align_fingerprint,
+        build_feature_fingerprint,
         calibrate_focal_before_bootstrap, calibrate_imu_sources,
         calibrated_pair_refresh_requires_fail_closed, can_reuse_align_result,
         can_reuse_feature_database, candidate_ffmpeg_args, candidate_image_names,
@@ -11222,6 +11631,89 @@ mod tests {
             RigMappingPlan::BootstrapThenConfigure
         );
         assert!(!configs[0].cameras[1].has_explicit_pose());
+    }
+
+    #[test]
+    fn auto_seed_recovery_spreads_non_degenerate_temporal_pairs_across_timeline() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("database.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE images (image_id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE two_view_geometries (
+                    pair_id INTEGER PRIMARY KEY,
+                    rows INTEGER NOT NULL,
+                    config INTEGER NOT NULL
+                 );",
+            )
+            .unwrap();
+        for index in 0..8_i64 {
+            connection
+                .execute(
+                    "INSERT INTO images(image_id, name) VALUES (?1, ?2)",
+                    rusqlite::params![index + 1, format!("lens0/frame{index:04}.jpg")],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO images(image_id, name) VALUES (?1, ?2)",
+                    rusqlite::params![index + 101, format!("lens1/frame{index:04}.jpg")],
+                )
+                .unwrap();
+        }
+        for (left, right, rows, config) in [
+            (1_i64, 3_i64, 220_i64, 3_i64),
+            (3, 5, 210, 3),
+            (5, 7, 205, 2),
+            (7, 8, 180, 3),
+            // A stronger panoramic pair must not win the first segment.
+            (1, 4, 2_000, 6),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![colmap_image_pair_id(left, right), rows, config],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let configs = serde_json::from_value::<Vec<RigBootstrapConfig>>(json!([{
+            "cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {
+                    "image_prefix": "lens1/",
+                    "cam_from_rig_rotation": [1.0, 0.0, 0.0, 0.0],
+                    "cam_from_rig_translation": [0.0, 0.0, 0.0]
+                }
+            ]
+        }]))
+        .unwrap();
+        let pairs = auto_seed_initial_pairs(&database, &configs).unwrap();
+        assert_eq!(pairs.len(), 4);
+        assert_eq!(
+            pairs
+                .iter()
+                .map(|pair| pair.timeline_segment)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+        assert!(pairs.iter().all(|pair| pair.geometry_config != 6));
+    }
+
+    #[test]
+    fn low_registration_coverage_is_user_visible() {
+        let low = RegistrationSummary {
+            registered: 11,
+            total: 169,
+        };
+        let healthy = RegistrationSummary {
+            registered: 120,
+            total: 169,
+        };
+        assert!(low.low_coverage_warning().is_some());
+        assert!(healthy.low_coverage_warning().is_none());
     }
 
     #[test]
