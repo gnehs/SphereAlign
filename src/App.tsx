@@ -272,6 +272,8 @@ function App() {
         name?: string;
         valid?: boolean;
         size?: number;
+        cameraBrand?: string;
+        cameraModel?: string;
         duration?: number;
         fps?: number;
         width?: number;

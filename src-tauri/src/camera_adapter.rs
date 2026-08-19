@@ -23,6 +23,8 @@ enum InstaPairRole {
 pub struct ProbedSource {
     pub path: PathBuf,
     pub probe: Value,
+    pub camera_model: Option<String>,
+    pub color_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -270,7 +272,10 @@ fn dual_track_bundle(source: ProbedSource, indices: [usize; 2]) -> CaptureBundle
         "DJI" => "DjiOsmo360Adapter",
         _ => "GenericDualFisheyeAdapter",
     };
-    let model = (vendor == "Insta360").then(|| "dual-track INSV".to_owned());
+    let model = source
+        .camera_model
+        .clone()
+        .or_else(|| (vendor == "Insta360").then(|| "dual-track INSV".to_owned()));
     let path = source.path.clone();
     CaptureBundle {
         adapter,
@@ -365,7 +370,11 @@ pub fn resolve_capture_bundles(sources: Vec<ProbedSource>) -> Result<Vec<Capture
         captures.push(CaptureBundle {
             adapter: "Insta360PairedInsvAdapter",
             vendor: "Insta360",
-            model: Some("paired INSV".to_owned()),
+            model: lens0
+                .camera_model
+                .clone()
+                .or_else(|| lens1.camera_model.clone())
+                .or_else(|| Some("paired INSV".to_owned())),
             source_paths: vec![lens0_path.clone(), lens1_path.clone()],
             source_probes: vec![lens0.clone(), lens1.clone()],
             lenses: [
@@ -451,6 +460,8 @@ mod tests {
         let captures = resolve_capture_bundles(vec![ProbedSource {
             path: path.clone(),
             probe: probe(2, 3840, 3840, "30000/1001", "10.0"),
+            camera_model: Some("Insta360 X4".to_owned()),
+            color_profile: None,
         }])
         .unwrap();
         assert_eq!(captures.len(), 1);
@@ -489,6 +500,8 @@ mod tests {
                 ],
                 "format": {"duration": "10.0"}
             }),
+            camera_model: None,
+            color_profile: None,
         }])
         .unwrap_err();
         assert!(error.contains("解析度不同"));
@@ -502,10 +515,14 @@ mod tests {
             ProbedSource {
                 path: lens1.clone(),
                 probe: probe(1, 2880, 2880, "30000/1001", "85.185"),
+                camera_model: Some("Insta360 X3".to_owned()),
+                color_profile: None,
             },
             ProbedSource {
                 path: lens0.clone(),
                 probe: probe(1, 2880, 2880, "30000/1001", "85.218"),
+                camera_model: Some("Insta360 X3".to_owned()),
+                color_profile: None,
             },
         ])
         .unwrap();
@@ -521,6 +538,8 @@ mod tests {
         let error = resolve_capture_bundles(vec![ProbedSource {
             path,
             probe: probe(1, 2880, 2880, "30000/1001", "85.0"),
+            camera_model: None,
+            color_profile: None,
         }])
         .unwrap_err();
         assert!(error.contains("_10_"));
@@ -555,6 +574,8 @@ mod tests {
                 ProbedSource {
                     path: path.clone(),
                     probe: serde_json::from_slice(&output.stdout).unwrap(),
+                    camera_model: None,
+                    color_profile: None,
                 }
             })
             .collect::<Vec<_>>();

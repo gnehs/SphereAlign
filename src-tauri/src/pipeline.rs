@@ -42,7 +42,7 @@ const CANDIDATE_STREAM_WIDTH: usize = CANDIDATE_PROXY_SIZE * 2;
 const CANDIDATE_STREAM_HEIGHT: usize = CANDIDATE_PROXY_SIZE;
 const CANDIDATE_FRAME_BYTES: usize = CANDIDATE_STREAM_WIDTH * CANDIDATE_STREAM_HEIGHT;
 const CANDIDATE_IMAGE_FORMAT: &str = "rawvideo-gray8-hstack-1024x512-memory";
-const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 4;
+const CANDIDATE_SELECTION_CHECKPOINT_SCHEMA_VERSION: u32 = 5;
 const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
@@ -136,6 +136,8 @@ struct CandidateSelectionCheckpoint {
     color_mode: String,
     resolved_color_profile: String,
     color_detection_confidence: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    color_lut_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color_lut_sha256: Option<String>,
     selection: SelectionMetadata,
@@ -2197,6 +2199,7 @@ fn load_candidate_selection_checkpoint(
         && checkpoint.color_mode == color_resolution.mode.as_str()
         && checkpoint.resolved_color_profile == color_resolution.resolved_profile.as_str()
         && (checkpoint.color_detection_confidence - color_resolution.confidence).abs() < 1e-6
+        && checkpoint.color_lut_id.as_deref() == color_resolution.lut_id.as_deref()
         && checkpoint.color_lut_sha256.as_deref() == color_resolution.lut_sha256.as_deref()
         && checkpoint.selection.color_mode == color_resolution.mode.as_str()
         && checkpoint.selection.resolved_color_profile
@@ -2251,6 +2254,7 @@ fn write_candidate_selection_checkpoint(
         color_mode: color_resolution.mode.as_str().to_owned(),
         resolved_color_profile: color_resolution.resolved_profile.as_str().to_owned(),
         color_detection_confidence: color_resolution.confidence,
+        color_lut_id: color_resolution.lut_id.clone(),
         color_lut_sha256: color_resolution.lut_sha256.clone(),
         selection: selection.clone(),
     };
@@ -2410,7 +2414,18 @@ fn run_extract(
         .map(|raw_input| {
             let path = PathBuf::from(raw_input);
             let probe = probe_streams(&ffprobe, &path)?;
-            Ok(ProbedSource { path, probe })
+            let telemetry_inspection = telemetry::inspect_source(&path).ok();
+            let camera_model = telemetry_inspection
+                .as_ref()
+                .and_then(|inspection| inspection.camera_model.clone());
+            let color_profile = telemetry_inspection
+                .and_then(|inspection| inspection.color_profile);
+            Ok(ProbedSource {
+                path,
+                probe,
+                camera_model,
+                color_profile,
+            })
         })
         .collect::<Result<Vec<_>, String>>()?;
     let captures = camera_adapter::resolve_capture_bundles(probed_sources)?;
@@ -2464,7 +2479,15 @@ fn run_extract(
         // Probe and resolve every source independently. A mixed capture may
         // contain a log source beside a display-referred source, so the first
         // source must never decide the transform for the rest of the job.
-        let color_detection = color::detect_from_probe(&input, probe);
+        let color_detection = color::detect_from_probe_with_camera(
+            &input,
+            probe,
+            capture.model.as_deref(),
+            capture
+                .source_probes
+                .first()
+                .and_then(|source| source.color_profile.as_deref()),
+        );
         let (color_resolution, color_lut) = color::resolve_for_extract(
             color_mode,
             &color_detection,
@@ -11643,6 +11666,8 @@ mod tests {
             resolved_profile: color::ColorProfile::Unknown,
             confidence: 0.0,
             applied: false,
+            lut_id: None,
+            lut_source_url: None,
             lut_sha256: None,
             lut_file_name: None,
             reasons: vec!["test".to_owned()],

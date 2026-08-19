@@ -19,7 +19,7 @@ export const APP_NOTICE_EASE = [0.22, 1, 0.36, 1] as const;
 type StageKey = "extract" | "mask" | "align";
 type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
-type ExtractColorMode = "auto" | "dlogMRec709" | "native";
+type ExtractColorMode = "auto" | "logRec709" | "dlogMRec709" | "native";
 
 function translate(descriptor: MessageDescriptor) {
   return i18n._(descriptor);
@@ -27,6 +27,14 @@ function translate(descriptor: MessageDescriptor) {
 
 interface ColorInspection {
   shouldApply?: boolean;
+  detectedProfile?: string;
+  cameraModel?: string;
+  recommendedLut?: {
+    id: string;
+    displayName: string;
+    fileName: string;
+    sourceUrl: string;
+  };
 }
 
 interface ColorInspectionSummary {
@@ -80,6 +88,8 @@ interface SourceInspection {
   name?: string;
   size?: number;
   valid?: boolean;
+  cameraBrand?: string;
+  cameraModel?: string;
   duration?: number;
   fps?: number;
   width?: number;
@@ -95,6 +105,8 @@ interface SourceMedia {
   path: string;
   label: string;
   detail: string;
+  cameraBrand?: string;
+  cameraModel?: string;
   status?: "ready" | "warning" | "unknown";
   issues?: SourceIssue[];
 }
@@ -276,6 +288,7 @@ const COLMAP_PATH_STORAGE_KEY = "spherealign.colmapPath";
 function normaliseExtractColorMode(value: unknown): ExtractColorMode {
   const raw = String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   if (["dlogmrec709", "dlogm709", "dlogm709lut", "dlogmtorec709"].includes(raw)) return "dlogMRec709";
+  if (["logrec709", "logtorec709", "builtin"].includes(raw)) return "logRec709";
   if (["native", "original", "none", "off"].includes(raw)) return "native";
   return "auto";
 }
@@ -1195,6 +1208,12 @@ function normaliseSourceInspection(value: unknown, fallbackPath = ""): SourceIns
     name: typeof body.name === "string" ? body.name : undefined,
     size: nonNegativeNumber(body.size),
     valid: typeof body.valid === "boolean" ? body.valid : undefined,
+    cameraBrand: typeof (body.cameraBrand ?? body.camera_brand) === "string"
+      ? String(body.cameraBrand ?? body.camera_brand).trim() || undefined
+      : undefined,
+    cameraModel: typeof (body.cameraModel ?? body.camera_model) === "string"
+      ? String(body.cameraModel ?? body.camera_model).trim() || undefined
+      : undefined,
     duration: nonNegativeNumber(body.duration),
     fps: nonNegativeNumber(body.fps),
     width: nonNegativeNumber(body.width),
@@ -1527,6 +1546,8 @@ function sourceFromPath(path: string, index: number, inspection?: SourceInspecti
     path,
     label: `Source ${String(index + 1).padStart(2, "0")}`,
     detail: label,
+    cameraBrand: inspection?.cameraBrand,
+    cameraModel: inspection?.cameraModel,
     status: sourceStatusForInspection(inspection),
     issues: inspection?.issues,
   };
@@ -1549,7 +1570,29 @@ function normaliseColorInspection(value: unknown): ColorInspection | null {
     ?? body.should_apply
     ?? nested?.shouldApply
     ?? nested?.should_apply;
-  return typeof shouldApplyValue === "boolean" ? { shouldApply: shouldApplyValue } : null;
+  const detectedProfile = body.detectedProfile ?? body.detected_profile ?? nested?.detectedProfile ?? nested?.detected_profile;
+  const cameraModel = body.cameraModel ?? body.camera_model ?? nested?.cameraModel ?? nested?.camera_model;
+  const rawLut = body.recommendedLut ?? body.recommended_lut ?? nested?.recommendedLut ?? nested?.recommended_lut;
+  const lut = rawLut && typeof rawLut === "object" ? rawLut as Record<string, unknown> : null;
+  const recommendedLut = lut
+    && typeof lut.id === "string"
+    && typeof (lut.displayName ?? lut.display_name) === "string"
+    && typeof (lut.fileName ?? lut.file_name) === "string"
+    && typeof (lut.sourceUrl ?? lut.source_url) === "string"
+    ? {
+        id: lut.id,
+        displayName: String(lut.displayName ?? lut.display_name),
+        fileName: String(lut.fileName ?? lut.file_name),
+        sourceUrl: String(lut.sourceUrl ?? lut.source_url),
+      }
+    : undefined;
+  if (typeof shouldApplyValue !== "boolean" && typeof detectedProfile !== "string" && typeof cameraModel !== "string" && !recommendedLut) return null;
+  return {
+    ...(typeof shouldApplyValue === "boolean" ? { shouldApply: shouldApplyValue } : {}),
+    ...(typeof detectedProfile === "string" ? { detectedProfile } : {}),
+    ...(typeof cameraModel === "string" ? { cameraModel } : {}),
+    ...(recommendedLut ? { recommendedLut } : {}),
+  };
 }
 
 function normaliseColorInspectionSummary(value: unknown): ColorInspectionSummary | null {

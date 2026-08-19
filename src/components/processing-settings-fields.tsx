@@ -57,9 +57,10 @@ export function ProcessingSettingsFields({
   const candidateMultiplier = candidateMultiplierFor(settings.extract);
   const candidateFps = settings.extract.baseFps * candidateMultiplier;
   const colorMode = settings.extract.colorMode;
-  const detectedDlog = sourceColorInspection?.shouldApply === true
+  const detectedLog = sourceColorInspection?.shouldApply === true
     || sourceColorInspection?.files?.some((file) => file.shouldApply === true) === true;
-  const restoreDlog = colorMode === "dlogMRec709" || (colorMode === "auto" && detectedDlog);
+  const restoreLog = colorMode === "logRec709" || colorMode === "dlogMRec709" || (colorMode === "auto" && detectedLog);
+  const detectedSources = sourceColorInspection?.files?.filter((file) => file.cameraModel || file.detectedProfile || file.recommendedLut) ?? [];
   const lutPath = settings.extract.lutPath?.trim() ?? "";
   const lutPathInvalid = customLutPathIsInvalid(lutPath);
 
@@ -131,26 +132,37 @@ export function ProcessingSettingsFields({
               <Field orientation="horizontal" className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5">
                 <Switch
                   id="extract-color-mode"
-                  checked={restoreDlog}
+                  checked={restoreLog}
                   onCheckedChange={(checked) => onSettingsChange((current) => ({
                     ...current,
-                    extract: { ...current.extract, colorMode: checked ? "dlogMRec709" : "native" },
+                    extract: { ...current.extract, colorMode: checked ? "logRec709" : "native" },
                   }))}
                 />
                 <div>
-                  <FieldLabel htmlFor="extract-color-mode"><Trans comment="Apply the official or custom lookup table to restore DJI D-Log M color.">Apply the D-Log M restoration LUT</Trans></FieldLabel>
-                  {colorMode === "auto" && detectedDlog && (
-                    <FieldDescription><Trans comment="The source filename suffix or media metadata indicated D-Log M color.">Detected from the _D filename suffix or media metadata and enabled.</Trans></FieldDescription>
+                  <FieldLabel htmlFor="extract-color-mode"><Trans comment="Automatically select a verified camera-specific LUT for detected Log footage.">Restore Log color with the matching LUT</Trans></FieldLabel>
+                  {colorMode === "auto" && detectedLog && (
+                    <FieldDescription><Trans comment="Camera model and explicit media profile metadata selected a verified LUT.">Camera model and Log profile detected; the matching LUT is enabled.</Trans></FieldDescription>
                   )}
                 </div>
               </Field>
+              {detectedSources.map((source, index) => (
+                <div key={`${source.cameraModel ?? "camera"}-${source.detectedProfile ?? index}`} className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  <div className="font-medium">{source.cameraModel ?? t`Unknown camera`} · {source.detectedProfile ?? t`Unknown color profile`}</div>
+                  {source.recommendedLut && (
+                    <div className="mt-1 text-muted-foreground">
+                      {source.recommendedLut.displayName} · <code>{source.recommendedLut.fileName}</code>{" "}
+                      <a className="underline underline-offset-2" href={source.recommendedLut.sourceUrl} target="_blank" rel="noreferrer"><Trans>Official source</Trans></a>
+                    </div>
+                  )}
+                </div>
+              ))}
               <Field className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=alert]]:mt-0.5" data-invalid={lutPathInvalid || undefined}>
                 <FieldLabel htmlFor="extract-lut-path"><Trans comment="Optional user-provided 3D LUT file path.">Custom LUT (optional)</Trans></FieldLabel>
                 <div className="flex items-center gap-2 [&_input]:flex-1">
                   <Input
                     id="extract-lut-path"
                     value={lutPath}
-                    placeholder={t`Leave blank to use the official D-Log M → Rec.709 LUT`}
+                    placeholder={t`Leave blank to use the detected camera's official LUT`}
                     aria-invalid={lutPathInvalid || undefined}
                     onChange={(event) => onSettingsChange((current) => ({
                       ...current,
@@ -162,8 +174,8 @@ export function ProcessingSettingsFields({
                 </div>
                 {lutPathInvalid
                   ? <Alert variant="destructive"><AlertTriangle /><AlertTitle>{t`Invalid LUT file format`}</AlertTitle><AlertDescription>{t`Choose a 3D LUT with the .cube extension.`}</AlertDescription></Alert>
-                  : colorMode === "dlogMRec709"
-                    ? <FieldDescription>{t`When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file.`}</FieldDescription>
+                  : colorMode === "logRec709" || colorMode === "dlogMRec709"
+                    ? <FieldDescription>{t`When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file.`}</FieldDescription>
                     : <FieldDescription>{t`Specify a .cube file only when you need to override the official LUT.`}</FieldDescription>}
               </Field>
             </FieldContent>

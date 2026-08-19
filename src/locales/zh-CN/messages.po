@@ -80,13 +80,13 @@ msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# 个来源} other {# 个来源}}"
 
 #. placeholder {0}: device.name
-#: src/lib/pipeline.ts:356
+#: src/lib/pipeline.ts:369
 msgid "{0} (GPU {ordinal})"
 msgstr "{0}（GPU {ordinal}）"
 
 #. placeholder {0}: completed.toLocaleString(getLocale())
 #. placeholder {1}: total.toLocaleString(getLocale())
-#: src/lib/pipeline.ts:997
+#: src/lib/pipeline.ts:1010
 msgid "{0} / {1}"
 msgstr "{0} / {1}"
 
@@ -96,13 +96,13 @@ msgstr "{0} / {1}"
 #~ msgstr "{0} 双鱼眼快照"
 
 #. placeholder {0}: rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)
-#: src/lib/pipeline.ts:1756
+#: src/lib/pipeline.ts:1799
 msgid "{0} items/sec"
 msgstr "{0} 项/秒"
 
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1052
+#: src/lib/pipeline.ts:1065
 msgid "{0} of {1} stages complete"
 msgstr "已完成 {0}/{1} 个阶段"
 
@@ -160,61 +160,61 @@ msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}：第一个视频流的首帧预览"
 
 #. Count of items already processed by a pipeline stage.
-#: src/lib/pipeline.ts:1002
+#: src/lib/pipeline.ts:1015
 msgid "{completed, plural, one {Processed #} other {Processed #}}"
 msgstr "{completed, plural, one {已处理 # 项} other {已处理 # 项}}"
 
-#: src/lib/pipeline.ts:737
+#: src/lib/pipeline.ts:750
 msgid "{count} candidate pairs processed"
 msgstr "已处理 {count} 对候选项"
 
-#: src/lib/pipeline.ts:739
-#: src/lib/pipeline.ts:740
+#: src/lib/pipeline.ts:752
+#: src/lib/pipeline.ts:753
 msgid "{count} masks failed; see the pipeline log"
 msgstr "{count} 个掩码失败；请查看流水线日志"
 
-#: src/lib/pipeline.ts:738
+#: src/lib/pipeline.ts:751
 msgid "{count} masks written"
 msgstr "已写入 {count} 个掩码"
 
-#: src/lib/pipeline.ts:743
+#: src/lib/pipeline.ts:756
 msgid "{count} sources"
 msgstr "{count} 个来源"
 
-#: src/lib/pipeline.ts:742
+#: src/lib/pipeline.ts:755
 msgid "{count} sources · browser preview"
 msgstr "{count} 个来源 · 浏览器预览"
 
-#: src/lib/pipeline.ts:736
+#: src/lib/pipeline.ts:749
 msgid "{count} sources completed"
 msgstr "已完成 {count} 个来源"
 
 #. placeholder {0}: String(minutes).padStart(2, "0")
-#: src/lib/pipeline.ts:904
+#: src/lib/pipeline.ts:917
 msgid "{hours} hr {0} min"
 msgstr "{hours} 小时 {0} 分钟"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:750
-#: src/lib/pipeline.ts:754
+#: src/lib/pipeline.ts:763
+#: src/lib/pipeline.ts:767
 msgid "{label}: {0}"
 msgstr "{label}：{0}"
 
 #. placeholder {0}: String(seconds).padStart(2, "0")
-#: src/lib/pipeline.ts:905
+#: src/lib/pipeline.ts:918
 msgid "{minutes} min {0} sec"
 msgstr "{minutes} 分钟 {0} 秒"
 
-#: src/lib/pipeline.ts:753
+#: src/lib/pipeline.ts:766
 msgid "{platform} · FFmpeg hardware decoding capability not reported"
 msgstr "{platform} · 未报告 FFmpeg 硬件解码能力"
 
-#: src/lib/pipeline.ts:906
+#: src/lib/pipeline.ts:919
 msgid "{seconds} sec"
 msgstr "{seconds} 秒"
 
 #. A source adapter must expose the video streams required by the panoramic workflow.
-#: src/lib/pipeline.ts:693
+#: src/lib/pipeline.ts:706
 msgctxt "source validation error"
 msgid "{source} does not contain the video streams required by its source adapter"
 msgstr "{source} 不包含其来源适配器所需的视频流"
@@ -226,45 +226,45 @@ msgstr "{source} 不包含其来源适配器所需的视频流"
 #~ msgstr "来源 {source} 不包含两个可识别的双鱼眼视频流"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:752
+#: src/lib/pipeline.ts:765
 msgid "{tool}: {0}"
 msgstr "{tool}：{0}"
 
 #. Count of all items reported by a pipeline stage.
-#: src/lib/pipeline.ts:998
+#: src/lib/pipeline.ts:1011
 msgid "{total, plural, one {Total #} other {Total #}}"
 msgstr "{total, plural, one {总计 # 项} other {总计 # 项}}"
 
-#: src/lib/pipeline.ts:741
+#: src/lib/pipeline.ts:754
 msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} 个来源 · {valid} 个通过检查"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:520
+#: src/App.tsx:522
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT（Cube）"
 
 #. Shown when an untranslated backend progress or status message contains CJK and has no localized mapping; hide the original to avoid misleading users.
-#: src/lib/pipeline.ts:411
+#: src/lib/pipeline.ts:424
 msgctxt "backend status fallback"
 msgid "A backend status message is unavailable in this language."
 msgstr "此语言暂不提供后端状态消息。"
 
-#: src/lib/pipeline.ts:644
+#: src/lib/pipeline.ts:657
 msgid "A processing stage is already running for this task; please wait"
 msgstr "此任务已有处理阶段正在运行；请稍候"
 
-#: src/lib/pipeline.ts:650
+#: src/lib/pipeline.ts:663
 msgid "A processing stage is already running; please wait"
 msgstr "已有处理阶段正在运行；请稍候"
 
 #. placeholder {0}: formatDuration(value)
-#: src/lib/pipeline.ts:1746
+#: src/lib/pipeline.ts:1789
 msgid "About {0}"
 msgstr "约 {0}"
 
-#: src/lib/pipeline.ts:1748
+#: src/lib/pipeline.ts:1791
 msgid "About {minutes} min"
 msgstr "约 {minutes} 分钟"
 
@@ -307,28 +307,28 @@ msgstr "创建后，项目信息会保存到输出文件夹中，因此任务可
 
 #. Fallback means retrying the same operation with software decoding after hardware decoding fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:673
+#: src/lib/pipeline.ts:686
 msgctxt "backend error"
 msgid "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
 msgstr "FFmpeg 硬件解码失败后，无法准备软件解码回退：{0}"
 
-#: src/lib/pipeline.ts:577
+#: src/lib/pipeline.ts:590
 msgid "Alignment"
 msgstr "对齐"
 
 #. The stage that aligns multiple panoramic sources and camera rigs.
-#: src/lib/pipeline.ts:225
+#: src/lib/pipeline.ts:237
 msgctxt "pipeline stage label"
 msgid "Alignment"
 msgstr "对齐"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:231
+#: src/components/processing-settings-fields.tsx:243
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "对齐"
 
-#: src/lib/pipeline.ts:715
+#: src/lib/pipeline.ts:728
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "对齐已完成：已注册 {registered} / {total} 个相机组帧（{percentage}%）"
 
@@ -338,27 +338,27 @@ msgstr "对齐已完成：已注册 {registered} / {total} 个相机组帧（{pe
 #~ msgstr "对齐工作流：{0}"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/lib/pipeline.ts:551
+#: src/lib/pipeline.ts:564
 msgid "Alignment: Cancelled"
 msgstr "对齐：已取消"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/lib/pipeline.ts:550
+#: src/lib/pipeline.ts:563
 msgid "Alignment: Completed"
 msgstr "对齐：已完成"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/lib/pipeline.ts:552
+#: src/lib/pipeline.ts:565
 msgid "Alignment: Failed"
 msgstr "对齐：失败"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/lib/pipeline.ts:548
+#: src/lib/pipeline.ts:561
 msgid "Alignment: Pending"
 msgstr "对齐：待处理"
 
 #. Synthesized pipeline log summary for the alignment stage.
-#: src/lib/pipeline.ts:549
+#: src/lib/pipeline.ts:562
 msgid "Alignment: Running"
 msgstr "对齐：运行中"
 
@@ -368,25 +368,25 @@ msgstr "所有必需能力均可用"
 
 #. Apply the official or custom lookup table to restore DJI D-Log M color.
 #: src/components/processing-settings-fields.tsx:141
-msgid "Apply the D-Log M restoration LUT"
-msgstr "应用 D-Log M 还原 LUT"
+#~ msgid "Apply the D-Log M restoration LUT"
+#~ msgstr "应用 D-Log M 还原 LUT"
 
 #. Alignment validation error for dual-fisheye frame pairs.
-#: src/lib/pipeline.ts:516
+#: src/lib/pipeline.ts:529
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "对齐至少需要两对匹配的 lens0/lens1 帧对"
 
-#: src/lib/pipeline.ts:649
+#: src/lib/pipeline.ts:662
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
 msgstr "自动流水线已完成帧提取、掩码和对齐"
 
-#: src/lib/pipeline.ts:607
-#: src/lib/pipeline.ts:1611
+#: src/lib/pipeline.ts:620
+#: src/lib/pipeline.ts:1654
 msgid "Available"
 msgstr "可用"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:75
+#: src/components/processing-settings-fields.tsx:76
 msgid "Base frame rate (FPS)"
 msgstr "基础帧率 (FPS)"
 
@@ -395,13 +395,13 @@ msgid "Basic reconstruction can run. CUDA and hardware acceleration are optional
 msgstr "可以运行基础重建。CUDA 和硬件加速为可选项；即使没有它们，处理仍可进行，但帧提取、特征匹配和重建会更慢。"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:252
+#: src/lib/pipeline.ts:264
 msgctxt "mask class"
 msgid "Bicycle"
 msgstr "自行车"
 
 #. Short label for the initial reconstruction bootstrap.
-#: src/lib/pipeline.ts:882
+#: src/lib/pipeline.ts:895
 msgctxt "pipeline phase"
 msgid "Bootstrap reconstruction"
 msgstr "重建引导"
@@ -409,7 +409,7 @@ msgstr "重建引导"
 #. The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:687
+#: src/lib/pipeline.ts:700
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 候选帧的硬件和软件解码均失败：硬件错误：{0}；软件错误：{1}"
@@ -418,7 +418,7 @@ msgstr "FFmpeg 候选帧的硬件和软件解码均失败：硬件错误：{0}�
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(cleanup[1])
 #. placeholder {2}: localiseTechnicalErrorDetail(cleanup[2])
-#: src/lib/pipeline.ts:681
+#: src/lib/pipeline.ts:694
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
 msgstr "FFmpeg 候选帧的硬件和软件解码均失败：硬件错误：{0}；软件错误：{1}；清理不完整输出也失败：{2}"
@@ -426,7 +426,7 @@ msgstr "FFmpeg 候选帧的硬件和软件解码均失败：硬件错误：{0}�
 #. The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:668
+#: src/lib/pipeline.ts:681
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 内存中候选帧的硬件和软件解码均失败：硬件错误：{0}；软件错误：{1}"
@@ -436,27 +436,27 @@ msgstr "FFmpeg 内存中候选帧的硬件和软件解码均失败：硬件错�
 #~ msgid "Browser preview"
 #~ msgstr "浏览器预览"
 
-#: src/lib/pipeline.ts:646
+#: src/lib/pipeline.ts:659
 msgid "Browser preview does not cancel backend work"
 msgstr "浏览器预览不会取消后端工作"
 
-#: src/lib/pipeline.ts:630
+#: src/lib/pipeline.ts:643
 msgid "Browser preview does not read local LUT files; paste a .cube path directly"
 msgstr "浏览器预览不会读取本地 LUT 文件；请直接粘贴 .cube 路径"
 
-#: src/lib/pipeline.ts:623
+#: src/lib/pipeline.ts:636
 msgid "Browser preview does not read local project information"
 msgstr "浏览器预览不会读取本地项目信息"
 
-#: src/lib/pipeline.ts:643
+#: src/lib/pipeline.ts:656
 msgid "Browser preview does not run backend work"
 msgstr "浏览器预览不会运行后端工作"
 
-#: src/lib/pipeline.ts:626
+#: src/lib/pipeline.ts:639
 msgid "Browser preview is not connected to the local runtime"
 msgstr "浏览器预览未连接到本地运行时"
 
-#: src/lib/pipeline.ts:622
+#: src/lib/pipeline.ts:635
 msgid "Browser preview keeps the custom output path"
 msgstr "浏览器预览会保留自定义输出路径"
 
@@ -465,7 +465,7 @@ msgstr "浏览器预览会保留自定义输出路径"
 #~ msgstr "浏览器预览任务"
 
 #. Fallback task name used when the app runs without the local Tauri runtime.
-#: src/lib/pipeline.ts:616
+#: src/lib/pipeline.ts:629
 msgctxt "browser preview task"
 msgid "Browser preview task"
 msgstr "浏览器预览任务"
@@ -475,13 +475,13 @@ msgstr "浏览器预览任务"
 #~ msgstr "浏览器预览：未连接到本地运行时"
 
 #. Warning stored on a browser-only preview task because it is not connected to the local Tauri runtime.
-#: src/lib/pipeline.ts:617
+#: src/lib/pipeline.ts:630
 msgctxt "browser preview task warning"
 msgid "Browser preview: not connected to the local runtime"
 msgstr "浏览器预览：未连接到本地运行时"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:255
+#: src/lib/pipeline.ts:267
 msgctxt "mask class"
 msgid "Bus"
 msgstr "公交车"
@@ -490,20 +490,25 @@ msgstr "公交车"
 msgid "Camera metadata could not be decoded from this file."
 msgstr "无法解码此文件中的相机元数据。"
 
+#. Camera model and explicit media profile metadata selected a verified LUT.
+#: src/components/processing-settings-fields.tsx:144
+msgid "Camera model and Log profile detected; the matching LUT is enabled."
+msgstr "已检测到相机型号和 Log 配置文件；已启用匹配的 LUT。"
+
 #. Short label for estimating the camera rig.
-#: src/lib/pipeline.ts:884
+#: src/lib/pipeline.ts:897
 msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "相机组估计"
 
 #. Short project recovery status indicating that processing can continue.
-#: src/lib/pipeline.ts:507
+#: src/lib/pipeline.ts:520
 msgid "Can be resumed"
 msgstr "可以恢复"
 
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
-#: src/lib/pipeline.ts:1710
+#: src/lib/pipeline.ts:1753
 msgid "Cancel"
 msgstr "取消"
 
@@ -521,79 +526,79 @@ msgstr "取消阶段"
 msgid "Cancel the current stage?"
 msgstr "要取消当前阶段吗？"
 
-#: src/lib/pipeline.ts:1719
+#: src/lib/pipeline.ts:1762
 msgid "Cancelled"
 msgstr "已取消"
 
 #. Short cancelled status label.
-#: src/lib/pipeline.ts:886
+#: src/lib/pipeline.ts:899
 msgctxt "pipeline phase status"
 msgid "Cancelled"
 msgstr "已取消"
 
 #. Backend progress message: output files were not committed.
 #. Backend progress message: output files were not committed.
-#: src/lib/pipeline.ts:440
-#: src/lib/pipeline.ts:472
+#: src/lib/pipeline.ts:453
+#: src/lib/pipeline.ts:485
 msgid "Cancelled before committing output"
 msgstr "写入输出前已取消"
 
 #. Backend progress message: selection was cancelled before the selected result was committed.
-#: src/lib/pipeline.ts:469
+#: src/lib/pipeline.ts:482
 msgid "Cancelled before committing the selected result"
 msgstr "写入选定结果前已取消"
 
-#: src/lib/pipeline.ts:661
+#: src/lib/pipeline.ts:674
 msgid "Cancelled before interval {interval}"
 msgstr "在处理区段 {interval} 前已取消"
 
-#: src/lib/pipeline.ts:708
+#: src/lib/pipeline.ts:721
 msgid "Cancelled before processing interval {interval}"
 msgstr "处理区段 {interval} 前已取消"
 
 #. Backend progress message; interval is a processing window, not a time duration.
-#: src/lib/pipeline.ts:437
+#: src/lib/pipeline.ts:450
 msgid "Cancelled before processing the next interval"
 msgstr "在处理下一个区段前已取消"
 
 #. Backend progress message: scoring candidate frames for selection.
 #. Backend progress message: scoring candidate frames for selection.
-#: src/lib/pipeline.ts:438
-#: src/lib/pipeline.ts:468
+#: src/lib/pipeline.ts:451
+#: src/lib/pipeline.ts:481
 msgid "Cancelled while scoring frame candidates"
 msgstr "为帧候选评分时已取消"
 
 #. A cancelled stage can be resumed later.
-#: src/lib/pipeline.ts:486
-#: src/lib/pipeline.ts:648
+#: src/lib/pipeline.ts:499
+#: src/lib/pipeline.ts:661
 msgid "Cancelled; you can resume later"
 msgstr "已取消；你可以稍后恢复"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:103
+#: src/components/processing-settings-fields.tsx:104
 msgid "Candidate frame rate"
 msgstr "候选帧率"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:253
+#: src/lib/pipeline.ts:265
 msgctxt "mask class"
 msgid "Car"
 msgstr "汽车"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:751
+#: src/lib/pipeline.ts:764
 msgid "Ceres BA: {0}"
 msgstr "Ceres BA：{0}"
 
-#: src/lib/pipeline.ts:586
+#: src/lib/pipeline.ts:599
 msgid "Ceres BA: CPU only"
 msgstr "Ceres BA：仅 CPU"
 
-#: src/lib/pipeline.ts:585
+#: src/lib/pipeline.ts:598
 msgid "Ceres BA: May be available (runtime CUDA/cuDSS check required)"
 msgstr "Ceres BA：可能可用（需要运行时 CUDA/cuDSS 检查）"
 
-#: src/lib/pipeline.ts:587
+#: src/lib/pipeline.ts:600
 msgid "Ceres BA: Not reported"
 msgstr "Ceres BA：未报告"
 
@@ -605,11 +610,11 @@ msgstr "更改路径"
 msgid "Check again"
 msgstr "再次检查环境"
 
-#: src/lib/pipeline.ts:564
+#: src/lib/pipeline.ts:577
 msgid "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
 msgstr "检查 COLMAP CUDA 构建版本以及是否有可用 NVIDIA GPU"
 
-#: src/lib/pipeline.ts:563
+#: src/lib/pipeline.ts:576
 msgid "Check the COLMAP executable and version"
 msgstr "检查 COLMAP 可执行文件和版本"
 
@@ -621,11 +626,11 @@ msgstr "请检查文件权限，并确认它是普通文件。"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/processing-settings-fields.tsx:160
+#: src/components/processing-settings-fields.tsx:172
 msgid "Choose .cube"
 msgstr "选择 .cube"
 
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:176
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "选择扩展名为 .cube 的 3D LUT。"
 
@@ -675,7 +680,7 @@ msgstr "选择一个或多个全景来源文件。"
 msgid "Choose sources"
 msgstr "选择来源"
 
-#: src/components/processing-settings-fields.tsx:161
+#: src/components/processing-settings-fields.tsx:173
 msgid "Clear custom LUT"
 msgstr "清除自定义 LUT"
 
@@ -700,43 +705,43 @@ msgstr "关闭通知"
 msgid "Close window"
 msgstr "关闭窗口"
 
-#: src/lib/pipeline.ts:724
+#: src/lib/pipeline.ts:737
 msgid "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 msgstr "COLMAP {component} 的 Ceres GPU 不可用；Ceres 已切换到 CPU：{error}"
 
-#: src/lib/pipeline.ts:723
+#: src/lib/pipeline.ts:736
 msgid "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgstr "COLMAP {component} GPU 执行失败；正在使用 CPU 重试：{error}"
 
-#: src/lib/pipeline.ts:596
+#: src/lib/pipeline.ts:609
 msgid "COLMAP alignment capability not confirmed"
 msgstr "COLMAP 对齐能力未确认"
 
-#: src/lib/pipeline.ts:770
+#: src/lib/pipeline.ts:783
 msgid "COLMAP bootstrap did not produce sparse/0"
 msgstr "COLMAP 引导未生成 sparse/0"
 
 #. Alignment error when COLMAP bootstrap produces no sparse model.
-#: src/lib/pipeline.ts:517
+#: src/lib/pipeline.ts:530
 msgid "COLMAP bootstrap produced no sparse submodel"
 msgstr "COLMAP 引导未生成 sparse 子模型"
 
-#: src/lib/pipeline.ts:599
+#: src/lib/pipeline.ts:612
 msgid "COLMAP CUDA capabilities were checked"
 msgstr "已检查 COLMAP CUDA 能力"
 
-#: src/lib/pipeline.ts:600
+#: src/lib/pipeline.ts:613
 msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA 能力检查结果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:500
+#: src/App.tsx:502
 #: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP 可执行文件"
 
 #. The alignment stage cannot start without COLMAP, but the project remains resumable.
-#: src/lib/pipeline.ts:461
+#: src/lib/pipeline.ts:474
 msgid "COLMAP is unavailable; alignment will remain pending and resumable"
 msgstr "COLMAP 不可用；对齐将保持待处理状态并可恢复"
 
@@ -744,36 +749,36 @@ msgstr "COLMAP 不可用；对齐将保持待处理状态并可恢复"
 #~ msgid "COLMAP launcher"
 #~ msgstr "COLMAP 启动器"
 
-#: src/lib/pipeline.ts:597
+#: src/lib/pipeline.ts:610
 msgid "COLMAP not detected"
 msgstr "未检测到 COLMAP"
 
-#: src/lib/pipeline.ts:769
+#: src/lib/pipeline.ts:782
 msgid "COLMAP was not found on PATH"
 msgstr "在 PATH 中未找到 COLMAP"
 
-#: src/lib/pipeline.ts:760
+#: src/lib/pipeline.ts:773
 msgid "COLMAP was not found; alignment will remain pending and resumable"
 msgstr "未找到 COLMAP；对齐将保持待处理状态并可恢复"
 
-#: src/lib/pipeline.ts:762
+#: src/lib/pipeline.ts:775
 msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
 msgstr "COLMAP.bat 无法直接使用；请选择官方便携版中的 bin/COLMAP.exe"
 
 #. Backend progress message: mask files are being written.
-#: src/lib/pipeline.ts:450
+#: src/lib/pipeline.ts:463
 msgid "Committing mask files"
 msgstr "正在写入掩码文件"
 
 #. Short label for writing output files.
-#: src/lib/pipeline.ts:878
+#: src/lib/pipeline.ts:891
 msgctxt "pipeline phase"
 msgid "Committing output"
 msgstr "写入输出"
 
 #. Shown when a pipeline stage is blocked by an incomplete prerequisite stage.
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:755
+#: src/lib/pipeline.ts:768
 msgid "Complete {0} first"
 msgstr "先完成 {0}"
 
@@ -782,12 +787,12 @@ msgstr "先完成 {0}"
 #~ msgstr "先完成 {prerequisite}"
 
 #: src/components/task-list.tsx:304
-#: src/lib/pipeline.ts:1721
+#: src/lib/pipeline.ts:1764
 msgid "Completed"
 msgstr "已完成"
 
 #. Short completed status label.
-#: src/lib/pipeline.ts:885
+#: src/lib/pipeline.ts:898
 msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "已完成"
@@ -796,11 +801,11 @@ msgstr "已完成"
 msgid "Completed reconstruction tasks will appear here."
 msgstr "完成的重建任务会显示在这里。"
 
-#: src/lib/pipeline.ts:566
+#: src/lib/pipeline.ts:579
 msgid "Confirm FFmpeg hardware decoding capabilities"
 msgstr "确认 FFmpeg 硬件解码能力"
 
-#: src/lib/pipeline.ts:565
+#: src/lib/pipeline.ts:578
 msgid "Confirm FFmpeg is available on the system PATH"
 msgstr "确认系统 PATH 中有可用的 FFmpeg"
 
@@ -810,8 +815,8 @@ msgstr "复制诊断信息"
 
 #. Backend progress message: copying selected source frames.
 #. Backend progress message: copying selected source frames.
-#: src/lib/pipeline.ts:441
-#: src/lib/pipeline.ts:473
+#: src/lib/pipeline.ts:454
+#: src/lib/pipeline.ts:486
 msgid "Copying selected frame pair"
 msgstr "正在复制选定的帧对"
 
@@ -830,19 +835,19 @@ msgstr "创建任务"
 #~ msgid "Created {0}"
 #~ msgstr "已创建 {0}"
 
-#: src/lib/pipeline.ts:748
+#: src/lib/pipeline.ts:761
 msgid "Created {name}"
 msgstr "已创建 {name}"
 
-#: src/lib/pipeline.ts:386
+#: src/lib/pipeline.ts:399
 msgid "CUDA acceleration"
 msgstr "CUDA 加速"
 
-#: src/lib/pipeline.ts:589
+#: src/lib/pipeline.ts:602
 msgid "CUDA acceleration available"
 msgstr "CUDA 加速可用"
 
-#: src/lib/pipeline.ts:590
+#: src/lib/pipeline.ts:603
 msgid "CUDA acceleration partially available"
 msgstr "CUDA 加速部分可用"
 
@@ -851,15 +856,15 @@ msgstr "CUDA 加速部分可用"
 #~ msgid "CUDA build: {0}"
 #~ msgstr "CUDA 构建：{0}"
 
-#: src/lib/pipeline.ts:579
+#: src/lib/pipeline.ts:592
 msgid "CUDA build: Supported"
 msgstr "CUDA 构建：支持"
 
-#: src/lib/pipeline.ts:580
+#: src/lib/pipeline.ts:593
 msgid "CUDA build: Unsupported"
 msgstr "CUDA 构建：不支持"
 
-#: src/lib/pipeline.ts:592
+#: src/lib/pipeline.ts:605
 msgid "CUDA status not confirmed"
 msgstr "CUDA 状态未确认"
 
@@ -878,7 +883,7 @@ msgid "Current work"
 msgstr "当前工作"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:148
+#: src/components/processing-settings-fields.tsx:160
 msgid "Custom LUT (optional)"
 msgstr "自定义 LUT（可选）"
 
@@ -886,16 +891,16 @@ msgstr "自定义 LUT（可选）"
 msgid "Dark"
 msgstr "深色"
 
-#: src/lib/pipeline.ts:712
+#: src/lib/pipeline.ts:725
 msgid "Decoding and scoring source {source} ({count} candidate pairs processed)"
 msgstr "正在解码并为来源 {source} 评分（已处理 {count} 对候选项）"
 
-#: src/lib/pipeline.ts:733
+#: src/lib/pipeline.ts:746
 msgid "Decoding and scoring source {source} dual-fisheye candidates in memory"
 msgstr "正在内存中解码并为来源 {source} 的双鱼眼候选项评分"
 
 #. Short label for full-resolution decoding.
-#: src/lib/pipeline.ts:877
+#: src/lib/pipeline.ts:890
 msgctxt "pipeline phase"
 msgid "Decoding full resolution"
 msgstr "解码全分辨率"
@@ -904,20 +909,20 @@ msgstr "解码全分辨率"
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "默认位于第一个来源旁：colmap-file-name"
 
-#: src/lib/pipeline.ts:567
+#: src/lib/pipeline.ts:580
 msgid "Detected"
 msgstr "已检测到"
 
 #. The source filename suffix or media metadata indicated D-Log M color.
 #: src/components/processing-settings-fields.tsx:143
-msgid "Detected from the _D filename suffix or media metadata and enabled."
-msgstr "已从 _D 文件名后缀或媒体元数据中检测到并启用。"
+#~ msgid "Detected from the _D filename suffix or media metadata and enabled."
+#~ msgstr "已从 _D 文件名后缀或媒体元数据中检测到并启用。"
 
 #: src/components/settings-sheet.tsx:143
 msgid "Diagnostic actions"
 msgstr "诊断操作"
 
-#: src/lib/pipeline.ts:627
+#: src/lib/pipeline.ts:640
 msgid "Diagnostics copied; you can paste them into a bug report"
 msgstr "诊断信息已复制；你可以将其粘贴到错误报告中"
 
@@ -955,7 +960,7 @@ msgid "Dual-fisheye extraction may be unavailable"
 msgstr "双鱼眼提取可能无法使用"
 
 #. Technical description of the frame extraction stage; keep IMU as the acronym.
-#: src/lib/pipeline.ts:214
+#: src/lib/pipeline.ts:226
 msgctxt "pipeline stage description"
 msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "双鱼眼帧、内参和 IMU"
@@ -966,7 +971,7 @@ msgid "Duration {0}"
 msgstr "时长 {0}"
 
 #. Technical description of the masking stage.
-#: src/lib/pipeline.ts:220
+#: src/lib/pipeline.ts:232
 msgctxt "pipeline stage description"
 msgid "Dynamic-object and sky masks"
 msgstr "动态对象和天空掩码"
@@ -990,7 +995,7 @@ msgstr "编辑排队中的任务"
 msgid "Elapsed"
 msgstr "已用时间"
 
-#: src/components/processing-settings-fields.tsx:247
+#: src/components/processing-settings-fields.tsx:259
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "检测到支持 CUDA 的 NVIDIA GPU 时默认启用；如果执行失败则回退到 CPU。"
 
@@ -1018,13 +1023,13 @@ msgstr "错误"
 msgid "Estimated remaining"
 msgstr "预计剩余时间"
 
-#: src/lib/pipeline.ts:1745
-#: src/lib/pipeline.ts:1752
-#: src/lib/pipeline.ts:1754
+#: src/lib/pipeline.ts:1788
+#: src/lib/pipeline.ts:1795
+#: src/lib/pipeline.ts:1797
 msgid "Estimating"
 msgstr "估算中"
 
-#: src/lib/pipeline.ts:613
+#: src/lib/pipeline.ts:626
 msgid "Executable detected (full path hidden)"
 msgstr "已检测到可执行文件（完整路径已隐藏）"
 
@@ -1033,137 +1038,137 @@ msgstr "已检测到可执行文件（完整路径已隐藏）"
 #~ msgid "Executable: {0}"
 #~ msgstr "可执行文件：{0}"
 
-#: src/lib/pipeline.ts:598
+#: src/lib/pipeline.ts:611
 msgid "Executable: system PATH"
 msgstr "可执行文件：系统 PATH"
 
 #. A resumable project already contains COLMAP reconstruction output.
 #. A resumable project already contains COLMAP reconstruction output.
-#: src/lib/pipeline.ts:457
-#: src/lib/pipeline.ts:496
+#: src/lib/pipeline.ts:470
+#: src/lib/pipeline.ts:509
 msgid "Existing COLMAP reconstruction was discovered"
 msgstr "发现现有 COLMAP 重建"
 
 #. A resumable project already contains extracted dual-fisheye frames.
-#: src/lib/pipeline.ts:455
+#: src/lib/pipeline.ts:468
 msgid "Existing dual-fisheye frames were discovered"
 msgstr "发现现有双鱼眼帧"
 
 #. A resumable project already contains mask files.
 #. A resumable project already contains mask files.
-#: src/lib/pipeline.ts:456
-#: src/lib/pipeline.ts:495
+#: src/lib/pipeline.ts:469
+#: src/lib/pipeline.ts:508
 msgid "Existing masks were discovered"
 msgstr "发现现有掩码"
 
 #. Backend alignment progress message while extracting image features.
-#: src/lib/pipeline.ts:513
+#: src/lib/pipeline.ts:526
 msgid "Extracting image features"
 msgstr "正在提取图像特征"
 
-#: src/lib/pipeline.ts:773
-#: src/lib/pipeline.ts:782
+#: src/lib/pipeline.ts:786
+#: src/lib/pipeline.ts:795
 msgid "Extraction I/O error: "
 msgstr "提取 I/O 错误： "
 
-#: src/lib/pipeline.ts:772
-#: src/lib/pipeline.ts:781
+#: src/lib/pipeline.ts:785
+#: src/lib/pipeline.ts:794
 msgid "Extraction image error: "
 msgstr "提取图像错误： "
 
-#: src/lib/pipeline.ts:1720
+#: src/lib/pipeline.ts:1763
 msgid "Failed"
 msgstr "失败"
 
 #. Short failed status label.
-#: src/lib/pipeline.ts:887
+#: src/lib/pipeline.ts:900
 msgctxt "pipeline phase status"
 msgid "Failed"
 msgstr "失败"
 
-#: src/lib/pipeline.ts:634
+#: src/lib/pipeline.ts:647
 msgid "Failed to create the task; check the runtime message"
 msgstr "创建任务失败；请检查运行时消息"
 
-#: src/lib/pipeline.ts:625
+#: src/lib/pipeline.ts:638
 msgid "Failed to open project"
 msgstr "打开项目失败"
 
-#: src/lib/pipeline.ts:727
+#: src/lib/pipeline.ts:740
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "读取 FFmpeg rawvideo 失败：{error}"
 
-#: src/lib/pipeline.ts:637
+#: src/lib/pipeline.ts:650
 msgid "Failed to save task changes; check the runtime message"
 msgstr "保存任务更改失败；请检查运行时消息"
 
 #. Short label for extracting image features.
-#: src/lib/pipeline.ts:881
+#: src/lib/pipeline.ts:894
 msgctxt "pipeline phase"
 msgid "Feature extraction"
 msgstr "特征提取"
 
-#: src/lib/pipeline.ts:602
+#: src/lib/pipeline.ts:615
 msgid "FFmpeg and ffprobe are both available"
 msgstr "FFmpeg 和 ffprobe 均可用"
 
-#: src/lib/pipeline.ts:729
-#: src/lib/pipeline.ts:761
+#: src/lib/pipeline.ts:742
+#: src/lib/pipeline.ts:774
 msgid "FFmpeg candidate frames fell back safely to CPU software decoding"
 msgstr "FFmpeg 候选帧已安全回退到 CPU 软件解码"
 
-#: src/lib/pipeline.ts:725
+#: src/lib/pipeline.ts:738
 msgid "FFmpeg did not produce any in-memory candidate frames"
 msgstr "FFmpeg 未生成任何内存中的候选帧"
 
 #. PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.
-#: src/lib/pipeline.ts:663
+#: src/lib/pipeline.ts:676
 msgctxt "backend progress message"
 msgid "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
 msgstr "FFmpeg 有 {count} 个候选帧缺少 PTS；已使用候选 FPS 估算时间"
 
-#: src/lib/pipeline.ts:605
+#: src/lib/pipeline.ts:618
 msgid "FFmpeg hardware acceleration not enabled"
 msgstr "未启用 FFmpeg 硬件加速"
 
-#: src/lib/pipeline.ts:604
+#: src/lib/pipeline.ts:617
 msgid "FFmpeg hardware acceleration supported"
 msgstr "支持 FFmpeg 硬件加速"
 
-#: src/lib/pipeline.ts:728
+#: src/lib/pipeline.ts:741
 msgid "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 msgstr "FFmpeg 硬件解码失败；正在使用 CPU 软件解码重试：{error}"
 
 #. Media preview error when FFmpeg is unavailable.
-#: src/lib/pipeline.ts:493
+#: src/lib/pipeline.ts:506
 msgid "FFmpeg is not installed"
 msgstr "未安装 FFmpeg"
 
-#: src/lib/pipeline.ts:730
+#: src/lib/pipeline.ts:743
 msgid "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 msgstr "FFmpeg 生成了 {actual} 个同步帧，但预期为 {expected} 个"
 
-#: src/lib/pipeline.ts:726
+#: src/lib/pipeline.ts:739
 msgid "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 msgstr "FFmpeg rawvideo 在帧中途结束：已接收 {received}/{expected} 个字节"
 
 #. Diagnostic note when FFmpeg reports no hardware acceleration components.
-#: src/lib/pipeline.ts:534
+#: src/lib/pipeline.ts:547
 msgctxt "backend diagnostic warning"
 msgid "FFmpeg reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "FFmpeg 未报告硬件加速组件；帧提取将使用 CPU 解码"
 
-#: src/lib/pipeline.ts:601
+#: src/lib/pipeline.ts:614
 msgid "FFmpeg tools incomplete"
 msgstr "FFmpeg 工具不完整"
 
 #. Keep FFmpeg, VideoToolbox, and CPU as technical names.
-#: src/lib/pipeline.ts:462
+#: src/lib/pipeline.ts:475
 msgid "FFmpeg was found without VideoToolbox support; extraction will use the CPU decoder"
 msgstr "找到 FFmpeg，但不支持 VideoToolbox；提取将使用 CPU 解码器"
 
 #. Backend tool error: FFmpeg is missing from PATH.
-#: src/lib/pipeline.ts:509
+#: src/lib/pipeline.ts:522
 msgid "FFmpeg was not found on the system PATH"
 msgstr "在系统 PATH 中未找到 FFmpeg"
 
@@ -1172,11 +1177,11 @@ msgstr "在系统 PATH 中未找到 FFmpeg"
 #~ msgid "FFmpeg: {0}"
 #~ msgstr "FFmpeg：{0}"
 
-#: src/lib/pipeline.ts:608
+#: src/lib/pipeline.ts:621
 msgid "FFmpeg: Available"
 msgstr "FFmpeg：可用"
 
-#: src/lib/pipeline.ts:609
+#: src/lib/pipeline.ts:622
 msgid "FFmpeg: Not detected"
 msgstr "FFmpeg：未检测到"
 
@@ -1189,7 +1194,7 @@ msgid "FFprobe is unavailable, so decoding cannot be checked before processing."
 msgstr "FFprobe 不可用，因此无法在处理前检查是否可解码。"
 
 #. Backend tool error: ffprobe is missing from PATH.
-#: src/lib/pipeline.ts:510
+#: src/lib/pipeline.ts:523
 msgid "ffprobe was not found on the system PATH"
 msgstr "在系统 PATH 中未找到 ffprobe"
 
@@ -1198,21 +1203,21 @@ msgstr "在系统 PATH 中未找到 ffprobe"
 #~ msgid "ffprobe: {0}"
 #~ msgstr "ffprobe：{0}"
 
-#: src/lib/pipeline.ts:610
+#: src/lib/pipeline.ts:623
 msgid "ffprobe: Available"
 msgstr "ffprobe：可用"
 
-#: src/lib/pipeline.ts:611
+#: src/lib/pipeline.ts:624
 msgid "ffprobe: Not detected"
 msgstr "ffprobe：未检测到"
 
 #. Short label for the final mapping/reconstruction pass.
-#: src/lib/pipeline.ts:883
+#: src/lib/pipeline.ts:896
 msgctxt "pipeline phase"
 msgid "Final reconstruction"
 msgstr "最终重建"
 
-#: src/lib/pipeline.ts:710
+#: src/lib/pipeline.ts:723
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "首次使用：正在下载 {model} 模型（{percent}%）"
 
@@ -1224,68 +1229,68 @@ msgstr "例如：山路 / 2026-08"
 msgid "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
 msgstr "使用官方 Windows 便携版时，请选择 bin/COLMAP.exe，不要选择根目录中的 COLMAP.bat 启动器。"
 
-#: src/lib/pipeline.ts:575
+#: src/lib/pipeline.ts:588
 msgid "Frame extraction"
 msgstr "帧提取"
 
 #. The stage that extracts selected frames from source media.
-#: src/lib/pipeline.ts:213
+#: src/lib/pipeline.ts:225
 msgctxt "pipeline stage label"
 msgid "Frame extraction"
 msgstr "帧提取"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:72
+#: src/components/processing-settings-fields.tsx:73
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "帧提取"
 
 #. The frame-extraction stage was cancelled.
 #. The frame-extraction stage was cancelled.
-#: src/lib/pipeline.ts:443
-#: src/lib/pipeline.ts:475
+#: src/lib/pipeline.ts:456
+#: src/lib/pipeline.ts:488
 msgctxt "backend stage status"
 msgid "Frame extraction cancelled"
 msgstr "帧提取已取消"
 
 #. Backend diagnostic warning: both command-line tools are required.
 #. Keep FFmpeg and ffprobe as command-line tool names.
-#: src/lib/pipeline.ts:460
-#: src/lib/pipeline.ts:519
-#: src/lib/pipeline.ts:759
+#: src/lib/pipeline.ts:473
+#: src/lib/pipeline.ts:532
+#: src/lib/pipeline.ts:772
 msgid "Frame extraction requires both system FFmpeg and ffprobe"
 msgstr "帧提取需要系统 FFmpeg 和 ffprobe"
 
-#: src/lib/pipeline.ts:603
+#: src/lib/pipeline.ts:616
 msgid "Frame extraction requires FFmpeg and ffprobe"
 msgstr "帧提取需要 FFmpeg 和 ffprobe"
 
-#: src/lib/pipeline.ts:766
+#: src/lib/pipeline.ts:779
 msgid "Frame extraction will use CPU decoding"
 msgstr "帧提取将使用 CPU 解码"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/lib/pipeline.ts:541
+#: src/lib/pipeline.ts:554
 msgid "Frame extraction: Cancelled"
 msgstr "帧提取：已取消"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/lib/pipeline.ts:540
+#: src/lib/pipeline.ts:553
 msgid "Frame extraction: Completed"
 msgstr "帧提取：已完成"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/lib/pipeline.ts:542
+#: src/lib/pipeline.ts:555
 msgid "Frame extraction: Failed"
 msgstr "帧提取：失败"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/lib/pipeline.ts:538
+#: src/lib/pipeline.ts:551
 msgid "Frame extraction: Pending"
 msgstr "帧提取：待处理"
 
 #. Synthesized pipeline log summary for the frame-extraction stage.
-#: src/lib/pipeline.ts:539
+#: src/lib/pipeline.ts:552
 msgid "Frame extraction: Running"
 msgstr "帧提取：运行中"
 
@@ -1306,32 +1311,32 @@ msgstr "地面参考方向不可用"
 #~ msgid "Gyroscope samples can be used for relative rotation calibration, but they do not provide an absolute ground direction."
 #~ msgstr "陀螺仪样本可用于相对旋转校正，但无法提供绝对地面方向。"
 
-#: src/lib/pipeline.ts:387
+#: src/lib/pipeline.ts:400
 msgid "Hardware acceleration"
 msgstr "硬件加速"
 
-#: src/lib/pipeline.ts:606
+#: src/lib/pipeline.ts:619
 msgid "Hardware decoding status not reported"
 msgstr "未报告硬件解码状态"
 
 #. Backend alignment progress message after feature extraction.
-#: src/lib/pipeline.ts:514
+#: src/lib/pipeline.ts:527
 msgid "Image feature extraction completed"
 msgstr "图像特征提取已完成"
 
 #. Short label for matching images.
-#: src/lib/pipeline.ts:880
+#: src/lib/pipeline.ts:893
 msgctxt "pipeline phase"
 msgid "Image matching"
 msgstr "图像匹配"
 
 #. Backend alignment progress message after image matching.
-#: src/lib/pipeline.ts:511
+#: src/lib/pipeline.ts:524
 msgid "Image matching completed"
 msgstr "图像匹配已完成"
 
 #. Backend alignment progress message while importing constrained matches.
-#: src/lib/pipeline.ts:512
+#: src/lib/pipeline.ts:525
 msgid "Importing constrained image matches"
 msgstr "正在导入受约束的图像匹配"
 
@@ -1374,17 +1379,17 @@ msgctxt "theme setting"
 msgid "Interface theme"
 msgstr "界面主题"
 
-#: src/lib/pipeline.ts:771
-#: src/lib/pipeline.ts:780
+#: src/lib/pipeline.ts:784
+#: src/lib/pipeline.ts:793
 msgid "Invalid extraction input: "
 msgstr "提取输入无效： "
 
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:176
 msgid "Invalid LUT file format"
 msgstr "LUT 文件格式无效"
 
-#: src/lib/pipeline.ts:774
-#: src/lib/pipeline.ts:783
+#: src/lib/pipeline.ts:787
+#: src/lib/pipeline.ts:796
 msgid "Invalid mask input: "
 msgstr "掩码输入无效： "
 
@@ -1394,7 +1399,7 @@ msgstr "掩码输入无效： "
 #~ msgid "Japanese"
 #~ msgstr "日语"
 
-#: src/lib/pipeline.ts:635
+#: src/lib/pipeline.ts:648
 msgid "Keep at least one source"
 msgstr "至少保留一个来源"
 
@@ -1417,11 +1422,15 @@ msgstr "上次检查：{0}"
 msgid "Leave blank to detect from PATH"
 msgstr "留空以从 PATH 检测"
 
-#: src/components/processing-settings-fields.tsx:153
-msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
-msgstr "留空以使用官方 D-Log M → Rec.709 LUT"
+#: src/components/processing-settings-fields.tsx:165
+msgid "Leave blank to use the detected camera's official LUT"
+msgstr "留空以使用检测到的相机官方 LUT"
 
-#: src/lib/pipeline.ts:900
+#: src/components/processing-settings-fields.tsx:153
+#~ msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
+#~ msgstr "留空以使用官方 D-Log M → Rec.709 LUT"
+
+#: src/lib/pipeline.ts:913
 msgid "Less than 1 second"
 msgstr "不到 1 秒"
 
@@ -1434,7 +1443,7 @@ msgstr "浅色"
 #~ msgid "Loaded resumable project {0}"
 #~ msgstr "已加载可恢复项目 {0}"
 
-#: src/lib/pipeline.ts:744
+#: src/lib/pipeline.ts:757
 msgid "Loaded resumable project {name}"
 msgstr "已加载可恢复项目 {name}"
 
@@ -1443,7 +1452,7 @@ msgstr "已加载可恢复项目 {name}"
 #~ msgid "Loaded unfinished project with {0} warnings"
 #~ msgstr "已加载包含 {0} 个警告的未完成项目"
 
-#: src/lib/pipeline.ts:745
+#: src/lib/pipeline.ts:758
 msgid "Loaded unfinished project with {count} warnings"
 msgstr "已加载包含 {count} 个警告的未完成项目"
 
@@ -1452,19 +1461,19 @@ msgstr "已加载包含 {count} 个警告的未完成项目"
 #~ msgid "Loaded unfinished project: {0}"
 #~ msgstr "已加载未完成项目：{0}"
 
-#: src/lib/pipeline.ts:746
+#: src/lib/pipeline.ts:759
 msgid "Loaded unfinished project: {name}"
 msgstr "已加载未完成项目：{name}"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/lib/pipeline.ts:445
-#: src/lib/pipeline.ts:477
+#: src/lib/pipeline.ts:458
+#: src/lib/pipeline.ts:490
 msgid "Loading YOLO11/SkySeg models"
 msgstr "正在加载 YOLO11/SkySeg 模型"
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:129
+#: src/components/processing-settings-fields.tsx:130
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT 设置"
@@ -1473,111 +1482,111 @@ msgstr "LUT 设置"
 msgid "Manage language, appearance, and runtime diagnostics."
 msgstr "管理语言、外观和运行环境诊断。"
 
-#: src/lib/pipeline.ts:778
-#: src/lib/pipeline.ts:787
+#: src/lib/pipeline.ts:791
+#: src/lib/pipeline.ts:800
 msgid "Mask I/O error: "
 msgstr "掩码 I/O 错误： "
 
-#: src/lib/pipeline.ts:777
-#: src/lib/pipeline.ts:786
+#: src/lib/pipeline.ts:790
+#: src/lib/pipeline.ts:799
 msgid "Mask image error: "
 msgstr "掩码图像错误： "
 
 #. Short label for running mask inference.
-#: src/lib/pipeline.ts:879
+#: src/lib/pipeline.ts:892
 msgctxt "pipeline phase"
 msgid "Mask inference"
 msgstr "掩码推理"
 
-#: src/lib/pipeline.ts:776
-#: src/lib/pipeline.ts:785
+#: src/lib/pipeline.ts:789
+#: src/lib/pipeline.ts:798
 msgid "Mask inference error: "
 msgstr "掩码推理错误： "
 
-#: src/lib/pipeline.ts:775
-#: src/lib/pipeline.ts:784
+#: src/lib/pipeline.ts:788
+#: src/lib/pipeline.ts:797
 msgid "Mask model error: "
 msgstr "掩码模型错误： "
 
-#: src/lib/pipeline.ts:779
-#: src/lib/pipeline.ts:788
+#: src/lib/pipeline.ts:792
+#: src/lib/pipeline.ts:801
 msgid "Mask operation cancelled"
 msgstr "掩码操作已取消"
 
 #. The masking operation was cancelled.
-#: src/lib/pipeline.ts:480
+#: src/lib/pipeline.ts:493
 msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "掩码操作已取消"
 
-#: src/lib/pipeline.ts:576
+#: src/lib/pipeline.ts:589
 msgid "Masking"
 msgstr "掩码"
 
 #. The stage that creates masks for dynamic objects and sky.
-#: src/lib/pipeline.ts:219
+#: src/lib/pipeline.ts:231
 msgctxt "pipeline stage label"
 msgid "Masking"
 msgstr "掩码"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:184
 msgctxt "settings section"
 msgid "Masking"
 msgstr "掩码"
 
 #. The masking stage was cancelled.
-#: src/lib/pipeline.ts:446
+#: src/lib/pipeline.ts:459
 msgctxt "backend stage status"
 msgid "Masking cancelled"
 msgstr "掩码已取消"
 
 #. Backend progress message: mask output files were not committed.
 #. Backend progress message: mask output files were not committed.
-#: src/lib/pipeline.ts:449
-#: src/lib/pipeline.ts:481
+#: src/lib/pipeline.ts:462
+#: src/lib/pipeline.ts:494
 msgid "Masking cancelled before committing output"
 msgstr "写入输出前掩码已取消"
 
 #. Backend completion message from the masking stage; this is not a request to start masking.
 #. The masking stage completed successfully.
-#: src/lib/pipeline.ts:451
-#: src/lib/pipeline.ts:489
+#: src/lib/pipeline.ts:464
+#: src/lib/pipeline.ts:502
 msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "掩码已完成"
 
-#: src/components/processing-settings-fields.tsx:226
+#: src/components/processing-settings-fields.tsx:238
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "掩码已禁用；帧提取后开始对齐。"
 
 #. Backend stage status when no object or sky mask is enabled.
-#: src/lib/pipeline.ts:483
+#: src/lib/pipeline.ts:496
 msgid "Masking is disabled; skipping"
 msgstr "掩码已禁用；跳过"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/lib/pipeline.ts:546
+#: src/lib/pipeline.ts:559
 msgid "Masking: Cancelled"
 msgstr "掩码：已取消"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/lib/pipeline.ts:545
+#: src/lib/pipeline.ts:558
 msgid "Masking: Completed"
 msgstr "掩码：已完成"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/lib/pipeline.ts:547
+#: src/lib/pipeline.ts:560
 msgid "Masking: Failed"
 msgstr "掩码：失败"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/lib/pipeline.ts:543
+#: src/lib/pipeline.ts:556
 msgid "Masking: Pending"
 msgstr "掩码：待处理"
 
 #. Synthesized pipeline log summary for the masking stage.
-#: src/lib/pipeline.ts:544
+#: src/lib/pipeline.ts:557
 msgid "Masking: Running"
 msgstr "掩码：运行中"
 
@@ -1607,12 +1616,12 @@ msgstr "最小化窗口"
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "缺少必需工具会阻止某些阶段。请先处理下方标记为“需要注意”的项目。"
 
-#: src/lib/pipeline.ts:711
+#: src/lib/pipeline.ts:724
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "已使用 {provider} 加载模型；已禁用 CPU 推理回退"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:254
+#: src/lib/pipeline.ts:266
 msgctxt "mask class"
 msgid "Motorcycle"
 msgstr "摩托车"
@@ -1624,21 +1633,21 @@ msgstr "摩托车"
 #~ msgstr "多来源 OSV 和相机组对齐"
 
 #. Technical description of the alignment stage for multiple panoramic source formats.
-#: src/lib/pipeline.ts:226
+#: src/lib/pipeline.ts:238
 msgctxt "pipeline stage description"
 msgid "Multi-source panoramic camera-rig alignment"
 msgstr "多来源全景相机组对齐"
 
-#: src/lib/pipeline.ts:593
+#: src/lib/pipeline.ts:606
 msgid "Native dual-fisheye camera-rig alignment is available"
 msgstr "原生双鱼眼相机组对齐可用"
 
 #: src/components/settings-sheet.tsx:176
-#: src/lib/pipeline.ts:1612
+#: src/lib/pipeline.ts:1655
 msgid "Needs attention"
 msgstr "需要注意"
 
-#: src/lib/pipeline.ts:620
+#: src/lib/pipeline.ts:633
 msgid "New reconstruction task"
 msgstr "新建重建任务"
 
@@ -1666,16 +1675,16 @@ msgid "No completed tasks yet"
 msgstr "暂无已完成的任务"
 
 #. Shown when the selected folder does not contain a project manifest that can be edited.
-#: src/lib/pipeline.ts:501
+#: src/lib/pipeline.ts:514
 msgctxt "project edit error"
 msgid "No editable project information was found"
 msgstr "未找到可编辑的项目信息"
 
-#: src/lib/pipeline.ts:624
+#: src/lib/pipeline.ts:637
 msgid "No loadable project information was found"
 msgstr "未找到可加载的项目信息"
 
-#: src/lib/pipeline.ts:765
+#: src/lib/pipeline.ts:778
 msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "未检测到 COLMAP 可用的 NVIDIA GPU；将使用 CPU"
 
@@ -1685,16 +1694,16 @@ msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "暂无任务"
 
-#: src/components/processing-settings-fields.tsx:247
+#: src/components/processing-settings-fields.tsx:259
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "未检测到可用的 COLMAP CUDA 加速，因此将使用 CPU。"
 
 #. Diagnostic note when no COLMAP executable is available.
-#: src/lib/pipeline.ts:522
+#: src/lib/pipeline.ts:535
 msgid "No usable COLMAP executable is selected; COLMAP CUDA build capability cannot be determined"
 msgstr "未选择可用的 COLMAP 可执行文件；无法确定 COLMAP CUDA 构建能力"
 
-#: src/lib/pipeline.ts:591
+#: src/lib/pipeline.ts:604
 msgid "No usable CUDA GPU detected"
 msgstr "未检测到可用的 CUDA GPU"
 
@@ -1706,24 +1715,24 @@ msgstr "未找到可用的 IMU 或融合姿态样本。"
 msgid "No video stream found"
 msgstr "未找到视频流"
 
-#: src/lib/pipeline.ts:1613
+#: src/lib/pipeline.ts:1656
 msgid "Not checked"
 msgstr "未检查"
 
-#: src/lib/pipeline.ts:561
+#: src/lib/pipeline.ts:574
 msgid "Not checked yet"
 msgstr "尚未检查"
 
-#: src/lib/pipeline.ts:578
+#: src/lib/pipeline.ts:591
 msgid "Not detected"
 msgstr "未检测到"
 
-#: src/lib/pipeline.ts:910
-#: src/lib/pipeline.ts:912
+#: src/lib/pipeline.ts:923
+#: src/lib/pipeline.ts:925
 msgid "Not recorded yet"
 msgstr "尚未记录"
 
-#: src/lib/pipeline.ts:570
+#: src/lib/pipeline.ts:583
 msgid "Not reported"
 msgstr "未报告"
 
@@ -1732,7 +1741,7 @@ msgstr "未报告"
 msgid "Not reported yet"
 msgstr "尚未报告"
 
-#: src/lib/pipeline.ts:573
+#: src/lib/pipeline.ts:586
 msgid "Not run yet"
 msgstr "尚未运行"
 
@@ -1748,14 +1757,18 @@ msgstr "尚未开始"
 #~ msgid "Not started; can be edited or removed."
 #~ msgstr "尚未开始；可编辑或移除。"
 
-#: src/lib/pipeline.ts:898
+#: src/lib/pipeline.ts:911
 msgid "Not timed yet"
 msgstr "尚未计时"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:192
+#: src/components/processing-settings-fields.tsx:204
 msgid "Objects to mask (multiple selection)"
 msgstr "要掩码的对象（可多选）"
+
+#: src/components/processing-settings-fields.tsx:154
+msgid "Official source"
+msgstr "官方来源"
 
 #: src/components/task-editor-dialog.tsx:206
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
@@ -1778,7 +1791,7 @@ msgstr "打开项目"
 #~ msgid "Opened {0}"
 #~ msgstr "已打开 {0}"
 
-#: src/lib/pipeline.ts:747
+#: src/lib/pipeline.ts:760
 msgid "Opened {name}"
 msgstr "已打开 {name}"
 
@@ -1819,15 +1832,15 @@ msgstr "未指定输出"
 msgid "Overall progress"
 msgstr "总体进度"
 
-#: src/lib/pipeline.ts:713
+#: src/lib/pipeline.ts:726
 msgid "Pairing block {current} / {total} completed"
 msgstr "配对区块 {current} / {total} 已完成"
 
-#: src/App.tsx:413
+#: src/App.tsx:415
 msgid "Panoramic source video"
 msgstr "全景来源视频"
 
-#: src/lib/pipeline.ts:1722
+#: src/lib/pipeline.ts:1765
 msgid "Pending"
 msgstr "待处理"
 
@@ -1836,16 +1849,16 @@ msgid "Performance will be affected"
 msgstr "性能将受到影响"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:251
+#: src/lib/pipeline.ts:263
 msgctxt "mask class"
 msgid "Person"
 msgstr "人员"
 
-#: src/lib/pipeline.ts:572
+#: src/lib/pipeline.ts:585
 msgid "Pipeline log"
 msgstr "流水线日志"
 
-#: src/lib/pipeline.ts:560
+#: src/lib/pipeline.ts:573
 msgid "Platform not checked yet"
 msgstr "尚未检查平台"
 
@@ -1863,7 +1876,7 @@ msgid "Preparing"
 msgstr "准备中"
 
 #. Short label for the preparation phase.
-#: src/lib/pipeline.ts:873
+#: src/lib/pipeline.ts:886
 msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "准备中"
@@ -1874,7 +1887,7 @@ msgstr "准备中"
 #~ msgstr "准备工作"
 
 #. Initial status stored while a backend stage is being prepared; keep this source value locale-independent in task state.
-#: src/lib/pipeline.ts:615
+#: src/lib/pipeline.ts:628
 msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "准备工作"
@@ -1892,11 +1905,11 @@ msgstr "预览 {alt}"
 #~ msgid "Preview task added: {0}"
 #~ msgstr "已添加预览任务：{0}"
 
-#: src/lib/pipeline.ts:749
+#: src/lib/pipeline.ts:762
 msgid "Preview task added: {name}"
 msgstr "已添加预览任务：{name}"
 
-#: src/lib/pipeline.ts:636
+#: src/lib/pipeline.ts:649
 msgid "Preview task updated"
 msgstr "预览任务已更新"
 
@@ -1905,12 +1918,12 @@ msgstr "预览任务已更新"
 msgid "Processed"
 msgstr "已处理"
 
-#: src/lib/pipeline.ts:571
-#: src/lib/pipeline.ts:892
+#: src/lib/pipeline.ts:584
+#: src/lib/pipeline.ts:905
 msgid "Processing"
 msgstr "处理中"
 
-#: src/lib/pipeline.ts:714
+#: src/lib/pipeline.ts:727
 msgid "Processing pairing block {current} / {total}"
 msgstr "正在处理配对区块 {current} / {total}"
 
@@ -1920,7 +1933,7 @@ msgstr "正在处理配对区块 {current} / {total}"
 msgid "Processing records"
 msgstr "处理记录"
 
-#: src/components/processing-settings-fields.tsx:69
+#: src/components/processing-settings-fields.tsx:70
 msgid "Processing settings"
 msgstr "处理设置"
 
@@ -1933,7 +1946,7 @@ msgstr "项目文件夹"
 #~ msgid "Queued"
 #~ msgstr "已排队"
 
-#: src/lib/pipeline.ts:638
+#: src/lib/pipeline.ts:651
 msgid "Queued task updated"
 msgstr "排队中的任务已更新"
 
@@ -1955,7 +1968,7 @@ msgstr "重建流水线"
 #~ msgstr "重建任务"
 
 #. Project recovery status shown while reconstructing a manifest from existing artifacts.
-#: src/lib/pipeline.ts:506
+#: src/lib/pipeline.ts:519
 msgid "Recovering project information"
 msgstr "正在恢复项目信息"
 
@@ -1986,7 +1999,12 @@ msgstr "要将任务从队列中移除吗？"
 msgid "Required capabilities need attention"
 msgstr "必需能力需要注意"
 
-#: src/lib/pipeline.ts:1711
+#. Automatically select a verified camera-specific LUT for detected Log footage.
+#: src/components/processing-settings-fields.tsx:142
+msgid "Restore Log color with the matching LUT"
+msgstr "使用匹配的 LUT 还原 Log 色彩"
+
+#: src/lib/pipeline.ts:1754
 msgid "Resume"
 msgstr "恢复"
 
@@ -1994,7 +2012,7 @@ msgstr "恢复"
 msgid "Resume an unfinished reconstruction task"
 msgstr "恢复未完成的重建任务"
 
-#: src/lib/pipeline.ts:1712
+#: src/lib/pipeline.ts:1755
 msgid "Retry"
 msgstr "重试"
 
@@ -2002,15 +2020,15 @@ msgstr "重试"
 msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
 msgstr "旋转校正可用，但加速度样本未通过地面方向质量检查。"
 
-#: src/lib/pipeline.ts:1714
+#: src/lib/pipeline.ts:1757
 msgid "Run"
 msgstr "运行"
 
-#: src/lib/pipeline.ts:1713
+#: src/lib/pipeline.ts:1756
 msgid "Run again"
 msgstr "再次运行"
 
-#: src/lib/pipeline.ts:562
+#: src/lib/pipeline.ts:575
 msgid "Run an environment check to confirm available capabilities"
 msgstr "运行环境检查以确认可用能力"
 
@@ -2023,14 +2041,14 @@ msgstr "运行检查"
 msgid "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 msgstr "运行环境检查以确认将使用 CUDA、硬件解码还是 CPU。"
 
-#: src/lib/pipeline.ts:1718
+#: src/lib/pipeline.ts:1761
 msgid "Running"
 msgstr "运行中"
 
 #. Keep YOLO11 and SkySeg as model names.
 #. Keep YOLO11 and SkySeg as model names.
-#: src/lib/pipeline.ts:448
-#: src/lib/pipeline.ts:479
+#: src/lib/pipeline.ts:461
+#: src/lib/pipeline.ts:492
 msgid "Running YOLO11/SkySeg inference"
 msgstr "正在运行 YOLO11/SkySeg 推理"
 
@@ -2040,7 +2058,7 @@ msgid "Runtime environment"
 msgstr "运行时环境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:123
+#: src/components/processing-settings-fields.tsx:124
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "以基础帧率的倍数采样候选帧，然后选择更清晰的帧。"
 
@@ -2057,51 +2075,51 @@ msgstr "保存新的任务名称也会重命名输出文件夹；不支持的文
 #. Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
 #. placeholder {1}: localiseTechnicalErrorDetail(rollbackError)
-#: src/lib/pipeline.ts:799
+#: src/lib/pipeline.ts:812
 msgctxt "project edit error"
 msgid "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 msgstr "保存任务更改失败，且无法恢复输出文件夹：{0}；回滚错误：{1}"
 
 #. The rename/save operation failed, but the output folder was rolled back successfully.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:794
+#: src/lib/pipeline.ts:807
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "保存任务更改失败；输出文件夹已恢复：{0}"
 
 #. Short label for a scan phase.
-#: src/lib/pipeline.ts:874
+#: src/lib/pipeline.ts:887
 msgctxt "pipeline phase"
 msgid "Scanning"
 msgstr "扫描中"
 
 #. Backend progress message: scanning candidate frame pairs.
 #. Backend progress message: scanning candidate frame pairs.
-#: src/lib/pipeline.ts:436
-#: src/lib/pipeline.ts:467
+#: src/lib/pipeline.ts:449
+#: src/lib/pipeline.ts:480
 msgid "Scanning dual-fisheye frame candidates"
 msgstr "正在扫描双鱼眼候选帧"
 
 #. Backend progress message: native fisheye images are being inspected.
 #. Backend progress message: native fisheye images are being inspected.
-#: src/lib/pipeline.ts:444
-#: src/lib/pipeline.ts:476
+#: src/lib/pipeline.ts:457
+#: src/lib/pipeline.ts:489
 msgid "Scanning native dual-fisheye images"
 msgstr "正在扫描原生双鱼眼图像"
 
-#: src/lib/pipeline.ts:662
-#: src/lib/pipeline.ts:709
+#: src/lib/pipeline.ts:675
+#: src/lib/pipeline.ts:722
 msgid "Scoring {count} paired candidates"
 msgstr "正在为 {count} 对候选项评分"
 
 #. Short label for scoring candidate frames.
-#: src/lib/pipeline.ts:875
+#: src/lib/pipeline.ts:888
 msgctxt "pipeline phase"
 msgid "Scoring candidates"
 msgstr "候选项评分"
 
 #. Short label for candidate scoring in memory.
-#: src/lib/pipeline.ts:876
+#: src/lib/pipeline.ts:889
 msgctxt "pipeline phase"
 msgid "Scoring in-memory candidates"
 msgstr "内存中候选项评分"
@@ -2111,12 +2129,12 @@ msgstr "内存中候选项评分"
 #~ msgstr "请先选择至少一个 OSV 或双鱼眼来源"
 
 #: src/components/task-editor-dialog.tsx:105
-#: src/lib/pipeline.ts:632
+#: src/lib/pipeline.ts:645
 msgid "Select at least one panoramic source first"
 msgstr "请先至少选择一个全景来源"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:252
+#: src/components/processing-settings-fields.tsx:264
 msgid "Select GPU"
 msgstr "选择 GPU"
 
@@ -2125,21 +2143,21 @@ msgid "Select the matching _00_ or _10_ INSV file to complete the dual-fisheye s
 msgstr "请选择配对的 _00_ 或 _10_ INSV 文件，以补全双鱼眼来源。"
 
 #. Backend progress message: a frame pair was selected without copying output files.
-#: src/lib/pipeline.ts:470
+#: src/lib/pipeline.ts:483
 msgid "Selected frame pair (output copy disabled)"
 msgstr "已选定帧对（已禁用输出复制）"
 
 #. Backend message: an output pair was already present, so no duplicate was written.
 #. Backend message: an output pair was already present, so no duplicate was written.
-#: src/lib/pipeline.ts:439
-#: src/lib/pipeline.ts:471
+#: src/lib/pipeline.ts:452
+#: src/lib/pipeline.ts:484
 msgid "Selected frame pair already exists; skipped"
 msgstr "选定的帧对已存在；已跳过"
 
 #. Backend progress message: selected source frames were written to output.
 #. Backend progress message: selected source frames were written to output.
-#: src/lib/pipeline.ts:442
-#: src/lib/pipeline.ts:474
+#: src/lib/pipeline.ts:455
+#: src/lib/pipeline.ts:487
 msgid "Selected frame pair committed"
 msgstr "已写入选定的帧对"
 
@@ -2149,7 +2167,7 @@ msgid "Settings"
 msgstr "设置"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:98
+#: src/components/processing-settings-fields.tsx:99
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "清晰度过滤"
@@ -2168,11 +2186,11 @@ msgstr "显示来源问题"
 #~ msgid "SIFT extraction: {0}"
 #~ msgstr "SIFT 提取：{0}"
 
-#: src/lib/pipeline.ts:581
+#: src/lib/pipeline.ts:594
 msgid "SIFT extraction: Supported"
 msgstr "SIFT 提取：支持"
 
-#: src/lib/pipeline.ts:582
+#: src/lib/pipeline.ts:595
 msgid "SIFT extraction: Unsupported"
 msgstr "SIFT 提取：不支持"
 
@@ -2181,11 +2199,11 @@ msgstr "SIFT 提取：不支持"
 #~ msgid "SIFT matching: {0}"
 #~ msgstr "SIFT 匹配：{0}"
 
-#: src/lib/pipeline.ts:583
+#: src/lib/pipeline.ts:596
 msgid "SIFT matching: Supported"
 msgstr "SIFT 匹配：支持"
 
-#: src/lib/pipeline.ts:584
+#: src/lib/pipeline.ts:597
 msgid "SIFT matching: Unsupported"
 msgstr "SIFT 匹配：不支持"
 
@@ -2196,28 +2214,28 @@ msgstr "SIFT 匹配：不支持"
 #~ msgstr "简体中文"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:222
+#: src/components/processing-settings-fields.tsx:234
 msgid "Sky filtering"
 msgstr "天空过滤"
 
 #: src/components/settings-sheet.tsx:89
-#: src/lib/pipeline.ts:614
+#: src/lib/pipeline.ts:627
 msgid "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 msgstr "部分 CUDA 或硬件加速能力不可用；受影响阶段将使用 CPU。"
 
-#: src/lib/pipeline.ts:731
+#: src/lib/pipeline.ts:744
 msgid "Source {source} color processing: {warning}"
 msgstr "来源 {source} 颜色处理：{warning}"
 
-#: src/lib/pipeline.ts:734
+#: src/lib/pipeline.ts:747
 msgid "Source {source} completed scoring {count} candidate pairs"
 msgstr "来源 {source} 已完成 {count} 对候选项评分"
 
-#: src/lib/pipeline.ts:735
+#: src/lib/pipeline.ts:748
 msgid "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 msgstr "来源 {source} 的动态关键帧裁剪保留了 {kept} / {total} 个基础 FPS 候选帧（移除了 {removed} 个）"
 
-#: src/lib/pipeline.ts:732
+#: src/lib/pipeline.ts:745
 msgid "Source {source} reused the in-memory scoring checkpoint"
 msgstr "来源 {source} 已复用内存中的评分检查点"
 
@@ -2242,7 +2260,7 @@ msgid "Source file not found"
 msgstr "找不到来源文件"
 
 #. Media preview error when the requested source file does not exist.
-#: src/lib/pipeline.ts:490
+#: src/lib/pipeline.ts:503
 msgid "Source file was not found"
 msgstr "未找到源文件"
 
@@ -2251,7 +2269,7 @@ msgstr "未找到源文件"
 msgid "Source inspection issues"
 msgstr "来源检查问题"
 
-#: src/lib/pipeline.ts:619
+#: src/lib/pipeline.ts:632
 msgid "Source inspection results are not available yet"
 msgstr "来源检查结果尚不可用"
 
@@ -2272,15 +2290,15 @@ msgid "Sources"
 msgstr "来源"
 
 #. Project validation error: source media cannot be nested under reconstruction output.
-#: src/lib/pipeline.ts:499
+#: src/lib/pipeline.ts:512
 msgid "Sources cannot be inside the output folder; move them elsewhere first"
 msgstr "来源不能位于输出文件夹内；请先将其移到其他位置"
 
-#: src/lib/pipeline.ts:618
+#: src/lib/pipeline.ts:631
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "已找到来源；你可以创建新的重建任务"
 
-#: src/components/processing-settings-fields.tsx:167
+#: src/components/processing-settings-fields.tsx:179
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "仅在需要覆盖官方 LUT 时指定 .cube 文件。"
 
@@ -2289,14 +2307,14 @@ msgstr "仅在需要覆盖官方 LUT 时指定 .cube 文件。"
 #~ msgstr "SphereAlign 诊断"
 
 #. Generic pipeline stage label.
-#: src/lib/pipeline.ts:232
+#: src/lib/pipeline.ts:244
 msgctxt "pipeline stage fallback"
 msgid "Stage"
 msgstr "阶段"
 
 #. placeholder {0}: runningIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1040
+#: src/lib/pipeline.ts:1053
 msgid "Stage {0} of {1} · {label}"
 msgstr "阶段 {0}/{1} · {label}"
 
@@ -2309,29 +2327,29 @@ msgstr "阶段 {0}/{1}：{2}"
 
 #. Committed artifacts remain valid and can be reused by a later run.
 #. Committed artifacts remain valid and can be reused by a later run.
-#: src/lib/pipeline.ts:453
-#: src/lib/pipeline.ts:485
+#: src/lib/pipeline.ts:466
+#: src/lib/pipeline.ts:498
 msgid "Stage cancelled; committed artifacts can be resumed"
 msgstr "阶段已取消；已写入的输出文件可恢复"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/lib/pipeline.ts:454
-#: src/lib/pipeline.ts:488
+#: src/lib/pipeline.ts:467
+#: src/lib/pipeline.ts:501
 msgctxt "backend stage status"
 msgid "Stage completed"
 msgstr "阶段已完成"
 
 #. Generic backend stage status message.
 #. Generic backend stage status message.
-#: src/lib/pipeline.ts:452
-#: src/lib/pipeline.ts:484
+#: src/lib/pipeline.ts:465
+#: src/lib/pipeline.ts:497
 msgctxt "backend stage status"
 msgid "Stage started"
 msgstr "阶段已开始"
 
 #. Short label for a stage summary.
-#: src/lib/pipeline.ts:888
+#: src/lib/pipeline.ts:901
 msgctxt "pipeline phase"
 msgid "Stage summary"
 msgstr "阶段摘要"
@@ -2345,13 +2363,13 @@ msgstr "回退到 CPU 的阶段仍可运行，但处理时间可能显著增加�
 #~ msgstr "已开始的任务会保留其阶段和处理记录。"
 
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:1084
+#: src/lib/pipeline.ts:1097
 msgid "Stop {0}"
 msgstr "停止 {0}"
 
 #. placeholder {0}: interruptedIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1045
+#: src/lib/pipeline.ts:1058
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "已停止于第 {0}/{1} 个阶段 · {label}"
 
@@ -2360,7 +2378,7 @@ msgstr "已停止于第 {0}/{1} 个阶段 · {label}"
 #~ msgid "Summary: {0}"
 #~ msgstr "摘要：{0}"
 
-#: src/lib/pipeline.ts:568
+#: src/lib/pipeline.ts:581
 msgid "Supported"
 msgstr "支持"
 
@@ -2372,11 +2390,11 @@ msgstr "支持的输入"
 msgid "System"
 msgstr "系统"
 
-#: src/lib/pipeline.ts:767
+#: src/lib/pipeline.ts:780
 msgid "System FFmpeg was not found on PATH"
 msgstr "在 PATH 中未找到系统 FFmpeg"
 
-#: src/lib/pipeline.ts:768
+#: src/lib/pipeline.ts:781
 msgid "System ffprobe was not found on PATH"
 msgstr "在 PATH 中未找到系统 ffprobe"
 
@@ -2384,7 +2402,7 @@ msgstr "在 PATH 中未找到系统 ffprobe"
 #~ msgid "System information"
 #~ msgstr "系统信息"
 
-#: src/lib/pipeline.ts:642
+#: src/lib/pipeline.ts:655
 msgid "Task added to the run queue"
 msgstr "任务已添加到运行队列"
 
@@ -2401,31 +2419,31 @@ msgid "Task name"
 msgstr "任务名称"
 
 #. Validation error shown when a queued task name contains only whitespace.
-#: src/lib/pipeline.ts:503
+#: src/lib/pipeline.ts:516
 msgctxt "project edit validation"
 msgid "Task name cannot be blank"
 msgstr "任务名称不能为空"
 
-#: src/lib/pipeline.ts:640
+#: src/lib/pipeline.ts:653
 msgid "Task removed from the queue; the output folder is kept"
 msgstr "任务已从队列中移除；输出文件夹已保留"
 
 #. Shown when technical details contain an untranslated message in a non-Traditional-Chinese locale.
-#: src/lib/pipeline.ts:405
+#: src/lib/pipeline.ts:418
 msgctxt "backend error details"
 msgid "Technical details are available in diagnostics."
 msgstr "技术详细信息可在诊断中查看。"
 
-#: src/lib/pipeline.ts:595
+#: src/lib/pipeline.ts:608
 msgid "The alignment stage will remain pending"
 msgstr "对齐阶段将保持待处理状态"
 
 #. Backend alignment message when a rig configuration supplies all extrinsics.
-#: src/lib/pipeline.ts:515
+#: src/lib/pipeline.ts:528
 msgid "The camera rig already provides complete extrinsics"
 msgstr "相机组已提供完整外参"
 
-#: src/lib/pipeline.ts:629
+#: src/lib/pipeline.ts:642
 msgid "The COLMAP path is used by the local Windows runtime"
 msgstr "本地 Windows 运行时使用 COLMAP 路径"
 
@@ -2438,11 +2456,11 @@ msgid "The current stage will stop. Completed output is kept, and you can resume
 msgstr "当前阶段将停止。已完成的输出会保留，稍后可继续此任务。"
 
 #: src/components/task-editor-dialog.tsx:109
-#: src/lib/pipeline.ts:633
+#: src/lib/pipeline.ts:646
 msgid "The custom LUT must be a .cube file"
 msgstr "自定义 LUT 必须是 .cube 文件"
 
-#: src/lib/pipeline.ts:594
+#: src/lib/pipeline.ts:607
 msgid "The executable was found, but the complete alignment workflow was not confirmed"
 msgstr "已找到可执行文件，但未确认完整对齐工作流"
 
@@ -2450,41 +2468,41 @@ msgstr "已找到可执行文件，但未确认完整对齐工作流"
 msgid "The file may have been moved, renamed, or deleted."
 msgstr "文件可能已移动、重命名或删除。"
 
-#: src/lib/pipeline.ts:588
+#: src/lib/pipeline.ts:601
 msgid "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"
 msgstr "旧版诊断未报告 COLMAP 构建版本；FFmpeg CUDA/VideoToolbox 并不表示 COLMAP CUDA"
 
 #. Shown when a backend or Tauri error has no localized mapping. Do not include the raw error text here.
-#: src/lib/pipeline.ts:399
+#: src/lib/pipeline.ts:412
 msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "本地运行时返回了意外错误。请查看诊断信息。"
 
 #. Shown when the output folder cannot be renamed because its parent directory is unavailable.
-#: src/lib/pipeline.ts:505
+#: src/lib/pipeline.ts:518
 msgctxt "project edit error"
 msgid "The output folder has no usable parent directory"
 msgstr "输出文件夹没有可用的父目录"
 
 #. Media preview error when the preview service cannot be used.
-#: src/lib/pipeline.ts:508
+#: src/lib/pipeline.ts:521
 msgid "The preview service is temporarily unavailable"
 msgstr "预览服务暂时不可用"
 
 #. A resumable project was recovered after an interrupted run.
 #. A resumable project was recovered after an interrupted run.
-#: src/lib/pipeline.ts:458
-#: src/lib/pipeline.ts:497
+#: src/lib/pipeline.ts:471
+#: src/lib/pipeline.ts:510
 msgid "The previous run was interrupted; this stage can be resumed"
 msgstr "上次运行被中断；此阶段可以恢复"
 
 #. Project operation error while another mutation is in progress.
-#: src/lib/pipeline.ts:500
+#: src/lib/pipeline.ts:513
 msgid "The project operation lock is temporarily unavailable"
 msgstr "项目操作锁暂时不可用"
 
 #. The rename is cancelled to avoid changing a project whose manifest path is inconsistent.
-#: src/lib/pipeline.ts:504
+#: src/lib/pipeline.ts:517
 msgctxt "project edit error"
 msgid "The project root in the manifest does not match its actual location; rename cancelled"
 msgstr "清单中的项目根目录与实际位置不匹配；已取消重命名"
@@ -2495,67 +2513,67 @@ msgid "The queue runs automatically in creation order"
 msgstr "队列按创建顺序自动运行"
 
 #. Diagnostic warning for a COLMAP build without confirmed CUDA support.
-#: src/lib/pipeline.ts:521
+#: src/lib/pipeline.ts:534
 msgid "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 msgstr "未确认所选 COLMAP CUDA 构建；特征提取和匹配将使用 CPU，且无法启用 Ceres GPU 求解器"
 
-#: src/lib/pipeline.ts:764
+#: src/lib/pipeline.ts:777
 msgid "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 msgstr "所选 COLMAP 的版本/帮助信息未报告 CUDA；将使用 CPU 进行特征提取和匹配"
 
 #. FeatureExtraction and FeatureMatching are COLMAP command-line options; keep these names unchanged.
-#: src/lib/pipeline.ts:526
+#: src/lib/pipeline.ts:539
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide both FeatureExtraction and FeatureMatching GPU options; feature stages will use the CPU"
 msgstr "所选 COLMAP 不同时提供 FeatureExtraction 和 FeatureMatching GPU 选项；特征阶段将使用 CPU"
 
 #. global_mapper is the COLMAP command name; incremental alignment is the fallback workflow.
-#: src/lib/pipeline.ts:527
+#: src/lib/pipeline.ts:540
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide global_mapper; only incremental alignment can be used"
 msgstr "所选 COLMAP 不提供 global_mapper；只能使用增量对齐"
 
 #. Keep view_graph_calibrator, global mapper, and focal prior as COLMAP technical terms.
-#: src/lib/pipeline.ts:532
+#: src/lib/pipeline.ts:545
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP does not provide view_graph_calibrator; the global mapper's focal prior must be supplied by external calibration"
 msgstr "所选 COLMAP 不提供 view_graph_calibrator；global mapper 的 focal prior 必须由外部标定提供"
 
 #. Keep the five COLMAP command names unchanged; dual-camera alignment refers to the dual-fisheye rig workflow.
-#: src/lib/pipeline.ts:533
+#: src/lib/pipeline.ts:546
 msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 msgstr "所选 COLMAP 缺少 feature_extractor、matches_importer、mapper、model_converter 或 rig_configurator；双相机对齐工作流无法完成"
 
-#: src/lib/pipeline.ts:763
+#: src/lib/pipeline.ts:776
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "所选 COLMAP 路径不存在或不是文件"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
-#: src/lib/pipeline.ts:520
+#: src/lib/pipeline.ts:533
 msgid "The selected COLMAP supports CUDA, but the Ceres GPU solver was not confirmed; Bundle Adjustment will use the CPU"
 msgstr "所选 COLMAP 支持 CUDA，但未确认 Ceres GPU 求解器；Bundle Adjustment 将使用 CPU"
 
 #. BA means Bundle Adjustment; keep global_mapper, Ceres, and Bundle Adjustment as technical terms.
-#: src/lib/pipeline.ts:530
+#: src/lib/pipeline.ts:543
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU Ceres BA; global Bundle Adjustment will use the CPU"
 msgstr "所选 global_mapper 不提供 GPU Ceres BA；全局 Bundle Adjustment 将使用 CPU"
 
 #. Keep global_mapper and global positioning as COLMAP technical terms.
-#: src/lib/pipeline.ts:529
+#: src/lib/pipeline.ts:542
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide GPU global positioning; global positioning will use the CPU"
 msgstr "所选 global_mapper 不提供 GPU global positioning；global positioning 将使用 CPU"
 
 #. Keep global_mapper and fixed-rotation/joint BA stage as COLMAP technical terms.
-#: src/lib/pipeline.ts:531
+#: src/lib/pipeline.ts:544
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the fixed-rotation/joint BA stage option; fixed-rotation experimental mode is unavailable"
 msgstr "所选 global_mapper 不提供 fixed-rotation/joint BA 阶段选项；fixed-rotation 实验模式不可用"
 
 #. Keep global_mapper and gravity rotation averaging as COLMAP technical terms.
-#: src/lib/pipeline.ts:528
+#: src/lib/pipeline.ts:541
 msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "所选 global_mapper 不提供 gravity rotation averaging 选项；global-gravity 模式不可用"
@@ -2565,7 +2583,7 @@ msgid "There are no processing records yet; each stage and its current position 
 msgstr "目前没有处理记录；开始执行后，每个阶段及其当前位置都会显示在此处。"
 
 #. Diagnostic note when FFmpeg hardware decoding is unavailable.
-#: src/lib/pipeline.ts:525
+#: src/lib/pipeline.ts:538
 msgid "This FFmpeg build reported no hardware acceleration components; frame extraction will use CPU decoding"
 msgstr "此 FFmpeg 构建未报告硬件加速组件；帧提取将使用 CPU 解码"
 
@@ -2574,23 +2592,23 @@ msgid "This file type is not supported by the current source adapters."
 msgstr "当前来源适配器不支持此文件类型。"
 
 #. Backend project message when an existing frame dataset has no source video.
-#: src/lib/pipeline.ts:518
+#: src/lib/pipeline.ts:531
 msgid "This folder has no source video; masking or alignment can run directly on existing frames"
 msgstr "此文件夹没有源视频；可以直接在现有帧上运行掩码或对齐"
 
 #. Project metadata was reconstructed from files already on disk.
 #. Project metadata was reconstructed from files already on disk.
-#: src/lib/pipeline.ts:459
-#: src/lib/pipeline.ts:498
+#: src/lib/pipeline.ts:472
+#: src/lib/pipeline.ts:511
 msgid "This project manifest was recovered from existing artifacts"
 msgstr "已从现有文件中恢复此项目清单"
 
 #. Media preview error for an unsupported source format.
-#: src/lib/pipeline.ts:491
+#: src/lib/pipeline.ts:504
 msgid "This source format is not supported"
 msgstr "不支持此来源格式"
 
-#: src/lib/pipeline.ts:641
+#: src/lib/pipeline.ts:654
 msgid "This task has already started"
 msgstr "此任务已开始"
 
@@ -2598,16 +2616,16 @@ msgstr "此任务已开始"
 msgid "This task has no recorded source files."
 msgstr "此任务没有记录的源文件。"
 
-#: src/lib/pipeline.ts:621
+#: src/lib/pipeline.ts:634
 msgid "This task has started and can no longer be edited"
 msgstr "此任务已开始，无法再编辑"
 
-#: src/lib/pipeline.ts:639
+#: src/lib/pipeline.ts:652
 msgid "This task has started and cannot be removed"
 msgstr "此任务已开始，无法移除"
 
 #. Diagnostic warning for an unsupported COLMAP version.
-#: src/lib/pipeline.ts:524
+#: src/lib/pipeline.ts:537
 msgid "This workflow requires COLMAP 4.1.1 or newer; older versions do not support the complete rig and global alignment workflow"
 msgstr "此工作流需要 COLMAP 4.1.1 或更高版本；较旧版本不支持完整的相机组和全局对齐工作流"
 
@@ -2618,108 +2636,116 @@ msgstr "此工作流需要 COLMAP 4.1.1 或更高版本；较旧版本不支持�
 #~ msgstr "繁体中文"
 
 #. Object class that can be excluded from reconstruction masks.
-#: src/lib/pipeline.ts:256
+#: src/lib/pipeline.ts:268
 msgctxt "mask class"
 msgid "Truck"
 msgstr "卡车"
 
-#: src/lib/pipeline.ts:647
+#: src/lib/pipeline.ts:660
 msgid "Unable to cancel the stage; it may still be running"
 msgstr "无法取消此阶段；它可能仍在运行。"
 
-#: src/lib/pipeline.ts:628
+#: src/lib/pipeline.ts:641
 msgid "Unable to copy diagnostics; check clipboard permissions"
 msgstr "无法复制诊断信息；请检查剪贴板权限"
 
-#: src/lib/pipeline.ts:718
+#: src/lib/pipeline.ts:731
 msgid "Unable to copy frame {source} to {destination}: {error}"
 msgstr "无法将帧 {source} 复制到 {destination}：{error}"
 
-#: src/lib/pipeline.ts:717
+#: src/lib/pipeline.ts:730
 msgid "Unable to create temporary frame {frame}: {error}"
 msgstr "无法创建临时帧 {frame}：{error}"
 
-#: src/lib/pipeline.ts:720
+#: src/lib/pipeline.ts:733
 msgid "Unable to create temporary metadata {path}: {error}"
 msgstr "无法创建临时元数据 {path}：{error}"
 
 #. Project root means the folder containing the loaded project manifest.
-#: src/lib/pipeline.ts:502
+#: src/lib/pipeline.ts:515
 msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "无法确定项目根目录"
 
 #: src/components/source-media.tsx:195
 #: src/components/source-media.tsx:197
-#: src/lib/pipeline.ts:612
+#: src/lib/pipeline.ts:625
 msgid "Unable to generate a first-frame preview"
 msgstr "无法生成首帧预览"
 
 #. Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:789
+#: src/lib/pipeline.ts:802
 msgctxt "project edit error"
 msgid "Unable to inspect the project root: {0}"
 msgstr "无法检查项目根目录：{0}"
 
 #. Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:703
+#: src/lib/pipeline.ts:716
 msgctxt "backend diagnostic warning"
 msgid "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 msgstr "无法解析来源 {source} 的归一化遥测数据；将使用视觉新颖度和 maximum-gap 回退：{0}"
 
 #. Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:698
+#: src/lib/pipeline.ts:711
 msgctxt "backend diagnostic warning"
 msgid "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 msgstr "无法读取来源 {source} 的归一化遥测数据；已禁用 IMU 关键帧项：{0}"
 
-#: src/lib/pipeline.ts:716
+#: src/lib/pipeline.ts:729
 msgid "Unable to read source frame {frame}: {error}"
 msgstr "无法读取源帧 {frame}：{error}"
 
 #. Media preview error when the first frame cannot be decoded.
-#: src/lib/pipeline.ts:492
+#: src/lib/pipeline.ts:505
 msgid "Unable to read the first video frame"
 msgstr "无法读取首个视频帧"
 
 #. Diagnostic warning when COLMAP capability probing cannot read the version banner.
-#: src/lib/pipeline.ts:523
+#: src/lib/pipeline.ts:536
 msgid "Unable to read the selected COLMAP version banner; capabilities are conservatively treated as unknown or unavailable"
 msgstr "无法读取所选 COLMAP 的版本信息；能力将按保守原则视为未知或不可用"
 
 #. Media preview error when FFmpeg cannot be launched.
-#: src/lib/pipeline.ts:494
+#: src/lib/pipeline.ts:507
 msgid "Unable to start FFmpeg"
 msgstr "无法启动 FFmpeg"
 
-#: src/lib/pipeline.ts:631
+#: src/lib/pipeline.ts:644
 msgid "Unable to start the stage automatically; check the runtime message"
 msgstr "无法自动启动阶段；请检查运行时消息"
 
-#: src/lib/pipeline.ts:645
+#: src/lib/pipeline.ts:658
 msgid "Unable to start the stage; check the runtime message"
 msgstr "无法启动阶段；请检查运行时消息"
 
-#: src/lib/pipeline.ts:719
+#: src/lib/pipeline.ts:732
 msgid "Unable to sync temporary frame {frame}: {error}"
 msgstr "无法同步临时帧 {frame}：{error}"
 
-#: src/lib/pipeline.ts:722
+#: src/lib/pipeline.ts:735
 msgid "Unable to sync temporary metadata {path}: {error}"
 msgstr "无法同步临时元数据 {path}：{error}"
 
-#: src/lib/pipeline.ts:721
+#: src/lib/pipeline.ts:734
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "无法写入临时元数据 {path}：{error}"
 
-#: src/lib/pipeline.ts:574
+#: src/components/processing-settings-fields.tsx:150
+msgid "Unknown camera"
+msgstr "未知相机"
+
+#: src/components/processing-settings-fields.tsx:150
+msgid "Unknown color profile"
+msgstr "未知色彩配置文件"
+
+#: src/lib/pipeline.ts:587
 msgid "Unnamed reconstruction"
 msgstr "未命名的重建"
 
-#: src/lib/pipeline.ts:569
+#: src/lib/pipeline.ts:582
 msgid "Unsupported"
 msgstr "不支持"
 
@@ -2728,7 +2754,7 @@ msgid "Unsupported source format"
 msgstr "不支持的来源格式"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:246
+#: src/components/processing-settings-fields.tsx:258
 msgid "Use CUDA acceleration for alignment"
 msgstr "使用 CUDA 加速进行对齐"
 
@@ -2738,14 +2764,14 @@ msgstr "使用 CUDA 加速进行对齐"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:224
+#: src/components/processing-settings-fields.tsx:236
 msgid "Use SkySeg to generate sky masks."
 msgstr "使用 SkySeg 生成天空掩码。"
 
 #. Backend message: an existing mask file was reused.
 #. Backend message: an existing mask file was reused.
-#: src/lib/pipeline.ts:447
-#: src/lib/pipeline.ts:478
+#: src/lib/pipeline.ts:460
+#: src/lib/pipeline.ts:491
 msgid "Verified that the mask exists; skipped"
 msgstr "已验证掩码存在；已跳过"
 
@@ -2763,11 +2789,11 @@ msgstr "查看详细信息"
 msgid "View details for {0}"
 msgstr "查看 {0} 的详细信息"
 
-#: src/lib/pipeline.ts:1086
+#: src/lib/pipeline.ts:1099
 msgid "Wait for {prerequisite} to finish"
 msgstr "等待 {prerequisite} 完成"
 
-#: src/lib/pipeline.ts:1088
+#: src/lib/pipeline.ts:1101
 msgid "Wait for the current stage to finish"
 msgstr "等待当前阶段完成"
 
@@ -2778,7 +2804,7 @@ msgstr "等待 {0} 完成"
 
 #. placeholder {0}: nextIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1050
+#: src/lib/pipeline.ts:1063
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "等待阶段 {0}/{1} · {label}"
 
@@ -2799,9 +2825,13 @@ msgstr "警告"
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "根据三次观察到的运行时长加权：帧提取 22%、掩码 4%、对齐 74%"
 
+#: src/components/processing-settings-fields.tsx:178
+msgid "When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file."
+msgstr "未指定自定义文件时，运行时使用检测到的型号对应的已验证 LUT；否则使用此 .cube 文件。"
+
 #: src/components/processing-settings-fields.tsx:166
-msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
-msgstr "未指定自定义文件时，运行时使用官方 LUT；否则使用此 .cube 文件。"
+#~ msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
+#~ msgstr "未指定自定义文件时，运行时使用官方 LUT；否则使用此 .cube 文件。"
 
 #: src/components/app-chrome.tsx:59
 msgid "Window controls"
@@ -2812,16 +2842,16 @@ msgid "Work summary"
 msgstr "工作摘要"
 
 #. Backend progress message: mask files are being written.
-#: src/lib/pipeline.ts:482
+#: src/lib/pipeline.ts:495
 msgid "Writing mask files"
 msgstr "正在写入掩码文件"
 
 #. Backend stage summary when no mask filters are enabled.
-#: src/lib/pipeline.ts:487
+#: src/lib/pipeline.ts:500
 msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO 和天空过滤已禁用；已跳过掩码"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:187
+#: src/components/processing-settings-fields.tsx:199
 msgid "YOLO object filtering"
 msgstr "YOLO 对象过滤"

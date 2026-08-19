@@ -257,6 +257,10 @@ pub struct SourceInspection {
     pub size: u64,
     pub valid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_brand: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fps: Option<f64>,
@@ -500,6 +504,44 @@ fn inspect_capture_telemetry(path: &Path) -> Result<telemetry::TelemetryInspecti
     telemetry::inspect_source(&sibling).or(primary)
 }
 
+fn normalized_camera_identity(
+    camera_type: &str,
+    camera_model: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let camera_type = camera_type.trim();
+    let raw_model = camera_model
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("unknown"));
+    let identity_hint = format!("{camera_type} {}", raw_model.unwrap_or_default());
+    let identity_hint = identity_hint.to_ascii_lowercase();
+    let brand = if identity_hint.contains("insta360") {
+        Some("Insta360".to_owned())
+    } else if identity_hint.contains("dji") {
+        Some("DJI".to_owned())
+    } else if !camera_type.is_empty() && !camera_type.eq_ignore_ascii_case("unknown") {
+        Some(camera_type.to_owned())
+    } else {
+        None
+    };
+    let model = raw_model.and_then(|value| {
+        let without_brand = brand
+            .as_deref()
+            .and_then(|brand| {
+                value
+                    .get(..brand.len())
+                    .filter(|prefix| prefix.eq_ignore_ascii_case(brand))
+                    .and_then(|_| value.get(brand.len()..))
+            })
+            .unwrap_or(value)
+            .trim_start_matches(|character: char| {
+                character.is_whitespace() || matches!(character, '-' | '_' | ':')
+            })
+            .trim();
+        (!without_brand.is_empty()).then(|| without_brand.to_owned())
+    });
+    (brand, model)
+}
+
 fn collect_source_paths(path: &Path, output: &mut Vec<PathBuf>) {
     if path.is_file() {
         if locate_manifest(path).is_some() {
@@ -581,6 +623,8 @@ fn inspect_source(path: &Path) -> SourceInspection {
         name,
         size,
         valid: metadata.is_some() && path.is_file() && is_supported_source(&path),
+        camera_brand: None,
+        camera_model: None,
         duration: None,
         fps: None,
         width: None,
@@ -641,7 +685,32 @@ fn inspect_source(path: &Path) -> SourceInspection {
 
     match probe_source(&path) {
         Ok(probe) => {
-            inspection.color_profile = Some(color::detect_from_probe(&path, &probe));
+            let telemetry_inspection = inspect_capture_telemetry(&path);
+            if let Ok(metadata) = telemetry_inspection.as_ref() {
+                (inspection.camera_brand, inspection.camera_model) = normalized_camera_identity(
+                    &metadata.camera_type,
+                    metadata.camera_model.as_deref(),
+                );
+            }
+            let color_profile = color::detect_from_probe_with_camera(
+                &path,
+                &probe,
+                telemetry_inspection
+                    .as_ref()
+                    .ok()
+                    .and_then(|metadata| metadata.camera_model.as_deref()),
+                telemetry_inspection
+                    .as_ref()
+                    .ok()
+                    .and_then(|metadata| metadata.color_profile.as_deref()),
+            );
+            if inspection.camera_brand.is_none() || inspection.camera_model.is_none() {
+                let (fallback_brand, fallback_model) =
+                    normalized_camera_identity("", color_profile.camera_model.as_deref());
+                inspection.camera_brand = inspection.camera_brand.or(fallback_brand);
+                inspection.camera_model = inspection.camera_model.or(fallback_model);
+            }
+            inspection.color_profile = Some(color_profile);
             let streams = probe
                 .get("streams")
                 .and_then(Value::as_array)
@@ -693,7 +762,7 @@ fn inspect_source(path: &Path) -> SourceInspection {
                         &["dual-fisheye-extraction"],
                     );
                 }
-                match inspect_capture_telemetry(&path) {
+                match telemetry_inspection {
                     Ok(metadata) if !metadata.samples_available => {
                         let message =
                             "Container metadata could not be decoded; ground correction and IMU-assisted reconstruction acceleration may be unavailable";
@@ -1444,6 +1513,48 @@ mod tests {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     static TEST_TEMP_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn camera_identity_uses_canonical_brand_and_non_redundant_model() {
+        assert_eq!(
+            normalized_camera_identity("Insta360", Some("Insta360 X5")),
+            (Some("Insta360".to_owned()), Some("X5".to_owned()))
+        );
+        assert_eq!(
+            normalized_camera_identity("DJI", Some("DJI Osmo 360")),
+            (Some("DJI".to_owned()), Some("Osmo 360".to_owned()))
+        );
+        assert_eq!(
+            normalized_camera_identity("DJI", None),
+            (Some("DJI".to_owned()), None)
+        );
+        assert_eq!(normalized_camera_identity("Unknown", None), (None, None));
+    }
+
+    #[test]
+    fn source_inspection_serializes_camera_identity_in_camel_case() {
+        let value = serde_json::to_value(SourceInspection {
+            path: "/capture/source.osv".to_owned(),
+            name: "source.osv".to_owned(),
+            size: 1,
+            valid: true,
+            camera_brand: Some("DJI".to_owned()),
+            camera_model: Some("Osmo 360".to_owned()),
+            duration: None,
+            fps: None,
+            width: None,
+            height: None,
+            lens_count: None,
+            color_profile: None,
+            warnings: Vec::new(),
+            issues: Vec::new(),
+        })
+        .unwrap();
+
+        assert_eq!(value.get("cameraBrand"), Some(&json!("DJI")));
+        assert_eq!(value.get("cameraModel"), Some(&json!("Osmo 360")));
+        assert!(value.get("camera_brand").is_none());
+    }
 
     #[test]
     fn queued_project_can_be_edited_but_started_project_cannot() {

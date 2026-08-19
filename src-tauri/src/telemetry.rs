@@ -579,6 +579,7 @@ pub struct TelemetryInspection {
     pub parser: String,
     pub camera_type: String,
     pub camera_model: Option<String>,
+    pub color_profile: Option<String>,
     pub samples_available: bool,
     pub normalized_imu_sample_count: usize,
     pub gyro_sample_count: usize,
@@ -640,10 +641,27 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
     let gravity_estimation_available =
         integrated.is_some() && build_gravity_direction_timeline(&normalized_imu).is_some();
     let mut fused_attitude_sample_count = 0usize;
+    let mut color_profile = None;
     for sample in input.samples.iter().flatten() {
         let Some(groups) = sample.tag_map.as_ref() else {
             continue;
         };
+        if color_profile.is_none() {
+            color_profile = groups
+                .get(&GroupId::Default)
+                .and_then(|tags| tags.get(&TagId::Metadata))
+                .and_then(|tag| match &tag.value {
+                    TagValue::Json(value) => {
+                        let metadata = value.get();
+                        metadata
+                            .get("gamma_mode")
+                            .or_else(|| metadata.get("gammaMode"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    }
+                    _ => None,
+                });
+        }
         let Some(group) = groups.get(&GroupId::Quaternion) else {
             continue;
         };
@@ -674,6 +692,7 @@ pub fn inspect_source(input_path: &Path) -> Result<TelemetryInspection, String> 
         parser: input.parser_name().to_owned(),
         camera_type: input.camera_type(),
         camera_model: input.camera_model().cloned(),
+        color_profile,
         samples_available,
         normalized_imu_sample_count,
         gyro_sample_count,
