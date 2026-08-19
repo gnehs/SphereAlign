@@ -39,6 +39,7 @@ import { useAppStore } from "@/stores/app-store";
 
 export interface TaskDetailProps {
   clockMs: number;
+  modal: boolean;
   onStageAction: (task: Task, stageKey: StageKey) => void;
   restoreFocusRef?: RefObject<HTMLElement | null>;
   onExitComplete?: () => void;
@@ -63,18 +64,18 @@ function StageStatusBadge({ status }: { status: StageState["status"] }) {
     <Badge
       className={cn(
         status === "running" && "border-primary/30 bg-primary/10 text-primary [&_[data-icon=inline-start]]:animate-spin [&_[data-icon=inline-start]]:[animation-duration:900ms]",
-        status === "completed" && "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+        status === "completed" && "border-success/30 bg-success/10 text-success",
         status === "cancelled" && "bg-muted text-muted-foreground",
       )}
       variant={status === "failed" ? "destructive" : "outline"}
     >
       {status === "running"
         ? <LoaderCircle data-icon="inline-start" aria-hidden="true" />
-        : <span className={cn(
+        : <span aria-hidden="true" className={cn(
           "block size-1.25 rounded-full bg-current",
-          status === "completed" && "text-emerald-600",
+          status === "completed" && "text-success",
           status === "failed" && "text-destructive",
-          status === "cancelled" && "text-amber-600",
+          status === "cancelled" && "text-warning",
           status === "pending" && "text-muted-foreground",
         )} />}
       {stageStatusLabel(status)}
@@ -134,7 +135,7 @@ function TaskSummary({
           <StageStatusBadge status={selectedStage.status} />
         </div>
         <div className="mt-4 flex flex-col gap-1 text-sm">
-          <strong className="font-semibold text-foreground">{phaseLabel(selectedStage.phase)}</strong>
+          <strong className="font-semibold text-foreground">{selectedStage.phase ? phaseLabel(selectedStage.phase) : stageStatusLabel(selectedStage.status)}</strong>
           <p className="leading-relaxed break-anywhere text-muted-foreground">{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
           {selectedStage.currentItem && <small className="leading-relaxed break-anywhere text-muted-foreground">{t`Current item: ${selectedStage.currentItem}`}</small>}
         </div>
@@ -159,7 +160,7 @@ function TaskSummary({
       {selectedTask.warnings.length > 0 && (
         <section className="border-b py-5">
           <DetailSectionHeading title={<Trans>Warnings</Trans>} meta={<Badge variant="destructive">{selectedTask.warnings.length}</Badge>} />
-          <div className="flex flex-col border-t">{selectedTask.warnings.map((warning, index) => <div className="flex min-w-0 items-start gap-2 border-t py-2.5 first:border-t-0" key={`${index}-${warning}`}><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" /><span className="min-w-0 text-sm leading-relaxed text-amber-700 dark:text-amber-400">{localiseUserMessage(warning)}</span></div>)}</div>
+          <div className="flex flex-col border-t">{selectedTask.warnings.map((warning, index) => <div className="flex min-w-0 items-start gap-2 border-t py-2.5 first:border-t-0" key={`${index}-${warning}`}><AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" /><span className="min-w-0 text-sm leading-relaxed text-warning">{localiseUserMessage(warning)}</span></div>)}</div>
         </section>
       )}
     </>
@@ -172,22 +173,23 @@ function TaskRecords({ selectedTask, selectedTaskLogs }: TaskRecordsProps) {
   return (
     <section className="pt-5">
       <DetailSectionHeading title={<Trans>Processing records</Trans>} meta={<Plural value={selectedTaskLogs.length} one="# entry" other="# entries" />} />
-      {selectedTaskLogs.length > 0 ? <ol className="overflow-hidden rounded-md border bg-muted/20" aria-label={t`Processing records`}>{selectedTaskLogs.map((log) => {
+      {selectedTaskLogs.length > 0 ? <ul className="overflow-hidden rounded-md border bg-muted/20" aria-label={t`Processing records`}>{selectedTaskLogs.map((log) => {
         const count = logCountLabel(log.completed, log.total);
         const scope = `${taskStageLabel(log.stage)}${log.phase ? `/${phaseLabel(log.phase)}` : ""}`;
         return <li className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)] items-baseline gap-x-2 border-t px-3 py-2 font-mono text-xs first:border-t-0" key={log.id}>
           <time className="shrink-0 text-muted-foreground" dateTime={timestampDateTime(log.timestampMs)}>{formatTimestamp(log.timestampMs, true)}</time>
-          <strong className={cn("font-semibold text-primary", log.level === "warning" && "text-amber-600", log.level === "error" && "text-destructive")}>{log.level === "warning" ? "WARN" : log.level.toUpperCase()}</strong>
+          <strong className={cn("font-semibold text-primary", log.level === "warning" && "text-warning", log.level === "error" && "text-destructive")}>{log.level === "warning" ? "WARN" : log.level.toUpperCase()}</strong>
           <p className="min-w-0 leading-relaxed break-anywhere whitespace-pre-wrap text-foreground"><span className="text-muted-foreground">[{scope}]</span>{" "}{localiseUserMessage(log.message)}</p>
           {(count || log.currentItem || log.durationMs !== undefined) && <div className="col-start-3 flex min-w-0 flex-wrap gap-x-3 text-muted-foreground">{count && <span>{count}</span>}{log.currentItem && <span className="break-anywhere">{log.currentItem}</span>}{log.durationMs !== undefined && <span>{t`Duration ${formatDuration(log.durationMs)}`}</span>}</div>}
         </li>;
-      })}</ol> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
+      })}</ul> : <p className="text-sm text-muted-foreground"><Trans>There are no processing records yet; each stage and its current position will appear here after execution starts.</Trans></p>}
     </section>
   );
 }
 
 export function TaskDetail({
   clockMs,
+  modal,
   onStageAction,
   restoreFocusRef,
   onExitComplete,
@@ -231,6 +233,7 @@ export function TaskDetail({
   return (
     <TaskDetailPanel
       open={taskDetailOpen && Boolean(selectedTask)}
+      modal={modal}
       title={selectedTask?.name ?? ""}
       description={selectedTask ? <span title={selectedTask.outputPath}>{selectedTask.outputPath || t`Output not specified`}</span> : null}
       leading={selectedTask ? (selectedTaskSources[0] ? <SourceThumbnail source={selectedTaskSources[0]} previewSide="left" size="compact" /> : <span className="grid size-10.5 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5"><FileStack /></span>) : null}

@@ -10,6 +10,7 @@ import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { AppHeader, AppNotice } from "@/components/app-chrome";
+import { CancelStageDialog } from "@/components/cancel-stage-dialog";
 import { SettingsSheet } from "@/components/settings-sheet";
 import { TaskDetail } from "@/components/task-detail";
 import { TaskEditorDialog, RemoveTaskDialog } from "@/components/task-editor-dialog";
@@ -68,7 +69,11 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
   }, {});
 }
 
- function App() {
+function toastIsError(message: string) {
+  return /^(Failed|Unable)\b/.test(message);
+}
+
+function App() {
   // Subscribe the whole screen to Lingui's locale-change event. Most of the
   // app uses the macro helpers directly, but raw backend messages are rendered
   // through localiseUserMessage and need the same rerender trigger.
@@ -153,6 +158,7 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
   const [taskDetailUsesSplitView, setTaskDetailUsesSplitView] = useState(() => window.matchMedia("(min-width: 921px)").matches);
   const taskDetailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [pendingCancellation, setPendingCancellation] = useState<{ taskId: string; stageKey: StageKey } | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeJobIds = useRef<Record<string, string>>({});
@@ -163,7 +169,7 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
 
   useEffect(() => {
     if (!toast) return;
-    const timeoutId = window.setTimeout(() => setToast(null), 5000);
+    const timeoutId = window.setTimeout(() => setToast(null), toastIsError(toast) ? 8000 : 5000);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
   useEffect(() => {
@@ -458,7 +464,11 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
           : selected;
       });
     }
-    else if (!IS_TAURI_RUNTIME) setDoctor({ ...emptyDoctor(), summary: "Browser preview is not connected to the local runtime" });
+    else if (!IS_TAURI_RUNTIME) {
+      const message = "Browser preview is not connected to the local runtime";
+      setDoctor({ ...emptyDoctor(), summary: message });
+      setToast(message);
+    }
     setDoctorLoading(false);
   }, []);
 
@@ -808,22 +818,24 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
     if (!IS_TAURI_RUNTIME) { setToast("Browser preview does not cancel backend work"); return; }
     const autoRun = autoPipelineRuns.current[task.projectId];
-    if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
-    delete pendingStageStarts.current[task.projectId];
     const jobId = task.stages[stageKey].jobId || activeJobIds.current[task.projectId];
     if (!jobId) {
-      queueMicrotask(() => pumpAutoPipelineRef.current());
+      setToast("Unable to cancel the stage; it may still be running");
       return;
     }
     const cancelled = await invokeSafely<boolean>("cancel_job", { jobId });
     if (cancelled === true) {
+      if (autoRun?.stage === stageKey) delete autoPipelineRuns.current[task.projectId];
+      delete pendingStageStarts.current[task.projectId];
       ignoredJobIds.current.add(jobId);
       delete jobTaskIds.current[jobId];
       if (activeJobIds.current[task.projectId] === jobId) delete activeJobIds.current[task.projectId];
       const finishedAtMs = Date.now();
       updateTaskStage(task.projectId, stageKey, { status: "cancelled", message: "Cancelled; you can resume later", jobId: undefined, finishedAtMs, durationMs: taskStageDuration(task.stages[stageKey], finishedAtMs) });
+      queueMicrotask(() => pumpAutoPipelineRef.current());
+      return;
     }
-    queueMicrotask(() => pumpAutoPipelineRef.current());
+    setToast("Unable to cancel the stage; it may still be running");
   }, [updateTaskStage]);
 
   useEffect(() => {
@@ -909,7 +921,7 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
   const handleStageAction = useCallback((task: Task, stageKey: StageKey) => {
     const status = task.stages[stageKey].status;
     if (status === "running") {
-      void cancelStage(task, stageKey);
+      setPendingCancellation({ taskId: task.projectId, stageKey });
       return;
     }
     const prerequisiteKey = stagePrerequisiteKey(task, stageKey);
@@ -948,7 +960,11 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
 
   return (
     <div className="flex size-full flex-col bg-background">
-      <main className="flex min-h-0 flex-1 flex-col overflow-auto">
+      <main
+        className="flex min-h-0 flex-1 flex-col overflow-auto"
+        inert={taskDetailOpen && !taskDetailUsesSplitView ? true : undefined}
+        aria-hidden={taskDetailOpen && !taskDetailUsesSplitView ? true : undefined}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -990,6 +1006,7 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
           <AppNotice
             key={toast}
             message={localiseUserMessage(toast)}
+            tone={toastIsError(toast) ? "error" : "info"}
             onClose={() => setToast(null)}
             avoidBottomAction={taskDetailOpen}
           />
@@ -1012,8 +1029,21 @@ function sourceInspectionsForPaths(paths: string[], inspections: Record<string, 
         onConfirm={deleteQueuedTask}
       />
 
+      <CancelStageDialog
+        open={Boolean(pendingCancellation)}
+        onOpenChange={(open) => { if (!open) setPendingCancellation(null); }}
+        onConfirm={async () => {
+          const request = pendingCancellation;
+          if (!request) return;
+          const task = useAppStore.getState().tasks.find((item) => item.projectId === request.taskId);
+          setPendingCancellation(null);
+          if (task) await cancelStage(task, request.stageKey);
+        }}
+      />
+
       <TaskDetail
         clockMs={clockMs}
+        modal={!taskDetailUsesSplitView}
         onStageAction={handleStageAction}
         restoreFocusRef={taskDetailTriggerRef}
         onExitComplete={() => {

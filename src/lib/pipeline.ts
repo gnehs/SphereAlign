@@ -644,6 +644,7 @@ const APP_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
   "A processing stage is already running for this task; please wait": msg({ message: "A processing stage is already running for this task; please wait" }),
   "Unable to start the stage; check the runtime message": msg({ message: "Unable to start the stage; check the runtime message" }),
   "Browser preview does not cancel backend work": msg({ message: "Browser preview does not cancel backend work" }),
+  "Unable to cancel the stage; it may still be running": msg({ message: "Unable to cancel the stage; it may still be running" }),
   "Cancelled; you can resume later": msg({ message: "Cancelled; you can resume later" }),
   "Automatic pipeline completed frame extraction, masking, and alignment": msg({ message: "Automatic pipeline completed frame extraction, masking, and alignment" }),
   "A processing stage is already running; please wait": msg({ message: "A processing stage is already running; please wait" }),

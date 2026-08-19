@@ -13,6 +13,7 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
+  FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,12 +64,12 @@ export function ProcessingSettingsFields({
   const lutPathInvalid = customLutPathIsInvalid(lutPath);
 
   return (
-    <section className="min-h-0 overflow-hidden border-l max-[760px]:overflow-visible max-[760px]:border-t max-[760px]:border-l-0" aria-labelledby="task-processing-settings-title">
-      <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto overscroll-contain px-7 py-6 [scrollbar-gutter:stable] max-[920px]:px-5 max-[760px]:h-auto max-[760px]:overflow-visible max-[760px]:p-5 max-[760px]:[--scroll-fade-mask:none]">
+    <section className="min-h-0 overflow-hidden border-l max-[920px]:overflow-visible max-[920px]:border-t max-[920px]:border-l-0" aria-labelledby="task-processing-settings-title">
+      <div className="scroll-fade-y scroll-fade-8 h-full overflow-y-auto overscroll-contain px-7 py-6 [scrollbar-gutter:stable] max-[920px]:h-auto max-[920px]:overflow-visible max-[920px]:p-5 max-[920px]:[--scroll-fade-mask:none]">
         <h2 id="task-processing-settings-title" className="mb-4 text-lg font-semibold text-foreground"><Trans>Processing settings</Trans></h2>
         <FieldGroup className="gap-4 [&>[data-slot=field]]:rounded-lg [&>[data-slot=field]]:border [&>[data-slot=field]]:bg-card [&>[data-slot=field]]:p-3">
-          <Field>
-            <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for extracting frames.">Frame extraction</Trans></FieldLabel>
+          <Field aria-labelledby="frame-extraction-settings-title">
+            <FieldTitle id="frame-extraction-settings-title"><Trans context="settings section" comment="Pipeline stage settings for extracting frames.">Frame extraction</Trans></FieldTitle>
             <FieldContent>
               <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                 <FieldLabel htmlFor="base-fps"><Trans comment="Base frames-per-second setting for source media extraction.">Base frame rate (FPS)</Trans></FieldLabel>
@@ -99,11 +100,12 @@ export function ProcessingSettingsFields({
               {settings.extract.skipBlurry && (
                 <Field className="mt-2 min-h-7 border-0 bg-transparent px-0 py-0.5">
                   <div className="flex items-center justify-between">
-                    <FieldLabel id="candidate-fps-label"><Trans comment="Frame rate used to sample candidate frames before selecting the sharpest ones.">Candidate frame rate</Trans></FieldLabel>
+                    <FieldTitle id="candidate-fps-label"><Trans comment="Frame rate used to sample candidate frames before selecting the sharpest ones.">Candidate frame rate</Trans></FieldTitle>
                     <span className="ml-auto font-mono text-sm text-muted-foreground">{candidateMultiplier}× · {candidateFps} FPS</span>
                   </div>
                   <Slider
                     aria-labelledby="candidate-fps-label"
+                    aria-valuetext={`${candidateMultiplier}× · ${candidateFps} FPS`}
                     min={MIN_CANDIDATE_MULTIPLIER}
                     max={MAX_CANDIDATE_MULTIPLIER}
                     step={1}
@@ -123,8 +125,8 @@ export function ProcessingSettingsFields({
               )}
             </FieldContent>
           </Field>
-          <Field>
-            <FieldLabel><Trans context="settings section" comment="Lookup table settings for restoring source media color.">LUT settings</Trans></FieldLabel>
+          <Field aria-labelledby="lut-settings-title">
+            <FieldTitle id="lut-settings-title"><Trans context="settings section" comment="Lookup table settings for restoring source media color.">LUT settings</Trans></FieldTitle>
             <FieldContent>
               <Field orientation="horizontal" className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5">
                 <Switch
@@ -166,8 +168,8 @@ export function ProcessingSettingsFields({
               </Field>
             </FieldContent>
           </Field>
-          <Field>
-            <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for creating masks.">Masking</Trans></FieldLabel>
+          <Field aria-labelledby="masking-settings-title">
+            <FieldTitle id="masking-settings-title"><Trans context="settings section" comment="Pipeline stage settings for creating masks.">Masking</Trans></FieldTitle>
             <FieldContent>
               <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                 <Checkbox
@@ -225,8 +227,8 @@ export function ProcessingSettingsFields({
               )}
             </FieldContent>
           </Field>
-          <Field>
-            <FieldLabel><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldLabel>
+          <Field aria-labelledby="alignment-settings-title">
+            <FieldTitle id="alignment-settings-title"><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldTitle>
             <FieldContent>
               <div className="flex flex-col gap-2">
                 <Field orientation="horizontal" className="mt-2.5 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal" data-disabled={doctor.gpuAvailable === false || undefined}>

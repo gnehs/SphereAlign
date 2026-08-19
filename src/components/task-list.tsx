@@ -16,7 +16,7 @@ import {
 import { type DragEvent, type ReactNode, useMemo } from "react";
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { useReducedMotion } from "motion/react";
+import { AnimatePresence, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -49,6 +49,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Progress, ProgressValue } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 
@@ -80,18 +81,18 @@ function StageStatusBadge({ status }: { status: StageStatus }) {
     <Badge
       className={cn(
         status === "running" && "border-primary/30 bg-primary/10 text-primary [&_[data-icon=inline-start]]:animate-spin [&_[data-icon=inline-start]]:[animation-duration:900ms]",
-        status === "completed" && "border-emerald-600/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+        status === "completed" && "border-success/30 bg-success/10 text-success",
         status === "cancelled" && "bg-muted text-muted-foreground",
       )}
       variant={status === "failed" ? "destructive" : "outline"}
     >
       {status === "running"
         ? <LoaderCircle data-icon="inline-start" aria-hidden="true" />
-        : <span className={cn(
+        : <span aria-hidden="true" className={cn(
           "block size-1.25 rounded-full bg-current",
-          status === "completed" && "text-emerald-600",
+          status === "completed" && "text-success",
           status === "failed" && "text-destructive",
-          status === "cancelled" && "text-amber-600",
+          status === "cancelled" && "text-warning",
           status === "pending" && "text-muted-foreground",
         )} />}
       {stageStatusLabel(status)}
@@ -138,13 +139,13 @@ function TaskCard({
 
   return (
     <article className={cn("rounded-xl border bg-card px-7.5 pt-6.5 pb-7.5 shadow-sm max-[760px]:px-4.5 max-[760px]:pt-5 max-[760px]:pb-6", queued && "bg-primary/[0.02]")}>
-      <div className="flex items-center justify-between gap-4.5">
+      <div className="flex items-start justify-between gap-4.5 max-[760px]:flex-col">
         <div className="flex min-w-0 items-center gap-3">
           {primarySource
             ? <SourceThumbnail source={primarySource} />
             : <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary [&_svg]:size-5.5"><FileStack /></span>}
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-[17px] font-semibold text-foreground">{task.name}</h2>
               {queued && <Badge variant="outline">{editableQueued ? t`Waiting to run` : t`Preparing`}</Badge>}
               {task.previewOnly && <Badge variant="outline">{t`Preview`}</Badge>}
@@ -154,7 +155,7 @@ function TaskCard({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 max-[760px]:w-full">
           {waitingForEnqueue && (
             <Button size="sm" onClick={() => onEnqueueTask(task)}>
               <Play data-icon="inline-start" />
@@ -195,9 +196,16 @@ function TaskCard({
         <>
           <div className="mt-6.5 mb-4 ml-15 max-[760px]:ml-0 [&_[data-slot=progress-track]]:h-1.75 [&_[data-slot=progress-value]]:hidden">
             <div className="mb-2 flex items-center gap-2 text-sm">
-              <span className="font-medium text-foreground" title={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`}>
+              <span className="font-medium text-foreground">
                 <Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans>
               </span>
+              <Popover>
+                <PopoverTrigger render={<Button variant="ghost" size="icon-xs" aria-label={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`} />}><Info /></PopoverTrigger>
+                <PopoverContent className="max-w-80" side="bottom" sideOffset={6}>
+                  <PopoverTitle><Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans></PopoverTitle>
+                  <p className="text-sm leading-relaxed text-muted-foreground"><Trans>Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%</Trans></p>
+                </PopoverContent>
+              </Popover>
               <small className="text-muted-foreground">{taskProgressSummary(task)}</small>
               <strong className="ml-auto font-mono font-medium text-foreground">{overall}%</strong>
             </div>
@@ -220,18 +228,19 @@ function TaskCard({
               const stageProgress = Math.round(current.progress);
               const Icon = stage.icon;
               const action = stageActionState(task, stage.key, hasRunningStage);
+              const stageLabelId = `task-${task.projectId}-stage-${stage.key}`;
               return (
                 <div className="relative flex min-w-0 items-center gap-2 border-t py-4 first:border-t-0 max-[760px]:flex-wrap max-[760px]:items-start max-[760px]:py-3" data-status={current.status} key={stage.key} role="listitem" aria-label={t`Stage ${stageIndex + 1} of ${STAGES.length}: ${stageLabel(stage)}`}>
                   <span className="relative grid w-6 shrink-0 items-start justify-items-center self-stretch" aria-hidden="true">
-                    <span className={cn("relative z-10 grid size-5 place-items-center rounded-full border bg-card text-[0.72rem] font-semibold text-muted-foreground [&_svg]:size-3", current.status === "running" && "border-primary text-primary ring-3 ring-primary/10", current.status === "completed" && "border-emerald-600 bg-emerald-500/10 text-emerald-600")}>
+                    <span className={cn("relative z-10 grid size-5 place-items-center rounded-full border bg-card text-[0.72rem] font-semibold text-muted-foreground [&_svg]:size-3", current.status === "running" && "border-primary text-primary ring-3 ring-primary/10", current.status === "completed" && "border-success bg-success/10 text-success")}>
                       {current.status === "completed" ? <CheckCircle2 /> : stageIndex + 1}
                     </span>
                     {stageIndex < STAGES.length - 1 && <span className="absolute top-5 -bottom-3 left-1/2 w-px -translate-x-1/2 bg-border" />}
                   </span>
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <Icon className={cn("size-4 shrink-0 text-muted-foreground", current.status === "running" && "text-primary")} />
+                    <Icon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", current.status === "running" && "text-primary")} />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <strong className="text-sm font-medium text-foreground">{stageLabel(stage)}</strong>
+                      <strong id={stageLabelId} className="text-sm font-medium text-foreground">{stageLabel(stage)}</strong>
                       <small className="truncate text-sm text-muted-foreground">{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small>
                       {current.status === "running" && (
                         <div className={cn("mt-1.5 flex w-[min(360px,100%)] items-center gap-2 [&_[data-slot=progress]]:min-w-20 [&_[data-slot=progress]]:flex-1 [&_[data-slot=progress-track]]:h-0.75 [&_[data-slot=progress-value]]:hidden [&>span]:w-7.5 [&>span]:text-right [&>span]:font-mono [&>span]:text-sm [&>span]:text-muted-foreground", stageProgress <= 0 && "[&_[data-slot=progress-indicator]]:!w-[30%] [&_[data-slot=progress-indicator]]:animate-[stage-progress-waiting_1.2s_ease-in-out_infinite]")}>
@@ -242,7 +251,7 @@ function TaskCard({
                     </div>
                   </div>
                   <StageStatusBadge status={current.status} />
-                  <Button variant={current.status === "running" ? "destructive" : "ghost"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => onStageAction(task, stage.key)}>
+                  <Button aria-describedby={stageLabelId} variant={current.status === "running" ? "destructive" : "ghost"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => onStageAction(task, stage.key)}>
                     {current.status === "running" ? <Square data-icon="inline-start" /> : current.status === "completed" ? <RotateCcw data-icon="inline-start" /> : <Play data-icon="inline-start" />}
                     {action.label}
                   </Button>
@@ -296,6 +305,11 @@ export function TaskWorkspace({
   ];
   const shouldReduceMotion = useReducedMotion();
   const hasTasks = groups.some((group) => group.items.length > 0);
+  const handleWorkspaceDragLeave = (event: DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    onDragLeave();
+  };
 
   if (!hasTasks) {
     return (
@@ -303,9 +317,10 @@ export function TaskWorkspace({
         className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-14 pb-18 text-center"
         onDragEnter={(event) => { event.preventDefault(); onDragEnter(); }}
         onDragOver={(event) => event.preventDefault()}
-        onDragLeave={onDragLeave}
+        onDragLeave={handleWorkspaceDragLeave}
         onDrop={onDrop}
       >
+        <span className="sr-only" role="status" aria-live="polite">{dragOver ? t`Drop panoramic source media` : ""}</span>
         <div className={cn("mb-5.5 grid size-17.5 place-items-center rounded-[18px] border bg-card text-muted-foreground transition-[border-color,color,transform,background] duration-200 [&_svg]:size-7", dragOver && "scale-[1.03] border-primary/50 bg-primary/10 text-primary")} aria-hidden="true"><FileStack /></div>
         <h2 className="text-[28px] font-semibold tracking-[-0.045em] text-foreground"><Trans context="empty state" comment="Empty task list heading.">No tasks yet</Trans></h2>
         <p className="mt-3 text-base leading-relaxed text-muted-foreground"><Trans comment="Drop panoramic source media here or choose files below. Existing projects are opened separately.">Drop panoramic source media here,<br />or use Open project to resume an existing project.</Trans></p>
@@ -313,7 +328,7 @@ export function TaskWorkspace({
           <Button size="lg" onClick={() => void onOpenSourcePicker()}><Upload data-icon="inline-start" /><Trans context="file picker action" comment="Button opens a file picker for source media.">Choose files</Trans></Button>
           <Button size="lg" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
         </div>
-        <section className="mt-7 w-[min(520px,100%)] text-left max-[760px]:w-[min(320px,100%)]" aria-labelledby="supported-formats-title">
+        <section className="mt-7 w-[min(680px,100%)] text-left max-[760px]:w-[min(320px,100%)]" aria-labelledby="supported-formats-title">
           <h2 id="supported-formats-title" className="mb-2.5 text-xs font-semibold tracking-wide text-muted-foreground"><Trans>Supported inputs</Trans></h2>
           <div className="grid grid-cols-3 gap-2.5 max-[920px]:grid-cols-2 max-[760px]:grid-cols-1">
             <SupportedFormatCard icon={Film} title={<Trans comment="DJI Osmo 360 source media files.">Osmo 360 source files</Trans>} detail="OSV" />
@@ -327,11 +342,30 @@ export function TaskWorkspace({
 
   return (
     <m.div
-      className="mr-auto w-full"
+      className="relative mr-auto min-h-full w-full"
       initial={false}
       animate={{ width: taskDetailOpen && selectedTask && taskDetailUsesSplitView ? "calc(100% - 460px)" : "100%" }}
       transition={shouldReduceMotion ? { duration: 0 } : TASK_DETAIL_DRAWER_TRANSITION}
+      onDragEnter={(event) => { event.preventDefault(); onDragEnter(); }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={handleWorkspaceDragLeave}
+      onDrop={onDrop}
     >
+      <AnimatePresence initial={false}>
+        {dragOver && (
+          <m.div
+            className="pointer-events-none fixed inset-x-3 top-16 bottom-3 z-30 grid place-items-center rounded-2xl border-2 border-dashed border-primary/50 bg-background/90 text-center shadow-lg backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.15, ease: [0.23, 1, 0.32, 1] }}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="flex flex-col items-center gap-3 px-6"><FileStack className="size-8 text-primary" aria-hidden="true" /><strong className="text-lg"><Trans>Drop panoramic source media</Trans></strong></span>
+          </m.div>
+        )}
+      </AnimatePresence>
       <section className="mx-auto w-full max-w-[1440px] px-8 pt-6.5 pb-14 max-[760px]:px-3.5 max-[760px]:pt-5.5 max-[760px]:pb-11.5">
         <div className="grid gap-7">
           {groups.filter((group) => group.key === "completed" || group.items.length > 0).map((group) => (

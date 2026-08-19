@@ -51,10 +51,17 @@ const tabVariants = {
   }),
 } as const;
 
+const reducedTabVariants = {
+  enter: { opacity: 0 },
+  center: { opacity: 1 },
+  exit: { opacity: 0 },
+} as const;
+
 export type TaskDetailTab = "summary" | "records";
 
 export interface TaskDetailPanelProps {
   open: boolean;
+  modal: boolean;
   title: ReactNode;
   description: ReactNode;
   leading: ReactNode;
@@ -73,6 +80,7 @@ const tabs: readonly TaskDetailTab[] = ["summary", "records"];
 
 export function TaskDetailPanel({
   open,
+  modal,
   title,
   description,
   leading,
@@ -110,6 +118,34 @@ export function TaskDetailPanel({
   }, [escapeBlocked, onClose, open]);
 
   useEffect(() => {
+    if (!open || !modal) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const trapFocus = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      )).filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+      if (!focusable.length) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    panel.addEventListener("keydown", trapFocus);
+    return () => panel.removeEventListener("keydown", trapFocus);
+  }, [modal, open]);
+
+  useEffect(() => {
     if (previousTabRef.current === activeTab) return;
     previousTabRef.current = activeTab;
     setTabDirection(activeTab === "records" ? 1 : -1);
@@ -144,24 +180,40 @@ export function TaskDetailPanel({
 
   const variants = shouldReduceMotion ? reducedPanelVariants : panelVariants;
   const transition = shouldReduceMotion ? TASK_DETAIL_FADE_TRANSITION : TASK_DETAIL_DRAWER_TRANSITION;
+  const activeTabVariants = shouldReduceMotion ? reducedTabVariants : tabVariants;
+  const activeTabTransition = shouldReduceMotion ? { duration: 0 } : TASK_DETAIL_TAB_TRANSITION;
 
   return (
     <AnimatePresence initial={false} onExitComplete={handleExitComplete}>
       {open && (
-        <m.aside
-          ref={panelRef}
-          key="task-detail"
-          className="fixed top-13 right-0 bottom-0 z-50 flex w-[min(460px,100vw)] flex-col gap-0 overflow-hidden border bg-card p-0 text-sm text-foreground shadow-lg outline-none will-change-transform max-[760px]:w-screen"
-          role="dialog"
-          aria-labelledby="task-detail-title"
-          aria-describedby="task-detail-description"
-          tabIndex={-1}
-          initial="closed"
-          animate="open"
-          exit="closed"
-          variants={variants}
-          transition={transition}
-        >
+        <>
+          {modal && (
+            <m.div
+              key="task-detail-backdrop"
+              className="fixed inset-0 z-40 bg-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.15, ease: [0.23, 1, 0.32, 1] }}
+              onClick={onClose}
+              aria-hidden="true"
+            />
+          )}
+          <m.aside
+            ref={panelRef}
+            key="task-detail"
+            className="fixed top-13 right-0 bottom-0 z-50 flex w-[min(460px,100vw)] flex-col gap-0 overflow-hidden border bg-card p-0 text-sm text-foreground shadow-lg outline-none will-change-transform max-[760px]:top-[61px] max-[760px]:w-screen"
+            role={modal ? "dialog" : "complementary"}
+            aria-modal={modal || undefined}
+            aria-labelledby="task-detail-title"
+            aria-describedby="task-detail-description"
+            tabIndex={-1}
+            initial="closed"
+            animate="open"
+            exit="closed"
+            variants={variants}
+            transition={transition}
+          >
           <header className="relative border-b px-6 pt-6 pb-4">
             <div className="flex min-w-0 items-center gap-3.5 pr-7">
               {leading}
@@ -203,7 +255,7 @@ export function TaskDetailPanel({
                     transition={TASK_DETAIL_PRESS_TRANSITION}
                   >
                     {tab === "summary" ? <Trans>Work summary</Trans> : <Trans>Processing records</Trans>}
-                    {active && <m.span className="absolute inset-x-0 -bottom-px h-0.5 bg-foreground" layoutId="task-detail-tab-indicator" transition={TASK_DETAIL_TAB_TRANSITION} />}
+                    {active && <m.span className="absolute inset-x-0 -bottom-px h-0.5 bg-foreground" layoutId="task-detail-tab-indicator" transition={activeTabTransition} />}
                   </m.button>
                 );
               })}
@@ -219,11 +271,11 @@ export function TaskDetailPanel({
                     role="tabpanel"
                     aria-labelledby="task-detail-tab-summary"
                     custom={tabDirection}
-                    variants={tabVariants}
+                    variants={activeTabVariants}
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={TASK_DETAIL_TAB_TRANSITION}
+                    transition={activeTabTransition}
                   >
                     {summary}
                   </m.div>
@@ -235,11 +287,11 @@ export function TaskDetailPanel({
                     role="tabpanel"
                     aria-labelledby="task-detail-tab-records"
                     custom={tabDirection}
-                    variants={tabVariants}
+                    variants={activeTabVariants}
                     initial="enter"
                     animate="center"
                     exit="exit"
-                    transition={TASK_DETAIL_TAB_TRANSITION}
+                    transition={activeTabTransition}
                   >
                     {records}
                   </m.div>
@@ -249,7 +301,8 @@ export function TaskDetailPanel({
           </div>
 
           <footer className="mt-auto flex flex-col gap-2 border-t px-6 pt-4 pb-5.5">{footer}</footer>
-        </m.aside>
+          </m.aside>
+        </>
       )}
     </AnimatePresence>
   );

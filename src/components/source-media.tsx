@@ -191,9 +191,12 @@ export function SourceThumbnail({
           "grid aspect-square shrink-0 place-items-center overflow-hidden rounded-full border bg-muted text-muted-foreground",
           size === "compact" ? "size-10.5" : "size-12",
         )}
+        role="img"
+        aria-label={failed ? t`Unable to generate a first-frame preview` : alt}
+        aria-busy={!failed}
         title={failed ? t`Unable to generate a first-frame preview` : undefined}
       >
-        {failed ? <Video className="size-4.5" aria-hidden="true" /> : <CircleDashed className="size-4.5 animate-spin [animation-duration:900ms]" aria-hidden="true" />}
+        {failed ? <Video className="size-4.5" aria-hidden="true" /> : <CircleDashed className="size-4.5 animate-spin [animation-duration:900ms] motion-reduce:animate-none" aria-hidden="true" />}
       </div>
     );
   }
@@ -230,8 +233,8 @@ export function SupportedFormatCard({ icon: Icon, title, detail }: { icon: Lucid
     <article className="flex min-w-0 items-center gap-3 rounded-xl border bg-card px-3.5 py-3">
       <Icon className="size-5 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
       <span className="flex min-w-0 flex-col gap-0.5">
-        <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
-        <small className="truncate text-xs text-muted-foreground">{detail}</small>
+        <strong className="text-sm leading-snug font-semibold text-foreground">{title}</strong>
+        <small className="text-xs leading-snug text-muted-foreground">{detail}</small>
       </span>
     </article>
   );

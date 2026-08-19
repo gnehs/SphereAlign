@@ -24,10 +24,6 @@ input {
   font: inherit;
 }
 
-button:active {
-  transform: translateY(1px);
-}
-
 @keyframes stage-progress-waiting {
   from { transform: translateX(-110%); }
   to { transform: translateX(360%); }

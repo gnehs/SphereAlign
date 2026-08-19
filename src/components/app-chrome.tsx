@@ -1,4 +1,4 @@
-import { FolderOpen, Info, Minus, Plus, Settings2, Square, X } from "lucide-react";
+import { CircleAlert, FolderOpen, Info, Minus, Plus, Settings2, Square, X } from "lucide-react";
 import { t } from "@lingui/core/macro";
 import * as m from "motion/react-m";
 import { Button } from "@/components/ui/button";
@@ -21,21 +21,23 @@ export interface AppNoticeProps {
   message: string;
   onClose: () => void;
   avoidBottomAction?: boolean;
+  tone?: "info" | "error";
 }
 
-export function AppNotice({ message, onClose, avoidBottomAction = false }: AppNoticeProps) {
+export function AppNotice({ message, onClose, avoidBottomAction = false, tone = "info" }: AppNoticeProps) {
+  const NoticeIcon = tone === "error" ? CircleAlert : Info;
   return (
     <m.div
       initial={{ y: 8, opacity: 0, scale: 0.98 }}
       animate={{ y: 0, opacity: 1, scale: 1 }}
       exit={{ y: 6, opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.18, ease: APP_NOTICE_EASE }}
-      className={cn("fixed bottom-5 left-5 z-60 flex w-[min(360px,calc(100vw-40px))] items-start gap-2.5 rounded-xl border bg-popover/95 p-3 text-sm text-popover-foreground shadow-md backdrop-blur-md", avoidBottomAction && "max-[760px]:bottom-18")}
-      role="status"
+      className={cn("fixed bottom-5 left-5 z-60 flex w-[min(360px,calc(100vw-40px))] items-start gap-2.5 rounded-xl border bg-popover/95 p-3 text-sm text-popover-foreground shadow-md backdrop-blur-md", tone === "error" && "border-destructive/30", avoidBottomAction && "max-[760px]:bottom-18")}
+      role={tone === "error" ? "alert" : "status"}
       aria-atomic="true"
     >
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-        <Info className="size-4" aria-hidden="true" />
+      <span className={cn("grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary", tone === "error" && "bg-destructive/10 text-destructive")}>
+        <NoticeIcon className="size-4" aria-hidden="true" />
       </span>
       <span className="min-w-0 flex-1 self-center leading-relaxed break-words">{message}</span>
       <Button className="-mt-1 -mr-1 shrink-0" variant="ghost" size="icon-xs" onClick={onClose} aria-label={t`Close notification`}>
@@ -102,12 +104,12 @@ export function AppHeader({ onNewTask, onOpenProject, onOpenSettings }: AppHeade
       <div className="flex min-h-9 w-full shrink-0 items-center self-stretch" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
         <h1 className="shrink-0 text-base font-semibold tracking-tight text-foreground">SphereAlign</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" onClick={onNewTask}><Plus data-icon="inline-start" /><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></Button>
-          <Button size="sm" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" onClick={onNewTask}><Plus data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></span></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></span></Button>
           <div className="mx-1 flex h-5">
             <Separator orientation="vertical" />
           </div>
-          <Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 data-icon="inline-start" /><Trans>Settings</Trans></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" variant="outline" onClick={onOpenSettings}><Settings2 data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans>Settings</Trans></span></Button>
         </div>
         <WindowsWindowControls />
       </div>

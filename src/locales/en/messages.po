@@ -65,17 +65,17 @@ msgstr ""
 #~ msgstr "- Processors:"
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/components/task-detail.tsx:174
+#: src/components/task-detail.tsx:175
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {# entry} other {# entries}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/components/task-detail.tsx:155
+#: src/components/task-detail.tsx:156
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/components/task-list.tsx:192
+#: src/components/task-list.tsx:193
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# source} other {# sources}}"
 
@@ -86,7 +86,7 @@ msgstr "{0} (GPU {ordinal})"
 
 #. placeholder {0}: completed.toLocaleString(getLocale())
 #. placeholder {1}: total.toLocaleString(getLocale())
-#: src/lib/pipeline.ts:995
+#: src/lib/pipeline.ts:997
 msgid "{0} / {1}"
 msgstr "{0} / {1}"
 
@@ -96,31 +96,31 @@ msgstr "{0} / {1}"
 #~ msgstr "{0} dual-fisheye snapshot"
 
 #. placeholder {0}: rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)
-#: src/lib/pipeline.ts:1754
+#: src/lib/pipeline.ts:1756
 msgid "{0} items/sec"
 msgstr "{0} items/sec"
 
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1050
+#: src/lib/pipeline.ts:1052
 msgid "{0} of {1} stages complete"
 msgstr "{0} of {1} stages complete"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:204
+#: src/components/task-list.tsx:212
 msgid "{0} overall time progress"
 msgstr "{0} overall time progress"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/components/task-detail.tsx:142
 #: src/components/task-detail.tsx:143
-#: src/components/task-list.tsx:238
+#: src/components/task-detail.tsx:144
+#: src/components/task-list.tsx:247
 msgid "{0} progress"
 msgstr "{0} progress"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:221
+#: src/components/source-media.tsx:224
 msgid "{0} source snapshot"
 msgstr "{0} source snapshot"
 
@@ -160,61 +160,61 @@ msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}: first-frame preview from the first video stream"
 
 #. Count of items already processed by a pipeline stage.
-#: src/lib/pipeline.ts:1000
+#: src/lib/pipeline.ts:1002
 msgid "{completed, plural, one {Processed #} other {Processed #}}"
 msgstr "{completed, plural, one {Processed #} other {Processed #}}"
 
-#: src/lib/pipeline.ts:736
+#: src/lib/pipeline.ts:737
 msgid "{count} candidate pairs processed"
 msgstr "{count} candidate pairs processed"
 
-#: src/lib/pipeline.ts:738
 #: src/lib/pipeline.ts:739
+#: src/lib/pipeline.ts:740
 msgid "{count} masks failed; see the pipeline log"
 msgstr "{count} masks failed; see the pipeline log"
 
-#: src/lib/pipeline.ts:737
+#: src/lib/pipeline.ts:738
 msgid "{count} masks written"
 msgstr "{count} masks written"
 
-#: src/lib/pipeline.ts:742
+#: src/lib/pipeline.ts:743
 msgid "{count} sources"
 msgstr "{count} sources"
 
-#: src/lib/pipeline.ts:741
+#: src/lib/pipeline.ts:742
 msgid "{count} sources · browser preview"
 msgstr "{count} sources · browser preview"
 
-#: src/lib/pipeline.ts:735
+#: src/lib/pipeline.ts:736
 msgid "{count} sources completed"
 msgstr "{count} sources completed"
 
 #. placeholder {0}: String(minutes).padStart(2, "0")
-#: src/lib/pipeline.ts:902
+#: src/lib/pipeline.ts:904
 msgid "{hours} hr {0} min"
 msgstr "{hours} hr {0} min"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:749
-#: src/lib/pipeline.ts:753
+#: src/lib/pipeline.ts:750
+#: src/lib/pipeline.ts:754
 msgid "{label}: {0}"
 msgstr "{label}: {0}"
 
 #. placeholder {0}: String(seconds).padStart(2, "0")
-#: src/lib/pipeline.ts:903
+#: src/lib/pipeline.ts:905
 msgid "{minutes} min {0} sec"
 msgstr "{minutes} min {0} sec"
 
-#: src/lib/pipeline.ts:752
+#: src/lib/pipeline.ts:753
 msgid "{platform} · FFmpeg hardware decoding capability not reported"
 msgstr "{platform} · FFmpeg hardware decoding capability not reported"
 
-#: src/lib/pipeline.ts:904
+#: src/lib/pipeline.ts:906
 msgid "{seconds} sec"
 msgstr "{seconds} sec"
 
 #. A source adapter must expose the video streams required by the panoramic workflow.
-#: src/lib/pipeline.ts:692
+#: src/lib/pipeline.ts:693
 msgctxt "source validation error"
 msgid "{source} does not contain the video streams required by its source adapter"
 msgstr "{source} does not contain the video streams required by its source adapter"
@@ -226,21 +226,21 @@ msgstr "{source} does not contain the video streams required by its source adapt
 #~ msgstr "{source} does not contain two recognizable dual-fisheye video streams"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:751
+#: src/lib/pipeline.ts:752
 msgid "{tool}: {0}"
 msgstr "{tool}: {0}"
 
 #. Count of all items reported by a pipeline stage.
-#: src/lib/pipeline.ts:996
+#: src/lib/pipeline.ts:998
 msgid "{total, plural, one {Total #} other {Total #}}"
 msgstr "{total, plural, one {Total #} other {Total #}}"
 
-#: src/lib/pipeline.ts:740
+#: src/lib/pipeline.ts:741
 msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} sources · {valid} passed inspection"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:510
+#: src/App.tsx:520
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT (Cube)"
@@ -255,20 +255,20 @@ msgstr "A backend status message is unavailable in this language."
 msgid "A processing stage is already running for this task; please wait"
 msgstr "A processing stage is already running for this task; please wait"
 
-#: src/lib/pipeline.ts:649
+#: src/lib/pipeline.ts:650
 msgid "A processing stage is already running; please wait"
 msgstr "A processing stage is already running; please wait"
 
 #. placeholder {0}: formatDuration(value)
-#: src/lib/pipeline.ts:1744
+#: src/lib/pipeline.ts:1746
 msgid "About {0}"
 msgstr "About {0}"
 
-#: src/lib/pipeline.ts:1746
+#: src/lib/pipeline.ts:1748
 msgid "About {minutes} min"
 msgstr "About {minutes} min"
 
-#: src/components/settings-sheet.tsx:155
+#: src/components/settings-sheet.tsx:162
 msgid "Acceleration capabilities not confirmed"
 msgstr "Acceleration capabilities not confirmed"
 
@@ -281,13 +281,13 @@ msgstr "Acceleration capabilities not confirmed"
 
 #. Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.
 #. Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.
-#: src/components/task-editor-dialog.tsx:105
-#: src/components/task-editor-dialog.tsx:110
+#: src/components/task-editor-dialog.tsx:127
+#: src/components/task-editor-dialog.tsx:132
 msgid "Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 msgstr "Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 
 #. Add a queued task to the automatic execution queue.
-#: src/components/task-list.tsx:161
+#: src/components/task-list.tsx:162
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "Add to queue"
@@ -296,18 +296,18 @@ msgstr "Add to queue"
 #~ msgid "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
 #~ msgstr "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
 
-#: src/components/task-editor-dialog.tsx:105
-#: src/components/task-editor-dialog.tsx:110
+#: src/components/task-editor-dialog.tsx:127
+#: src/components/task-editor-dialog.tsx:132
 msgid "Adjust the task name, sources, and processing settings before it starts."
 msgstr "Adjust the task name, sources, and processing settings before it starts."
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "After creation, project information is saved in the output folder so the task can resume after an interruption."
 msgstr "After creation, project information is saved in the output folder so the task can resume after an interruption."
 
 #. Fallback means retrying the same operation with software decoding after hardware decoding fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:672
+#: src/lib/pipeline.ts:673
 msgctxt "backend error"
 msgid "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
 msgstr "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
@@ -323,12 +323,12 @@ msgid "Alignment"
 msgstr "Alignment"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:229
+#: src/components/processing-settings-fields.tsx:231
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "Alignment"
 
-#: src/lib/pipeline.ts:714
+#: src/lib/pipeline.ts:715
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 
@@ -362,12 +362,12 @@ msgstr "Alignment: Pending"
 msgid "Alignment: Running"
 msgstr "Alignment: Running"
 
-#: src/components/settings-sheet.tsx:150
+#: src/components/settings-sheet.tsx:157
 msgid "All required capabilities are available"
 msgstr "All required capabilities are available"
 
 #. Apply the official or custom lookup table to restore DJI D-Log M color.
-#: src/components/processing-settings-fields.tsx:139
+#: src/components/processing-settings-fields.tsx:141
 msgid "Apply the D-Log M restoration LUT"
 msgstr "Apply the D-Log M restoration LUT"
 
@@ -376,21 +376,21 @@ msgstr "Apply the D-Log M restoration LUT"
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "At least two matching lens0/lens1 frame pairs are required for alignment"
 
-#: src/lib/pipeline.ts:648
+#: src/lib/pipeline.ts:649
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
 msgstr "Automatic pipeline completed frame extraction, masking, and alignment"
 
 #: src/lib/pipeline.ts:607
-#: src/lib/pipeline.ts:1609
+#: src/lib/pipeline.ts:1611
 msgid "Available"
 msgstr "Available"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:74
+#: src/components/processing-settings-fields.tsx:75
 msgid "Base frame rate (FPS)"
 msgstr "Base frame rate (FPS)"
 
-#: src/components/settings-sheet.tsx:151
+#: src/components/settings-sheet.tsx:158
 msgid "Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower."
 msgstr "Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower."
 
@@ -401,7 +401,7 @@ msgid "Bicycle"
 msgstr "Bicycle"
 
 #. Short label for the initial reconstruction bootstrap.
-#: src/lib/pipeline.ts:880
+#: src/lib/pipeline.ts:882
 msgctxt "pipeline phase"
 msgid "Bootstrap reconstruction"
 msgstr "Bootstrap reconstruction"
@@ -409,7 +409,7 @@ msgstr "Bootstrap reconstruction"
 #. The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:686
+#: src/lib/pipeline.ts:687
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
 msgstr "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
@@ -418,7 +418,7 @@ msgstr "Both hardware and software decoding failed for FFmpeg candidate frames: 
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(cleanup[1])
 #. placeholder {2}: localiseTechnicalErrorDetail(cleanup[2])
-#: src/lib/pipeline.ts:680
+#: src/lib/pipeline.ts:681
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
 msgstr "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
@@ -426,7 +426,7 @@ msgstr "Both hardware and software decoding failed for FFmpeg candidate frames: 
 #. The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:667
+#: src/lib/pipeline.ts:668
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
@@ -491,7 +491,7 @@ msgid "Camera metadata could not be decoded from this file."
 msgstr "Camera metadata could not be decoded from this file."
 
 #. Short label for estimating the camera rig.
-#: src/lib/pipeline.ts:882
+#: src/lib/pipeline.ts:884
 msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "Camera-rig estimation"
@@ -501,24 +501,32 @@ msgstr "Camera-rig estimation"
 msgid "Can be resumed"
 msgstr "Can be resumed"
 
-#: src/components/task-editor-dialog.tsx:157
-#: src/components/task-editor-dialog.tsx:176
-#: src/lib/pipeline.ts:1708
+#: src/components/task-editor-dialog.tsx:186
+#: src/components/task-editor-dialog.tsx:207
+#: src/lib/pipeline.ts:1710
 msgid "Cancel"
 msgstr "Cancel"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/components/task-detail.tsx:250
+#: src/components/task-detail.tsx:253
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "Cancel entire task"
 
-#: src/lib/pipeline.ts:1717
+#: src/components/cancel-stage-dialog.tsx:31
+msgid "Cancel stage"
+msgstr "Cancel stage"
+
+#: src/components/cancel-stage-dialog.tsx:26
+msgid "Cancel the current stage?"
+msgstr "Cancel the current stage?"
+
+#: src/lib/pipeline.ts:1719
 msgid "Cancelled"
 msgstr "Cancelled"
 
 #. Short cancelled status label.
-#: src/lib/pipeline.ts:884
+#: src/lib/pipeline.ts:886
 msgctxt "pipeline phase status"
 msgid "Cancelled"
 msgstr "Cancelled"
@@ -535,11 +543,11 @@ msgstr "Cancelled before committing output"
 msgid "Cancelled before committing the selected result"
 msgstr "Cancelled before committing the selected result"
 
-#: src/lib/pipeline.ts:660
+#: src/lib/pipeline.ts:661
 msgid "Cancelled before interval {interval}"
 msgstr "Cancelled before interval {interval}"
 
-#: src/lib/pipeline.ts:707
+#: src/lib/pipeline.ts:708
 msgid "Cancelled before processing interval {interval}"
 msgstr "Cancelled before processing interval {interval}"
 
@@ -557,12 +565,12 @@ msgstr "Cancelled while scoring frame candidates"
 
 #. A cancelled stage can be resumed later.
 #: src/lib/pipeline.ts:486
-#: src/lib/pipeline.ts:647
+#: src/lib/pipeline.ts:648
 msgid "Cancelled; you can resume later"
 msgstr "Cancelled; you can resume later"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:102
+#: src/components/processing-settings-fields.tsx:103
 msgid "Candidate frame rate"
 msgstr "Candidate frame rate"
 
@@ -573,7 +581,7 @@ msgid "Car"
 msgstr "Car"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:750
+#: src/lib/pipeline.ts:751
 msgid "Ceres BA: {0}"
 msgstr "Ceres BA: {0}"
 
@@ -589,11 +597,11 @@ msgstr "Ceres BA: May be available (runtime CUDA/cuDSS check required)"
 msgid "Ceres BA: Not reported"
 msgstr "Ceres BA: Not reported"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "Change path"
 msgstr "Change path"
 
-#: src/components/settings-sheet.tsx:144
+#: src/components/settings-sheet.tsx:145
 msgid "Check again"
 msgstr "Check again"
 
@@ -609,15 +617,15 @@ msgstr "Check the COLMAP executable and version"
 msgid "Check the file permissions and confirm that it is a regular file."
 msgstr "Check the file permissions and confirm that it is a regular file."
 
-#: src/components/settings-sheet.tsx:144
+#: src/components/settings-sheet.tsx:145
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/processing-settings-fields.tsx:158
+#: src/components/processing-settings-fields.tsx:160
 msgid "Choose .cube"
 msgstr "Choose .cube"
 
-#: src/components/processing-settings-fields.tsx:162
+#: src/components/processing-settings-fields.tsx:164
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "Choose a 3D LUT with the .cube extension."
 
@@ -626,17 +634,17 @@ msgstr "Choose a 3D LUT with the .cube extension."
 #~ msgstr "Choose another"
 
 #. Button opens a folder picker to choose a different output location.
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgctxt "output folder picker action"
 msgid "Choose another"
 msgstr "Choose another"
 
 #: src/components/settings-sheet.tsx:98
-msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
-msgstr "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
+#~ msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
+#~ msgstr "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
 
 #. Button opens a file picker for source media.
-#: src/components/task-list.tsx:313
+#: src/components/task-list.tsx:328
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "Choose files"
@@ -647,7 +655,7 @@ msgstr "Choose files"
 #~ msgid "Choose folder"
 #~ msgstr "Choose folder"
 
-#: src/components/settings-sheet.tsx:120
+#: src/components/settings-sheet.tsx:121
 msgid "Choose light, dark, or follow the system appearance automatically."
 msgstr "Choose light, dark, or follow the system appearance automatically."
 
@@ -659,44 +667,44 @@ msgstr "Choose light, dark, or follow the system appearance automatically."
 #~ msgid "Choose multiple OSV or dual-fisheye media files."
 #~ msgstr "Choose multiple OSV or dual-fisheye media files."
 
-#: src/components/task-editor-dialog.tsx:137
+#: src/components/task-editor-dialog.tsx:164
 msgid "Choose one or more panoramic source files."
 msgstr "Choose one or more panoramic source files."
 
-#: src/components/task-editor-dialog.tsx:134
+#: src/components/task-editor-dialog.tsx:161
 msgid "Choose sources"
 msgstr "Choose sources"
 
-#: src/components/processing-settings-fields.tsx:159
+#: src/components/processing-settings-fields.tsx:161
 msgid "Clear custom LUT"
 msgstr "Clear custom LUT"
 
 #. Accessible label for the icon-only button that closes the dialog.
 #. Accessible label for the icon-only button that closes the sheet.
 #. Label for the button that closes the dialog from the footer.
-#: src/components/settings-sheet.tsx:172
-#: src/components/task-detail-panel.tsx:179
-#: src/components/task-detail.tsx:251
+#: src/components/settings-sheet.tsx:179
+#: src/components/task-detail-panel.tsx:231
+#: src/components/task-detail.tsx:254
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
 #: src/components/ui/sheet.tsx:84
 msgid "Close"
 msgstr "Close"
 
-#: src/components/app-chrome.tsx:41
+#: src/components/app-chrome.tsx:43
 msgid "Close notification"
 msgstr "Close notification"
 
-#: src/components/app-chrome.tsx:79
-#: src/components/app-chrome.tsx:80
+#: src/components/app-chrome.tsx:81
+#: src/components/app-chrome.tsx:82
 msgid "Close window"
 msgstr "Close window"
 
-#: src/lib/pipeline.ts:723
+#: src/lib/pipeline.ts:724
 msgid "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 msgstr "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 
-#: src/lib/pipeline.ts:722
+#: src/lib/pipeline.ts:723
 msgid "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgstr "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 
@@ -704,7 +712,7 @@ msgstr "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgid "COLMAP alignment capability not confirmed"
 msgstr "COLMAP alignment capability not confirmed"
 
-#: src/lib/pipeline.ts:768
+#: src/lib/pipeline.ts:770
 msgid "COLMAP bootstrap did not produce sparse/0"
 msgstr "COLMAP bootstrap did not produce sparse/0"
 
@@ -722,7 +730,8 @@ msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA capability check result"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/components/settings-sheet.tsx:166
+#: src/App.tsx:500
+#: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP executable"
 
@@ -731,21 +740,25 @@ msgstr "COLMAP executable"
 msgid "COLMAP is unavailable; alignment will remain pending and resumable"
 msgstr "COLMAP is unavailable; alignment will remain pending and resumable"
 
-#: src/App.tsx:490
-msgid "COLMAP launcher"
-msgstr "COLMAP launcher"
+#: src/App.tsx:500
+#~ msgid "COLMAP launcher"
+#~ msgstr "COLMAP launcher"
 
 #: src/lib/pipeline.ts:597
 msgid "COLMAP not detected"
 msgstr "COLMAP not detected"
 
-#: src/lib/pipeline.ts:767
+#: src/lib/pipeline.ts:769
 msgid "COLMAP was not found on PATH"
 msgstr "COLMAP was not found on PATH"
 
-#: src/lib/pipeline.ts:759
+#: src/lib/pipeline.ts:760
 msgid "COLMAP was not found; alignment will remain pending and resumable"
 msgstr "COLMAP was not found; alignment will remain pending and resumable"
+
+#: src/lib/pipeline.ts:762
+msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
+msgstr "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
 
 #. Backend progress message: mask files are being written.
 #: src/lib/pipeline.ts:450
@@ -753,14 +766,14 @@ msgid "Committing mask files"
 msgstr "Committing mask files"
 
 #. Short label for writing output files.
-#: src/lib/pipeline.ts:876
+#: src/lib/pipeline.ts:878
 msgctxt "pipeline phase"
 msgid "Committing output"
 msgstr "Committing output"
 
 #. Shown when a pipeline stage is blocked by an incomplete prerequisite stage.
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:754
+#: src/lib/pipeline.ts:755
 msgid "Complete {0} first"
 msgstr "Complete {0} first"
 
@@ -768,18 +781,18 @@ msgstr "Complete {0} first"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "Complete {prerequisite} first"
 
-#: src/components/task-list.tsx:295
-#: src/lib/pipeline.ts:1719
+#: src/components/task-list.tsx:304
+#: src/lib/pipeline.ts:1721
 msgid "Completed"
 msgstr "Completed"
 
 #. Short completed status label.
-#: src/lib/pipeline.ts:883
+#: src/lib/pipeline.ts:885
 msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "Completed"
 
-#: src/components/task-list.tsx:364
+#: src/components/task-list.tsx:398
 msgid "Completed reconstruction tasks will appear here."
 msgstr "Completed reconstruction tasks will appear here."
 
@@ -791,7 +804,7 @@ msgstr "Confirm FFmpeg hardware decoding capabilities"
 msgid "Confirm FFmpeg is available on the system PATH"
 msgstr "Confirm FFmpeg is available on the system PATH"
 
-#: src/components/settings-sheet.tsx:143
+#: src/components/settings-sheet.tsx:144
 msgid "Copy diagnostics"
 msgstr "Copy diagnostics"
 
@@ -807,7 +820,7 @@ msgstr "Copying selected frame pair"
 #~ msgstr "CPU only"
 
 #. Create the reconstruction task.
-#: src/components/task-editor-dialog.tsx:158
+#: src/components/task-editor-dialog.tsx:187
 msgctxt "task action"
 msgid "Create task"
 msgstr "Create task"
@@ -817,7 +830,7 @@ msgstr "Create task"
 #~ msgid "Created {0}"
 #~ msgstr "Created {0}"
 
-#: src/lib/pipeline.ts:747
+#: src/lib/pipeline.ts:748
 msgid "Created {name}"
 msgstr "Created {name}"
 
@@ -851,43 +864,43 @@ msgid "CUDA status not confirmed"
 msgstr "CUDA status not confirmed"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/components/task-detail.tsx:139
+#: src/components/task-detail.tsx:140
 msgid "Current item: {0}"
 msgstr "Current item: {0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/components/task-list.tsx:207
+#: src/components/task-list.tsx:215
 msgid "Current stage: {0}"
 msgstr "Current stage: {0}"
 
-#: src/components/task-detail.tsx:133
+#: src/components/task-detail.tsx:134
 msgid "Current work"
 msgstr "Current work"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:146
+#: src/components/processing-settings-fields.tsx:148
 msgid "Custom LUT (optional)"
 msgstr "Custom LUT (optional)"
 
-#: src/components/settings-sheet.tsx:135
+#: src/components/settings-sheet.tsx:136
 msgid "Dark"
 msgstr "Dark"
 
-#: src/lib/pipeline.ts:711
+#: src/lib/pipeline.ts:712
 msgid "Decoding and scoring source {source} ({count} candidate pairs processed)"
 msgstr "Decoding and scoring source {source} ({count} candidate pairs processed)"
 
-#: src/lib/pipeline.ts:732
+#: src/lib/pipeline.ts:733
 msgid "Decoding and scoring source {source} dual-fisheye candidates in memory"
 msgstr "Decoding and scoring source {source} dual-fisheye candidates in memory"
 
 #. Short label for full-resolution decoding.
-#: src/lib/pipeline.ts:875
+#: src/lib/pipeline.ts:877
 msgctxt "pipeline phase"
 msgid "Decoding full resolution"
 msgstr "Decoding full resolution"
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "Defaults beside the first source: colmap-file-name"
 
@@ -896,11 +909,11 @@ msgid "Detected"
 msgstr "Detected"
 
 #. The source filename suffix or media metadata indicated D-Log M color.
-#: src/components/processing-settings-fields.tsx:141
+#: src/components/processing-settings-fields.tsx:143
 msgid "Detected from the _D filename suffix or media metadata and enabled."
 msgstr "Detected from the _D filename suffix or media metadata and enabled."
 
-#: src/components/settings-sheet.tsx:142
+#: src/components/settings-sheet.tsx:143
 msgid "Diagnostic actions"
 msgstr "Diagnostic actions"
 
@@ -926,12 +939,14 @@ msgstr "Diagnostics copied; you can paste them into a bug report"
 #~ msgid "Drop OSV or dual-fisheye media here,<0/>or use Open project to resume an existing project."
 #~ msgstr "Drop OSV or dual-fisheye media here,<0/>or use Open project to resume an existing project."
 
-#: src/components/task-editor-dialog.tsx:133
+#: src/components/task-editor-dialog.tsx:160
+#: src/components/task-list.tsx:323
+#: src/components/task-list.tsx:365
 msgid "Drop panoramic source media"
 msgstr "Drop panoramic source media"
 
 #. Drop panoramic source media here or choose files below. Existing projects are opened separately.
-#: src/components/task-list.tsx:311
+#: src/components/task-list.tsx:326
 msgid "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 msgstr "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 
@@ -946,7 +961,7 @@ msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "Dual-fisheye frames, intrinsics, and IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
-#: src/components/task-detail.tsx:182
+#: src/components/task-detail.tsx:183
 msgid "Duration {0}"
 msgstr "Duration {0}"
 
@@ -957,25 +972,25 @@ msgid "Dynamic-object and sky masks"
 msgstr "Dynamic-object and sky masks"
 
 #. Edit a task that has not started.
-#: src/components/task-list.tsx:168
+#: src/components/task-list.tsx:169
 msgctxt "task action"
 msgid "Edit"
 msgstr "Edit"
 
 #. Dialog for editing a task before it starts.
 #. Dialog for editing a task before it starts.
-#: src/components/task-editor-dialog.tsx:104
-#: src/components/task-editor-dialog.tsx:109
+#: src/components/task-editor-dialog.tsx:126
+#: src/components/task-editor-dialog.tsx:131
 msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "Edit queued task"
 
-#: src/components/task-detail.tsx:147
-#: src/components/task-list.tsx:212
+#: src/components/task-detail.tsx:148
+#: src/components/task-list.tsx:220
 msgid "Elapsed"
 msgstr "Elapsed"
 
-#: src/components/processing-settings-fields.tsx:245
+#: src/components/processing-settings-fields.tsx:247
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 
@@ -998,14 +1013,14 @@ msgstr "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls bac
 msgid "Error"
 msgstr "Error"
 
-#: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:213
+#: src/components/task-detail.tsx:149
+#: src/components/task-list.tsx:221
 msgid "Estimated remaining"
 msgstr "Estimated remaining"
 
-#: src/lib/pipeline.ts:1743
-#: src/lib/pipeline.ts:1750
+#: src/lib/pipeline.ts:1745
 #: src/lib/pipeline.ts:1752
+#: src/lib/pipeline.ts:1754
 msgid "Estimating"
 msgstr "Estimating"
 
@@ -1046,22 +1061,22 @@ msgstr "Existing masks were discovered"
 msgid "Extracting image features"
 msgstr "Extracting image features"
 
-#: src/lib/pipeline.ts:771
-#: src/lib/pipeline.ts:780
+#: src/lib/pipeline.ts:773
+#: src/lib/pipeline.ts:782
 msgid "Extraction I/O error: "
 msgstr "Extraction I/O error: "
 
-#: src/lib/pipeline.ts:770
-#: src/lib/pipeline.ts:779
+#: src/lib/pipeline.ts:772
+#: src/lib/pipeline.ts:781
 msgid "Extraction image error: "
 msgstr "Extraction image error: "
 
-#: src/lib/pipeline.ts:1718
+#: src/lib/pipeline.ts:1720
 msgid "Failed"
 msgstr "Failed"
 
 #. Short failed status label.
-#: src/lib/pipeline.ts:885
+#: src/lib/pipeline.ts:887
 msgctxt "pipeline phase status"
 msgid "Failed"
 msgstr "Failed"
@@ -1074,7 +1089,7 @@ msgstr "Failed to create the task; check the runtime message"
 msgid "Failed to open project"
 msgstr "Failed to open project"
 
-#: src/lib/pipeline.ts:726
+#: src/lib/pipeline.ts:727
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "Failed to read FFmpeg rawvideo: {error}"
 
@@ -1083,7 +1098,7 @@ msgid "Failed to save task changes; check the runtime message"
 msgstr "Failed to save task changes; check the runtime message"
 
 #. Short label for extracting image features.
-#: src/lib/pipeline.ts:879
+#: src/lib/pipeline.ts:881
 msgctxt "pipeline phase"
 msgid "Feature extraction"
 msgstr "Feature extraction"
@@ -1092,17 +1107,17 @@ msgstr "Feature extraction"
 msgid "FFmpeg and ffprobe are both available"
 msgstr "FFmpeg and ffprobe are both available"
 
-#: src/lib/pipeline.ts:728
-#: src/lib/pipeline.ts:760
+#: src/lib/pipeline.ts:729
+#: src/lib/pipeline.ts:761
 msgid "FFmpeg candidate frames fell back safely to CPU software decoding"
 msgstr "FFmpeg candidate frames fell back safely to CPU software decoding"
 
-#: src/lib/pipeline.ts:724
+#: src/lib/pipeline.ts:725
 msgid "FFmpeg did not produce any in-memory candidate frames"
 msgstr "FFmpeg did not produce any in-memory candidate frames"
 
 #. PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.
-#: src/lib/pipeline.ts:662
+#: src/lib/pipeline.ts:663
 msgctxt "backend progress message"
 msgid "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
 msgstr "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
@@ -1115,7 +1130,7 @@ msgstr "FFmpeg hardware acceleration not enabled"
 msgid "FFmpeg hardware acceleration supported"
 msgstr "FFmpeg hardware acceleration supported"
 
-#: src/lib/pipeline.ts:727
+#: src/lib/pipeline.ts:728
 msgid "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 msgstr "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 
@@ -1124,11 +1139,11 @@ msgstr "FFmpeg hardware decoding failed; retrying with CPU software decoding: {e
 msgid "FFmpeg is not installed"
 msgstr "FFmpeg is not installed"
 
-#: src/lib/pipeline.ts:729
+#: src/lib/pipeline.ts:730
 msgid "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 msgstr "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 
-#: src/lib/pipeline.ts:725
+#: src/lib/pipeline.ts:726
 msgid "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 msgstr "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 
@@ -1192,20 +1207,20 @@ msgid "ffprobe: Not detected"
 msgstr "ffprobe: Not detected"
 
 #. Short label for the final mapping/reconstruction pass.
-#: src/lib/pipeline.ts:881
+#: src/lib/pipeline.ts:883
 msgctxt "pipeline phase"
 msgid "Final reconstruction"
 msgstr "Final reconstruction"
 
-#: src/lib/pipeline.ts:709
+#: src/lib/pipeline.ts:710
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "First use: downloading the {model} model ({percent}%)"
 
-#: src/components/task-editor-dialog.tsx:121
+#: src/components/task-editor-dialog.tsx:144
 msgid "For example: mountain route / 2026-08"
 msgstr "For example: mountain route / 2026-08"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
 msgstr "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
 
@@ -1220,7 +1235,7 @@ msgid "Frame extraction"
 msgstr "Frame extraction"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:71
+#: src/components/processing-settings-fields.tsx:72
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "Frame extraction"
@@ -1237,7 +1252,7 @@ msgstr "Frame extraction cancelled"
 #. Keep FFmpeg and ffprobe as command-line tool names.
 #: src/lib/pipeline.ts:460
 #: src/lib/pipeline.ts:519
-#: src/lib/pipeline.ts:758
+#: src/lib/pipeline.ts:759
 msgid "Frame extraction requires both system FFmpeg and ffprobe"
 msgstr "Frame extraction requires both system FFmpeg and ffprobe"
 
@@ -1245,7 +1260,7 @@ msgstr "Frame extraction requires both system FFmpeg and ffprobe"
 msgid "Frame extraction requires FFmpeg and ffprobe"
 msgstr "Frame extraction requires FFmpeg and ffprobe"
 
-#: src/lib/pipeline.ts:764
+#: src/lib/pipeline.ts:766
 msgid "Frame extraction will use CPU decoding"
 msgstr "Frame extraction will use CPU decoding"
 
@@ -1305,7 +1320,7 @@ msgid "Image feature extraction completed"
 msgstr "Image feature extraction completed"
 
 #. Short label for matching images.
-#: src/lib/pipeline.ts:878
+#: src/lib/pipeline.ts:880
 msgctxt "pipeline phase"
 msgid "Image matching"
 msgstr "Image matching"
@@ -1332,7 +1347,7 @@ msgstr "IMU samples were found, but fused-attitude samples were not available."
 msgid "IMU-assisted orientation may be unavailable"
 msgstr "IMU-assisted orientation may be unavailable"
 
-#: src/components/task-list.tsx:294
+#: src/components/task-list.tsx:303
 msgid "In progress"
 msgstr "In progress"
 
@@ -1341,35 +1356,35 @@ msgstr "In progress"
 #~ msgstr "In progress and finished"
 
 #. Insta360 source media files.
-#: src/components/task-list.tsx:320
+#: src/components/task-list.tsx:335
 msgid "Insta360 source files"
 msgstr "Insta360 source files"
 
-#: src/components/settings-sheet.tsx:108
+#: src/components/settings-sheet.tsx:109
 msgid "Interface language"
 msgstr "Interface language"
 
-#: src/components/settings-sheet.tsx:131
+#: src/components/settings-sheet.tsx:132
 msgid "Interface theme"
 msgstr "Interface theme"
 
 #. Select the visual theme of the interface.
-#: src/components/settings-sheet.tsx:119
+#: src/components/settings-sheet.tsx:120
 msgctxt "theme setting"
 msgid "Interface theme"
 msgstr "Interface theme"
 
-#: src/lib/pipeline.ts:769
-#: src/lib/pipeline.ts:778
+#: src/lib/pipeline.ts:771
+#: src/lib/pipeline.ts:780
 msgid "Invalid extraction input: "
 msgstr "Invalid extraction input: "
 
-#: src/components/processing-settings-fields.tsx:162
+#: src/components/processing-settings-fields.tsx:164
 msgid "Invalid LUT file format"
 msgstr "Invalid LUT file format"
 
-#: src/lib/pipeline.ts:772
-#: src/lib/pipeline.ts:781
+#: src/lib/pipeline.ts:774
+#: src/lib/pipeline.ts:783
 msgid "Invalid mask input: "
 msgstr "Invalid mask input: "
 
@@ -1383,30 +1398,34 @@ msgstr "Invalid mask input: "
 msgid "Keep at least one source"
 msgstr "Keep at least one source"
 
+#: src/components/cancel-stage-dialog.tsx:30
+msgid "Keep running"
+msgstr "Keep running"
+
 #. Select the language used by the interface.
-#: src/components/settings-sheet.tsx:102
+#: src/components/settings-sheet.tsx:103
 msgctxt "language setting"
 msgid "Language"
 msgstr "Language"
 
 #. placeholder {0}: formatDoctorCheckedAt(doctor.checkedAt)
-#: src/components/settings-sheet.tsx:141
+#: src/components/settings-sheet.tsx:142
 msgid "Last checked: {0}"
 msgstr "Last checked: {0}"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "Leave blank to detect from PATH"
 msgstr "Leave blank to detect from PATH"
 
-#: src/components/processing-settings-fields.tsx:151
+#: src/components/processing-settings-fields.tsx:153
 msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
 msgstr "Leave blank to use the official D-Log M → Rec.709 LUT"
 
-#: src/lib/pipeline.ts:898
+#: src/lib/pipeline.ts:900
 msgid "Less than 1 second"
 msgstr "Less than 1 second"
 
-#: src/components/settings-sheet.tsx:134
+#: src/components/settings-sheet.tsx:135
 msgid "Light"
 msgstr "Light"
 
@@ -1415,7 +1434,7 @@ msgstr "Light"
 #~ msgid "Loaded resumable project {0}"
 #~ msgstr "Loaded resumable project {0}"
 
-#: src/lib/pipeline.ts:743
+#: src/lib/pipeline.ts:744
 msgid "Loaded resumable project {name}"
 msgstr "Loaded resumable project {name}"
 
@@ -1424,7 +1443,7 @@ msgstr "Loaded resumable project {name}"
 #~ msgid "Loaded unfinished project with {0} warnings"
 #~ msgstr "Loaded unfinished project with {0} warnings"
 
-#: src/lib/pipeline.ts:744
+#: src/lib/pipeline.ts:745
 msgid "Loaded unfinished project with {count} warnings"
 msgstr "Loaded unfinished project with {count} warnings"
 
@@ -1433,7 +1452,7 @@ msgstr "Loaded unfinished project with {count} warnings"
 #~ msgid "Loaded unfinished project: {0}"
 #~ msgstr "Loaded unfinished project: {0}"
 
-#: src/lib/pipeline.ts:745
+#: src/lib/pipeline.ts:746
 msgid "Loaded unfinished project: {name}"
 msgstr "Loaded unfinished project: {name}"
 
@@ -1445,39 +1464,43 @@ msgid "Loading YOLO11/SkySeg models"
 msgstr "Loading YOLO11/SkySeg models"
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:127
+#: src/components/processing-settings-fields.tsx:129
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT settings"
 
-#: src/lib/pipeline.ts:776
-#: src/lib/pipeline.ts:785
+#: src/components/settings-sheet.tsx:99
+msgid "Manage language, appearance, and runtime diagnostics."
+msgstr "Manage language, appearance, and runtime diagnostics."
+
+#: src/lib/pipeline.ts:778
+#: src/lib/pipeline.ts:787
 msgid "Mask I/O error: "
 msgstr "Mask I/O error: "
 
-#: src/lib/pipeline.ts:775
-#: src/lib/pipeline.ts:784
+#: src/lib/pipeline.ts:777
+#: src/lib/pipeline.ts:786
 msgid "Mask image error: "
 msgstr "Mask image error: "
 
 #. Short label for running mask inference.
-#: src/lib/pipeline.ts:877
+#: src/lib/pipeline.ts:879
 msgctxt "pipeline phase"
 msgid "Mask inference"
 msgstr "Mask inference"
 
-#: src/lib/pipeline.ts:774
-#: src/lib/pipeline.ts:783
+#: src/lib/pipeline.ts:776
+#: src/lib/pipeline.ts:785
 msgid "Mask inference error: "
 msgstr "Mask inference error: "
 
-#: src/lib/pipeline.ts:773
-#: src/lib/pipeline.ts:782
+#: src/lib/pipeline.ts:775
+#: src/lib/pipeline.ts:784
 msgid "Mask model error: "
 msgstr "Mask model error: "
 
-#: src/lib/pipeline.ts:777
-#: src/lib/pipeline.ts:786
+#: src/lib/pipeline.ts:779
+#: src/lib/pipeline.ts:788
 msgid "Mask operation cancelled"
 msgstr "Mask operation cancelled"
 
@@ -1498,7 +1521,7 @@ msgid "Masking"
 msgstr "Masking"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:170
+#: src/components/processing-settings-fields.tsx:172
 msgctxt "settings section"
 msgid "Masking"
 msgstr "Masking"
@@ -1524,7 +1547,7 @@ msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "Masking completed"
 
-#: src/components/processing-settings-fields.tsx:224
+#: src/components/processing-settings-fields.tsx:226
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "Masking is disabled; alignment starts after frame extraction."
 
@@ -1562,8 +1585,8 @@ msgstr "Masking: Running"
 msgid "Matching lens file is missing"
 msgstr "Matching lens file is missing"
 
-#: src/components/app-chrome.tsx:70
-#: src/components/app-chrome.tsx:71
+#: src/components/app-chrome.tsx:72
+#: src/components/app-chrome.tsx:73
 msgid "Maximize or restore window"
 msgstr "Maximize or restore window"
 
@@ -1575,16 +1598,16 @@ msgstr "Maximize or restore window"
 #~ msgid "Memory"
 #~ msgstr "Memory"
 
-#: src/components/app-chrome.tsx:61
-#: src/components/app-chrome.tsx:62
+#: src/components/app-chrome.tsx:63
+#: src/components/app-chrome.tsx:64
 msgid "Minimize window"
 msgstr "Minimize window"
 
-#: src/components/settings-sheet.tsx:151
+#: src/components/settings-sheet.tsx:158
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 
-#: src/lib/pipeline.ts:710
+#: src/lib/pipeline.ts:711
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "Model loaded with {provider}; CPU inference fallback is disabled"
 
@@ -1610,8 +1633,8 @@ msgstr "Multi-source panoramic camera-rig alignment"
 msgid "Native dual-fisheye camera-rig alignment is available"
 msgstr "Native dual-fisheye camera-rig alignment is available"
 
-#: src/components/settings-sheet.tsx:169
-#: src/lib/pipeline.ts:1610
+#: src/components/settings-sheet.tsx:176
+#: src/lib/pipeline.ts:1612
 msgid "Needs attention"
 msgstr "Needs attention"
 
@@ -1621,14 +1644,14 @@ msgstr "New reconstruction task"
 
 #. Dialog for creating a new reconstruction task.
 #. Dialog for creating a new reconstruction task.
-#: src/components/task-editor-dialog.tsx:104
-#: src/components/task-editor-dialog.tsx:109
+#: src/components/task-editor-dialog.tsx:126
+#: src/components/task-editor-dialog.tsx:131
 msgctxt "new task dialog"
 msgid "New reconstruction task"
 msgstr "New reconstruction task"
 
 #. Create a new reconstruction task.
-#: src/components/app-chrome.tsx:105
+#: src/components/app-chrome.tsx:107
 msgctxt "task action"
 msgid "New reconstruction task"
 msgstr "New reconstruction task"
@@ -1638,7 +1661,7 @@ msgstr "New reconstruction task"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 
-#: src/components/task-list.tsx:363
+#: src/components/task-list.tsx:397
 msgid "No completed tasks yet"
 msgstr "No completed tasks yet"
 
@@ -1652,17 +1675,17 @@ msgstr "No editable project information was found"
 msgid "No loadable project information was found"
 msgstr "No loadable project information was found"
 
-#: src/lib/pipeline.ts:763
+#: src/lib/pipeline.ts:765
 msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 
 #. Empty task list heading.
-#: src/components/task-list.tsx:310
+#: src/components/task-list.tsx:325
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "No tasks yet"
 
-#: src/components/processing-settings-fields.tsx:245
+#: src/components/processing-settings-fields.tsx:247
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 
@@ -1683,7 +1706,7 @@ msgstr "No usable IMU or fused-attitude samples were found."
 msgid "No video stream found"
 msgstr "No video stream found"
 
-#: src/lib/pipeline.ts:1611
+#: src/lib/pipeline.ts:1613
 msgid "Not checked"
 msgstr "Not checked"
 
@@ -1695,8 +1718,8 @@ msgstr "Not checked yet"
 msgid "Not detected"
 msgstr "Not detected"
 
-#: src/lib/pipeline.ts:908
 #: src/lib/pipeline.ts:910
+#: src/lib/pipeline.ts:912
 msgid "Not recorded yet"
 msgstr "Not recorded yet"
 
@@ -1704,8 +1727,8 @@ msgstr "Not recorded yet"
 msgid "Not reported"
 msgstr "Not reported"
 
-#: src/components/task-detail.tsx:146
-#: src/components/task-list.tsx:211
+#: src/components/task-detail.tsx:147
+#: src/components/task-list.tsx:219
 msgid "Not reported yet"
 msgstr "Not reported yet"
 
@@ -1713,11 +1736,11 @@ msgstr "Not reported yet"
 msgid "Not run yet"
 msgstr "Not run yet"
 
-#: src/components/task-detail.tsx:150
+#: src/components/task-detail.tsx:151
 msgid "Not specified"
 msgstr "Not specified"
 
-#: src/components/task-list.tsx:212
+#: src/components/task-list.tsx:220
 msgid "Not started"
 msgstr "Not started"
 
@@ -1725,23 +1748,23 @@ msgstr "Not started"
 #~ msgid "Not started; can be edited or removed."
 #~ msgstr "Not started; can be edited or removed."
 
-#: src/lib/pipeline.ts:896
+#: src/lib/pipeline.ts:898
 msgid "Not timed yet"
 msgstr "Not timed yet"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:190
+#: src/components/processing-settings-fields.tsx:192
 msgid "Objects to mask (multiple selection)"
 msgstr "Objects to mask (multiple selection)"
 
-#: src/components/task-editor-dialog.tsx:175
+#: src/components/task-editor-dialog.tsx:206
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "Only the task and queue state are removed; the existing output folder is not deleted."
 
 #. Open an existing resumable project.
 #. Open an existing resumable project.
-#: src/components/app-chrome.tsx:106
-#: src/components/task-list.tsx:314
+#: src/components/app-chrome.tsx:108
+#: src/components/task-list.tsx:329
 msgctxt "project action"
 msgid "Open project"
 msgstr "Open project"
@@ -1755,7 +1778,7 @@ msgstr "Open project"
 #~ msgid "Opened {0}"
 #~ msgstr "Opened {0}"
 
-#: src/lib/pipeline.ts:746
+#: src/lib/pipeline.ts:747
 msgid "Opened {name}"
 msgstr "Opened {name}"
 
@@ -1764,7 +1787,7 @@ msgid "Orientation metadata is unavailable"
 msgstr "Orientation metadata is unavailable"
 
 #. DJI Osmo 360 source media files.
-#: src/components/task-list.tsx:319
+#: src/components/task-list.tsx:334
 msgid "Osmo 360 source files"
 msgstr "Osmo 360 source files"
 
@@ -1773,40 +1796,42 @@ msgstr "Osmo 360 source files"
 #~ msgstr "OSV / dual-fisheye video"
 
 #. Output folder or artifact location.
-#: src/components/task-detail.tsx:150
+#: src/components/task-detail.tsx:151
 msgctxt "output metric"
 msgid "Output"
 msgstr "Output"
 
 #. Folder where project metadata and reconstruction output are saved.
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgctxt "output destination"
 msgid "Output folder"
 msgstr "Output folder"
 
-#: src/components/task-detail.tsx:235
-#: src/components/task-list.tsx:153
+#: src/components/task-detail.tsx:238
+#: src/components/task-list.tsx:154
 msgid "Output not specified"
 msgstr "Output not specified"
 
 #. Overall progress weighted by observed stage durations.
-#: src/components/task-list.tsx:199
+#. Overall progress weighted by observed stage durations.
+#: src/components/task-list.tsx:200
+#: src/components/task-list.tsx:205
 msgid "Overall progress"
 msgstr "Overall progress"
 
-#: src/lib/pipeline.ts:712
+#: src/lib/pipeline.ts:713
 msgid "Pairing block {current} / {total} completed"
 msgstr "Pairing block {current} / {total} completed"
 
-#: src/App.tsx:407
+#: src/App.tsx:413
 msgid "Panoramic source video"
 msgstr "Panoramic source video"
 
-#: src/lib/pipeline.ts:1720
+#: src/lib/pipeline.ts:1722
 msgid "Pending"
 msgstr "Pending"
 
-#: src/components/settings-sheet.tsx:155
+#: src/components/settings-sheet.tsx:162
 msgid "Performance will be affected"
 msgstr "Performance will be affected"
 
@@ -1833,12 +1858,12 @@ msgstr "Platform not checked yet"
 msgid "Possible impact"
 msgstr "Possible impact"
 
-#: src/components/task-list.tsx:149
+#: src/components/task-list.tsx:150
 msgid "Preparing"
 msgstr "Preparing"
 
 #. Short label for the preparation phase.
-#: src/lib/pipeline.ts:871
+#: src/lib/pipeline.ts:873
 msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "Preparing"
@@ -1854,11 +1879,11 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "Preparing work"
 
-#: src/components/task-list.tsx:150
+#: src/components/task-list.tsx:151
 msgid "Preview"
 msgstr "Preview"
 
-#: src/components/source-media.tsx:214
+#: src/components/source-media.tsx:217
 msgid "Preview {alt}"
 msgstr "Preview {alt}"
 
@@ -1867,7 +1892,7 @@ msgstr "Preview {alt}"
 #~ msgid "Preview task added: {0}"
 #~ msgstr "Preview task added: {0}"
 
-#: src/lib/pipeline.ts:748
+#: src/lib/pipeline.ts:749
 msgid "Preview task added: {name}"
 msgstr "Preview task added: {name}"
 
@@ -1875,32 +1900,32 @@ msgstr "Preview task added: {name}"
 msgid "Preview task updated"
 msgstr "Preview task updated"
 
-#: src/components/task-detail.tsx:146
-#: src/components/task-list.tsx:211
+#: src/components/task-detail.tsx:147
+#: src/components/task-list.tsx:219
 msgid "Processed"
 msgstr "Processed"
 
 #: src/lib/pipeline.ts:571
-#: src/lib/pipeline.ts:890
+#: src/lib/pipeline.ts:892
 msgid "Processing"
 msgstr "Processing"
 
-#: src/lib/pipeline.ts:713
+#: src/lib/pipeline.ts:714
 msgid "Processing pairing block {current} / {total}"
 msgstr "Processing pairing block {current} / {total}"
 
-#: src/components/task-detail-panel.tsx:205
-#: src/components/task-detail.tsx:174
+#: src/components/task-detail-panel.tsx:257
 #: src/components/task-detail.tsx:175
+#: src/components/task-detail.tsx:176
 msgid "Processing records"
 msgstr "Processing records"
 
-#: src/components/processing-settings-fields.tsx:68
+#: src/components/processing-settings-fields.tsx:69
 msgid "Processing settings"
 msgstr "Processing settings"
 
 #. A project folder containing a resumable reconstruction.
-#: src/components/task-list.tsx:321
+#: src/components/task-list.tsx:336
 msgid "Project folder"
 msgstr "Project folder"
 
@@ -1913,7 +1938,7 @@ msgid "Queued task updated"
 msgstr "Queued task updated"
 
 #. Estimated processing throughput, not network speed.
-#: src/components/task-detail.tsx:149
+#: src/components/task-detail.tsx:150
 msgid "Rate (estimated)"
 msgstr "Rate (estimated)"
 
@@ -1921,7 +1946,7 @@ msgstr "Rate (estimated)"
 msgid "Reconstruction acceleration may be unavailable"
 msgstr "Reconstruction acceleration may be unavailable"
 
-#: src/components/task-list.tsx:217
+#: src/components/task-list.tsx:225
 msgid "Reconstruction pipeline"
 msgstr "Reconstruction pipeline"
 
@@ -1935,41 +1960,41 @@ msgid "Recovering project information"
 msgstr "Recovering project information"
 
 #. Remove a queued task without deleting its output folder.
-#: src/components/task-list.tsx:172
+#: src/components/task-list.tsx:173
 msgctxt "task action"
 msgid "Remove"
 msgstr "Remove"
 
 #. placeholder {0}: source.label
-#: src/components/task-editor-dialog.tsx:136
+#: src/components/task-editor-dialog.tsx:163
 msgid "Remove {0}"
 msgstr "Remove {0}"
 
 #. Remove the queued task, while keeping its output folder.
-#: src/components/task-editor-dialog.tsx:176
+#: src/components/task-editor-dialog.tsx:207
 msgctxt "task action"
 msgid "Remove task"
 msgstr "Remove task"
 
 #. Confirmation dialog for removing a queued task.
-#: src/components/task-editor-dialog.tsx:175
+#: src/components/task-editor-dialog.tsx:206
 msgctxt "remove task confirmation"
 msgid "Remove task from queue?"
 msgstr "Remove task from queue?"
 
-#: src/components/settings-sheet.tsx:150
+#: src/components/settings-sheet.tsx:157
 msgid "Required capabilities need attention"
 msgstr "Required capabilities need attention"
 
-#: src/lib/pipeline.ts:1709
+#: src/lib/pipeline.ts:1711
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/task-list.tsx:321
+#: src/components/task-list.tsx:336
 msgid "Resume an unfinished reconstruction task"
 msgstr "Resume an unfinished reconstruction task"
 
-#: src/lib/pipeline.ts:1710
+#: src/lib/pipeline.ts:1712
 msgid "Retry"
 msgstr "Retry"
 
@@ -1977,11 +2002,11 @@ msgstr "Retry"
 msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
 msgstr "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
 
-#: src/lib/pipeline.ts:1712
+#: src/lib/pipeline.ts:1714
 msgid "Run"
 msgstr "Run"
 
-#: src/lib/pipeline.ts:1711
+#: src/lib/pipeline.ts:1713
 msgid "Run again"
 msgstr "Run again"
 
@@ -1989,11 +2014,16 @@ msgstr "Run again"
 msgid "Run an environment check to confirm available capabilities"
 msgstr "Run an environment check to confirm available capabilities"
 
-#: src/components/settings-sheet.tsx:161
+#: src/components/settings-sheet.tsx:145
+msgid "Run check"
+msgstr "Run check"
+
+#: src/components/settings-sheet.tsx:153
+#: src/components/settings-sheet.tsx:168
 msgid "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 msgstr "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 
-#: src/lib/pipeline.ts:1716
+#: src/lib/pipeline.ts:1718
 msgid "Running"
 msgstr "Running"
 
@@ -2004,42 +2034,43 @@ msgstr "Running"
 msgid "Running YOLO11/SkySeg inference"
 msgstr "Running YOLO11/SkySeg inference"
 
-#: src/components/settings-sheet.tsx:141
+#: src/components/settings-sheet.tsx:142
+#: src/components/settings-sheet.tsx:152
 msgid "Runtime environment"
 msgstr "Runtime environment"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:121
+#: src/components/processing-settings-fields.tsx:123
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 
 #. Save changes to a queued task.
-#: src/components/task-editor-dialog.tsx:158
+#: src/components/task-editor-dialog.tsx:187
 msgctxt "task action"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
 msgstr "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
 
 #. Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
 #. placeholder {1}: localiseTechnicalErrorDetail(rollbackError)
-#: src/lib/pipeline.ts:797
+#: src/lib/pipeline.ts:799
 msgctxt "project edit error"
 msgid "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 msgstr "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 
 #. The rename/save operation failed, but the output folder was rolled back successfully.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:792
+#: src/lib/pipeline.ts:794
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "Saving task changes failed; the output folder was restored: {0}"
 
 #. Short label for a scan phase.
-#: src/lib/pipeline.ts:872
+#: src/lib/pipeline.ts:874
 msgctxt "pipeline phase"
 msgid "Scanning"
 msgstr "Scanning"
@@ -2058,19 +2089,19 @@ msgstr "Scanning dual-fisheye frame candidates"
 msgid "Scanning native dual-fisheye images"
 msgstr "Scanning native dual-fisheye images"
 
-#: src/lib/pipeline.ts:661
-#: src/lib/pipeline.ts:708
+#: src/lib/pipeline.ts:662
+#: src/lib/pipeline.ts:709
 msgid "Scoring {count} paired candidates"
 msgstr "Scoring {count} paired candidates"
 
 #. Short label for scoring candidate frames.
-#: src/lib/pipeline.ts:873
+#: src/lib/pipeline.ts:875
 msgctxt "pipeline phase"
 msgid "Scoring candidates"
 msgstr "Scoring candidates"
 
 #. Short label for candidate scoring in memory.
-#: src/lib/pipeline.ts:874
+#: src/lib/pipeline.ts:876
 msgctxt "pipeline phase"
 msgid "Scoring in-memory candidates"
 msgstr "Scoring in-memory candidates"
@@ -2079,12 +2110,13 @@ msgstr "Scoring in-memory candidates"
 #~ msgid "Select at least one OSV or dual-fisheye source first"
 #~ msgstr "Select at least one OSV or dual-fisheye source first"
 
+#: src/components/task-editor-dialog.tsx:105
 #: src/lib/pipeline.ts:632
 msgid "Select at least one panoramic source first"
 msgstr "Select at least one panoramic source first"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:250
+#: src/components/processing-settings-fields.tsx:252
 msgid "Select GPU"
 msgstr "Select GPU"
 
@@ -2111,13 +2143,13 @@ msgstr "Selected frame pair already exists; skipped"
 msgid "Selected frame pair committed"
 msgstr "Selected frame pair committed"
 
-#: src/components/app-chrome.tsx:110
-#: src/components/settings-sheet.tsx:98
+#: src/components/app-chrome.tsx:112
+#: src/components/settings-sheet.tsx:99
 msgid "Settings"
 msgstr "Settings"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:97
+#: src/components/processing-settings-fields.tsx:98
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "Sharpness filtering"
@@ -2164,28 +2196,28 @@ msgstr "SIFT matching: Unsupported"
 #~ msgstr "Simplified Chinese"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:220
+#: src/components/processing-settings-fields.tsx:222
 msgid "Sky filtering"
 msgstr "Sky filtering"
 
-#: src/components/settings-sheet.tsx:88
+#: src/components/settings-sheet.tsx:89
 #: src/lib/pipeline.ts:614
 msgid "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 msgstr "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 
-#: src/lib/pipeline.ts:730
+#: src/lib/pipeline.ts:731
 msgid "Source {source} color processing: {warning}"
 msgstr "Source {source} color processing: {warning}"
 
-#: src/lib/pipeline.ts:733
+#: src/lib/pipeline.ts:734
 msgid "Source {source} completed scoring {count} candidate pairs"
 msgstr "Source {source} completed scoring {count} candidate pairs"
 
-#: src/lib/pipeline.ts:734
+#: src/lib/pipeline.ts:735
 msgid "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 msgstr "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 
-#: src/lib/pipeline.ts:731
+#: src/lib/pipeline.ts:732
 msgid "Source {source} reused the in-memory scoring checkpoint"
 msgstr "Source {source} reused the in-memory scoring checkpoint"
 
@@ -2215,6 +2247,7 @@ msgid "Source file was not found"
 msgstr "Source file was not found"
 
 #: src/components/source-media.tsx:115
+#: src/components/task-editor-dialog.tsx:107
 msgid "Source inspection issues"
 msgstr "Source inspection issues"
 
@@ -2227,13 +2260,13 @@ msgid "Source metadata is unavailable"
 msgstr "Source metadata is unavailable"
 
 #. Input media for a reconstruction task.
-#: src/components/task-editor-dialog.tsx:123
+#: src/components/task-editor-dialog.tsx:146
 msgctxt "source input"
 msgid "Sources"
 msgstr "Sources"
 
 #. Source media included in this reconstruction task.
-#: src/components/task-detail.tsx:155
+#: src/components/task-detail.tsx:156
 msgctxt "source section"
 msgid "Sources"
 msgstr "Sources"
@@ -2247,7 +2280,7 @@ msgstr "Sources cannot be inside the output folder; move them elsewhere first"
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "Sources found; you can create a new reconstruction task"
 
-#: src/components/processing-settings-fields.tsx:165
+#: src/components/processing-settings-fields.tsx:167
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "Specify a .cube file only when you need to override the official LUT."
 
@@ -2263,14 +2296,14 @@ msgstr "Stage"
 
 #. placeholder {0}: runningIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1038
+#: src/lib/pipeline.ts:1040
 msgid "Stage {0} of {1} · {label}"
 msgstr "Stage {0} of {1} · {label}"
 
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/components/task-list.tsx:224
+#: src/components/task-list.tsx:233
 msgid "Stage {0} of {1}: {2}"
 msgstr "Stage {0} of {1}: {2}"
 
@@ -2298,12 +2331,12 @@ msgid "Stage started"
 msgstr "Stage started"
 
 #. Short label for a stage summary.
-#: src/lib/pipeline.ts:886
+#: src/lib/pipeline.ts:888
 msgctxt "pipeline phase"
 msgid "Stage summary"
 msgstr "Stage summary"
 
-#: src/components/settings-sheet.tsx:162
+#: src/components/settings-sheet.tsx:169
 msgid "Stages that fall back to the CPU can still run, but processing may take significantly longer."
 msgstr "Stages that fall back to the CPU can still run, but processing may take significantly longer."
 
@@ -2312,13 +2345,13 @@ msgstr "Stages that fall back to the CPU can still run, but processing may take 
 #~ msgstr "Started tasks keep their stages and processing records."
 
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:1082
+#: src/lib/pipeline.ts:1084
 msgid "Stop {0}"
 msgstr "Stop {0}"
 
 #. placeholder {0}: interruptedIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1043
+#: src/lib/pipeline.ts:1045
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "Stopped at stage {0} of {1} · {label}"
 
@@ -2331,19 +2364,19 @@ msgstr "Stopped at stage {0} of {1} · {label}"
 msgid "Supported"
 msgstr "Supported"
 
-#: src/components/task-list.tsx:317
+#: src/components/task-list.tsx:332
 msgid "Supported inputs"
 msgstr "Supported inputs"
 
-#: src/components/settings-sheet.tsx:133
+#: src/components/settings-sheet.tsx:134
 msgid "System"
 msgstr "System"
 
-#: src/lib/pipeline.ts:765
+#: src/lib/pipeline.ts:767
 msgid "System FFmpeg was not found on PATH"
 msgstr "System FFmpeg was not found on PATH"
 
-#: src/lib/pipeline.ts:766
+#: src/lib/pipeline.ts:768
 msgid "System ffprobe was not found on PATH"
 msgstr "System ffprobe was not found on PATH"
 
@@ -2355,15 +2388,15 @@ msgstr "System ffprobe was not found on PATH"
 msgid "Task added to the run queue"
 msgstr "Task added to the run queue"
 
-#: src/components/task-editor-dialog.tsx:107
+#: src/components/task-editor-dialog.tsx:129
 msgid "Task creation help"
 msgstr "Task creation help"
 
-#: src/components/task-editor-dialog.tsx:119
+#: src/components/task-editor-dialog.tsx:142
 msgid "Task information"
 msgstr "Task information"
 
-#: src/components/task-editor-dialog.tsx:121
+#: src/components/task-editor-dialog.tsx:144
 msgid "Task name"
 msgstr "Task name"
 
@@ -2400,6 +2433,11 @@ msgstr "The COLMAP path is used by the local Windows runtime"
 msgid "The container does not include a video stream that can be processed."
 msgstr "The container does not include a video stream that can be processed."
 
+#: src/components/cancel-stage-dialog.tsx:27
+msgid "The current stage will stop. Completed output is kept, and you can resume the task later."
+msgstr "The current stage will stop. Completed output is kept, and you can resume the task later."
+
+#: src/components/task-editor-dialog.tsx:109
 #: src/lib/pipeline.ts:633
 msgid "The custom LUT must be a .cube file"
 msgstr "The custom LUT must be a .cube file"
@@ -2452,7 +2490,7 @@ msgid "The project root in the manifest does not match its actual location; rena
 msgstr "The project root in the manifest does not match its actual location; rename cancelled"
 
 #. Queued tasks run automatically in creation order.
-#: src/components/task-list.tsx:191
+#: src/components/task-list.tsx:192
 msgid "The queue runs automatically in creation order"
 msgstr "The queue runs automatically in creation order"
 
@@ -2461,7 +2499,7 @@ msgstr "The queue runs automatically in creation order"
 msgid "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 msgstr "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 
-#: src/lib/pipeline.ts:762
+#: src/lib/pipeline.ts:764
 msgid "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 msgstr "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 
@@ -2489,12 +2527,9 @@ msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 msgstr "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 
-#: src/lib/pipeline.ts:761
+#: src/lib/pipeline.ts:763
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "The selected COLMAP path does not exist or is not a file"
-
-msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
-msgstr "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
 #: src/lib/pipeline.ts:520
@@ -2525,7 +2560,7 @@ msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 
-#: src/components/task-detail.tsx:184
+#: src/components/task-detail.tsx:185
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "There are no processing records yet; each stage and its current position will appear here after execution starts."
 
@@ -2559,7 +2594,7 @@ msgstr "This source format is not supported"
 msgid "This task has already started"
 msgstr "This task has already started"
 
-#: src/components/task-detail.tsx:156
+#: src/components/task-detail.tsx:157
 msgid "This task has no recorded source files."
 msgstr "This task has no recorded source files."
 
@@ -2588,19 +2623,23 @@ msgctxt "mask class"
 msgid "Truck"
 msgstr "Truck"
 
+#: src/lib/pipeline.ts:647
+msgid "Unable to cancel the stage; it may still be running"
+msgstr "Unable to cancel the stage; it may still be running"
+
 #: src/lib/pipeline.ts:628
 msgid "Unable to copy diagnostics; check clipboard permissions"
 msgstr "Unable to copy diagnostics; check clipboard permissions"
 
-#: src/lib/pipeline.ts:717
+#: src/lib/pipeline.ts:718
 msgid "Unable to copy frame {source} to {destination}: {error}"
 msgstr "Unable to copy frame {source} to {destination}: {error}"
 
-#: src/lib/pipeline.ts:716
+#: src/lib/pipeline.ts:717
 msgid "Unable to create temporary frame {frame}: {error}"
 msgstr "Unable to create temporary frame {frame}: {error}"
 
-#: src/lib/pipeline.ts:719
+#: src/lib/pipeline.ts:720
 msgid "Unable to create temporary metadata {path}: {error}"
 msgstr "Unable to create temporary metadata {path}: {error}"
 
@@ -2610,33 +2649,34 @@ msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "Unable to determine the project root"
 
-#: src/components/source-media.tsx:194
+#: src/components/source-media.tsx:195
+#: src/components/source-media.tsx:197
 #: src/lib/pipeline.ts:612
 msgid "Unable to generate a first-frame preview"
 msgstr "Unable to generate a first-frame preview"
 
 #. Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:787
+#: src/lib/pipeline.ts:789
 msgctxt "project edit error"
 msgid "Unable to inspect the project root: {0}"
 msgstr "Unable to inspect the project root: {0}"
 
 #. Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:702
+#: src/lib/pipeline.ts:703
 msgctxt "backend diagnostic warning"
 msgid "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 msgstr "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 
 #. Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:697
+#: src/lib/pipeline.ts:698
 msgctxt "backend diagnostic warning"
 msgid "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 msgstr "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 
-#: src/lib/pipeline.ts:715
+#: src/lib/pipeline.ts:716
 msgid "Unable to read source frame {frame}: {error}"
 msgstr "Unable to read source frame {frame}: {error}"
 
@@ -2663,15 +2703,15 @@ msgstr "Unable to start the stage automatically; check the runtime message"
 msgid "Unable to start the stage; check the runtime message"
 msgstr "Unable to start the stage; check the runtime message"
 
-#: src/lib/pipeline.ts:718
+#: src/lib/pipeline.ts:719
 msgid "Unable to sync temporary frame {frame}: {error}"
 msgstr "Unable to sync temporary frame {frame}: {error}"
 
-#: src/lib/pipeline.ts:721
+#: src/lib/pipeline.ts:722
 msgid "Unable to sync temporary metadata {path}: {error}"
 msgstr "Unable to sync temporary metadata {path}: {error}"
 
-#: src/lib/pipeline.ts:720
+#: src/lib/pipeline.ts:721
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "Unable to write temporary metadata {path}: {error}"
 
@@ -2688,7 +2728,7 @@ msgid "Unsupported source format"
 msgstr "Unsupported source format"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:244
+#: src/components/processing-settings-fields.tsx:246
 msgid "Use CUDA acceleration for alignment"
 msgstr "Use CUDA acceleration for alignment"
 
@@ -2698,7 +2738,7 @@ msgstr "Use CUDA acceleration for alignment"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr "Use Open project to open a project folder"
 
-#: src/components/processing-settings-fields.tsx:222
+#: src/components/processing-settings-fields.tsx:224
 msgid "Use SkySeg to generate sky masks."
 msgstr "Use SkySeg to generate sky masks."
 
@@ -2714,35 +2754,35 @@ msgstr "Verified that the mask exists; skipped"
 #~ msgid "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
 #~ msgstr "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
 
-#: src/components/settings-sheet.tsx:168
+#: src/components/settings-sheet.tsx:175
 msgid "View details"
 msgstr "View details"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:179
+#: src/components/task-list.tsx:180
 msgid "View details for {0}"
 msgstr "View details for {0}"
 
-#: src/lib/pipeline.ts:1084
+#: src/lib/pipeline.ts:1086
 msgid "Wait for {prerequisite} to finish"
 msgstr "Wait for {prerequisite} to finish"
 
-#: src/lib/pipeline.ts:1086
+#: src/lib/pipeline.ts:1088
 msgid "Wait for the current stage to finish"
 msgstr "Wait for the current stage to finish"
 
 #. placeholder {0}: action.prerequisite
-#: src/components/task-list.tsx:235
+#: src/components/task-list.tsx:244
 msgid "Waiting for {0} to finish"
 msgstr "Waiting for {0} to finish"
 
 #. placeholder {0}: nextIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1048
+#: src/lib/pipeline.ts:1050
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "Waiting for stage {0} of {1} · {label}"
 
-#: src/components/task-list.tsx:149
+#: src/components/task-list.tsx:150
 msgid "Waiting to run"
 msgstr "Waiting to run"
 
@@ -2750,23 +2790,24 @@ msgstr "Waiting to run"
 msgid "Warning"
 msgstr "Warning"
 
-#: src/components/task-detail.tsx:161
+#: src/components/task-detail.tsx:162
 msgid "Warnings"
 msgstr "Warnings"
 
-#: src/components/task-list.tsx:198
+#: src/components/task-list.tsx:203
+#: src/components/task-list.tsx:206
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:166
 msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
 msgstr "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
 
-#: src/components/app-chrome.tsx:57
+#: src/components/app-chrome.tsx:59
 msgid "Window controls"
 msgstr "Window controls"
 
-#: src/components/task-detail-panel.tsx:205
+#: src/components/task-detail-panel.tsx:257
 msgid "Work summary"
 msgstr "Work summary"
 
@@ -2781,6 +2822,6 @@ msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO and sky filtering are disabled; masking was skipped"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:185
+#: src/components/processing-settings-fields.tsx:187
 msgid "YOLO object filtering"
 msgstr "YOLO object filtering"

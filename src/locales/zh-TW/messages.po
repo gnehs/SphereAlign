@@ -65,17 +65,17 @@ msgstr ""
 #~ msgstr "- 處理器："
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/components/task-detail.tsx:174
+#: src/components/task-detail.tsx:175
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {# 筆} other {# 筆}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/components/task-detail.tsx:155
+#: src/components/task-detail.tsx:156
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# 個檔案} other {# 個檔案}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/components/task-list.tsx:192
+#: src/components/task-list.tsx:193
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# 個來源} other {# 個來源}}"
 
@@ -86,7 +86,7 @@ msgstr "{0}（GPU {ordinal}）"
 
 #. placeholder {0}: completed.toLocaleString(getLocale())
 #. placeholder {1}: total.toLocaleString(getLocale())
-#: src/lib/pipeline.ts:995
+#: src/lib/pipeline.ts:997
 msgid "{0} / {1}"
 msgstr "{0} / {1}"
 
@@ -96,31 +96,31 @@ msgstr "{0} / {1}"
 #~ msgstr "{0} 雙魚眼快照"
 
 #. placeholder {0}: rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)
-#: src/lib/pipeline.ts:1754
+#: src/lib/pipeline.ts:1756
 msgid "{0} items/sec"
 msgstr "{0} 個項目/秒"
 
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1050
+#: src/lib/pipeline.ts:1052
 msgid "{0} of {1} stages complete"
 msgstr "{0} / {1} 個階段已完成"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:204
+#: src/components/task-list.tsx:212
 msgid "{0} overall time progress"
 msgstr "{0} 的整體時間進度"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/components/task-detail.tsx:142
 #: src/components/task-detail.tsx:143
-#: src/components/task-list.tsx:238
+#: src/components/task-detail.tsx:144
+#: src/components/task-list.tsx:247
 msgid "{0} progress"
 msgstr "{0} 進度"
 
 #. placeholder {0}: source.detail
-#: src/components/source-media.tsx:221
+#: src/components/source-media.tsx:224
 msgid "{0} source snapshot"
 msgstr "{0} 來源快照"
 
@@ -160,61 +160,61 @@ msgid "{0}: first-frame preview from the first video stream"
 msgstr "{0}：第一個視訊串流的第一幀預覽"
 
 #. Count of items already processed by a pipeline stage.
-#: src/lib/pipeline.ts:1000
+#: src/lib/pipeline.ts:1002
 msgid "{completed, plural, one {Processed #} other {Processed #}}"
 msgstr "{completed, plural, one {已處理 #} other {已處理 #}}"
 
-#: src/lib/pipeline.ts:736
+#: src/lib/pipeline.ts:737
 msgid "{count} candidate pairs processed"
 msgstr "已處理 {count} 個候選影格對"
 
-#: src/lib/pipeline.ts:738
 #: src/lib/pipeline.ts:739
+#: src/lib/pipeline.ts:740
 msgid "{count} masks failed; see the pipeline log"
 msgstr "{count} 個遮罩失敗；請查看管線記錄"
 
-#: src/lib/pipeline.ts:737
+#: src/lib/pipeline.ts:738
 msgid "{count} masks written"
 msgstr "已寫入 {count} 個遮罩"
 
-#: src/lib/pipeline.ts:742
+#: src/lib/pipeline.ts:743
 msgid "{count} sources"
 msgstr "{count} 個來源"
 
-#: src/lib/pipeline.ts:741
+#: src/lib/pipeline.ts:742
 msgid "{count} sources · browser preview"
 msgstr "{count} 個來源 · 瀏覽器預覽"
 
-#: src/lib/pipeline.ts:735
+#: src/lib/pipeline.ts:736
 msgid "{count} sources completed"
 msgstr "{count} 個來源已完成"
 
 #. placeholder {0}: String(minutes).padStart(2, "0")
-#: src/lib/pipeline.ts:902
+#: src/lib/pipeline.ts:904
 msgid "{hours} hr {0} min"
 msgstr "{hours} 小時 {0} 分鐘"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:749
-#: src/lib/pipeline.ts:753
+#: src/lib/pipeline.ts:750
+#: src/lib/pipeline.ts:754
 msgid "{label}: {0}"
 msgstr "{label}：{0}"
 
 #. placeholder {0}: String(seconds).padStart(2, "0")
-#: src/lib/pipeline.ts:903
+#: src/lib/pipeline.ts:905
 msgid "{minutes} min {0} sec"
 msgstr "{minutes} 分鐘 {0} 秒"
 
-#: src/lib/pipeline.ts:752
+#: src/lib/pipeline.ts:753
 msgid "{platform} · FFmpeg hardware decoding capability not reported"
 msgstr "{platform} · 未回報 FFmpeg 硬體解碼能力"
 
-#: src/lib/pipeline.ts:904
+#: src/lib/pipeline.ts:906
 msgid "{seconds} sec"
 msgstr "{seconds} 秒"
 
 #. A source adapter must expose the video streams required by the panoramic workflow.
-#: src/lib/pipeline.ts:692
+#: src/lib/pipeline.ts:693
 msgctxt "source validation error"
 msgid "{source} does not contain the video streams required by its source adapter"
 msgstr "{source} 不包含來源 adapter 所需的視訊串流"
@@ -226,21 +226,21 @@ msgstr "{source} 不包含來源 adapter 所需的視訊串流"
 #~ msgstr "{source} 不包含兩個可辨識的雙魚眼影片串流"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:751
+#: src/lib/pipeline.ts:752
 msgid "{tool}: {0}"
 msgstr "{tool}：{0}"
 
 #. Count of all items reported by a pipeline stage.
-#: src/lib/pipeline.ts:996
+#: src/lib/pipeline.ts:998
 msgid "{total, plural, one {Total #} other {Total #}}"
 msgstr "{total, plural, one {總計 #} other {總計 #}}"
 
-#: src/lib/pipeline.ts:740
+#: src/lib/pipeline.ts:741
 msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} 個來源 · {valid} 個通過檢查"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:510
+#: src/App.tsx:520
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT（Cube）"
@@ -255,20 +255,20 @@ msgstr "此語言無法提供後端狀態訊息。"
 msgid "A processing stage is already running for this task; please wait"
 msgstr "此任務已有處理階段正在執行；請稍候"
 
-#: src/lib/pipeline.ts:649
+#: src/lib/pipeline.ts:650
 msgid "A processing stage is already running; please wait"
 msgstr "已有處理階段正在執行；請稍候"
 
 #. placeholder {0}: formatDuration(value)
-#: src/lib/pipeline.ts:1744
+#: src/lib/pipeline.ts:1746
 msgid "About {0}"
 msgstr "約 {0}"
 
-#: src/lib/pipeline.ts:1746
+#: src/lib/pipeline.ts:1748
 msgid "About {minutes} min"
 msgstr "約 {minutes} 分鐘"
 
-#: src/components/settings-sheet.tsx:155
+#: src/components/settings-sheet.tsx:162
 msgid "Acceleration capabilities not confirmed"
 msgstr "尚未確認加速能力"
 
@@ -281,13 +281,13 @@ msgstr "尚未確認加速能力"
 
 #. Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.
 #. Only add panoramic media captured in one scene; separate media from different scenes into separate tasks.
-#: src/components/task-editor-dialog.tsx:105
-#: src/components/task-editor-dialog.tsx:110
+#: src/components/task-editor-dialog.tsx:127
+#: src/components/task-editor-dialog.tsx:132
 msgid "Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 msgstr "僅新增在同一場景擷取的全景來源媒體。同一場景可包含多個來源。不同場景請建立個別的重建任務。"
 
 #. Add a queued task to the automatic execution queue.
-#: src/components/task-list.tsx:161
+#: src/components/task-list.tsx:162
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "加入佇列"
@@ -296,18 +296,18 @@ msgstr "加入佇列"
 #~ msgid "Adjust the interface language and theme, and check COLMAP, CUDA, FFmpeg, and hardware acceleration capabilities."
 #~ msgstr "調整介面語言與主題，並檢查 COLMAP、CUDA、FFmpeg 及硬體加速能力。"
 
-#: src/components/task-editor-dialog.tsx:105
-#: src/components/task-editor-dialog.tsx:110
+#: src/components/task-editor-dialog.tsx:127
+#: src/components/task-editor-dialog.tsx:132
 msgid "Adjust the task name, sources, and processing settings before it starts."
 msgstr "在開始前調整任務名稱、來源與處理設定。"
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "After creation, project information is saved in the output folder so the task can resume after an interruption."
 msgstr "建立後，專案資訊會儲存在輸出資料夾中，讓任務在中斷後可以繼續。"
 
 #. Fallback means retrying the same operation with software decoding after hardware decoding fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:672
+#: src/lib/pipeline.ts:673
 msgctxt "backend error"
 msgid "After FFmpeg hardware decoding failed, unable to prepare the software-decoding fallback: {0}"
 msgstr "FFmpeg 硬體解碼失敗後，無法準備軟體解碼備援：{0}"
@@ -323,12 +323,12 @@ msgid "Alignment"
 msgstr "對齊"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:229
+#: src/components/processing-settings-fields.tsx:231
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "對齊"
 
-#: src/lib/pipeline.ts:714
+#: src/lib/pipeline.ts:715
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "對齊已完成：已註冊 {registered} / {total} 個相機組影格（{percentage}%）"
 
@@ -362,12 +362,12 @@ msgstr "對齊：待處理"
 msgid "Alignment: Running"
 msgstr "對齊：執行中"
 
-#: src/components/settings-sheet.tsx:150
+#: src/components/settings-sheet.tsx:157
 msgid "All required capabilities are available"
 msgstr "所有必要能力皆可用"
 
 #. Apply the official or custom lookup table to restore DJI D-Log M color.
-#: src/components/processing-settings-fields.tsx:139
+#: src/components/processing-settings-fields.tsx:141
 msgid "Apply the D-Log M restoration LUT"
 msgstr "套用 D-Log M 還原 LUT"
 
@@ -376,21 +376,21 @@ msgstr "套用 D-Log M 還原 LUT"
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "至少需要兩組相符的 lens0/lens1 影格對才能對齊"
 
-#: src/lib/pipeline.ts:648
+#: src/lib/pipeline.ts:649
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
 msgstr "自動管線已完成影格擷取、遮罩與對齊"
 
 #: src/lib/pipeline.ts:607
-#: src/lib/pipeline.ts:1609
+#: src/lib/pipeline.ts:1611
 msgid "Available"
 msgstr "可用"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:74
+#: src/components/processing-settings-fields.tsx:75
 msgid "Base frame rate (FPS)"
 msgstr "基準影格率 (FPS)"
 
-#: src/components/settings-sheet.tsx:151
+#: src/components/settings-sheet.tsx:158
 msgid "Basic reconstruction can run. CUDA and hardware acceleration are optional; processing still works without them but frame extraction, feature matching, and reconstruction will be slower."
 msgstr "基本重建可以執行。CUDA 與硬體加速為選用功能；即使沒有它們仍可處理，但影格擷取、特徵匹配與重建會較慢。"
 
@@ -401,7 +401,7 @@ msgid "Bicycle"
 msgstr "自行車"
 
 #. Short label for the initial reconstruction bootstrap.
-#: src/lib/pipeline.ts:880
+#: src/lib/pipeline.ts:882
 msgctxt "pipeline phase"
 msgid "Bootstrap reconstruction"
 msgstr "啟動重建"
@@ -409,7 +409,7 @@ msgstr "啟動重建"
 #. The candidate-frame decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:686
+#: src/lib/pipeline.ts:687
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}"
@@ -418,7 +418,7 @@ msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(cleanup[1])
 #. placeholder {2}: localiseTechnicalErrorDetail(cleanup[2])
-#: src/lib/pipeline.ts:680
+#: src/lib/pipeline.ts:681
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg candidate frames: hardware error: {0}; software error: {1}; cleanup also failed for incomplete output: {2}"
 msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}；未完成輸出的清理也失敗：{2}"
@@ -426,7 +426,7 @@ msgstr "FFmpeg 候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0
 #. The in-memory candidate decoder tried hardware and software paths; technical error details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(hardwareError)
 #. placeholder {1}: localiseTechnicalErrorDetail(softwareError)
-#: src/lib/pipeline.ts:667
+#: src/lib/pipeline.ts:668
 msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 記憶體中候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}"
@@ -491,7 +491,7 @@ msgid "Camera metadata could not be decoded from this file."
 msgstr "無法解碼這個檔案中的相機中繼資料。"
 
 #. Short label for estimating the camera rig.
-#: src/lib/pipeline.ts:882
+#: src/lib/pipeline.ts:884
 msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "相機組估算"
@@ -501,24 +501,32 @@ msgstr "相機組估算"
 msgid "Can be resumed"
 msgstr "可繼續"
 
-#: src/components/task-editor-dialog.tsx:157
-#: src/components/task-editor-dialog.tsx:176
-#: src/lib/pipeline.ts:1708
+#: src/components/task-editor-dialog.tsx:186
+#: src/components/task-editor-dialog.tsx:207
+#: src/lib/pipeline.ts:1710
 msgid "Cancel"
 msgstr "取消"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/components/task-detail.tsx:250
+#: src/components/task-detail.tsx:253
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "取消整個任務"
 
-#: src/lib/pipeline.ts:1717
+#: src/components/cancel-stage-dialog.tsx:31
+msgid "Cancel stage"
+msgstr "取消階段"
+
+#: src/components/cancel-stage-dialog.tsx:26
+msgid "Cancel the current stage?"
+msgstr "要取消目前階段嗎？"
+
+#: src/lib/pipeline.ts:1719
 msgid "Cancelled"
 msgstr "已取消"
 
 #. Short cancelled status label.
-#: src/lib/pipeline.ts:884
+#: src/lib/pipeline.ts:886
 msgctxt "pipeline phase status"
 msgid "Cancelled"
 msgstr "已取消"
@@ -535,11 +543,11 @@ msgstr "在寫入輸出前已取消"
 msgid "Cancelled before committing the selected result"
 msgstr "在寫入選取結果前已取消"
 
-#: src/lib/pipeline.ts:660
+#: src/lib/pipeline.ts:661
 msgid "Cancelled before interval {interval}"
 msgstr "在處理區段 {interval} 前已取消"
 
-#: src/lib/pipeline.ts:707
+#: src/lib/pipeline.ts:708
 msgid "Cancelled before processing interval {interval}"
 msgstr "在處理區段 {interval} 前已取消"
 
@@ -557,12 +565,12 @@ msgstr "評分影格候選項目時已取消"
 
 #. A cancelled stage can be resumed later.
 #: src/lib/pipeline.ts:486
-#: src/lib/pipeline.ts:647
+#: src/lib/pipeline.ts:648
 msgid "Cancelled; you can resume later"
 msgstr "已取消；稍後可以繼續"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:102
+#: src/components/processing-settings-fields.tsx:103
 msgid "Candidate frame rate"
 msgstr "候選影格率"
 
@@ -573,7 +581,7 @@ msgid "Car"
 msgstr "汽車"
 
 #. placeholder {0}: localiseUserMessage(status)
-#: src/lib/pipeline.ts:750
+#: src/lib/pipeline.ts:751
 msgid "Ceres BA: {0}"
 msgstr "Ceres BA：{0}"
 
@@ -589,11 +597,11 @@ msgstr "Ceres BA：可能可用（需要執行環境 CUDA/cuDSS 檢查）"
 msgid "Ceres BA: Not reported"
 msgstr "Ceres BA：未回報"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "Change path"
 msgstr "變更路徑"
 
-#: src/components/settings-sheet.tsx:144
+#: src/components/settings-sheet.tsx:145
 msgid "Check again"
 msgstr "再次檢查環境"
 
@@ -609,15 +617,15 @@ msgstr "檢查 COLMAP 可執行檔與版本"
 msgid "Check the file permissions and confirm that it is a regular file."
 msgstr "請檢查檔案權限，並確認它是一般檔案。"
 
-#: src/components/settings-sheet.tsx:144
+#: src/components/settings-sheet.tsx:145
 msgid "Checking"
 msgstr "檢查中"
 
-#: src/components/processing-settings-fields.tsx:158
+#: src/components/processing-settings-fields.tsx:160
 msgid "Choose .cube"
 msgstr "選擇 .cube"
 
-#: src/components/processing-settings-fields.tsx:162
+#: src/components/processing-settings-fields.tsx:164
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "選擇副檔名為 .cube 的 3D LUT。"
 
@@ -626,17 +634,17 @@ msgstr "選擇副檔名為 .cube 的 3D LUT。"
 #~ msgstr "選擇其他"
 
 #. Button opens a folder picker to choose a different output location.
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgctxt "output folder picker action"
 msgid "Choose another"
 msgstr "選擇其他"
 
 #: src/components/settings-sheet.tsx:98
-msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
-msgstr "選擇英文、簡體中文、繁體中文或日文。"
+#~ msgid "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
+#~ msgstr "選擇英文、簡體中文、繁體中文或日文。"
 
 #. Button opens a file picker for source media.
-#: src/components/task-list.tsx:313
+#: src/components/task-list.tsx:328
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "選擇檔案"
@@ -647,7 +655,7 @@ msgstr "選擇檔案"
 #~ msgid "Choose folder"
 #~ msgstr "選擇資料夾"
 
-#: src/components/settings-sheet.tsx:120
+#: src/components/settings-sheet.tsx:121
 msgid "Choose light, dark, or follow the system appearance automatically."
 msgstr "選擇淺色、深色，或自動遵循系統外觀。"
 
@@ -659,44 +667,44 @@ msgstr "選擇淺色、深色，或自動遵循系統外觀。"
 #~ msgid "Choose multiple OSV or dual-fisheye media files."
 #~ msgstr "選擇多個 OSV 或雙魚眼媒體檔案。"
 
-#: src/components/task-editor-dialog.tsx:137
+#: src/components/task-editor-dialog.tsx:164
 msgid "Choose one or more panoramic source files."
 msgstr "選擇一個或多個全景來源檔案。"
 
-#: src/components/task-editor-dialog.tsx:134
+#: src/components/task-editor-dialog.tsx:161
 msgid "Choose sources"
 msgstr "選擇來源"
 
-#: src/components/processing-settings-fields.tsx:159
+#: src/components/processing-settings-fields.tsx:161
 msgid "Clear custom LUT"
 msgstr "清除自訂 LUT"
 
 #. Accessible label for the icon-only button that closes the dialog.
 #. Accessible label for the icon-only button that closes the sheet.
 #. Label for the button that closes the dialog from the footer.
-#: src/components/settings-sheet.tsx:172
-#: src/components/task-detail-panel.tsx:179
-#: src/components/task-detail.tsx:251
+#: src/components/settings-sheet.tsx:179
+#: src/components/task-detail-panel.tsx:231
+#: src/components/task-detail.tsx:254
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
 #: src/components/ui/sheet.tsx:84
 msgid "Close"
 msgstr "關閉"
 
-#: src/components/app-chrome.tsx:41
+#: src/components/app-chrome.tsx:43
 msgid "Close notification"
 msgstr "關閉通知"
 
-#: src/components/app-chrome.tsx:79
-#: src/components/app-chrome.tsx:80
+#: src/components/app-chrome.tsx:81
+#: src/components/app-chrome.tsx:82
 msgid "Close window"
 msgstr "關閉視窗"
 
-#: src/lib/pipeline.ts:723
+#: src/lib/pipeline.ts:724
 msgid "COLMAP {component} Ceres GPU is unavailable; Ceres switched to CPU: {error}"
 msgstr "COLMAP {component} 的 Ceres GPU 無法使用；Ceres 已切換至 CPU：{error}"
 
-#: src/lib/pipeline.ts:722
+#: src/lib/pipeline.ts:723
 msgid "COLMAP {component} GPU execution failed; retrying with CPU: {error}"
 msgstr "COLMAP {component} GPU 執行失敗；正在改用 CPU 重試：{error}"
 
@@ -704,7 +712,7 @@ msgstr "COLMAP {component} GPU 執行失敗；正在改用 CPU 重試：{error}"
 msgid "COLMAP alignment capability not confirmed"
 msgstr "尚未確認 COLMAP 對齊能力"
 
-#: src/lib/pipeline.ts:768
+#: src/lib/pipeline.ts:770
 msgid "COLMAP bootstrap did not produce sparse/0"
 msgstr "COLMAP 啟動重建未產生 sparse/0"
 
@@ -722,7 +730,8 @@ msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA 能力檢查結果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/components/settings-sheet.tsx:166
+#: src/App.tsx:500
+#: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP 可執行檔"
 
@@ -731,21 +740,25 @@ msgstr "COLMAP 可執行檔"
 msgid "COLMAP is unavailable; alignment will remain pending and resumable"
 msgstr "COLMAP 無法使用；對齊將保持待處理狀態，且可繼續執行"
 
-#: src/App.tsx:490
-msgid "COLMAP launcher"
-msgstr "COLMAP 啟動器"
+#: src/App.tsx:500
+#~ msgid "COLMAP launcher"
+#~ msgstr "COLMAP 啟動器"
 
 #: src/lib/pipeline.ts:597
 msgid "COLMAP not detected"
 msgstr "未偵測到 COLMAP"
 
-#: src/lib/pipeline.ts:767
+#: src/lib/pipeline.ts:769
 msgid "COLMAP was not found on PATH"
 msgstr "在 PATH 中找不到 COLMAP"
 
-#: src/lib/pipeline.ts:759
+#: src/lib/pipeline.ts:760
 msgid "COLMAP was not found; alignment will remain pending and resumable"
 msgstr "找不到 COLMAP；對齊將保持待處理狀態，且可繼續執行"
+
+#: src/lib/pipeline.ts:762
+msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
+msgstr "COLMAP.bat 無法直接使用；請選擇官方可攜版的 bin/COLMAP.exe"
 
 #. Backend progress message: mask files are being written.
 #: src/lib/pipeline.ts:450
@@ -753,14 +766,14 @@ msgid "Committing mask files"
 msgstr "正在寫入遮罩檔案"
 
 #. Short label for writing output files.
-#: src/lib/pipeline.ts:876
+#: src/lib/pipeline.ts:878
 msgctxt "pipeline phase"
 msgid "Committing output"
 msgstr "正在寫入輸出"
 
 #. Shown when a pipeline stage is blocked by an incomplete prerequisite stage.
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:754
+#: src/lib/pipeline.ts:755
 msgid "Complete {0} first"
 msgstr "請先完成 {0}"
 
@@ -768,18 +781,18 @@ msgstr "請先完成 {0}"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "請先完成 {prerequisite}"
 
-#: src/components/task-list.tsx:295
-#: src/lib/pipeline.ts:1719
+#: src/components/task-list.tsx:304
+#: src/lib/pipeline.ts:1721
 msgid "Completed"
 msgstr "已完成"
 
 #. Short completed status label.
-#: src/lib/pipeline.ts:883
+#: src/lib/pipeline.ts:885
 msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "已完成"
 
-#: src/components/task-list.tsx:364
+#: src/components/task-list.tsx:398
 msgid "Completed reconstruction tasks will appear here."
 msgstr "完成的重建任務會顯示在這裡。"
 
@@ -791,7 +804,7 @@ msgstr "確認 FFmpeg 硬體解碼能力"
 msgid "Confirm FFmpeg is available on the system PATH"
 msgstr "確認系統 PATH 上有可用的 FFmpeg"
 
-#: src/components/settings-sheet.tsx:143
+#: src/components/settings-sheet.tsx:144
 msgid "Copy diagnostics"
 msgstr "複製診斷資料"
 
@@ -807,7 +820,7 @@ msgstr "正在複製所選影格對"
 #~ msgstr "僅使用 CPU"
 
 #. Create the reconstruction task.
-#: src/components/task-editor-dialog.tsx:158
+#: src/components/task-editor-dialog.tsx:187
 msgctxt "task action"
 msgid "Create task"
 msgstr "建立任務"
@@ -817,7 +830,7 @@ msgstr "建立任務"
 #~ msgid "Created {0}"
 #~ msgstr "已建立 {0}"
 
-#: src/lib/pipeline.ts:747
+#: src/lib/pipeline.ts:748
 msgid "Created {name}"
 msgstr "已建立 {name}"
 
@@ -851,43 +864,43 @@ msgid "CUDA status not confirmed"
 msgstr "尚未確認 CUDA 狀態"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/components/task-detail.tsx:139
+#: src/components/task-detail.tsx:140
 msgid "Current item: {0}"
 msgstr "目前項目：{0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/components/task-list.tsx:207
+#: src/components/task-list.tsx:215
 msgid "Current stage: {0}"
 msgstr "目前階段：{0}"
 
-#: src/components/task-detail.tsx:133
+#: src/components/task-detail.tsx:134
 msgid "Current work"
 msgstr "目前工作"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:146
+#: src/components/processing-settings-fields.tsx:148
 msgid "Custom LUT (optional)"
 msgstr "自訂 LUT（選用）"
 
-#: src/components/settings-sheet.tsx:135
+#: src/components/settings-sheet.tsx:136
 msgid "Dark"
 msgstr "深色"
 
-#: src/lib/pipeline.ts:711
+#: src/lib/pipeline.ts:712
 msgid "Decoding and scoring source {source} ({count} candidate pairs processed)"
 msgstr "正在解碼並評分來源 {source}（已處理 {count} 個候選影格對）"
 
-#: src/lib/pipeline.ts:732
+#: src/lib/pipeline.ts:733
 msgid "Decoding and scoring source {source} dual-fisheye candidates in memory"
 msgstr "正在記憶體中解碼並評分來源 {source} 的雙魚眼候選影格"
 
 #. Short label for full-resolution decoding.
-#: src/lib/pipeline.ts:875
+#: src/lib/pipeline.ts:877
 msgctxt "pipeline phase"
 msgid "Decoding full resolution"
 msgstr "正在解碼完整解析度"
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "第一個來源旁的預設值：colmap-file-name"
 
@@ -896,11 +909,11 @@ msgid "Detected"
 msgstr "已偵測到"
 
 #. The source filename suffix or media metadata indicated D-Log M color.
-#: src/components/processing-settings-fields.tsx:141
+#: src/components/processing-settings-fields.tsx:143
 msgid "Detected from the _D filename suffix or media metadata and enabled."
 msgstr "已從檔名結尾的 _D 或媒體中繼資料偵測到，並已啟用。"
 
-#: src/components/settings-sheet.tsx:142
+#: src/components/settings-sheet.tsx:143
 msgid "Diagnostic actions"
 msgstr "診斷動作"
 
@@ -926,12 +939,14 @@ msgstr "診斷資料已複製；你可以將其貼到錯誤回報中"
 #~ msgid "Drop OSV or dual-fisheye media here,<0/>or use Open project to resume an existing project."
 #~ msgstr "將 OSV 或雙魚眼媒體拖放到這裡，<0/>或使用「開啟專案」來繼續現有專案。"
 
-#: src/components/task-editor-dialog.tsx:133
+#: src/components/task-editor-dialog.tsx:160
+#: src/components/task-list.tsx:323
+#: src/components/task-list.tsx:365
 msgid "Drop panoramic source media"
 msgstr "拖放全景來源媒體"
 
 #. Drop panoramic source media here or choose files below. Existing projects are opened separately.
-#: src/components/task-list.tsx:311
+#: src/components/task-list.tsx:326
 msgid "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 msgstr "將全景來源媒體拖放到這裡，<0/>或使用「開啟專案」來繼續現有專案。"
 
@@ -946,7 +961,7 @@ msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "雙魚眼影格、內部參數與 IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
-#: src/components/task-detail.tsx:182
+#: src/components/task-detail.tsx:183
 msgid "Duration {0}"
 msgstr "持續時間 {0}"
 
@@ -957,25 +972,25 @@ msgid "Dynamic-object and sky masks"
 msgstr "動態物件與天空遮罩"
 
 #. Edit a task that has not started.
-#: src/components/task-list.tsx:168
+#: src/components/task-list.tsx:169
 msgctxt "task action"
 msgid "Edit"
 msgstr "編輯"
 
 #. Dialog for editing a task before it starts.
 #. Dialog for editing a task before it starts.
-#: src/components/task-editor-dialog.tsx:104
-#: src/components/task-editor-dialog.tsx:109
+#: src/components/task-editor-dialog.tsx:126
+#: src/components/task-editor-dialog.tsx:131
 msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "編輯已排入佇列的任務"
 
-#: src/components/task-detail.tsx:147
-#: src/components/task-list.tsx:212
+#: src/components/task-detail.tsx:148
+#: src/components/task-list.tsx:220
 msgid "Elapsed"
 msgstr "經過時間"
 
-#: src/components/processing-settings-fields.tsx:245
+#: src/components/processing-settings-fields.tsx:247
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "偵測到支援 CUDA 的 NVIDIA GPU 時預設啟用；如果執行失敗，會改用 CPU。"
 
@@ -998,14 +1013,14 @@ msgstr "偵測到支援 CUDA 的 NVIDIA GPU 時預設啟用；如果執行失敗
 msgid "Error"
 msgstr "錯誤"
 
-#: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:213
+#: src/components/task-detail.tsx:149
+#: src/components/task-list.tsx:221
 msgid "Estimated remaining"
 msgstr "預估剩餘時間"
 
-#: src/lib/pipeline.ts:1743
-#: src/lib/pipeline.ts:1750
+#: src/lib/pipeline.ts:1745
 #: src/lib/pipeline.ts:1752
+#: src/lib/pipeline.ts:1754
 msgid "Estimating"
 msgstr "估算中"
 
@@ -1046,22 +1061,22 @@ msgstr "已發現現有遮罩"
 msgid "Extracting image features"
 msgstr "正在擷取影像特徵"
 
-#: src/lib/pipeline.ts:771
-#: src/lib/pipeline.ts:780
+#: src/lib/pipeline.ts:773
+#: src/lib/pipeline.ts:782
 msgid "Extraction I/O error: "
 msgstr "擷取 I/O 錯誤： "
 
-#: src/lib/pipeline.ts:770
-#: src/lib/pipeline.ts:779
+#: src/lib/pipeline.ts:772
+#: src/lib/pipeline.ts:781
 msgid "Extraction image error: "
 msgstr "擷取影像錯誤： "
 
-#: src/lib/pipeline.ts:1718
+#: src/lib/pipeline.ts:1720
 msgid "Failed"
 msgstr "失敗"
 
 #. Short failed status label.
-#: src/lib/pipeline.ts:885
+#: src/lib/pipeline.ts:887
 msgctxt "pipeline phase status"
 msgid "Failed"
 msgstr "失敗"
@@ -1074,7 +1089,7 @@ msgstr "建立任務失敗；請檢查執行環境訊息"
 msgid "Failed to open project"
 msgstr "開啟專案失敗"
 
-#: src/lib/pipeline.ts:726
+#: src/lib/pipeline.ts:727
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "讀取 FFmpeg rawvideo 失敗：{error}"
 
@@ -1083,7 +1098,7 @@ msgid "Failed to save task changes; check the runtime message"
 msgstr "儲存任務變更失敗；請檢查執行環境訊息"
 
 #. Short label for extracting image features.
-#: src/lib/pipeline.ts:879
+#: src/lib/pipeline.ts:881
 msgctxt "pipeline phase"
 msgid "Feature extraction"
 msgstr "特徵擷取"
@@ -1092,17 +1107,17 @@ msgstr "特徵擷取"
 msgid "FFmpeg and ffprobe are both available"
 msgstr "FFmpeg 與 ffprobe 均可用"
 
-#: src/lib/pipeline.ts:728
-#: src/lib/pipeline.ts:760
+#: src/lib/pipeline.ts:729
+#: src/lib/pipeline.ts:761
 msgid "FFmpeg candidate frames fell back safely to CPU software decoding"
 msgstr "FFmpeg 候選影格已安全改用 CPU 軟體解碼"
 
-#: src/lib/pipeline.ts:724
+#: src/lib/pipeline.ts:725
 msgid "FFmpeg did not produce any in-memory candidate frames"
 msgstr "FFmpeg 未產生任何記憶體中的候選影格"
 
 #. PTS is the presentation timestamp; candidate FPS is the frame-rate estimate used when FFmpeg omits PTS.
-#: src/lib/pipeline.ts:662
+#: src/lib/pipeline.ts:663
 msgctxt "backend progress message"
 msgid "FFmpeg had {count} candidate frames without PTS; estimated timing using candidate FPS"
 msgstr "FFmpeg 有 {count} 個候選影格缺少 PTS；已使用候選 FPS 估算時間"
@@ -1115,7 +1130,7 @@ msgstr "未啟用 FFmpeg 硬體加速"
 msgid "FFmpeg hardware acceleration supported"
 msgstr "支援 FFmpeg 硬體加速"
 
-#: src/lib/pipeline.ts:727
+#: src/lib/pipeline.ts:728
 msgid "FFmpeg hardware decoding failed; retrying with CPU software decoding: {error}"
 msgstr "FFmpeg 硬體解碼失敗；正在改用 CPU 軟體解碼重試：{error}"
 
@@ -1124,11 +1139,11 @@ msgstr "FFmpeg 硬體解碼失敗；正在改用 CPU 軟體解碼重試：{error
 msgid "FFmpeg is not installed"
 msgstr "未安裝 FFmpeg"
 
-#: src/lib/pipeline.ts:729
+#: src/lib/pipeline.ts:730
 msgid "FFmpeg produced {actual} synchronized frames, but {expected} were expected"
 msgstr "FFmpeg 產生了 {actual} 個同步影格，但預期為 {expected} 個"
 
-#: src/lib/pipeline.ts:725
+#: src/lib/pipeline.ts:726
 msgid "FFmpeg rawvideo ended mid-frame: received {received}/{expected} bytes"
 msgstr "FFmpeg rawvideo 在影格中途結束：已收到 {received}/{expected} 位元組"
 
@@ -1192,20 +1207,20 @@ msgid "ffprobe: Not detected"
 msgstr "ffprobe：未偵測到"
 
 #. Short label for the final mapping/reconstruction pass.
-#: src/lib/pipeline.ts:881
+#: src/lib/pipeline.ts:883
 msgctxt "pipeline phase"
 msgid "Final reconstruction"
 msgstr "最終重建"
 
-#: src/lib/pipeline.ts:709
+#: src/lib/pipeline.ts:710
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "首次使用：正在下載 {model} 模型（{percent}%）"
 
-#: src/components/task-editor-dialog.tsx:121
+#: src/components/task-editor-dialog.tsx:144
 msgid "For example: mountain route / 2026-08"
 msgstr "例如：山路 / 2026-08"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "For the official Windows portable build, select bin/COLMAP.exe. Do not select the root COLMAP.bat launcher."
 msgstr "使用官方 Windows 可攜版時，請選擇 bin/COLMAP.exe，不要選擇根目錄的 COLMAP.bat 啟動器。"
 
@@ -1220,7 +1235,7 @@ msgid "Frame extraction"
 msgstr "影格擷取"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:71
+#: src/components/processing-settings-fields.tsx:72
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "影格擷取"
@@ -1237,7 +1252,7 @@ msgstr "影格擷取已取消"
 #. Keep FFmpeg and ffprobe as command-line tool names.
 #: src/lib/pipeline.ts:460
 #: src/lib/pipeline.ts:519
-#: src/lib/pipeline.ts:758
+#: src/lib/pipeline.ts:759
 msgid "Frame extraction requires both system FFmpeg and ffprobe"
 msgstr "影格擷取需要系統 FFmpeg 與 ffprobe"
 
@@ -1245,7 +1260,7 @@ msgstr "影格擷取需要系統 FFmpeg 與 ffprobe"
 msgid "Frame extraction requires FFmpeg and ffprobe"
 msgstr "影格擷取需要 FFmpeg 與 ffprobe"
 
-#: src/lib/pipeline.ts:764
+#: src/lib/pipeline.ts:766
 msgid "Frame extraction will use CPU decoding"
 msgstr "影格擷取將使用 CPU 解碼"
 
@@ -1305,7 +1320,7 @@ msgid "Image feature extraction completed"
 msgstr "影像特徵擷取已完成"
 
 #. Short label for matching images.
-#: src/lib/pipeline.ts:878
+#: src/lib/pipeline.ts:880
 msgctxt "pipeline phase"
 msgid "Image matching"
 msgstr "影像匹配"
@@ -1332,7 +1347,7 @@ msgstr "已找到 IMU 樣本，但融合姿態樣本無法使用。"
 msgid "IMU-assisted orientation may be unavailable"
 msgstr "IMU 輔助方向估計可能無法使用"
 
-#: src/components/task-list.tsx:294
+#: src/components/task-list.tsx:303
 msgid "In progress"
 msgstr "進行中"
 
@@ -1341,35 +1356,35 @@ msgstr "進行中"
 #~ msgstr "進行中與已完成"
 
 #. Insta360 source media files.
-#: src/components/task-list.tsx:320
+#: src/components/task-list.tsx:335
 msgid "Insta360 source files"
 msgstr "Insta360 來源檔案"
 
-#: src/components/settings-sheet.tsx:108
+#: src/components/settings-sheet.tsx:109
 msgid "Interface language"
 msgstr "介面語言"
 
-#: src/components/settings-sheet.tsx:131
+#: src/components/settings-sheet.tsx:132
 msgid "Interface theme"
 msgstr "介面主題"
 
 #. Select the visual theme of the interface.
-#: src/components/settings-sheet.tsx:119
+#: src/components/settings-sheet.tsx:120
 msgctxt "theme setting"
 msgid "Interface theme"
 msgstr "介面主題"
 
-#: src/lib/pipeline.ts:769
-#: src/lib/pipeline.ts:778
+#: src/lib/pipeline.ts:771
+#: src/lib/pipeline.ts:780
 msgid "Invalid extraction input: "
 msgstr "無效的擷取輸入： "
 
-#: src/components/processing-settings-fields.tsx:162
+#: src/components/processing-settings-fields.tsx:164
 msgid "Invalid LUT file format"
 msgstr "無效的 LUT 檔案格式"
 
-#: src/lib/pipeline.ts:772
-#: src/lib/pipeline.ts:781
+#: src/lib/pipeline.ts:774
+#: src/lib/pipeline.ts:783
 msgid "Invalid mask input: "
 msgstr "無效的遮罩輸入： "
 
@@ -1383,30 +1398,34 @@ msgstr "無效的遮罩輸入： "
 msgid "Keep at least one source"
 msgstr "至少保留一個來源"
 
+#: src/components/cancel-stage-dialog.tsx:30
+msgid "Keep running"
+msgstr "繼續執行"
+
 #. Select the language used by the interface.
-#: src/components/settings-sheet.tsx:102
+#: src/components/settings-sheet.tsx:103
 msgctxt "language setting"
 msgid "Language"
 msgstr "語言"
 
 #. placeholder {0}: formatDoctorCheckedAt(doctor.checkedAt)
-#: src/components/settings-sheet.tsx:141
+#: src/components/settings-sheet.tsx:142
 msgid "Last checked: {0}"
 msgstr "上次檢查：{0}"
 
-#: src/components/settings-sheet.tsx:166
+#: src/components/settings-sheet.tsx:173
 msgid "Leave blank to detect from PATH"
 msgstr "留白以從 PATH 偵測"
 
-#: src/components/processing-settings-fields.tsx:151
+#: src/components/processing-settings-fields.tsx:153
 msgid "Leave blank to use the official D-Log M → Rec.709 LUT"
 msgstr "留白以使用官方 D-Log M → Rec.709 LUT"
 
-#: src/lib/pipeline.ts:898
+#: src/lib/pipeline.ts:900
 msgid "Less than 1 second"
 msgstr "少於 1 秒"
 
-#: src/components/settings-sheet.tsx:134
+#: src/components/settings-sheet.tsx:135
 msgid "Light"
 msgstr "淺色"
 
@@ -1415,7 +1434,7 @@ msgstr "淺色"
 #~ msgid "Loaded resumable project {0}"
 #~ msgstr "已載入可繼續的專案 {0}"
 
-#: src/lib/pipeline.ts:743
+#: src/lib/pipeline.ts:744
 msgid "Loaded resumable project {name}"
 msgstr "已載入可繼續的專案 {name}"
 
@@ -1424,7 +1443,7 @@ msgstr "已載入可繼續的專案 {name}"
 #~ msgid "Loaded unfinished project with {0} warnings"
 #~ msgstr "已載入含 {0} 個警告的未完成專案"
 
-#: src/lib/pipeline.ts:744
+#: src/lib/pipeline.ts:745
 msgid "Loaded unfinished project with {count} warnings"
 msgstr "已載入含 {count} 個警告的未完成專案"
 
@@ -1433,7 +1452,7 @@ msgstr "已載入含 {count} 個警告的未完成專案"
 #~ msgid "Loaded unfinished project: {0}"
 #~ msgstr "已載入未完成的專案：{0}"
 
-#: src/lib/pipeline.ts:745
+#: src/lib/pipeline.ts:746
 msgid "Loaded unfinished project: {name}"
 msgstr "已載入未完成的專案：{name}"
 
@@ -1445,39 +1464,43 @@ msgid "Loading YOLO11/SkySeg models"
 msgstr "正在載入 YOLO11/SkySeg 模型"
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:127
+#: src/components/processing-settings-fields.tsx:129
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT 設定"
 
-#: src/lib/pipeline.ts:776
-#: src/lib/pipeline.ts:785
+#: src/components/settings-sheet.tsx:99
+msgid "Manage language, appearance, and runtime diagnostics."
+msgstr "管理語言、外觀與執行環境診斷。"
+
+#: src/lib/pipeline.ts:778
+#: src/lib/pipeline.ts:787
 msgid "Mask I/O error: "
 msgstr "遮罩 I/O 錯誤： "
 
-#: src/lib/pipeline.ts:775
-#: src/lib/pipeline.ts:784
+#: src/lib/pipeline.ts:777
+#: src/lib/pipeline.ts:786
 msgid "Mask image error: "
 msgstr "遮罩影像錯誤： "
 
 #. Short label for running mask inference.
-#: src/lib/pipeline.ts:877
+#: src/lib/pipeline.ts:879
 msgctxt "pipeline phase"
 msgid "Mask inference"
 msgstr "遮罩推論"
 
-#: src/lib/pipeline.ts:774
-#: src/lib/pipeline.ts:783
+#: src/lib/pipeline.ts:776
+#: src/lib/pipeline.ts:785
 msgid "Mask inference error: "
 msgstr "遮罩推論錯誤："
 
-#: src/lib/pipeline.ts:773
-#: src/lib/pipeline.ts:782
+#: src/lib/pipeline.ts:775
+#: src/lib/pipeline.ts:784
 msgid "Mask model error: "
 msgstr "遮罩模型錯誤："
 
-#: src/lib/pipeline.ts:777
-#: src/lib/pipeline.ts:786
+#: src/lib/pipeline.ts:779
+#: src/lib/pipeline.ts:788
 msgid "Mask operation cancelled"
 msgstr "遮罩作業已取消"
 
@@ -1498,7 +1521,7 @@ msgid "Masking"
 msgstr "遮罩處理"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:170
+#: src/components/processing-settings-fields.tsx:172
 msgctxt "settings section"
 msgid "Masking"
 msgstr "遮罩處理"
@@ -1524,7 +1547,7 @@ msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "遮罩處理已完成"
 
-#: src/components/processing-settings-fields.tsx:224
+#: src/components/processing-settings-fields.tsx:226
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "已停用遮罩處理；影格擷取後開始對齊。"
 
@@ -1562,8 +1585,8 @@ msgstr "遮罩處理：執行中"
 msgid "Matching lens file is missing"
 msgstr "缺少配對的鏡頭檔案"
 
-#: src/components/app-chrome.tsx:70
-#: src/components/app-chrome.tsx:71
+#: src/components/app-chrome.tsx:72
+#: src/components/app-chrome.tsx:73
 msgid "Maximize or restore window"
 msgstr "最大化或還原視窗"
 
@@ -1575,16 +1598,16 @@ msgstr "最大化或還原視窗"
 #~ msgid "Memory"
 #~ msgstr "記憶體"
 
-#: src/components/app-chrome.tsx:61
-#: src/components/app-chrome.tsx:62
+#: src/components/app-chrome.tsx:63
+#: src/components/app-chrome.tsx:64
 msgid "Minimize window"
 msgstr "最小化視窗"
 
-#: src/components/settings-sheet.tsx:151
+#: src/components/settings-sheet.tsx:158
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "缺少必要工具會阻擋部分階段。請先處理下方標示為「需要注意」的項目。"
 
-#: src/lib/pipeline.ts:710
+#: src/lib/pipeline.ts:711
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "模型已由 {provider} 載入；已停用 CPU 推論備援"
 
@@ -1610,8 +1633,8 @@ msgstr "多來源全景相機組對齊"
 msgid "Native dual-fisheye camera-rig alignment is available"
 msgstr "原生雙魚眼相機組對齊可用"
 
-#: src/components/settings-sheet.tsx:169
-#: src/lib/pipeline.ts:1610
+#: src/components/settings-sheet.tsx:176
+#: src/lib/pipeline.ts:1612
 msgid "Needs attention"
 msgstr "需要注意"
 
@@ -1621,14 +1644,14 @@ msgstr "新增重建任務"
 
 #. Dialog for creating a new reconstruction task.
 #. Dialog for creating a new reconstruction task.
-#: src/components/task-editor-dialog.tsx:104
-#: src/components/task-editor-dialog.tsx:109
+#: src/components/task-editor-dialog.tsx:126
+#: src/components/task-editor-dialog.tsx:131
 msgctxt "new task dialog"
 msgid "New reconstruction task"
 msgstr "新增重建任務"
 
 #. Create a new reconstruction task.
-#: src/components/app-chrome.tsx:105
+#: src/components/app-chrome.tsx:107
 msgctxt "task action"
 msgid "New reconstruction task"
 msgstr "新增重建任務"
@@ -1638,7 +1661,7 @@ msgstr "新增重建任務"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "新任務會依序執行影格擷取、遮罩處理與對齊；每個階段仍可個別取消或重試。"
 
-#: src/components/task-list.tsx:363
+#: src/components/task-list.tsx:397
 msgid "No completed tasks yet"
 msgstr "尚無已完成的任務"
 
@@ -1652,17 +1675,17 @@ msgstr "找不到可編輯的專案資訊"
 msgid "No loadable project information was found"
 msgstr "找不到可載入的專案資訊"
 
-#: src/lib/pipeline.ts:763
+#: src/lib/pipeline.ts:765
 msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "未偵測到 COLMAP 可使用的 NVIDIA GPU；將使用 CPU"
 
 #. Empty task list heading.
-#: src/components/task-list.tsx:310
+#: src/components/task-list.tsx:325
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "尚無任務"
 
-#: src/components/processing-settings-fields.tsx:245
+#: src/components/processing-settings-fields.tsx:247
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "未偵測到可用的 COLMAP CUDA 加速，因此將使用 CPU。"
 
@@ -1683,7 +1706,7 @@ msgstr "找不到可用的 IMU 或融合姿態樣本。"
 msgid "No video stream found"
 msgstr "找不到影片串流"
 
-#: src/lib/pipeline.ts:1611
+#: src/lib/pipeline.ts:1613
 msgid "Not checked"
 msgstr "未檢查"
 
@@ -1695,8 +1718,8 @@ msgstr "尚未檢查"
 msgid "Not detected"
 msgstr "未偵測到"
 
-#: src/lib/pipeline.ts:908
 #: src/lib/pipeline.ts:910
+#: src/lib/pipeline.ts:912
 msgid "Not recorded yet"
 msgstr "尚未記錄"
 
@@ -1704,8 +1727,8 @@ msgstr "尚未記錄"
 msgid "Not reported"
 msgstr "未回報"
 
-#: src/components/task-detail.tsx:146
-#: src/components/task-list.tsx:211
+#: src/components/task-detail.tsx:147
+#: src/components/task-list.tsx:219
 msgid "Not reported yet"
 msgstr "尚未回報"
 
@@ -1713,11 +1736,11 @@ msgstr "尚未回報"
 msgid "Not run yet"
 msgstr "尚未執行"
 
-#: src/components/task-detail.tsx:150
+#: src/components/task-detail.tsx:151
 msgid "Not specified"
 msgstr "未指定"
 
-#: src/components/task-list.tsx:212
+#: src/components/task-list.tsx:220
 msgid "Not started"
 msgstr "尚未開始"
 
@@ -1725,23 +1748,23 @@ msgstr "尚未開始"
 #~ msgid "Not started; can be edited or removed."
 #~ msgstr "尚未開始；可編輯或移除。"
 
-#: src/lib/pipeline.ts:896
+#: src/lib/pipeline.ts:898
 msgid "Not timed yet"
 msgstr "尚未計時"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:190
+#: src/components/processing-settings-fields.tsx:192
 msgid "Objects to mask (multiple selection)"
 msgstr "要遮罩的物件（可多選）"
 
-#: src/components/task-editor-dialog.tsx:175
+#: src/components/task-editor-dialog.tsx:206
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "只會移除任務與佇列狀態；不會刪除現有輸出資料夾。"
 
 #. Open an existing resumable project.
 #. Open an existing resumable project.
-#: src/components/app-chrome.tsx:106
-#: src/components/task-list.tsx:314
+#: src/components/app-chrome.tsx:108
+#: src/components/task-list.tsx:329
 msgctxt "project action"
 msgid "Open project"
 msgstr "開啟專案"
@@ -1755,7 +1778,7 @@ msgstr "開啟專案"
 #~ msgid "Opened {0}"
 #~ msgstr "已開啟 {0}"
 
-#: src/lib/pipeline.ts:746
+#: src/lib/pipeline.ts:747
 msgid "Opened {name}"
 msgstr "已開啟 {name}"
 
@@ -1764,7 +1787,7 @@ msgid "Orientation metadata is unavailable"
 msgstr "方向中繼資料無法使用"
 
 #. DJI Osmo 360 source media files.
-#: src/components/task-list.tsx:319
+#: src/components/task-list.tsx:334
 msgid "Osmo 360 source files"
 msgstr "Osmo 360 來源檔案"
 
@@ -1773,40 +1796,42 @@ msgstr "Osmo 360 來源檔案"
 #~ msgstr "OSV / 雙魚眼影片"
 
 #. Output folder or artifact location.
-#: src/components/task-detail.tsx:150
+#: src/components/task-detail.tsx:151
 msgctxt "output metric"
 msgid "Output"
 msgstr "輸出"
 
 #. Folder where project metadata and reconstruction output are saved.
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgctxt "output destination"
 msgid "Output folder"
 msgstr "輸出資料夾"
 
-#: src/components/task-detail.tsx:235
-#: src/components/task-list.tsx:153
+#: src/components/task-detail.tsx:238
+#: src/components/task-list.tsx:154
 msgid "Output not specified"
 msgstr "未指定輸出"
 
 #. Overall progress weighted by observed stage durations.
-#: src/components/task-list.tsx:199
+#. Overall progress weighted by observed stage durations.
+#: src/components/task-list.tsx:200
+#: src/components/task-list.tsx:205
 msgid "Overall progress"
 msgstr "整體進度"
 
-#: src/lib/pipeline.ts:712
+#: src/lib/pipeline.ts:713
 msgid "Pairing block {current} / {total} completed"
 msgstr "配對區塊 {current} / {total} 已完成"
 
-#: src/App.tsx:407
+#: src/App.tsx:413
 msgid "Panoramic source video"
 msgstr "全景來源影片"
 
-#: src/lib/pipeline.ts:1720
+#: src/lib/pipeline.ts:1722
 msgid "Pending"
 msgstr "待處理"
 
-#: src/components/settings-sheet.tsx:155
+#: src/components/settings-sheet.tsx:162
 msgid "Performance will be affected"
 msgstr "效能將受影響"
 
@@ -1833,12 +1858,12 @@ msgstr "平台尚未檢查"
 msgid "Possible impact"
 msgstr "可能的影響"
 
-#: src/components/task-list.tsx:149
+#: src/components/task-list.tsx:150
 msgid "Preparing"
 msgstr "準備中"
 
 #. Short label for the preparation phase.
-#: src/lib/pipeline.ts:871
+#: src/lib/pipeline.ts:873
 msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "準備中"
@@ -1854,11 +1879,11 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "準備工作"
 
-#: src/components/task-list.tsx:150
+#: src/components/task-list.tsx:151
 msgid "Preview"
 msgstr "預覽"
 
-#: src/components/source-media.tsx:214
+#: src/components/source-media.tsx:217
 msgid "Preview {alt}"
 msgstr "預覽 {alt}"
 
@@ -1867,7 +1892,7 @@ msgstr "預覽 {alt}"
 #~ msgid "Preview task added: {0}"
 #~ msgstr "已新增預覽任務：{0}"
 
-#: src/lib/pipeline.ts:748
+#: src/lib/pipeline.ts:749
 msgid "Preview task added: {name}"
 msgstr "已新增預覽任務：{name}"
 
@@ -1875,32 +1900,32 @@ msgstr "已新增預覽任務：{name}"
 msgid "Preview task updated"
 msgstr "預覽任務已更新"
 
-#: src/components/task-detail.tsx:146
-#: src/components/task-list.tsx:211
+#: src/components/task-detail.tsx:147
+#: src/components/task-list.tsx:219
 msgid "Processed"
 msgstr "已處理"
 
 #: src/lib/pipeline.ts:571
-#: src/lib/pipeline.ts:890
+#: src/lib/pipeline.ts:892
 msgid "Processing"
 msgstr "處理中"
 
-#: src/lib/pipeline.ts:713
+#: src/lib/pipeline.ts:714
 msgid "Processing pairing block {current} / {total}"
 msgstr "正在處理配對區塊 {current} / {total}"
 
-#: src/components/task-detail-panel.tsx:205
-#: src/components/task-detail.tsx:174
+#: src/components/task-detail-panel.tsx:257
 #: src/components/task-detail.tsx:175
+#: src/components/task-detail.tsx:176
 msgid "Processing records"
 msgstr "處理記錄"
 
-#: src/components/processing-settings-fields.tsx:68
+#: src/components/processing-settings-fields.tsx:69
 msgid "Processing settings"
 msgstr "處理設定"
 
 #. A project folder containing a resumable reconstruction.
-#: src/components/task-list.tsx:321
+#: src/components/task-list.tsx:336
 msgid "Project folder"
 msgstr "專案資料夾"
 
@@ -1913,7 +1938,7 @@ msgid "Queued task updated"
 msgstr "已更新佇列任務"
 
 #. Estimated processing throughput, not network speed.
-#: src/components/task-detail.tsx:149
+#: src/components/task-detail.tsx:150
 msgid "Rate (estimated)"
 msgstr "速率（預估）"
 
@@ -1921,7 +1946,7 @@ msgstr "速率（預估）"
 msgid "Reconstruction acceleration may be unavailable"
 msgstr "重建加速可能無法使用"
 
-#: src/components/task-list.tsx:217
+#: src/components/task-list.tsx:225
 msgid "Reconstruction pipeline"
 msgstr "重建管線"
 
@@ -1935,41 +1960,41 @@ msgid "Recovering project information"
 msgstr "正在復原專案資訊"
 
 #. Remove a queued task without deleting its output folder.
-#: src/components/task-list.tsx:172
+#: src/components/task-list.tsx:173
 msgctxt "task action"
 msgid "Remove"
 msgstr "移除"
 
 #. placeholder {0}: source.label
-#: src/components/task-editor-dialog.tsx:136
+#: src/components/task-editor-dialog.tsx:163
 msgid "Remove {0}"
 msgstr "移除 {0}"
 
 #. Remove the queued task, while keeping its output folder.
-#: src/components/task-editor-dialog.tsx:176
+#: src/components/task-editor-dialog.tsx:207
 msgctxt "task action"
 msgid "Remove task"
 msgstr "移除任務"
 
 #. Confirmation dialog for removing a queued task.
-#: src/components/task-editor-dialog.tsx:175
+#: src/components/task-editor-dialog.tsx:206
 msgctxt "remove task confirmation"
 msgid "Remove task from queue?"
 msgstr "要從佇列移除任務嗎？"
 
-#: src/components/settings-sheet.tsx:150
+#: src/components/settings-sheet.tsx:157
 msgid "Required capabilities need attention"
 msgstr "必要能力需要注意"
 
-#: src/lib/pipeline.ts:1709
+#: src/lib/pipeline.ts:1711
 msgid "Resume"
 msgstr "繼續"
 
-#: src/components/task-list.tsx:321
+#: src/components/task-list.tsx:336
 msgid "Resume an unfinished reconstruction task"
 msgstr "繼續未完成的重建任務"
 
-#: src/lib/pipeline.ts:1710
+#: src/lib/pipeline.ts:1712
 msgid "Retry"
 msgstr "重試"
 
@@ -1977,11 +2002,11 @@ msgstr "重試"
 msgid "Rotation calibration is available, but acceleration samples did not pass the ground-direction quality check."
 msgstr "旋轉校正可用，但加速度樣本未通過地面方向品質檢查。"
 
-#: src/lib/pipeline.ts:1712
+#: src/lib/pipeline.ts:1714
 msgid "Run"
 msgstr "執行"
 
-#: src/lib/pipeline.ts:1711
+#: src/lib/pipeline.ts:1713
 msgid "Run again"
 msgstr "再次執行"
 
@@ -1989,11 +2014,16 @@ msgstr "再次執行"
 msgid "Run an environment check to confirm available capabilities"
 msgstr "執行環境檢查以確認可用能力"
 
-#: src/components/settings-sheet.tsx:161
+#: src/components/settings-sheet.tsx:145
+msgid "Run check"
+msgstr "執行檢查"
+
+#: src/components/settings-sheet.tsx:153
+#: src/components/settings-sheet.tsx:168
 msgid "Run the environment check to confirm whether CUDA, hardware decoding, or the CPU will be used."
 msgstr "執行環境檢查，以確認將使用 CUDA、硬體解碼或 CPU。"
 
-#: src/lib/pipeline.ts:1716
+#: src/lib/pipeline.ts:1718
 msgid "Running"
 msgstr "執行中"
 
@@ -2004,42 +2034,43 @@ msgstr "執行中"
 msgid "Running YOLO11/SkySeg inference"
 msgstr "正在執行 YOLO11/SkySeg 推論"
 
-#: src/components/settings-sheet.tsx:141
+#: src/components/settings-sheet.tsx:142
+#: src/components/settings-sheet.tsx:152
 msgid "Runtime environment"
 msgstr "執行環境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:121
+#: src/components/processing-settings-fields.tsx:123
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "以基準影格率的倍數取樣候選影格，然後選取較清晰的影格。"
 
 #. Save changes to a queued task.
-#: src/components/task-editor-dialog.tsx:158
+#: src/components/task-editor-dialog.tsx:187
 msgctxt "task action"
 msgid "Save changes"
 msgstr "儲存變更"
 
-#: src/components/task-editor-dialog.tsx:140
+#: src/components/task-editor-dialog.tsx:167
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
 msgstr "儲存新的任務名稱也會重新命名輸出資料夾；不支援的檔名字元會變成連字號。"
 
 #. Both saving the task and rolling the output folder back failed; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
 #. placeholder {1}: localiseTechnicalErrorDetail(rollbackError)
-#: src/lib/pipeline.ts:797
+#: src/lib/pipeline.ts:799
 msgctxt "project edit error"
 msgid "Saving task changes failed, and the output folder could not be restored: {0}; rollback error: {1}"
 msgstr "儲存任務變更失敗，且無法還原輸出資料夾：{0}；回復錯誤：{1}"
 
 #. The rename/save operation failed, but the output folder was rolled back successfully.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:792
+#: src/lib/pipeline.ts:794
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "儲存任務變更失敗；輸出資料夾已還原：{0}"
 
 #. Short label for a scan phase.
-#: src/lib/pipeline.ts:872
+#: src/lib/pipeline.ts:874
 msgctxt "pipeline phase"
 msgid "Scanning"
 msgstr "掃描中"
@@ -2058,19 +2089,19 @@ msgstr "正在掃描雙魚眼候選影格"
 msgid "Scanning native dual-fisheye images"
 msgstr "正在掃描原生雙魚眼影像"
 
-#: src/lib/pipeline.ts:661
-#: src/lib/pipeline.ts:708
+#: src/lib/pipeline.ts:662
+#: src/lib/pipeline.ts:709
 msgid "Scoring {count} paired candidates"
 msgstr "正在評分 {count} 個配對候選項目"
 
 #. Short label for scoring candidate frames.
-#: src/lib/pipeline.ts:873
+#: src/lib/pipeline.ts:875
 msgctxt "pipeline phase"
 msgid "Scoring candidates"
 msgstr "評分候選項目"
 
 #. Short label for candidate scoring in memory.
-#: src/lib/pipeline.ts:874
+#: src/lib/pipeline.ts:876
 msgctxt "pipeline phase"
 msgid "Scoring in-memory candidates"
 msgstr "評分記憶體中的候選項目"
@@ -2079,12 +2110,13 @@ msgstr "評分記憶體中的候選項目"
 #~ msgid "Select at least one OSV or dual-fisheye source first"
 #~ msgstr "請先至少選取一個 OSV 或雙魚眼來源"
 
+#: src/components/task-editor-dialog.tsx:105
 #: src/lib/pipeline.ts:632
 msgid "Select at least one panoramic source first"
 msgstr "請先至少選取一個全景來源"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:250
+#: src/components/processing-settings-fields.tsx:252
 msgid "Select GPU"
 msgstr "選取 GPU"
 
@@ -2111,13 +2143,13 @@ msgstr "所選影格對已存在；已略過"
 msgid "Selected frame pair committed"
 msgstr "已寫入所選影格對"
 
-#: src/components/app-chrome.tsx:110
-#: src/components/settings-sheet.tsx:98
+#: src/components/app-chrome.tsx:112
+#: src/components/settings-sheet.tsx:99
 msgid "Settings"
 msgstr "設定"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:97
+#: src/components/processing-settings-fields.tsx:98
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "清晰度篩選"
@@ -2164,28 +2196,28 @@ msgstr "SIFT 匹配：不支援"
 #~ msgstr "簡體中文"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:220
+#: src/components/processing-settings-fields.tsx:222
 msgid "Sky filtering"
 msgstr "天空篩選"
 
-#: src/components/settings-sheet.tsx:88
+#: src/components/settings-sheet.tsx:89
 #: src/lib/pipeline.ts:614
 msgid "Some CUDA or hardware acceleration capabilities are unavailable; affected stages will use the CPU."
 msgstr "部分 CUDA 或硬體加速能力無法使用；受影響的階段將使用 CPU。"
 
-#: src/lib/pipeline.ts:730
+#: src/lib/pipeline.ts:731
 msgid "Source {source} color processing: {warning}"
 msgstr "來源 {source} 色彩處理：{warning}"
 
-#: src/lib/pipeline.ts:733
+#: src/lib/pipeline.ts:734
 msgid "Source {source} completed scoring {count} candidate pairs"
 msgstr "來源 {source} 已完成 {count} 個候選影格對的評分"
 
-#: src/lib/pipeline.ts:734
+#: src/lib/pipeline.ts:735
 msgid "Source {source} dynamic keyframe pruning kept {kept} / {total} base-FPS candidates ({removed} removed)"
 msgstr "來源 {source} 動態關鍵影格剪枝保留 {kept} / {total} 個基準 FPS 候選影格（移除 {removed} 個）"
 
-#: src/lib/pipeline.ts:731
+#: src/lib/pipeline.ts:732
 msgid "Source {source} reused the in-memory scoring checkpoint"
 msgstr "來源 {source} 已重用記憶體中的評分檢查點"
 
@@ -2215,6 +2247,7 @@ msgid "Source file was not found"
 msgstr "找不到來源檔案"
 
 #: src/components/source-media.tsx:115
+#: src/components/task-editor-dialog.tsx:107
 msgid "Source inspection issues"
 msgstr "來源檢查問題"
 
@@ -2227,13 +2260,13 @@ msgid "Source metadata is unavailable"
 msgstr "來源中繼資料無法使用"
 
 #. Input media for a reconstruction task.
-#: src/components/task-editor-dialog.tsx:123
+#: src/components/task-editor-dialog.tsx:146
 msgctxt "source input"
 msgid "Sources"
 msgstr "來源"
 
 #. Source media included in this reconstruction task.
-#: src/components/task-detail.tsx:155
+#: src/components/task-detail.tsx:156
 msgctxt "source section"
 msgid "Sources"
 msgstr "來源"
@@ -2247,7 +2280,7 @@ msgstr "來源不能位於輸出資料夾內；請先移到其他位置"
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "已找到來源；你可以建立新的重建任務"
 
-#: src/components/processing-settings-fields.tsx:165
+#: src/components/processing-settings-fields.tsx:167
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "只有需要覆寫官方 LUT 時才指定 .cube 檔案。"
 
@@ -2263,14 +2296,14 @@ msgstr "階段"
 
 #. placeholder {0}: runningIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1038
+#: src/lib/pipeline.ts:1040
 msgid "Stage {0} of {1} · {label}"
 msgstr "第 {0} / {1} 個階段 · {label}"
 
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/components/task-list.tsx:224
+#: src/components/task-list.tsx:233
 msgid "Stage {0} of {1}: {2}"
 msgstr "第 {0} / {1} 個階段：{2}"
 
@@ -2298,12 +2331,12 @@ msgid "Stage started"
 msgstr "階段已開始"
 
 #. Short label for a stage summary.
-#: src/lib/pipeline.ts:886
+#: src/lib/pipeline.ts:888
 msgctxt "pipeline phase"
 msgid "Stage summary"
 msgstr "階段摘要"
 
-#: src/components/settings-sheet.tsx:162
+#: src/components/settings-sheet.tsx:169
 msgid "Stages that fall back to the CPU can still run, but processing may take significantly longer."
 msgstr "改用 CPU 的階段仍可執行，但處理時間可能大幅增加。"
 
@@ -2312,13 +2345,13 @@ msgstr "改用 CPU 的階段仍可執行，但處理時間可能大幅增加。"
 #~ msgstr "已開始的任務會保留其階段與處理記錄。"
 
 #. placeholder {0}: stageLabel(STAGES.find((stage) => stage.key === stageKey))
-#: src/lib/pipeline.ts:1082
+#: src/lib/pipeline.ts:1084
 msgid "Stop {0}"
 msgstr "停止 {0}"
 
 #. placeholder {0}: interruptedIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1043
+#: src/lib/pipeline.ts:1045
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "已停止於第 {0} / {1} 個階段 · {label}"
 
@@ -2331,19 +2364,19 @@ msgstr "已停止於第 {0} / {1} 個階段 · {label}"
 msgid "Supported"
 msgstr "支援"
 
-#: src/components/task-list.tsx:317
+#: src/components/task-list.tsx:332
 msgid "Supported inputs"
 msgstr "支援的輸入"
 
-#: src/components/settings-sheet.tsx:133
+#: src/components/settings-sheet.tsx:134
 msgid "System"
 msgstr "系統"
 
-#: src/lib/pipeline.ts:765
+#: src/lib/pipeline.ts:767
 msgid "System FFmpeg was not found on PATH"
 msgstr "在 PATH 中找不到系統 FFmpeg"
 
-#: src/lib/pipeline.ts:766
+#: src/lib/pipeline.ts:768
 msgid "System ffprobe was not found on PATH"
 msgstr "在 PATH 中找不到系統 ffprobe"
 
@@ -2355,15 +2388,15 @@ msgstr "在 PATH 中找不到系統 ffprobe"
 msgid "Task added to the run queue"
 msgstr "任務已加入執行佇列"
 
-#: src/components/task-editor-dialog.tsx:107
+#: src/components/task-editor-dialog.tsx:129
 msgid "Task creation help"
 msgstr "建立任務說明"
 
-#: src/components/task-editor-dialog.tsx:119
+#: src/components/task-editor-dialog.tsx:142
 msgid "Task information"
 msgstr "任務資訊"
 
-#: src/components/task-editor-dialog.tsx:121
+#: src/components/task-editor-dialog.tsx:144
 msgid "Task name"
 msgstr "任務名稱"
 
@@ -2400,6 +2433,11 @@ msgstr "本機 Windows 執行環境使用此 COLMAP 路徑"
 msgid "The container does not include a video stream that can be processed."
 msgstr "容器中沒有可處理的影片串流。"
 
+#: src/components/cancel-stage-dialog.tsx:27
+msgid "The current stage will stop. Completed output is kept, and you can resume the task later."
+msgstr "目前階段將停止。已完成的輸出會保留，稍後可繼續此任務。"
+
+#: src/components/task-editor-dialog.tsx:109
 #: src/lib/pipeline.ts:633
 msgid "The custom LUT must be a .cube file"
 msgstr "自訂 LUT 必須是 .cube 檔案"
@@ -2452,7 +2490,7 @@ msgid "The project root in the manifest does not match its actual location; rena
 msgstr "資訊清單中的專案根目錄與實際位置不符；已取消重新命名"
 
 #. Queued tasks run automatically in creation order.
-#: src/components/task-list.tsx:191
+#: src/components/task-list.tsx:192
 msgid "The queue runs automatically in creation order"
 msgstr "佇列會依建立順序自動執行"
 
@@ -2461,7 +2499,7 @@ msgstr "佇列會依建立順序自動執行"
 msgid "The selected COLMAP CUDA build was not confirmed; feature extraction and matching will use the CPU, and the Ceres GPU solver cannot be enabled"
 msgstr "未確認所選 COLMAP CUDA 組建；特徵擷取與匹配將使用 CPU，且無法啟用 Ceres GPU 求解器"
 
-#: src/lib/pipeline.ts:762
+#: src/lib/pipeline.ts:764
 msgid "The selected COLMAP did not report CUDA in its version/help banner; CPU feature extraction and matching will be used"
 msgstr "所選 COLMAP 的版本／說明橫幅未回報 CUDA；將使用 CPU 進行特徵擷取與匹配"
 
@@ -2489,12 +2527,9 @@ msgctxt "backend diagnostic warning"
 msgid "The selected COLMAP is missing feature_extractor, matches_importer, mapper, model_converter, or rig_configurator; the dual-camera alignment workflow cannot complete"
 msgstr "所選 COLMAP 缺少 feature_extractor、matches_importer、mapper、model_converter 或 rig_configurator；雙相機對齊工作流程無法完成"
 
-#: src/lib/pipeline.ts:761
+#: src/lib/pipeline.ts:763
 msgid "The selected COLMAP path does not exist or is not a file"
 msgstr "所選 COLMAP 路徑不存在或不是檔案"
-
-msgid "COLMAP.bat cannot be used directly; select bin/COLMAP.exe from the official portable build"
-msgstr "COLMAP.bat 無法直接使用；請選擇官方可攜版的 bin/COLMAP.exe"
 
 #. Diagnostic warning: COLMAP CUDA support does not prove Ceres GPU availability.
 #: src/lib/pipeline.ts:520
@@ -2525,7 +2560,7 @@ msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "所選 global_mapper 未提供 gravity rotation averaging 選項；global-gravity 模式無法使用"
 
-#: src/components/task-detail.tsx:184
+#: src/components/task-detail.tsx:185
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "尚無處理記錄；開始執行後，每個階段及其目前位置會顯示於此。"
 
@@ -2559,7 +2594,7 @@ msgstr "不支援此來源格式"
 msgid "This task has already started"
 msgstr "此任務已經開始"
 
-#: src/components/task-detail.tsx:156
+#: src/components/task-detail.tsx:157
 msgid "This task has no recorded source files."
 msgstr "此任務沒有已記錄的來源檔案。"
 
@@ -2588,19 +2623,23 @@ msgctxt "mask class"
 msgid "Truck"
 msgstr "卡車"
 
+#: src/lib/pipeline.ts:647
+msgid "Unable to cancel the stage; it may still be running"
+msgstr "無法取消此階段；它可能仍在執行。"
+
 #: src/lib/pipeline.ts:628
 msgid "Unable to copy diagnostics; check clipboard permissions"
 msgstr "無法複製診斷資料；請檢查剪貼簿權限"
 
-#: src/lib/pipeline.ts:717
+#: src/lib/pipeline.ts:718
 msgid "Unable to copy frame {source} to {destination}: {error}"
 msgstr "無法將影格 {source} 複製到 {destination}：{error}"
 
-#: src/lib/pipeline.ts:716
+#: src/lib/pipeline.ts:717
 msgid "Unable to create temporary frame {frame}: {error}"
 msgstr "無法建立暫存影格 {frame}：{error}"
 
-#: src/lib/pipeline.ts:719
+#: src/lib/pipeline.ts:720
 msgid "Unable to create temporary metadata {path}: {error}"
 msgstr "無法建立暫存中繼資料 {path}：{error}"
 
@@ -2610,33 +2649,34 @@ msgctxt "project edit error"
 msgid "Unable to determine the project root"
 msgstr "無法判定專案根目錄"
 
-#: src/components/source-media.tsx:194
+#: src/components/source-media.tsx:195
+#: src/components/source-media.tsx:197
 #: src/lib/pipeline.ts:612
 msgid "Unable to generate a first-frame preview"
 msgstr "無法產生第一影格預覽"
 
 #. Project root means the folder containing the loaded project manifest; technical details may be shown only when safe for the active locale.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:787
+#: src/lib/pipeline.ts:789
 msgctxt "project edit error"
 msgid "Unable to inspect the project root: {0}"
 msgstr "無法檢查專案根目錄：{0}"
 
 #. Visual novelty and maximum-gap fallback are keyframe-selection strategies used when telemetry parsing fails.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:702
+#: src/lib/pipeline.ts:703
 msgctxt "backend diagnostic warning"
 msgid "Unable to parse normalized telemetry for source {source}; using visual novelty and the maximum-gap fallback: {0}"
 msgstr "無法解析來源 {source} 的正規化遙測資料；將使用視覺新穎度與最大間隔備援：{0}"
 
 #. Telemetry is normalized camera metadata; disabling the IMU keyframe term leaves visual keyframe selection available.
 #. placeholder {0}: localiseTechnicalErrorDetail(error)
-#: src/lib/pipeline.ts:697
+#: src/lib/pipeline.ts:698
 msgctxt "backend diagnostic warning"
 msgid "Unable to read normalized telemetry for source {source}; the IMU keyframe term was disabled: {0}"
 msgstr "無法讀取來源 {source} 的正規化遙測資料；已停用 IMU 關鍵影格項目：{0}"
 
-#: src/lib/pipeline.ts:715
+#: src/lib/pipeline.ts:716
 msgid "Unable to read source frame {frame}: {error}"
 msgstr "無法讀取來源影格 {frame}：{error}"
 
@@ -2663,15 +2703,15 @@ msgstr "無法自動啟動階段；請檢查執行環境訊息"
 msgid "Unable to start the stage; check the runtime message"
 msgstr "無法啟動階段；請檢查執行環境訊息"
 
-#: src/lib/pipeline.ts:718
+#: src/lib/pipeline.ts:719
 msgid "Unable to sync temporary frame {frame}: {error}"
 msgstr "無法同步暫存影格 {frame}：{error}"
 
-#: src/lib/pipeline.ts:721
+#: src/lib/pipeline.ts:722
 msgid "Unable to sync temporary metadata {path}: {error}"
 msgstr "無法同步暫存中繼資料 {path}：{error}"
 
-#: src/lib/pipeline.ts:720
+#: src/lib/pipeline.ts:721
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "無法寫入暫存中繼資料 {path}：{error}"
 
@@ -2688,7 +2728,7 @@ msgid "Unsupported source format"
 msgstr "不支援的來源格式"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:244
+#: src/components/processing-settings-fields.tsx:246
 msgid "Use CUDA acceleration for alignment"
 msgstr "使用 CUDA 加速進行對齊"
 
@@ -2698,7 +2738,7 @@ msgstr "使用 CUDA 加速進行對齊"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:222
+#: src/components/processing-settings-fields.tsx:224
 msgid "Use SkySeg to generate sky masks."
 msgstr "使用 SkySeg 產生天空遮罩。"
 
@@ -2714,35 +2754,35 @@ msgstr "已確認遮罩存在；已略過"
 #~ msgid "View current work, processing metrics, and complete processing records; unavailable performance monitoring is marked explicitly."
 #~ msgstr "檢視目前工作、處理指標與完整處理記錄；無法使用的效能監控會明確標示。"
 
-#: src/components/settings-sheet.tsx:168
+#: src/components/settings-sheet.tsx:175
 msgid "View details"
 msgstr "檢視詳細資料"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:179
+#: src/components/task-list.tsx:180
 msgid "View details for {0}"
 msgstr "檢視 {0} 的詳細資料"
 
-#: src/lib/pipeline.ts:1084
+#: src/lib/pipeline.ts:1086
 msgid "Wait for {prerequisite} to finish"
 msgstr "等待 {prerequisite} 完成"
 
-#: src/lib/pipeline.ts:1086
+#: src/lib/pipeline.ts:1088
 msgid "Wait for the current stage to finish"
 msgstr "等待目前階段完成"
 
 #. placeholder {0}: action.prerequisite
-#: src/components/task-list.tsx:235
+#: src/components/task-list.tsx:244
 msgid "Waiting for {0} to finish"
 msgstr "等待 {0} 完成"
 
 #. placeholder {0}: nextIndex + 1
 #. placeholder {1}: STAGES.length
-#: src/lib/pipeline.ts:1048
+#: src/lib/pipeline.ts:1050
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "等待第 {0} / {1} 個階段 · {label}"
 
-#: src/components/task-list.tsx:149
+#: src/components/task-list.tsx:150
 msgid "Waiting to run"
 msgstr "等待執行"
 
@@ -2750,23 +2790,24 @@ msgstr "等待執行"
 msgid "Warning"
 msgstr "警告"
 
-#: src/components/task-detail.tsx:161
+#: src/components/task-detail.tsx:162
 msgid "Warnings"
 msgstr "警告"
 
-#: src/components/task-list.tsx:198
+#: src/components/task-list.tsx:203
+#: src/components/task-list.tsx:206
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "以三次觀測到的執行時間加權：影格擷取 22%、遮罩處理 4%、對齊 74%"
 
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:166
 msgid "When no custom file is specified, the runtime uses the official LUT; otherwise it uses this .cube file."
 msgstr "未指定自訂檔案時，執行環境會使用官方 LUT；否則會使用此 .cube 檔案。"
 
-#: src/components/app-chrome.tsx:57
+#: src/components/app-chrome.tsx:59
 msgid "Window controls"
 msgstr "視窗控制項"
 
-#: src/components/task-detail-panel.tsx:205
+#: src/components/task-detail-panel.tsx:257
 msgid "Work summary"
 msgstr "工作摘要"
 
@@ -2781,6 +2822,6 @@ msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO 與天空篩選已停用；已略過遮罩處理"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:185
+#: src/components/processing-settings-fields.tsx:187
 msgid "YOLO object filtering"
 msgstr "YOLO 物件篩選"
