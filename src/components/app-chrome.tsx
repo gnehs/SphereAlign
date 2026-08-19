@@ -104,12 +104,12 @@ export function AppHeader({ onNewTask, onOpenProject, onOpenSettings }: AppHeade
       <div className="flex min-h-9 w-full shrink-0 items-center self-stretch" data-tauri-drag-region={IS_TAURI_RUNTIME ? "" : undefined}>
         <h1 className="shrink-0 text-base font-semibold tracking-tight text-foreground">SphereAlign</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" onClick={onNewTask}><Plus data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></span></Button>
-          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></span></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0 max-[760px]:has-data-[icon=inline-start]:pl-0" size="lg" onClick={onNewTask}><Plus data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="task action" comment="Create a new reconstruction task.">New reconstruction task</Trans></span></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0 max-[760px]:has-data-[icon=inline-start]:pl-0" size="lg" variant="outline" onClick={() => void onOpenProject()}><FolderOpen data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans context="project action" comment="Open an existing resumable project.">Open project</Trans></span></Button>
           <div className="mx-1 flex h-5">
             <Separator orientation="vertical" />
           </div>
-          <Button className="max-[760px]:size-8 max-[760px]:px-0" size="sm" variant="outline" onClick={onOpenSettings}><Settings2 data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans>Settings</Trans></span></Button>
+          <Button className="max-[760px]:size-8 max-[760px]:px-0 max-[760px]:has-data-[icon=inline-start]:pl-0" size="lg" variant="outline" onClick={onOpenSettings}><Settings2 data-icon="inline-start" /><span className="max-[760px]:sr-only"><Trans>Settings</Trans></span></Button>
         </div>
         <WindowsWindowControls />
       </div>
