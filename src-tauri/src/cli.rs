@@ -20,6 +20,8 @@ struct AbcArgs {
     gpu_index: String,
     variants: Vec<String>,
     profile_override: Option<String>,
+    feature_pipeline: String,
+    model_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,7 +73,7 @@ pub fn run(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: spherealign-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned]".to_owned()
+    "Usage: spherealign-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned] [--feature-pipeline sift|aliked-n16rot-lightglue|aliked-n32-lightglue] [--model-dir <directory>]".to_owned()
 }
 
 fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
@@ -81,6 +83,8 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
     let mut gpu_index = "0".to_owned();
     let mut variants = vec!["A".to_owned(), "B".to_owned(), "C".to_owned()];
     let mut profile_override = None;
+    let mut feature_pipeline = "sift".to_owned();
+    let mut model_dir = None;
     let mut index = 0;
     while index < args.len() {
         let key = &args[index];
@@ -113,6 +117,17 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
                 }
                 profile_override = Some(profile);
             }
+            "--feature-pipeline" => {
+                let pipeline = value.trim().to_ascii_lowercase();
+                if !matches!(
+                    pipeline.as_str(),
+                    "sift" | "aliked-n16rot-lightglue" | "aliked-n32-lightglue"
+                ) {
+                    return Err("--feature-pipeline must be sift, aliked-n16rot-lightglue, or aliked-n32-lightglue".to_owned());
+                }
+                feature_pipeline = pipeline;
+            }
+            "--model-dir" => model_dir = Some(PathBuf::from(value)),
             other => return Err(format!("unknown option: {other}\n{}", usage())),
         }
         index += 2;
@@ -142,6 +157,25 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
         .map_err(|error| format!("cannot canonicalize COLMAP executable {colmap}: {error}"))?
         .to_string_lossy()
         .into_owned();
+    if feature_pipeline != "sift" {
+        let directory = model_dir.as_ref().ok_or_else(|| {
+            "--model-dir is required for an ALIKED feature pipeline".to_owned()
+        })?;
+        if !directory.is_dir() {
+            return Err(format!("model directory does not exist: {}", directory.display()));
+        }
+        let extractor = if feature_pipeline == "aliked-n32-lightglue" {
+            "aliked-n32.onnx"
+        } else {
+            "aliked-n16rot.onnx"
+        };
+        for name in [extractor, "aliked-lightglue.onnx"] {
+            let path = directory.join(name);
+            if !path.is_file() {
+                return Err(format!("required ONNX model does not exist: {}", path.display()));
+            }
+        }
+    }
     Ok(AbcArgs {
         inputs,
         output_root,
@@ -149,6 +183,8 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
         gpu_index,
         variants,
         profile_override,
+        feature_pipeline,
+        model_dir,
     })
 }
 
@@ -234,6 +270,23 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
             &mut settings,
             json!({ "align": { "colmapQualityProfile": profile } }),
         );
+        let mut feature_settings = json!({
+            "featurePipeline": &args.feature_pipeline,
+        });
+        if let Some(model_dir) = &args.model_dir {
+            let extractor_name = if args.feature_pipeline == "aliked-n32-lightglue" {
+                "aliked-n32.onnx"
+            } else {
+                "aliked-n16rot.onnx"
+            };
+            feature_settings["featureExtractorModelPath"] = json!(
+                model_dir.join(extractor_name).to_string_lossy().into_owned()
+            );
+            feature_settings["featureMatcherModelPath"] = json!(
+                model_dir.join("aliked-lightglue.onnx").to_string_lossy().into_owned()
+            );
+        }
+        merge(&mut settings, json!({ "align": feature_settings }));
         let project_path = args.output_root.join(name);
         println!("=== Variant {name} ({profile}) ===");
         let manifest = project::create(CreateProjectRequest {

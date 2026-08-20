@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "testedAt": "2026-08-19/2026-08-20",
+  "environment": {
+    "cpu": "Intel Core i5-13400F",
+    "gpu": "NVIDIA GeForce RTX 4070 Ti 12 GB",
+    "nvidiaDriver": "610.62",
+    "colmap": "4.1.1 custom CUDA build a0d785f",
+    "pipelineVariant": "B",
+    "canonicalImages": "native dual fisheye"
+  },
+  "metrics": [
+    {"scene":"0807-room","environment":"indoor","pipeline":"sift","selectedRigFrames":457,"completeRegisteredRigFrames":433,"completeRegisteredPercent":94.7484,"points3d":132821,"medianTrackLength":3.0,"medianReprojectionErrorPx":0.852357,"extractMinutes":18.96,"alignMinutes":76.03,"totalMinutes":95.00,"featureMinutes":4.29,"matchingMinutes":0.66,"mappingMinutes":70.30},
+    {"scene":"0807-room","environment":"indoor","pipeline":"aliked-n16rot-lightglue","selectedRigFrames":457,"completeRegisteredRigFrames":456,"completeRegisteredPercent":99.7812,"points3d":146249,"medianTrackLength":3.0,"medianReprojectionErrorPx":1.323489,"extractMinutes":17.85,"alignMinutes":178.21,"totalMinutes":196.07,"featureMinutes":27.03,"matchingMinutes":11.14,"mappingMinutes":139.42},
+    {"scene":"tpe-toilet","environment":"indoor","pipeline":"sift","selectedRigFrames":283,"completeRegisteredRigFrames":257,"completeRegisteredPercent":90.8127,"points3d":37918,"medianTrackLength":3.0,"medianReprojectionErrorPx":0.682817,"extractMinutes":11.62,"alignMinutes":9.80,"totalMinutes":21.42,"featureMinutes":2.37,"matchingMinutes":0.50,"mappingMinutes":6.43},
+    {"scene":"tpe-toilet","environment":"indoor","pipeline":"aliked-n16rot-lightglue","selectedRigFrames":283,"completeRegisteredRigFrames":283,"completeRegisteredPercent":100.0,"points3d":82360,"medianTrackLength":3.0,"medianReprojectionErrorPx":1.250961,"extractMinutes":11.72,"alignMinutes":50.62,"totalMinutes":62.35,"featureMinutes":19.99,"matchingMinutes":6.48,"mappingMinutes":23.75},
+    {"scene":"tpe-toilet","environment":"indoor","pipeline":"aliked-n32-lightglue","selectedRigFrames":283,"completeRegisteredRigFrames":283,"completeRegisteredPercent":100.0,"points3d":71002,"medianTrackLength":3.0,"medianReprojectionErrorPx":1.176164,"extractMinutes":11.57,"alignMinutes":40.41,"totalMinutes":51.99,"featureMinutes":15.84,"matchingMinutes":6.40,"mappingMinutes":17.76},
+    {"scene":"tokyo-station","environment":"outdoor","pipeline":"sift","selectedRigFrames":973,"completeRegisteredRigFrames":495,"completeRegisteredPercent":50.8736,"points3d":175497,"medianTrackLength":4.0,"medianReprojectionErrorPx":0.750517,"extractMinutes":47.15,"alignMinutes":178.17,"totalMinutes":225.32,"featureMinutes":8.08,"matchingMinutes":1.36,"mappingMinutes":167.09},
+    {"scene":"tokyo-station","environment":"outdoor","pipeline":"aliked-n16rot-lightglue","selectedRigFrames":973,"completeRegisteredRigFrames":973,"completeRegisteredPercent":100.0,"points3d":190054,"medianTrackLength":4.0,"medianReprojectionErrorPx":0.994004,"extractMinutes":47.11,"alignMinutes":548.64,"totalMinutes":595.76,"featureMinutes":59.15,"matchingMinutes":22.35,"mappingMinutes":465.62}
+  ],
+  "pairSmokeTests": [
+    {"pipeline":"aliked-n16rot-lightglue","provider":"CUDA","imageSize":3840,"keypoints":[2047,2048],"rawMatches":1234,"geometricInliers":841,"inlierRatioPercent":68.15},
+    {"pipeline":"loma-b128","provider":"CPU","maxImageSize":1024,"keypoints":[2048,2048],"rawMatches":1403,"geometricInliers":722,"inlierRatioPercent":51.46,"pairSecondsExcludingInit":9.552,"sessionInitSeconds":0.999},
+    {"pipeline":"loma-b128","provider":"DirectML","status":"failed","reason":"dynamic Reshape / graph fusion incompatibility"}
+  ],
+  "modelSha256": {
+    "aliked-n16rot.onnx": "39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547",
+    "aliked-n32.onnx": "a077728a02d2de1a775c66df6de8cfeb7c6b51ca57572c64c680131c988c8b3c",
+    "aliked-lightglue.onnx": "b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d",
+    "loma_detector.onnx": "b6af99c5e730034ac9b675d1ebe05d0679af4569a3c26f10a6a50f91e02dc512",
+    "loma_descriptor_dedode_b.onnx": "82660a364299013618fe649092ebc4f617559f6a77e1ab5a3412be62a47ddc2d",
+    "loma_matcher_B128.onnx": "e71ad490d13713374433a7ef99a7b4f4877d09338e40f347b7e64cc90150ee16"
+  },
+  "limitations": [
+    "No survey, LiDAR, control-point, or known-trajectory ground truth was available.",
+    "Reprojection error is an internal SfM consistency proxy and is not absolute metric accuracy.",
+    "LoMa was evaluated only as a pair-level smoke test on this machine."
+  ]
+}

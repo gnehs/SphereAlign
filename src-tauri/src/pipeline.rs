@@ -48,12 +48,12 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
 pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 26;
-const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 4;
-const FEATURE_EXTRACTION_TYPE: &str = "SIFT";
+const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 5;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
 const FEATURE_MAX_NUM_FEATURES: usize = 10_240;
 const FEATURE_PEAK_THRESHOLD: f64 = 0.006;
+const ALIKED_MAX_IMAGE_SIZE: usize = 1_600;
 const MATCH_MAX_NUM_MATCHES: usize = 10_240;
 const CANDIDATE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 const COLMAP_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
@@ -115,12 +115,50 @@ struct FeatureFingerprintPayload {
     schema_version: u32,
     colmap_version: String,
     extractor_type: &'static str,
+    matcher_type: &'static str,
+    extractor_model_sha256: Option<String>,
+    matcher_model_sha256: Option<String>,
     camera_model: &'static str,
     default_focal_length_factor: f64,
     quality_profile: &'static str,
     include_masks: bool,
     color_metadata_sha256: Option<String>,
     files: Vec<AlignFileIdentity>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FeaturePipeline {
+    Sift,
+    AlikedN16RotLightGlue,
+    AlikedN32LightGlue,
+}
+
+impl FeaturePipeline {
+    fn extractor_type(self) -> &'static str {
+        match self {
+            Self::Sift => "SIFT",
+            Self::AlikedN16RotLightGlue => "ALIKED_N16ROT",
+            Self::AlikedN32LightGlue => "ALIKED_N32",
+        }
+    }
+
+    fn matcher_type(self) -> &'static str {
+        match self {
+            Self::Sift => "SIFT_BRUTEFORCE",
+            Self::AlikedN16RotLightGlue | Self::AlikedN32LightGlue => "ALIKED_LIGHTGLUE",
+        }
+    }
+
+    fn is_aliked(self) -> bool {
+        self != Self::Sift
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FeaturePipelineConfig {
+    pipeline: FeaturePipeline,
+    extractor_model_path: Option<PathBuf>,
+    matcher_model_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -780,6 +818,48 @@ fn colmap_quality_profile(settings: &Value) -> Result<ColmapQualityProfile, Stri
             "align.colmapQualityProfile must be baseline or tuned (got {value})"
         )),
     }
+}
+
+fn feature_pipeline_config(settings: &Value) -> Result<FeaturePipelineConfig, String> {
+    let pipeline = match settings
+        .pointer("/align/featurePipeline")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("sift")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "sift" => FeaturePipeline::Sift,
+        "aliked-n16rot-lightglue" => FeaturePipeline::AlikedN16RotLightGlue,
+        "aliked-n32-lightglue" => FeaturePipeline::AlikedN32LightGlue,
+        value => return Err(format!("unsupported align.featurePipeline: {value}")),
+    };
+    let read_path = |pointer: &str| {
+        settings
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    };
+    let config = FeaturePipelineConfig {
+        pipeline,
+        extractor_model_path: read_path("/align/featureExtractorModelPath"),
+        matcher_model_path: read_path("/align/featureMatcherModelPath"),
+    };
+    if config.pipeline.is_aliked() {
+        for (label, path) in [
+            ("extractor", config.extractor_model_path.as_ref()),
+            ("matcher", config.matcher_model_path.as_ref()),
+        ] {
+            let path = path.ok_or_else(|| format!("ALIKED {label} model path is required"))?;
+            if !path.is_file() {
+                return Err(format!("ALIKED {label} model does not exist: {}", path.display()));
+            }
+        }
+    }
+    Ok(config)
 }
 
 fn mapper_mode(settings: &Value) -> Result<MapperMode, String> {
@@ -4565,6 +4645,7 @@ fn build_feature_fingerprint(
     colmap_version: &str,
     include_masks: bool,
     quality_profile: ColmapQualityProfile,
+    feature_config: &FeaturePipelineConfig,
 ) -> Result<String, String> {
     let mut files = Vec::new();
     collect_align_file_identities(&root.join("images"), root, &mut files)?;
@@ -4575,7 +4656,18 @@ fn build_feature_fingerprint(
     let payload = FeatureFingerprintPayload {
         schema_version: FEATURE_FINGERPRINT_SCHEMA_VERSION,
         colmap_version: colmap_version.to_owned(),
-        extractor_type: FEATURE_EXTRACTION_TYPE,
+        extractor_type: feature_config.pipeline.extractor_type(),
+        matcher_type: feature_config.pipeline.matcher_type(),
+        extractor_model_sha256: feature_config
+            .extractor_model_path
+            .as_deref()
+            .map(file_sha256)
+            .transpose()?,
+        matcher_model_sha256: feature_config
+            .matcher_model_path
+            .as_deref()
+            .map(file_sha256)
+            .transpose()?,
         camera_model: FEATURE_CAMERA_MODEL,
         default_focal_length_factor: FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR,
         quality_profile: quality_profile.as_str(),
@@ -5589,6 +5681,7 @@ fn feature_extractor_args(
     gpu_index: &str,
     use_masks: bool,
     quality_profile: ColmapQualityProfile,
+    feature_config: &FeaturePipelineConfig,
 ) -> Vec<String> {
     let mut args = vec![
         "feature_extractor".into(),
@@ -5607,19 +5700,47 @@ fn feature_extractor_args(
         "--ImageReader.default_focal_length_factor".into(),
         FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR.to_string(),
         "--FeatureExtraction.type".into(),
-        FEATURE_EXTRACTION_TYPE.into(),
-        "--SiftExtraction.max_num_features".into(),
-        if quality_profile == ColmapQualityProfile::Tuned {
-            FEATURE_MAX_NUM_FEATURES.to_string()
-        } else {
-            "8192".into()
-        },
+        feature_config.pipeline.extractor_type().into(),
         "--FeatureExtraction.use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureExtraction.gpu_index".into(),
         gpu_index.to_owned(),
     ];
-    if quality_profile == ColmapQualityProfile::Tuned {
+    if feature_config.pipeline == FeaturePipeline::Sift {
+        args.extend([
+            "--SiftExtraction.max_num_features".into(),
+            if quality_profile == ColmapQualityProfile::Tuned {
+                FEATURE_MAX_NUM_FEATURES.to_string()
+            } else {
+                "8192".into()
+            },
+        ]);
+    } else {
+        args.extend([
+            "--FeatureExtraction.max_image_size".into(),
+            ALIKED_MAX_IMAGE_SIZE.to_string(),
+            "--AlikedExtraction.max_num_features".into(),
+            "2048".into(),
+        ]);
+        let (option, model) = match feature_config.pipeline {
+            FeaturePipeline::AlikedN16RotLightGlue => (
+                "--AlikedExtraction.n16rot_model_path",
+                feature_config.extractor_model_path.as_ref(),
+            ),
+            FeaturePipeline::AlikedN32LightGlue => (
+                "--AlikedExtraction.n32_model_path",
+                feature_config.extractor_model_path.as_ref(),
+            ),
+            FeaturePipeline::Sift => unreachable!(),
+        };
+        args.extend([
+            option.into(),
+            model.expect("validated ALIKED extractor model").to_string_lossy().into_owned(),
+        ]);
+    }
+    if quality_profile == ColmapQualityProfile::Tuned
+        && feature_config.pipeline == FeaturePipeline::Sift
+    {
         // Osmo 360 imagery often contains low-contrast wall and distant
         // detail. Retain more of those stable extrema than COLMAP's default
         // without enabling affine/DSP SIFT, which would disable the fast GPU
@@ -5642,6 +5763,7 @@ fn matches_importer_args(
     use_gpu: bool,
     gpu_index: &str,
     quality_profile: ColmapQualityProfile,
+    feature_config: &FeaturePipelineConfig,
 ) -> Vec<String> {
     let mut args = vec![
         "matches_importer".into(),
@@ -5657,6 +5779,8 @@ fn matches_importer_args(
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureMatching.gpu_index".into(),
         gpu_index.to_owned(),
+        "--FeatureMatching.type".into(),
+        feature_config.pipeline.matcher_type().into(),
         "--FeatureMatching.max_num_matches".into(),
         if quality_profile == ColmapQualityProfile::Tuned {
             MATCH_MAX_NUM_MATCHES.to_string()
@@ -5664,6 +5788,17 @@ fn matches_importer_args(
             "8192".into()
         },
     ];
+    if feature_config.pipeline.is_aliked() {
+        args.extend([
+            "--AlikedMatching.lightglue_model_path".into(),
+            feature_config
+                .matcher_model_path
+                .as_ref()
+                .expect("validated ALIKED matcher model")
+                .to_string_lossy()
+                .into_owned(),
+        ]);
+    }
     if quality_profile == ColmapQualityProfile::Tuned {
         args.extend([
             // Spend modest extra RANSAC work on retrieval/cross-source pairs instead of
@@ -6917,6 +7052,7 @@ fn refresh_calibrated_pair_matches(
     use_gpu: bool,
     use_calibrated_fov: bool,
     quality_profile: ColmapQualityProfile,
+    feature_config: &FeaturePipelineConfig,
     control: &JobControl,
 ) -> Result<bool, String> {
     let pairs_path = root.join("metadata/pairs.txt");
@@ -6963,7 +7099,14 @@ fn refresh_calibrated_pair_matches(
     let result = clear_matching_cache(database)
         .map_err(|error| error.to_string())
         .and_then(|()| {
-            let args = matches_importer_args(root, database, use_gpu, gpu_index, quality_profile);
+            let args = matches_importer_args(
+                root,
+                database,
+                use_gpu,
+                gpu_index,
+                quality_profile,
+                feature_config,
+            );
             run_child(app, id, colmap, &args, control)
         });
     match result {
@@ -7367,6 +7510,7 @@ fn run_align(
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
     let quality_profile = colmap_quality_profile(&manifest.settings)?;
+    let feature_config = feature_pipeline_config(&manifest.settings)?;
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
@@ -7483,7 +7627,13 @@ fn run_align(
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
     let feature_fingerprint =
-        build_feature_fingerprint(&root, &colmap_version, use_masks, quality_profile)?;
+        build_feature_fingerprint(
+            &root,
+            &colmap_version,
+            use_masks,
+            quality_profile,
+            &feature_config,
+        )?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
     let external_orientation_requested = manifest
@@ -7833,9 +7983,25 @@ fn run_align(
     let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
     let feature_started = Instant::now();
     let feature_gpu_args =
-        feature_extractor_args(&root, &db, true, &gpu_index, use_masks, quality_profile);
+        feature_extractor_args(
+            &root,
+            &db,
+            true,
+            &gpu_index,
+            use_masks,
+            quality_profile,
+            &feature_config,
+        );
     let feature_cpu_args =
-        feature_extractor_args(&root, &db, false, &gpu_index, use_masks, quality_profile);
+        feature_extractor_args(
+            &root,
+            &db,
+            false,
+            &gpu_index,
+            use_masks,
+            quality_profile,
+            &feature_config,
+        );
     if feature_cache_reusable {
         let (expected, completed) = feature_cache_counts.unwrap_or((0, 0));
         emit_log(
@@ -8002,8 +8168,22 @@ fn run_align(
     );
     let matching_progress = Cell::new(None::<ColmapFraction>);
     let highest_matching_fraction = Cell::new(0.0_f32);
-    let matching_gpu_args = matches_importer_args(&root, &db, true, &gpu_index, quality_profile);
-    let matching_cpu_args = matches_importer_args(&root, &db, false, &gpu_index, quality_profile);
+    let matching_gpu_args = matches_importer_args(
+        &root,
+        &db,
+        true,
+        &gpu_index,
+        quality_profile,
+        &feature_config,
+    );
+    let matching_cpu_args = matches_importer_args(
+        &root,
+        &db,
+        false,
+        &gpu_index,
+        quality_profile,
+        &feature_config,
+    );
     let matching_database_backup = root.join("metadata/.align-matching-database.backup");
     remove_align_artifact(&matching_database_backup)?;
     if feature_matching_gpu {
@@ -9101,6 +9281,7 @@ fn run_align(
                     feature_matching_gpu,
                     use_calibrated_fov_pairs,
                     quality_profile,
+                    &feature_config,
                     control,
                 ) {
                     Ok(true) => emit_log(
@@ -9628,7 +9809,8 @@ mod tests {
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
         view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
         write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ColmapQualityProfile,
-        ExtractionStage, GlobalCandidateQualityMetrics, GlobalMapperOptions, JobControl,
+        ExtractionStage, FeaturePipeline, FeaturePipelineConfig, GlobalCandidateQualityMetrics,
+        GlobalMapperOptions, JobControl,
         JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent, RawFrameMessage,
         RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
         RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
@@ -9636,6 +9818,14 @@ mod tests {
         CANDIDATE_STREAM_WIDTH, DJI_DRONE_CALIBRATION_PROFILE, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG,
         STANDARD_IMU_CALIBRATION_PROFILE,
     };
+
+    fn sift_feature_config() -> FeaturePipelineConfig {
+        FeaturePipelineConfig {
+            pipeline: FeaturePipeline::Sift,
+            extractor_model_path: None,
+            matcher_model_path: None,
+        }
+    }
     use crate::camera_adapter::LensStream;
     use crate::color;
     use crate::color::ValidatedLut;
@@ -10133,8 +10323,15 @@ mod tests {
         let db = root.join("database.db");
         let images = root.join("images");
         let sparse = root.join("sparse");
-        let feature =
-            feature_extractor_args(root, &db, true, "0,1", true, ColmapQualityProfile::Tuned);
+        let feature = feature_extractor_args(
+            root,
+            &db,
+            true,
+            "0,1",
+            true,
+            ColmapQualityProfile::Tuned,
+            &sift_feature_config(),
+        );
         assert!(feature
             .windows(2)
             .any(|args| { args == ["--FeatureExtraction.use_gpu", "1"] }));
@@ -10162,8 +10359,15 @@ mod tests {
             .windows(2)
             .any(|args| { args == ["--ImageReader.mask_path", expected_mask_path.as_str()] }));
 
-        let baseline_feature =
-            feature_extractor_args(root, &db, true, "0", false, ColmapQualityProfile::Baseline);
+        let baseline_feature = feature_extractor_args(
+            root,
+            &db,
+            true,
+            "0",
+            false,
+            ColmapQualityProfile::Baseline,
+            &sift_feature_config(),
+        );
         assert!(baseline_feature
             .windows(2)
             .any(|args| args == ["--SiftExtraction.max_num_features", "8192"]));
@@ -10171,7 +10375,14 @@ mod tests {
             .iter()
             .any(|arg| arg == "--SiftExtraction.peak_threshold"));
 
-        let matching = matches_importer_args(root, &db, true, "0,1", ColmapQualityProfile::Tuned);
+        let matching = matches_importer_args(
+            root,
+            &db,
+            true,
+            "0,1",
+            ColmapQualityProfile::Tuned,
+            &sift_feature_config(),
+        );
         assert!(matching
             .windows(2)
             .any(|args| { args == ["--FeatureMatching.use_gpu", "1"] }));
@@ -10187,8 +10398,14 @@ mod tests {
         assert!(matching
             .windows(2)
             .any(|args| { args == ["--TwoViewGeometry.max_num_trials", "15000"] }));
-        let baseline_matching =
-            matches_importer_args(root, &db, true, "0", ColmapQualityProfile::Baseline);
+        let baseline_matching = matches_importer_args(
+            root,
+            &db,
+            true,
+            "0",
+            ColmapQualityProfile::Baseline,
+            &sift_feature_config(),
+        );
         assert!(baseline_matching
             .windows(2)
             .any(|args| args == ["--FeatureMatching.max_num_matches", "8192"]));
@@ -10228,6 +10445,63 @@ mod tests {
             .windows(2)
             .any(|args| { args == ["--Mapper.ba_refine_sensor_from_rig", "0"] }));
         assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
+    }
+
+    #[test]
+    fn aliked_lightglue_arguments_select_onnx_models_and_limits() {
+        let root = Path::new("project");
+        let db = root.join("database.db");
+        let config = FeaturePipelineConfig {
+            pipeline: FeaturePipeline::AlikedN16RotLightGlue,
+            extractor_model_path: Some(PathBuf::from("models/aliked-n16rot.onnx")),
+            matcher_model_path: Some(PathBuf::from("models/aliked-lightglue.onnx")),
+        };
+
+        let feature = feature_extractor_args(
+            root,
+            &db,
+            true,
+            "0",
+            false,
+            ColmapQualityProfile::Baseline,
+            &config,
+        );
+        assert!(feature
+            .windows(2)
+            .any(|args| args == ["--FeatureExtraction.type", "ALIKED_N16ROT"]));
+        assert!(feature
+            .windows(2)
+            .any(|args| args == ["--FeatureExtraction.max_image_size", "1600"]));
+        assert!(feature
+            .windows(2)
+            .any(|args| args == ["--AlikedExtraction.max_num_features", "2048"]));
+        assert!(feature.windows(2).any(|args| {
+            args == [
+                "--AlikedExtraction.n16rot_model_path",
+                "models/aliked-n16rot.onnx",
+            ]
+        }));
+        assert!(!feature
+            .iter()
+            .any(|arg| arg == "--SiftExtraction.max_num_features"));
+
+        let matching = matches_importer_args(
+            root,
+            &db,
+            true,
+            "0",
+            ColmapQualityProfile::Baseline,
+            &config,
+        );
+        assert!(matching
+            .windows(2)
+            .any(|args| args == ["--FeatureMatching.type", "ALIKED_LIGHTGLUE"]));
+        assert!(matching.windows(2).any(|args| {
+            args == [
+                "--AlikedMatching.lightglue_model_path",
+                "models/aliked-lightglue.onnx",
+            ]
+        }));
     }
 
     #[test]
@@ -10661,6 +10935,7 @@ mod tests {
             "COLMAP 4.1.1",
             false,
             ColmapQualityProfile::Baseline,
+            &sift_feature_config(),
         )
         .unwrap();
         fs::create_dir_all(temp.path().join("metadata")).unwrap();
@@ -10673,6 +10948,7 @@ mod tests {
                 "COLMAP 4.1.1",
                 false,
                 ColmapQualityProfile::Baseline,
+                &sift_feature_config(),
             )
             .unwrap()
         );
@@ -10683,6 +10959,7 @@ mod tests {
                 "COLMAP 4.2.0",
                 false,
                 ColmapQualityProfile::Baseline,
+                &sift_feature_config(),
             )
             .unwrap()
         );
@@ -10695,6 +10972,7 @@ mod tests {
                 "COLMAP 4.1.1",
                 true,
                 ColmapQualityProfile::Baseline,
+                &sift_feature_config(),
             )
             .unwrap()
         );
@@ -10705,6 +10983,7 @@ mod tests {
                 "COLMAP 4.1.1",
                 false,
                 ColmapQualityProfile::Tuned,
+                &sift_feature_config(),
             )
             .unwrap()
         );
