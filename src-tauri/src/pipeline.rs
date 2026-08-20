@@ -1412,21 +1412,27 @@ fn balanced_select_expression(indexes: &[u64]) -> String {
 /// Build the second-pass FFmpeg command.  `fps` is intentionally before
 /// `select`: the selected indexes are zero-based positions in the candidate
 /// stream produced by the first pass, after frame-rate conversion.
-fn selected_ffmpeg_args(
-    lenses: &[LensStream; 2],
+fn selected_ffmpeg_filter(
     candidate_fps: f64,
     selected_indexes: &[u64],
-    lens0: &Path,
-    lens1: &Path,
     lut: Option<&ValidatedLut>,
-) -> Vec<String> {
-    let (input_paths, input_indices) = ffmpeg_input_layout(lenses);
+) -> String {
     let select = balanced_select_expression(selected_indexes);
     let lut_filter = lut
         .map(color::lut3d_filter)
         .map(|filter| format!(",format=gbrp10le,{filter}"))
         .unwrap_or_default();
-    let filter = format!("setpts=PTS-STARTPTS,fps={candidate_fps}{lut_filter},select={select}");
+    format!("setpts=PTS-STARTPTS,fps={candidate_fps}{lut_filter},select={select}")
+}
+
+fn selected_ffmpeg_args(
+    lenses: &[LensStream; 2],
+    filter_script: &Path,
+    lens0: &Path,
+    lens1: &Path,
+) -> Vec<String> {
+    let (input_paths, input_indices) = ffmpeg_input_layout(lenses);
+    let filter_script = filter_script.to_string_lossy().into_owned();
     let mut args = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
     for path in input_paths {
         args.push("-i".into());
@@ -1435,8 +1441,8 @@ fn selected_ffmpeg_args(
     args.extend([
         "-map".into(),
         format!("{}:{}", input_indices[0], lenses[0].ffmpeg_stream_index),
-        "-vf".into(),
-        filter.clone(),
+        "-filter_script:v".into(),
+        filter_script.clone(),
         "-fps_mode".into(),
         "passthrough".into(),
         "-q:v".into(),
@@ -1444,8 +1450,8 @@ fn selected_ffmpeg_args(
         lens0.join("%08d.jpg").to_string_lossy().into_owned(),
         "-map".into(),
         format!("{}:{}", input_indices[1], lenses[1].ffmpeg_stream_index),
-        "-vf".into(),
-        filter,
+        "-filter_script:v".into(),
+        filter_script,
         "-fps_mode".into(),
         "passthrough".into(),
         "-q:v".into(),
@@ -2921,13 +2927,21 @@ fn run_extract(
                 Some(current_source.clone()),
                 None,
             );
+            // A long capture can select thousands of indexes. Keeping that
+            // expression in an argument exceeds Windows' CreateProcess limit
+            // because the filter is used once per lens output. A filter script
+            // keeps the command line bounded independently of capture length.
+            let filter_script = transaction_root.join("selected-frames.filter");
+            fs::write(
+                &filter_script,
+                selected_ffmpeg_filter(candidate_fps, &selected_indexes, filter_lut),
+            )
+            .map_err(|error| format!("無法寫入 FFmpeg 選定影格 filter script：{error}"))?;
             let software_args = selected_ffmpeg_args(
                 &capture.lenses,
-                candidate_fps,
-                &selected_indexes,
+                &filter_script,
                 &decoded_lens0,
                 &decoded_lens1,
-                filter_lut,
             );
             let accelerated_args = with_hwaccel_auto(&software_args);
             run_ffmpeg_with_fallback(
@@ -12087,11 +12101,9 @@ mod tests {
 
         let selected = selected_ffmpeg_args(
             &lenses,
-            8.0,
-            &[0, 1],
+            Path::new("capture/selected.filter"),
             Path::new("capture/lens0"),
             Path::new("capture/lens1"),
-            None,
         );
         assert!(selected.windows(2).any(|pair| pair == ["-map", "0:0"]));
         assert!(selected.windows(2).any(|pair| pair == ["-map", "1:0"]));
@@ -12139,24 +12151,9 @@ mod tests {
         assert!(filter.find("lut3d=").unwrap() < filter.find("format=gray").unwrap());
         assert!(filter.contains("interp=tetrahedral"));
 
-        let selected = selected_ffmpeg_args(
-            &test_lenses("input.osv", 0, 1),
-            8.0,
-            &[0],
-            Path::new("capture/lens0"),
-            Path::new("capture/lens1"),
-            Some(&lut),
-        );
-        let filters = selected
-            .iter()
-            .enumerate()
-            .filter(|(_, value)| *value == "-vf")
-            .map(|(index, _)| &selected[index + 1])
-            .collect::<Vec<_>>();
-        assert_eq!(filters.len(), 2);
-        assert!(filters
-            .iter()
-            .all(|filter| { filter.contains("lut3d=") && filter.contains("interp=tetrahedral") }));
+        let selected_filter = super::selected_ffmpeg_filter(8.0, &[0], Some(&lut));
+        assert!(selected_filter.contains("lut3d="));
+        assert!(selected_filter.contains("interp=tetrahedral"));
     }
 
     #[test]
@@ -12307,26 +12304,30 @@ mod tests {
         assert_eq!(depth, 0);
         assert!(max_depth <= 10, "select tree should remain balanced");
 
-        let args = selected_ffmpeg_args(
-            &test_lenses("input.osv", 0, 1),
-            8.0,
-            &[0, 127],
-            Path::new("capture/lens0"),
-            Path::new("capture/lens1"),
-            None,
-        );
-        let filters = args
-            .iter()
-            .enumerate()
-            .filter(|(_, value)| *value == "-vf")
-            .map(|(index, _)| &args[index + 1])
-            .collect::<Vec<_>>();
-        assert_eq!(filters.len(), 2);
-        assert!(filters.iter().all(|filter| {
+        let filter = super::selected_ffmpeg_filter(8.0, &[0, 127], None);
+        assert!(
             filter.starts_with("setpts=PTS-STARTPTS,fps=8,select='")
                 && filter.contains("eq(n,0)")
                 && filter.contains("eq(n,127)")
-        }));
+        );
+
+        let args = selected_ffmpeg_args(
+            &test_lenses("input.osv", 0, 1),
+            Path::new("capture/selected.filter"),
+            Path::new("capture/lens0"),
+            Path::new("capture/lens1"),
+        );
+        let filter_scripts = args
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| *value == "-filter_script:v")
+            .map(|(index, _)| &args[index + 1])
+            .collect::<Vec<_>>();
+        assert_eq!(filter_scripts.len(), 2);
+        assert!(filter_scripts
+            .iter()
+            .all(|path| *path == "capture/selected.filter"));
+        assert!(!args.iter().any(|arg| arg.contains("eq(n,")));
     }
 
     #[test]
