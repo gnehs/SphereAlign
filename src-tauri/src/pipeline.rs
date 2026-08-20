@@ -1433,7 +1433,16 @@ fn selected_ffmpeg_args(
 ) -> Vec<String> {
     let (input_paths, input_indices) = ffmpeg_input_layout(lenses);
     let filter_script = filter_script.to_string_lossy().into_owned();
-    let mut args = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
+    let mut args = vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-y".into(),
+        "-nostats".into(),
+        "-stats_period".into(),
+        "0.5".into(),
+        "-progress".into(),
+        "pipe:1".into(),
+    ];
     for path in input_paths {
         args.push("-i".into());
         args.push(path.to_string_lossy().into_owned());
@@ -1459,6 +1468,14 @@ fn selected_ffmpeg_args(
         lens1.join("%08d.jpg").to_string_lossy().into_owned(),
     ]);
     args
+}
+
+fn parse_ffmpeg_progress_frame(line: &str) -> Option<usize> {
+    line.trim()
+        .strip_prefix("frame=")?
+        .trim()
+        .parse::<usize>()
+        .ok()
 }
 
 /// Add FFmpeg's input-scoped automatic hardware decoder selection immediately
@@ -1988,7 +2005,7 @@ fn run_candidate_stream_with_fallback(
 /// optional expected count lets the second pass reject a partial or excessive
 /// select result before it can be committed.
 #[allow(clippy::too_many_arguments)]
-fn run_ffmpeg_with_fallback(
+fn run_ffmpeg_with_fallback<F>(
     app: &AppHandle,
     id: &str,
     ffmpeg: &Path,
@@ -1999,7 +2016,11 @@ fn run_ffmpeg_with_fallback(
     lens1: &Path,
     expected_count: Option<usize>,
     control: &JobControl,
-) -> Result<(), String> {
+    mut on_progress: F,
+) -> Result<(), String>
+where
+    F: FnMut(usize),
+{
     let validate_output = || {
         let count = synchronized_candidate_count(lens0, lens1)?;
         if let Some(expected) = expected_count {
@@ -2011,8 +2032,15 @@ fn run_ffmpeg_with_fallback(
         }
         Ok(())
     };
-    let hardware_result =
-        run_child(app, id, ffmpeg, accelerated_args, control).and_then(|()| validate_output());
+    let mut run_attempt = |args: &[String]| {
+        run_child_with_output(app, id, ffmpeg, args, control, |line| {
+            if let Some(frame) = parse_ffmpeg_progress_frame(line) {
+                on_progress(frame);
+            }
+        })
+        .and_then(|()| validate_output())
+    };
+    let hardware_result = run_attempt(accelerated_args);
     match hardware_result {
         Ok(()) => Ok(()),
         Err(hardware_error)
@@ -2033,8 +2061,7 @@ fn run_ffmpeg_with_fallback(
             }
             reset_candidate_dirs(output_root, lens0, lens1)
                 .map_err(|error| format!("FFmpeg 硬體解碼失敗後，無法準備軟體解碼回退：{error}"))?;
-            let software_result =
-                run_child(app, id, ffmpeg, software_args, control).and_then(|()| validate_output());
+            let software_result = run_attempt(software_args);
             match software_result {
                 Ok(()) => {
                     emit_log(app, id, "info", "FFmpeg 候選影格已安全回退至 CPU 軟體解碼");
@@ -2944,6 +2971,8 @@ fn run_extract(
                 &decoded_lens1,
             );
             let accelerated_args = with_hwaccel_auto(&software_args);
+            let selected_count = selected_sequences.len();
+            let mut highest_decoded = 0usize;
             run_ffmpeg_with_fallback(
                 app,
                 id,
@@ -2955,6 +2984,38 @@ fn run_extract(
                 &decoded_lens1,
                 Some(selected_sequences.len()),
                 control,
+                |decoded| {
+                    let completed = decoded.min(selected_count);
+                    if completed <= highest_decoded {
+                        return;
+                    }
+                    highest_decoded = completed;
+                    let decode_fraction = completed as f32 / selected_count as f32;
+                    emit_progress_detailed(
+                        app,
+                        id,
+                        &StageName::Extract,
+                        "decoding-full-resolution",
+                        source_stage_progress(
+                            source_index,
+                            total_sources,
+                            CANDIDATE_SELECTION_PROGRESS_SHARE
+                                + FULL_RESOLUTION_PROGRESS_SHARE * decode_fraction,
+                        ),
+                        format!(
+                            "正在以原始解析度重新解碼來源 {}（已完成 {} / {} 組選定影格）",
+                            source_index + 1,
+                            completed,
+                            selected_count,
+                        ),
+                        "running",
+                        false,
+                        Some(completed as u64),
+                        Some(selected_count as u64),
+                        Some(current_source.clone()),
+                        None,
+                    );
+                },
             )?;
             map_full_res_candidates(
                 &decoded_lens0,
@@ -12328,6 +12389,19 @@ mod tests {
             .iter()
             .all(|path| *path == "capture/selected.filter"));
         assert!(!args.iter().any(|arg| arg.contains("eq(n,")));
+        assert!(args.windows(2).any(|pair| pair == ["-progress", "pipe:1"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-stats_period", "0.5"]));
+        assert!(args.iter().any(|arg| arg == "-nostats"));
+    }
+
+    #[test]
+    fn ffmpeg_progress_parser_accepts_only_frame_updates() {
+        assert_eq!(super::parse_ffmpeg_progress_frame("frame=1771"), Some(1771));
+        assert_eq!(super::parse_ffmpeg_progress_frame("frame=  42\r"), Some(42));
+        assert_eq!(super::parse_ffmpeg_progress_frame("progress=continue"), None);
+        assert_eq!(super::parse_ffmpeg_progress_frame("frame=N/A"), None);
     }
 
     #[test]

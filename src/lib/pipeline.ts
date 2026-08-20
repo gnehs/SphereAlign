@@ -745,6 +745,7 @@ function localiseUserMessage(value: string): string {
     .replace(/來源 (\d+) 已沿用記憶體評分 checkpoint/g, (_match, source) => t`Source ${source} reused the in-memory scoring checkpoint`)
     .replace(/正在記憶體中同步解碼並評分來源 (\d+) 的雙魚眼候選影格/g, (_match, source) => t`Decoding and scoring source ${source} dual-fisheye candidates in memory`)
     .replace(/來源 (\d+) 已完成 (\d+) 組候選影格評分/g, (_match, source, count) => t`Source ${source} completed scoring ${count} candidate pairs`)
+    .replace(/正在以原始解析度重新解碼來源 (\d+)（已完成 (\d+) \/ (\d+) 組選定影格）/g, (_match, source, completed, total) => t`Decoding source ${source} again at native resolution (${completed} / ${total} selected frame pairs completed)`)
     .replace(/來源 (\d+) 的動態 keyframe 剪枝保留 (\d+) \/ (\d+) 組 base-FPS 候選（移除 (\d+) 組）/g, (_match, source, kept, total, removed) => t`Source ${source} dynamic keyframe pruning kept ${kept} / ${total} base-FPS candidates (${removed} removed)`)
     .replace(/已完成\s*(\d+)\s*個來源/g, (_match, count) => t`${count} sources completed`)
     .replace(/已處理\s*(\d+)\s*組候選影格/g, (_match, count) => t`${count} candidate pairs processed`)
