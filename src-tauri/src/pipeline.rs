@@ -65,8 +65,11 @@ const MAX_AUTO_SEED_RECOVERY_ATTEMPTS: usize = 4;
 const MAX_AUTO_SEED_FRAME_GAP: usize = 16;
 const AUTO_SEED_RECOVERY_TRIGGER_RATIO: f64 = 0.45;
 const MIN_HEALTHY_REGISTRATION_RATIO: f64 = 0.50;
-const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.7;
+const TELEMETRY_PARSE_PROGRESS_SHARE: f32 = 0.05;
+const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.60;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
+const FRAME_COMMIT_PROGRESS_SHARE: f32 = 0.10;
+const TELEMETRY_COPY_PROGRESS_SHARE: f32 = 0.05;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -479,6 +482,124 @@ fn emit_progress_detailed(
     );
 }
 
+struct ProgressHeartbeatState {
+    progress: f32,
+    message: String,
+    current_item: Option<String>,
+    completed: Option<u64>,
+    total: Option<u64>,
+}
+
+struct ProgressHeartbeat {
+    state: Arc<Mutex<ProgressHeartbeatState>>,
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl ProgressHeartbeat {
+    #[allow(clippy::too_many_arguments)]
+    fn start(
+        app: &AppHandle,
+        id: &str,
+        stage: StageName,
+        phase: &str,
+        progress: f32,
+        message: impl Into<String>,
+        current_item: Option<String>,
+        completed: Option<u64>,
+        total: Option<u64>,
+    ) -> Self {
+        let message = message.into();
+        emit_progress_detailed(
+            app,
+            id,
+            &stage,
+            phase,
+            progress,
+            message.clone(),
+            "running",
+            false,
+            completed,
+            total,
+            current_item.clone(),
+            Some(0),
+        );
+        let state = Arc::new(Mutex::new(ProgressHeartbeatState {
+            progress,
+            message,
+            current_item,
+            completed,
+            total,
+        }));
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_state = state.clone();
+        let worker_stop = stop.clone();
+        let app = app.clone();
+        let id = id.to_owned();
+        let phase = phase.to_owned();
+        let started = Instant::now();
+        let worker = thread::spawn(move || {
+            while !worker_stop.load(Ordering::Acquire) {
+                thread::park_timeout(Duration::from_secs(1));
+                if worker_stop.load(Ordering::Acquire) {
+                    break;
+                }
+                let state = worker_state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                emit_progress_detailed(
+                    &app,
+                    &id,
+                    &stage,
+                    &phase,
+                    state.progress,
+                    format!("{}（已等待 {} 秒）", state.message, started.elapsed().as_secs()),
+                    "running",
+                    false,
+                    state.completed,
+                    state.total,
+                    state.current_item.clone(),
+                    Some(elapsed_ms(started)),
+                );
+            }
+        });
+        Self {
+            state,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn update(
+        &self,
+        progress: f32,
+        message: impl Into<String>,
+        current_item: Option<String>,
+        completed: Option<u64>,
+        total: Option<u64>,
+    ) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.progress = state.progress.max(progress);
+        state.message = message.into();
+        state.current_item = current_item;
+        state.completed = completed;
+        state.total = total;
+    }
+}
+
+impl Drop for ProgressHeartbeat {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+    }
+}
+
 fn emit_log(app: &AppHandle, id: &str, level: &str, message: impl Into<String>) {
     let _ = app.emit(
         "pipeline-log",
@@ -520,7 +641,8 @@ impl CandidateProgressReporter<'_> {
         let progress = source_stage_progress(
             self.source_index,
             self.total_sources,
-            selection_fraction * CANDIDATE_SELECTION_PROGRESS_SHARE,
+            TELEMETRY_PARSE_PROGRESS_SHARE
+                + selection_fraction * CANDIDATE_SELECTION_PROGRESS_SHARE,
         );
         emit_progress_detailed(
             self.app,
@@ -1476,6 +1598,16 @@ fn parse_ffmpeg_progress_frame(line: &str) -> Option<usize> {
         .trim()
         .parse::<usize>()
         .ok()
+}
+
+fn parse_ffmpeg_progress_time_seconds(line: &str) -> Option<f64> {
+    let micros = line
+        .trim()
+        .strip_prefix("out_time_us=")?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    Some(micros as f64 / 1_000_000.0)
 }
 
 /// Add FFmpeg's input-scoped automatic hardware decoder selection immediately
@@ -2670,10 +2802,61 @@ fn run_extract(
         // max-gap fallback remain available.
         let normalized_path = metadata.join(format!("source{source_index:03}_telemetry.json"));
         let mut attitude_timeline = None;
-        let telemetry_sha256 = match telemetry::parse_and_write(
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Extract,
+            "parsing-telemetry",
+            source_stage_progress(source_index, total_sources, 0.0),
+            format!("正在解析來源 {} 的相機 telemetry", source_index + 1),
+            "running",
+            false,
+            Some(0),
+            Some(100),
+            Some(current_source.clone()),
+            None,
+        );
+        let telemetry_highest_percent = Cell::new(0_u64);
+        let telemetry_last_emit = Cell::new(None::<Instant>);
+        let telemetry_sha256 = match telemetry::parse_and_write_with_progress(
             &capture.telemetry_path,
             &normalized_path,
             control.cancelled.clone(),
+            |fraction| {
+                let percent = (fraction.clamp(0.0, 1.0) * 100.0).round() as u64;
+                telemetry_highest_percent.set(telemetry_highest_percent.get().max(percent));
+                if telemetry_highest_percent.get() < 100
+                    && telemetry_last_emit
+                        .get()
+                        .is_some_and(|last| last.elapsed() < CANDIDATE_PROGRESS_INTERVAL)
+                {
+                    return;
+                }
+                telemetry_last_emit.set(Some(Instant::now()));
+                let progress_fraction = telemetry_highest_percent.get() as f32 / 100.0;
+                emit_progress_detailed(
+                    app,
+                    id,
+                    &StageName::Extract,
+                    "parsing-telemetry",
+                    source_stage_progress(
+                        source_index,
+                        total_sources,
+                        TELEMETRY_PARSE_PROGRESS_SHARE * progress_fraction,
+                    ),
+                    format!(
+                        "正在解析來源 {} 的相機 telemetry（{}%）",
+                        source_index + 1,
+                        telemetry_highest_percent.get(),
+                    ),
+                    "running",
+                    false,
+                    Some(telemetry_highest_percent.get()),
+                    Some(100),
+                    Some(current_source.clone()),
+                    None,
+                );
+            },
         ) {
             Ok(export) => {
                 normalized_telemetry.push(json!({
@@ -2718,6 +2901,24 @@ fn run_extract(
             }
             Err(error) => return Err(error),
         };
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Extract,
+            "parsing-telemetry",
+            source_stage_progress(
+                source_index,
+                total_sources,
+                TELEMETRY_PARSE_PROGRESS_SHARE,
+            ),
+            format!("來源 {} 的 telemetry 準備完成", source_index + 1),
+            "running",
+            false,
+            Some(100),
+            Some(100),
+            Some(current_source.clone()),
+            None,
+        );
         let motion_context = keyframe_pruning.then(|| CandidateMotionContext {
             config: keyframe_thresholds,
             attitude_timeline: attitude_timeline.clone(),
@@ -2766,7 +2967,11 @@ fn run_extract(
                 id,
                 &StageName::Extract,
                 "selecting-in-memory",
-                source_stage_progress(source_index, total_sources, 0.0),
+                source_stage_progress(
+                    source_index,
+                    total_sources,
+                    TELEMETRY_PARSE_PROGRESS_SHARE,
+                ),
                 format!(
                     "正在記憶體中同步解碼並評分來源 {} 的雙魚眼候選影格",
                     source_index + 1
@@ -2849,7 +3054,7 @@ fn run_extract(
             source_stage_progress(
                 source_index,
                 total_sources,
-                CANDIDATE_SELECTION_PROGRESS_SHARE,
+                TELEMETRY_PARSE_PROGRESS_SHARE + CANDIDATE_SELECTION_PROGRESS_SHARE,
             ),
             format!(
                 "來源 {} 已完成 {} 組候選影格評分",
@@ -2940,7 +3145,7 @@ fn run_extract(
                 source_stage_progress(
                     source_index,
                     total_sources,
-                    CANDIDATE_SELECTION_PROGRESS_SHARE,
+                    TELEMETRY_PARSE_PROGRESS_SHARE + CANDIDATE_SELECTION_PROGRESS_SHARE,
                 ),
                 format!(
                     "正在以原始解析度重新解碼來源 {} 的 {} 組選定影格",
@@ -2999,7 +3204,8 @@ fn run_extract(
                         source_stage_progress(
                             source_index,
                             total_sources,
-                            CANDIDATE_SELECTION_PROGRESS_SHARE
+                            TELEMETRY_PARSE_PROGRESS_SHARE
+                                + CANDIDATE_SELECTION_PROGRESS_SHARE
                                 + FULL_RESOLUTION_PROGRESS_SHARE * decode_fraction,
                         ),
                         format!(
@@ -3032,7 +3238,9 @@ fn run_extract(
                 source_stage_progress(
                     source_index,
                     total_sources,
-                    CANDIDATE_SELECTION_PROGRESS_SHARE + FULL_RESOLUTION_PROGRESS_SHARE,
+                    TELEMETRY_PARSE_PROGRESS_SHARE
+                        + CANDIDATE_SELECTION_PROGRESS_SHARE
+                        + FULL_RESOLUTION_PROGRESS_SHARE,
                 ),
                 format!(
                     "來源 {} 已完成 {} 組原始解析度影格解碼",
@@ -3075,14 +3283,16 @@ fn run_extract(
         let cancelled = control.cancelled.clone();
         let completed_intervals = Arc::new(AtomicU64::new(0));
         let completed_intervals_for_callback = completed_intervals.clone();
+        let current_source_for_commit = current_source.clone();
         let source_offset = source_stage_progress(
             source_index,
             total_sources,
-            CANDIDATE_SELECTION_PROGRESS_SHARE + FULL_RESOLUTION_PROGRESS_SHARE,
+            TELEMETRY_PARSE_PROGRESS_SHARE
+                + CANDIDATE_SELECTION_PROGRESS_SHARE
+                + FULL_RESOLUTION_PROGRESS_SHARE,
         );
         let source_scale =
-            (1.0 - CANDIDATE_SELECTION_PROGRESS_SHARE - FULL_RESOLUTION_PROGRESS_SHARE)
-                / total_sources as f32;
+            FRAME_COMMIT_PROGRESS_SHARE / total_sources as f32;
         let commit_summary = extraction::extract_selected_pairs(
             &commit_request,
             || cancelled.load(Ordering::Acquire),
@@ -3105,7 +3315,7 @@ fn run_extract(
                     false,
                     Some(completed),
                     Some(total_intervals),
-                    Some(current_source.clone()),
+                    Some(current_source_for_commit.clone()),
                     None,
                 )
             },
@@ -3146,15 +3356,174 @@ fn run_extract(
         // streams so long captures do not retain avoidable temporary storage.
         drop(transaction_cleanup);
 
-        for (input_index, source) in capture.source_probes.iter().enumerate() {
-            for stream in stream_indices(&source.probe, "data") {
-                if control.cancelled.load(Ordering::Acquire) {
-                    return Err("cancelled".to_owned());
+        let telemetry_jobs = capture
+            .source_probes
+            .iter()
+            .enumerate()
+            .flat_map(|(input_index, source)| {
+                let duration = probe_duration_seconds(&source.probe);
+                stream_indices(&source.probe, "data")
+                    .into_iter()
+                    .map(move |stream| (input_index, source.path.clone(), stream, duration))
+            })
+            .collect::<Vec<_>>();
+        let telemetry_job_total = telemetry_jobs.len();
+        let telemetry_copy_base = TELEMETRY_PARSE_PROGRESS_SHARE
+            + CANDIDATE_SELECTION_PROGRESS_SHARE
+            + FULL_RESOLUTION_PROGRESS_SHARE
+            + FRAME_COMMIT_PROGRESS_SHARE;
+        for (job_index, (input_index, source_path, stream, duration)) in
+            telemetry_jobs.into_iter().enumerate()
+        {
+            if control.cancelled.load(Ordering::Acquire) {
+                return Err("cancelled".to_owned());
+            }
+            let final_path = metadata.join(format!(
+                "source{source_index:03}_input{input_index}_stream{stream}_telemetry.bin"
+            ));
+            let report_copy_progress = |fraction: f32, message: String| {
+                let aggregate = (job_index as f32 + fraction.clamp(0.0, 1.0))
+                    / telemetry_job_total.max(1) as f32;
+                emit_progress_detailed(
+                    app,
+                    id,
+                    &StageName::Extract,
+                    "copying-telemetry",
+                    source_stage_progress(
+                        source_index,
+                        total_sources,
+                        telemetry_copy_base + TELEMETRY_COPY_PROGRESS_SHARE * aggregate,
+                    ),
+                    message,
+                    "running",
+                    false,
+                    Some(
+                        (job_index + usize::from(fraction >= 1.0))
+                            .min(telemetry_job_total) as u64,
+                    ),
+                    Some(telemetry_job_total as u64),
+                    Some(current_source.clone()),
+                    None,
+                );
+            };
+            if final_path.is_file() {
+                telemetry_streams.push(json!({
+                    "sourceIndex": source_index,
+                    "inputIndex": input_index,
+                    "streamIndex": stream,
+                    "path": final_path.to_string_lossy(),
+                    "format": "ffmpeg-data-stream-copy"
+                }));
+                report_copy_progress(
+                    1.0,
+                    format!(
+                        "來源 {} 已沿用 telemetry stream {} / {}",
+                        source_index + 1,
+                        job_index + 1,
+                        telemetry_job_total,
+                    ),
+                );
+                continue;
+            }
+            report_copy_progress(
+                0.0,
+                format!(
+                    "正在封裝來源 {} 的 telemetry stream（{} / {}）",
+                    source_index + 1,
+                    job_index + 1,
+                    telemetry_job_total,
+                ),
+            );
+            let partial_path = final_path.with_extension("bin.partial");
+            let args = vec![
+                "-hide_banner".into(),
+                "-nostdin".into(),
+                "-y".into(),
+                "-nostats".into(),
+                "-stats_period".into(),
+                "0.5".into(),
+                "-progress".into(),
+                "pipe:1".into(),
+                "-i".into(),
+                source_path.to_string_lossy().into_owned(),
+                "-map".into(),
+                format!("0:{stream}"),
+                "-c".into(),
+                "copy".into(),
+                "-f".into(),
+                "data".into(),
+                partial_path.to_string_lossy().into_owned(),
+            ];
+            let telemetry_heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Extract,
+                "copying-telemetry",
+                source_stage_progress(
+                    source_index,
+                    total_sources,
+                    telemetry_copy_base
+                        + TELEMETRY_COPY_PROGRESS_SHARE * job_index as f32
+                            / telemetry_job_total.max(1) as f32,
+                ),
+                format!(
+                    "正在封裝來源 {} 的 telemetry stream（{} / {}）",
+                    source_index + 1,
+                    job_index + 1,
+                    telemetry_job_total,
+                ),
+                Some(current_source.clone()),
+                Some(job_index as u64),
+                Some(telemetry_job_total as u64),
+            );
+            let highest_fraction = Cell::new(0.0_f32);
+            let result = run_child_with_output(app, id, &ffmpeg, &args, control, |line| {
+                let Some(seconds) = parse_ffmpeg_progress_time_seconds(line) else {
+                    return;
+                };
+                let Some(duration) = duration.filter(|value| *value > f64::EPSILON) else {
+                    return;
+                };
+                let fraction = (seconds / duration).clamp(0.0, 0.99) as f32;
+                if fraction <= highest_fraction.get() {
+                    return;
                 }
-                let final_path = metadata.join(format!(
-                    "source{source_index:03}_input{input_index}_stream{stream}_telemetry.bin"
-                ));
-                if final_path.is_file() {
+                highest_fraction.set(fraction);
+                telemetry_heartbeat.update(
+                    source_stage_progress(
+                        source_index,
+                        total_sources,
+                        telemetry_copy_base
+                            + TELEMETRY_COPY_PROGRESS_SHARE
+                                * (job_index as f32 + fraction)
+                                / telemetry_job_total.max(1) as f32,
+                    ),
+                    format!(
+                        "正在封裝來源 {} 的 telemetry stream（{} / {}，{:.0}%）",
+                        source_index + 1,
+                        job_index + 1,
+                        telemetry_job_total,
+                        fraction * 100.0,
+                    ),
+                    Some(current_source.clone()),
+                    Some(job_index as u64),
+                    Some(telemetry_job_total as u64),
+                );
+                report_copy_progress(
+                    fraction,
+                    format!(
+                        "正在封裝來源 {} 的 telemetry stream（{} / {}，{:.0}%）",
+                        source_index + 1,
+                        job_index + 1,
+                        telemetry_job_total,
+                        fraction * 100.0,
+                    ),
+                );
+            });
+            match result {
+                Ok(()) => {
+                    fs::rename(&partial_path, &final_path)
+                        .map_err(|error| error.to_string())?;
                     telemetry_streams.push(json!({
                         "sourceIndex": source_index,
                         "inputIndex": input_index,
@@ -3162,48 +3531,42 @@ fn run_extract(
                         "path": final_path.to_string_lossy(),
                         "format": "ffmpeg-data-stream-copy"
                     }));
-                    continue;
+                    report_copy_progress(
+                        1.0,
+                        format!(
+                            "來源 {} 已完成 telemetry stream {} / {}",
+                            source_index + 1,
+                            job_index + 1,
+                            telemetry_job_total,
+                        ),
+                    );
                 }
-                let partial_path = final_path.with_extension("bin.partial");
-                let args = vec![
-                    "-hide_banner".into(),
-                    "-nostdin".into(),
-                    "-y".into(),
-                    "-i".into(),
-                    source.path.to_string_lossy().into_owned(),
-                    "-map".into(),
-                    format!("0:{stream}"),
-                    "-c".into(),
-                    "copy".into(),
-                    "-f".into(),
-                    "data".into(),
-                    partial_path.to_string_lossy().into_owned(),
-                ];
-                match run_child(app, id, &ffmpeg, &args, control) {
-                    Ok(()) => {
-                        fs::rename(&partial_path, &final_path)
-                            .map_err(|error| error.to_string())?;
-                        telemetry_streams.push(json!({
-                            "sourceIndex": source_index,
-                            "inputIndex": input_index,
-                            "streamIndex": stream,
-                            "path": final_path.to_string_lossy(),
-                            "format": "ffmpeg-data-stream-copy"
-                        }));
-                    }
-                    Err(error) if !control.cancelled.load(Ordering::Acquire) => {
-                        let _ = fs::remove_file(&partial_path);
-                        emit_log(
-                            app,
-                            id,
-                            "warning",
-                            format!("無法封裝 telemetry stream {stream}: {error}"),
-                        );
-                    }
-                    Err(error) => return Err(error),
+                Err(error) if !control.cancelled.load(Ordering::Acquire) => {
+                    let _ = fs::remove_file(&partial_path);
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!("無法封裝 telemetry stream {stream}: {error}"),
+                    );
                 }
+                Err(error) => return Err(error),
             }
         }
+        emit_progress_detailed(
+            app,
+            id,
+            &StageName::Extract,
+            "source-completed",
+            source_stage_progress(source_index, total_sources, 1.0),
+            format!("來源 {} 的影格與 telemetry 已完成", source_index + 1),
+            "running",
+            false,
+            Some((source_index + 1) as u64),
+            Some(total_sources as u64),
+            Some(current_source.clone()),
+            None,
+        );
     }
     let metadata = output.join("metadata");
     fs::create_dir_all(&metadata).map_err(|e| e.to_string())?;
@@ -7182,7 +7545,36 @@ fn refresh_calibrated_pair_matches(
                 quality_profile,
                 feature_config,
             );
-            run_child(app, id, colmap, &args, control)
+            let heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "calibrated-matching",
+                colmap_step_progress(4, 0.70),
+                "正在依校正後的 FOV 重新配對特徵",
+                Some("matches_importer".to_owned()),
+                None,
+                None,
+            );
+            run_child_with_output(app, id, colmap, &args, control, |line| {
+                let Some(fraction) = parse_matching_progress(line) else {
+                    return;
+                };
+                let completed = fraction.current.min(fraction.total);
+                heartbeat.update(
+                    colmap_step_progress(
+                        4,
+                        0.70 + 0.05 * completed as f32 / fraction.total as f32,
+                    ),
+                    format!(
+                        "正在依校正後的 FOV 重新配對特徵（{} / {}）",
+                        completed, fraction.total
+                    ),
+                    Some("matches_importer".to_owned()),
+                    Some(completed),
+                    Some(fraction.total),
+                );
+            })
         });
     match result {
         Ok(()) => {
@@ -8196,6 +8588,17 @@ fn run_align(
         // The independent-camera bootstrap is only necessary for unknown poses.
         remove_align_artifact(&unconfigured_database_backup)?;
         create_colmap_database_backup(&db, &unconfigured_database_backup)?;
+        let _rig_preconfigure_heartbeat = ProgressHeartbeat::start(
+            app,
+            id,
+            StageName::Align,
+            "rig-configuring",
+            colmap_step_progress(0, 0.99),
+            "正在把已知雙鏡頭外參寫入 COLMAP 資料庫",
+            Some("rig_configurator".to_owned()),
+            None,
+            None,
+        );
         let configure_result = run_child(
             app,
             id,
@@ -8358,6 +8761,17 @@ fn run_align(
                 id,
                 "info",
                 "正在以 view graph 校正 focal length；只有成功結果才會標記為 focal prior",
+            );
+            let _focal_heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "focal-calibration",
+                colmap_step_progress(1, 0.99),
+                "正在校正並驗證 view graph focal prior",
+                Some("view_graph_calibrator".to_owned()),
+                None,
+                None,
             );
             let result = run_child(app, id, &colmap, &view_graph_calibrator_args(&db), control);
             match result {
@@ -8540,7 +8954,7 @@ fn run_align(
                         id,
                         "bootstrap",
                         2,
-                        highest_registered.get() as f32 / bootstrap_total as f32,
+                        0.60 * highest_registered.get() as f32 / bootstrap_total as f32,
                         format!(
                             "正在建立獨立鏡頭初始模型，已註冊約 {} / {} 張影像",
                             highest_registered.get(),
@@ -8551,9 +8965,21 @@ fn run_align(
                 },
             )?;
         }
-        let selected_bootstrap = match select_colmap_bootstrap_for_rig(
-            app, id, &colmap, &root, &bootstrap, control,
-        ) {
+        let initial_bootstrap_selection = {
+            let _heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "bootstrap-validation",
+                colmap_step_progress(2, 0.60),
+                "正在檢查 bootstrap 子模型並選擇相機組共同影格",
+                Some("model_converter".to_owned()),
+                None,
+                None,
+            );
+            select_colmap_bootstrap_for_rig(app, id, &colmap, &root, &bootstrap, control)
+        };
+        let selected_bootstrap = match initial_bootstrap_selection {
             Ok(model) => model,
             Err(initial_error) => {
                 let initial_pairs = verified_bootstrap_initial_pairs(&db, &rig_configs)?;
@@ -8575,7 +9001,8 @@ fn run_align(
                 let retry_root = root.join("sparse_bootstrap_retry");
                 let mut retry_failures = Vec::new();
                 let mut selected = None;
-                for pair in initial_pairs {
+                let retry_total = initial_pairs.len();
+                for (retry_index, pair) in initial_pairs.into_iter().enumerate() {
                     remove_align_artifact(&retry_root)?;
                     fs::create_dir_all(&retry_root)
                         .map_err(|error| format!("無法建立 bootstrap 重試資料夾：{error}"))?;
@@ -8609,6 +9036,22 @@ fn run_align(
                         &mapper_gpu_index,
                         retry_options,
                     );
+                    let retry_base = retry_index as f32 / retry_total as f32;
+                    let retry_heartbeat = ProgressHeartbeat::start(
+                        app,
+                        id,
+                        StageName::Align,
+                        "bootstrap-retry",
+                        colmap_step_progress(2, 0.60 + 0.40 * retry_base),
+                        format!(
+                            "正在嘗試 bootstrap 初始 pair（{} / {}）",
+                            retry_index + 1,
+                            retry_total
+                        ),
+                        Some(pair.image_names.clone()),
+                        Some(retry_index as u64),
+                        Some(retry_total as u64),
+                    );
                     let run_result = run_mapper_with_gpu_fallback(
                         app,
                         id,
@@ -8620,7 +9063,28 @@ fn run_align(
                         "bootstrap_mapper_retry",
                         control,
                         || {},
-                        |_| {},
+                        |line| {
+                            let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                                return;
+                            };
+                            let image_fraction = registered.min(independent_image_total.max(1)) as f32
+                                / independent_image_total.max(1) as f32;
+                            let attempt_fraction =
+                                (retry_index as f32 + image_fraction) / retry_total as f32;
+                            retry_heartbeat.update(
+                                colmap_step_progress(2, 0.60 + 0.40 * attempt_fraction),
+                                format!(
+                                    "bootstrap 重試 {} / {}，已註冊約 {} / {} 張影像",
+                                    retry_index + 1,
+                                    retry_total,
+                                    registered.min(independent_image_total.max(1)),
+                                    independent_image_total.max(1)
+                                ),
+                                Some(format!("影像 #{image_id}")),
+                                Some(retry_index as u64),
+                                Some(retry_total as u64),
+                            );
+                        },
                     );
                     let attempt = run_result.and_then(|()| {
                         select_colmap_bootstrap_for_rig(
@@ -8678,6 +9142,17 @@ fn run_align(
         fs::create_dir_all(&configured_bootstrap)
             .map_err(|error| format!("無法建立 COLMAP 相機組驗證模型資料夾：{error}"))?;
         let mut rig_derivation_failure = None;
+        let rig_heartbeat = ProgressHeartbeat::start(
+            app,
+            id,
+            StageName::Align,
+            "rig-configuring",
+            3.0 / 5.0,
+            "正在建立並驗證雙鏡頭相機組模型",
+            Some("rig_configurator".to_owned()),
+            None,
+            None,
+        );
         let configure_result = run_child_with_output(
             app,
             id,
@@ -8751,6 +9226,7 @@ fn run_align(
                 }
             }
         };
+        drop(rig_heartbeat);
         rig_configs = persist_rig_config_from_database(&root, &db)?;
         let post_rig_focal_report = if calibrate_focal_prior {
             crate::colmap_priors::read_focal_prior_report(&db, "view_graph_calibrator")
@@ -8781,6 +9257,17 @@ fn run_align(
                 id,
                 "info",
                 "正在 rig configurator 後有界重試 view graph focal calibration",
+            );
+            let _focal_retry_heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "focal-calibration",
+                colmap_step_progress(3, 0.40),
+                "正在重試並驗證 view graph focal prior",
+                Some("view_graph_calibrator".to_owned()),
+                None,
+                None,
             );
             let retry_result = run_child(
                 app,
@@ -9032,7 +9519,7 @@ fn run_align(
                     id,
                     "final-mapping",
                     4,
-                    highest_registered.get() as f32 / final_total as f32,
+                    0.50 * highest_registered.get() as f32 / final_total as f32,
                     format!(
                         "正在重建最終模型，已註冊約 {} / {} 組影格",
                         highest_registered.get(),
@@ -9045,14 +9532,27 @@ fn run_align(
         if !sparse_rig_model_exists(&sparse) {
             return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
         }
-        let mut final_calibrated_sensor_count = validate_colmap_configured_rig_model(
-            app,
-            id,
-            &colmap,
-            &root,
-            &sparse.join("0"),
-            control,
-        )?;
+        let mut final_calibrated_sensor_count = {
+            let _heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "final-validation",
+                colmap_step_progress(4, 0.50),
+                "正在驗證最終相機組模型與已註冊影格",
+                Some("model_converter".to_owned()),
+                None,
+                Some(final_total),
+            );
+            validate_colmap_configured_rig_model(
+                app,
+                id,
+                &colmap,
+                &root,
+                &sparse.join("0"),
+                control,
+            )?
+        };
         if mapper_mode == MapperMode::Incremental {
             let recovery_report_path = root.join("metadata/auto_seed_recovery.json");
             let scratch_text = root.join("metadata/.align-auto-seed-text");
@@ -9088,29 +9588,30 @@ fn run_align(
                     ),
                 );
                 for (attempt_index, seed) in seed_pairs.iter().enumerate() {
+                    let attempt_total = seed_pairs.len().max(1);
                     let retry_root = root.join(format!(
                         "metadata/.align-auto-seed-retry-{}",
                         attempt_index + 1
                     ));
                     remove_align_artifact(&retry_root)?;
                     fs::create_dir_all(&retry_root).map_err(|error| error.to_string())?;
-                    emit_progress_detailed(
+                    let recovery_heartbeat = ProgressHeartbeat::start(
                         app,
                         id,
-                        &StageName::Align,
+                        StageName::Align,
                         "auto-seed-recovery",
-                        4.0 / 5.0,
+                        colmap_step_progress(
+                            4,
+                            0.50 + 0.20 * attempt_index as f32 / attempt_total as f32,
+                        ),
                         format!(
                             "初始模型覆蓋不足，正在自動嘗試較可靠的起始位置（{} / {}）",
                             attempt_index + 1,
-                            seed_pairs.len()
+                            attempt_total
                         ),
-                        "running",
-                        false,
-                        None,
-                        None,
                         Some(seed.image_names.clone()),
-                        None,
+                        Some(attempt_index as u64),
+                        Some(attempt_total as u64),
                     );
                     let retry_options = MapperOptions {
                         multiple_models: false,
@@ -9144,7 +9645,28 @@ fn run_align(
                         "auto_seed_mapper",
                         control,
                         || {},
-                        |_| {},
+                        |line| {
+                            let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                                return;
+                            };
+                            let registration_fraction = registered.min(final_total) as f32
+                                / final_total as f32;
+                            let fraction = (attempt_index as f32 + registration_fraction)
+                                / attempt_total as f32;
+                            recovery_heartbeat.update(
+                                colmap_step_progress(4, 0.50 + 0.20 * fraction),
+                                format!(
+                                    "自動 seed 重試 {} / {}，已註冊約 {} / {} 組影格",
+                                    attempt_index + 1,
+                                    attempt_total,
+                                    registered.min(final_total),
+                                    final_total
+                                ),
+                                Some(format!("影像 #{image_id}")),
+                                Some(attempt_index as u64),
+                                Some(attempt_total as u64),
+                            );
+                        },
                     );
                     if let Err(error) = run_result {
                         if cancelled_error(&error, control) {
@@ -9320,21 +9842,35 @@ fn run_align(
                 "gravityPriorRequested": use_gravity_prior,
             }),
         )?;
-        match prepare_global_mapper_priors_from_seed(
-            app,
-            id,
-            &root,
-            &colmap,
-            &sparse.join("0"),
-            &db,
-            &rig_configs,
-            setting_bool(
-                &manifest.settings,
-                "/align/exportRollingShutterTrajectory",
-                false,
-            ),
-            control,
-        ) {
+        let prior_result = {
+            let _heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "imu-calibration",
+                colmap_step_progress(4, 0.70),
+                "正在估計並驗證 IMU 時間偏移、hand-eye 與 focal priors",
+                Some("imu_calibration".to_owned()),
+                None,
+                None,
+            );
+            prepare_global_mapper_priors_from_seed(
+                app,
+                id,
+                &root,
+                &colmap,
+                &sparse.join("0"),
+                &db,
+                &rig_configs,
+                setting_bool(
+                    &manifest.settings,
+                    "/align/exportRollingShutterTrajectory",
+                    false,
+                ),
+                control,
+            )
+        };
+        match prior_result {
             Ok(report) => {
                 emit_log(
                     app,
@@ -9468,6 +10004,18 @@ fn run_align(
                     },
                 );
                 let mut quality_gate_audit = None;
+                let global_total = rig_frame_total.max(1);
+                let global_heartbeat = ProgressHeartbeat::start(
+                    app,
+                    id,
+                    StageName::Align,
+                    "global-mapping",
+                    colmap_step_progress(4, 0.75),
+                    "正在建立並驗證 global mapper 候選模型",
+                    Some("global_mapper".to_owned()),
+                    None,
+                    Some(global_total),
+                );
                 let global_result = run_mapper_with_gpu_fallback(
                     app,
                     id,
@@ -9479,9 +10027,34 @@ fn run_align(
                     "global_mapper",
                     control,
                     || {},
-                    |_| {},
+                    |line| {
+                        let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                            return;
+                        };
+                        let completed = registered.min(global_total);
+                        global_heartbeat.update(
+                            colmap_step_progress(
+                                4,
+                                0.75 + 0.10 * completed as f32 / global_total as f32,
+                            ),
+                            format!(
+                                "正在建立 global mapper 候選模型，已註冊約 {} / {} 組影格",
+                                completed, global_total
+                            ),
+                            Some(format!("影像 #{image_id}")),
+                            Some(completed),
+                            Some(global_total),
+                        );
+                    },
                 )
                 .and_then(|()| {
+                    global_heartbeat.update(
+                        colmap_step_progress(4, 0.85),
+                        "正在驗證 global mapper 候選模型",
+                        Some("global_mapper".to_owned()),
+                        Some(global_total),
+                        Some(global_total),
+                    );
                     if !sparse_rig_model_exists(&global_candidate) {
                         return Err("global_mapper 未產生含 rigs/frames 的候選模型".to_owned());
                     }
@@ -9613,6 +10186,17 @@ fn run_align(
             "info",
             "正在驗證並執行外部 orientation-aware BA；不會將 quaternion 傳給 stock COLMAP",
         );
+        let _orientation_heartbeat = ProgressHeartbeat::start(
+            app,
+            id,
+            StageName::Align,
+            "orientation-ba",
+            colmap_step_progress(4, 0.90),
+            "正在執行並驗證外部 orientation-aware BA",
+            Some("orientation_prior".to_owned()),
+            None,
+            None,
+        );
         match run_external_orientation_ba_candidate(
             app,
             id,
@@ -9648,6 +10232,17 @@ fn run_align(
             id,
             "info",
             "正在以校正後的 IMU gravity 扶正最終模型（LichtFeld +Y up）",
+        );
+        let _gravity_heartbeat = ProgressHeartbeat::start(
+            app,
+            id,
+            StageName::Align,
+            "gravity-alignment",
+            colmap_step_progress(4, 0.94),
+            "正在計算、轉換並驗證重力扶正模型",
+            Some("gravity_alignment".to_owned()),
+            None,
+            None,
         );
         match align_sparse_model_to_gravity(
             app,
@@ -9741,6 +10336,17 @@ fn run_align(
         Some(effective_final_mapper_component),
     )?;
     let final_text_model = root.join("metadata/final-model-text");
+    let finalization_heartbeat = ProgressHeartbeat::start(
+        app,
+        id,
+        StageName::Align,
+        "finalizing",
+        colmap_step_progress(4, 0.97),
+        "正在匯出並檢查最終模型報告",
+        Some("model_converter".to_owned()),
+        None,
+        None,
+    );
     export_colmap_text_model(
         app,
         id,
@@ -9749,6 +10355,13 @@ fn run_align(
         &final_text_model,
         control,
     )?;
+    finalization_heartbeat.update(
+        colmap_step_progress(4, 0.985),
+        "正在產生最終重建品質報告",
+        Some("benchmark".to_owned()),
+        None,
+        None,
+    );
     let benchmark_variant = if effective_final_mapper_component == "global_mapper" {
         crate::reconstruction_benchmark::BenchmarkVariant::CGlobal
     } else if setting_bool(&manifest.settings, "/extract/keyframePruning", true) {
@@ -12402,6 +13015,14 @@ mod tests {
         assert_eq!(super::parse_ffmpeg_progress_frame("frame=  42\r"), Some(42));
         assert_eq!(super::parse_ffmpeg_progress_frame("progress=continue"), None);
         assert_eq!(super::parse_ffmpeg_progress_frame("frame=N/A"), None);
+        assert_eq!(
+            super::parse_ffmpeg_progress_time_seconds("out_time_us=1250000"),
+            Some(1.25)
+        );
+        assert_eq!(
+            super::parse_ffmpeg_progress_time_seconds("out_time_us=N/A"),
+            None
+        );
     }
 
     #[test]

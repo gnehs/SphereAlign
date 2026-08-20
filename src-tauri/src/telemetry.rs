@@ -1551,6 +1551,18 @@ pub fn parse_and_write(
     output_path: &Path,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<TelemetryExport, String> {
+    parse_and_write_with_progress(input_path, output_path, cancel_flag, |_| {})
+}
+
+pub fn parse_and_write_with_progress<F>(
+    input_path: &Path,
+    output_path: &Path,
+    cancel_flag: Arc<AtomicBool>,
+    progress: F,
+) -> Result<TelemetryExport, String>
+where
+    F: Fn(f64),
+{
     let mut stream = fs::File::open(input_path).map_err(|error| error.to_string())?;
     let source_metadata = stream.metadata().map_err(|error| error.to_string())?;
     let source_size = source_metadata.len();
@@ -1569,7 +1581,7 @@ pub fn parse_and_write(
         &mut stream,
         size,
         input_path,
-        |_| {},
+        progress,
         cancel_flag.clone(),
     )
     .map_err(|error| error.to_string())?;

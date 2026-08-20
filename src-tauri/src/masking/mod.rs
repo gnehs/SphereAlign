@@ -34,8 +34,10 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::fisheye::{
     LensOpticalOcclusions, OpticalOcclusion, ValidRegion, DJI_VALID_RADIUS_RATIO,
@@ -209,7 +211,7 @@ pub struct MaskProgress {
 }
 
 /// Stable progress stage names for frontend events.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MaskStage {
     Discovering,
@@ -391,7 +393,10 @@ pub fn process_mask_batch(
         }
     }
     if request.classes.is_empty() && !request.mask_sky {
-        return process_with_engine(request, cancel, &NoExclusionsEngine, on_progress);
+        return process_with_engine(request, cancel, &NoExclusionsEngine, |mut event| {
+            event.fraction = 0.05 + 0.95 * event.fraction;
+            on_progress(event);
+        });
     }
     on_progress(MaskProgress {
         index: 0,
@@ -400,7 +405,7 @@ pub fn process_mask_batch(
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         stage: MaskStage::Discovering,
-        fraction: 0.0,
+        fraction: 0.05,
         message: "正在掃描原生雙魚眼影像".to_string(),
     });
     on_progress(MaskProgress {
@@ -410,25 +415,57 @@ pub fn process_mask_batch(
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         stage: MaskStage::LoadingModel,
-        fraction: 0.0,
+        fraction: 0.05,
         message: "正在載入 YOLO11／SkySeg 模型".to_string(),
     });
-    let engine = NativeMaskEngine::load(request, cancel, &|event| {
-        let percent = event
-            .downloaded
-            .saturating_mul(100)
-            .checked_div(event.total)
-            .unwrap_or(0);
-        on_progress(MaskProgress {
-            index: 0,
-            total: 0,
-            completed: 0,
-            input: request.images_dir.clone(),
-            mask_path: request.masks_dir.clone(),
-            stage: MaskStage::LoadingModel,
-            fraction: 0.0,
-            message: format!("首次使用，正在下載 {} 模型（{}%）", event.label, percent),
+    let loading_basis_points = AtomicU32::new(500);
+    let loading_done = AtomicBool::new(false);
+    let engine = thread::scope(|scope| {
+        let heartbeat = scope.spawn(|| {
+            let started = Instant::now();
+            while !loading_done.load(Ordering::Acquire) {
+                thread::park_timeout(Duration::from_secs(1));
+                if loading_done.load(Ordering::Acquire) {
+                    break;
+                }
+                on_progress(MaskProgress {
+                    index: 0,
+                    total: 0,
+                    completed: 0,
+                    input: request.images_dir.clone(),
+                    mask_path: request.masks_dir.clone(),
+                    stage: MaskStage::LoadingModel,
+                    fraction: loading_basis_points.load(Ordering::Acquire) as f32 / 10_000.0,
+                    message: format!(
+                        "正在載入 YOLO11／SkySeg 模型（已等待 {} 秒）",
+                        started.elapsed().as_secs(),
+                    ),
+                });
+            }
         });
+        let result = NativeMaskEngine::load(request, cancel, &|event| {
+            let percent = event
+                .downloaded
+                .saturating_mul(100)
+                .checked_div(event.total)
+                .unwrap_or(0);
+            let basis_points = 500_u32.saturating_add((percent as u32).saturating_mul(5));
+            loading_basis_points.fetch_max(basis_points.min(1_000), Ordering::AcqRel);
+            on_progress(MaskProgress {
+                index: 0,
+                total: 0,
+                completed: 0,
+                input: request.images_dir.clone(),
+                mask_path: request.masks_dir.clone(),
+                stage: MaskStage::LoadingModel,
+                fraction: loading_basis_points.load(Ordering::Acquire) as f32 / 10_000.0,
+                message: format!("首次使用，正在下載 {} 模型（{}%）", event.label, percent),
+            });
+        });
+        loading_done.store(true, Ordering::Release);
+        heartbeat.thread().unpark();
+        let _ = heartbeat.join();
+        result
     })?;
     on_progress(MaskProgress {
         index: 0,
@@ -437,13 +474,16 @@ pub fn process_mask_batch(
         input: request.images_dir.clone(),
         mask_path: request.masks_dir.clone(),
         stage: MaskStage::LoadingModel,
-        fraction: 0.0,
+        fraction: 0.10,
         message: format!(
             "模型已載入 {}，CPU 推論回退已停用",
             engine.execution_provider
         ),
     });
-    process_with_engine(request, cancel, &engine, on_progress)
+    process_with_engine(request, cancel, &engine, |mut event| {
+        event.fraction = 0.10 + 0.90 * event.fraction;
+        on_progress(event);
+    })
 }
 
 /// Return a completed summary before model discovery when every output is
@@ -482,7 +522,7 @@ fn skip_fully_verified_batch(
         outputs.push((input, mask_path));
     }
 
-    for (input, mask_path) in &outputs {
+    for (index, (input, mask_path)) in outputs.iter().enumerate() {
         if cancel.is_cancelled() {
             return Ok(Some(summary(0, true)));
         }
@@ -497,6 +537,16 @@ fn skip_fully_verified_batch(
         if !is_valid_mask_file(mask_path, width, height) {
             return Ok(None);
         }
+        on_progress(MaskProgress {
+            index: index + 1,
+            total,
+            completed: index + 1,
+            input: (*input).clone(),
+            mask_path: mask_path.clone(),
+            stage: MaskStage::Discovering,
+            fraction: 0.05 * (index + 1) as f32 / total.max(1) as f32,
+            message: format!("正在驗證既有遮罩（{} / {}）", index + 1, total),
+        });
     }
 
     for (index, (input, mask_path)) in outputs.iter().enumerate() {
@@ -511,7 +561,7 @@ fn skip_fully_verified_batch(
             input,
             mask_path,
             MaskStage::Skipped,
-            (index + 1) as f32 / total as f32,
+            0.05 + 0.95 * (index + 1) as f32 / total as f32,
             "已確認遮罩存在，已略過",
         );
     }

@@ -488,6 +488,20 @@ const USER_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
   "影格擷取已取消": msg({ message: "Frame extraction cancelled", context: "backend stage status", comment: "The frame-extraction stage was cancelled." }),
   "正在掃描原生雙魚眼影像": msg({ message: "Scanning native dual-fisheye images", comment: "Backend progress message: native fisheye images are being inspected." }),
   "正在載入 YOLO11／SkySeg 模型": msg({ message: "Loading YOLO11/SkySeg models", comment: "Keep YOLO11 and SkySeg as model names." }),
+  "正在依校正後的 FOV 重新配對特徵": msg({ message: "Rematching features using the calibrated FOV", comment: "FOV means field of view." }),
+  "正在建立並驗證 global mapper 候選模型": msg({ message: "Building and validating the global mapper candidate", comment: "Keep global mapper as a technical component name." }),
+  "正在驗證 global mapper 候選模型": msg({ message: "Validating the global mapper candidate", comment: "Keep global mapper as a technical component name." }),
+  "正在執行並驗證外部 orientation-aware BA": msg({ message: "Running and validating external orientation-aware BA", comment: "BA means bundle adjustment." }),
+  "正在計算、轉換並驗證重力扶正模型": msg({ message: "Computing, transforming, and validating gravity alignment", comment: "Progress message for aligning the final sparse model to gravity." }),
+  "正在匯出並檢查最終模型報告": msg({ message: "Exporting and checking the final model report", comment: "Progress message during final model export." }),
+  "正在產生最終重建品質報告": msg({ message: "Generating the final reconstruction quality report", comment: "Progress message during final report generation." }),
+  "正在把已知雙鏡頭外參寫入 COLMAP 資料庫": msg({ message: "Writing known dual-camera extrinsics to the COLMAP database", comment: "Progress message while configuring a known camera rig." }),
+  "正在建立並驗證雙鏡頭相機組模型": msg({ message: "Building and validating the dual-camera rig model", comment: "Progress message while configuring the camera rig." }),
+  "正在校正並驗證 view graph focal prior": msg({ message: "Calibrating and validating the view-graph focal prior", comment: "Keep view graph and focal prior as technical terms." }),
+  "正在重試並驗證 view graph focal prior": msg({ message: "Retrying and validating the view-graph focal prior", comment: "Keep view graph and focal prior as technical terms." }),
+  "正在檢查 bootstrap 子模型並選擇相機組共同影格": msg({ message: "Checking bootstrap submodels and selecting shared camera-rig frames", comment: "Progress message while validating bootstrap reconstruction components." }),
+  "正在驗證最終相機組模型與已註冊影格": msg({ message: "Validating the final camera-rig model and registered frames", comment: "Progress message after final mapping." }),
+  "正在估計並驗證 IMU 時間偏移、hand-eye 與 focal priors": msg({ message: "Estimating and validating IMU time offset, hand-eye calibration, and focal priors", comment: "Keep IMU, hand-eye, and focal prior as technical terms." }),
   "已確認遮罩存在，已略過": msg({ message: "Verified that the mask exists; skipped", comment: "Backend message: an existing mask file was reused." }),
   "正在執行 YOLO11／SkySeg 推論": msg({ message: "Running YOLO11/SkySeg inference", comment: "Keep YOLO11 and SkySeg as model names." }),
   "遮罩處理已取消": msg({ message: "Mask operation cancelled", context: "backend stage status", comment: "The masking operation was cancelled." }),
@@ -673,6 +687,22 @@ function localiseUserMessage(value: string): string {
   const translated = value
     .replace(/cancelled before interval (\d+)/g, (_match, interval) => t`Cancelled before interval ${interval}`)
     .replace(/scoring (\d+) paired candidates/g, (_match, count) => t`Scoring ${count} paired candidates`)
+    .replace(/^(.+)（已等待 (\d+) 秒）$/g, (_match, message, seconds) => t`${localiseUserMessage(message)} (${seconds} seconds elapsed)`)
+    .replace(/^正在解析來源 (\d+) 的相機 telemetry(?:（(\d+)%）)?$/g, (_match, source, percent) => percent === undefined
+      ? t`Parsing camera telemetry for source ${source}`
+      : t`Parsing camera telemetry for source ${source} (${percent}%)`)
+    .replace(/^來源 (\d+) 的 telemetry 準備完成$/g, (_match, source) => t`Telemetry preparation completed for source ${source}`)
+    .replace(/^正在封裝來源 (\d+) 的 telemetry stream（(\d+) \/ (\d+)(?:，(\d+)%)?）$/g, (_match, source, current, total, percent) => percent === undefined
+      ? t`Packaging telemetry stream for source ${source} (${current} / ${total})`
+      : t`Packaging telemetry stream for source ${source} (${current} / ${total}, ${percent}%)`)
+    .replace(/^來源 (\d+) 已(?:沿用|完成) telemetry stream (\d+) \/ (\d+)$/g, (_match, source, current, total) => t`Telemetry stream ready for source ${source} (${current} / ${total})`)
+    .replace(/^來源 (\d+) 的影格與 telemetry 已完成$/g, (_match, source) => t`Frames and telemetry completed for source ${source}`)
+    .replace(/^正在驗證既有遮罩（(\d+) \/ (\d+)）$/g, (_match, current, total) => t`Verifying existing masks (${current} / ${total})`)
+    .replace(/^正在嘗試 bootstrap 初始 pair（(\d+) \/ (\d+)）$/g, (_match, current, total) => t`Trying bootstrap initial pair (${current} / ${total})`)
+    .replace(/^bootstrap 重試 (\d+) \/ (\d+)，已註冊約 (\d+) \/ (\d+) 張影像$/g, (_match, attempt, attempts, registered, total) => t`Bootstrap retry ${attempt} / ${attempts}: about ${registered} / ${total} images registered`)
+    .replace(/^自動 seed 重試 (\d+) \/ (\d+)，已註冊約 (\d+) \/ (\d+) 組影格$/g, (_match, attempt, attempts, registered, total) => t`Automatic seed retry ${attempt} / ${attempts}: about ${registered} / ${total} frame groups registered`)
+    .replace(/^初始模型覆蓋不足，正在自動嘗試較可靠的起始位置（(\d+) \/ (\d+)）$/g, (_match, current, total) => t`Initial-model coverage is low; trying a more reliable starting position (${current} / ${total})`)
+    .replace(/^正在建立 global mapper 候選模型，已註冊約 (\d+) \/ (\d+) 組影格$/g, (_match, registered, total) => t`Building the global mapper candidate: about ${registered} / ${total} frame groups registered`)
     .replace(/FFmpeg 有 (\d+) 張候選影格未回報 PTS，已使用 candidate FPS 時間估算/g, (_match, count) => t({
       message: `FFmpeg had ${count} candidate frames without PTS; estimated timing using candidate FPS`,
       context: "backend progress message",
@@ -889,12 +919,27 @@ const PHASE_LABELS: Record<string, MessageDescriptor> = {
   scoring: msg({ message: "Scoring candidates", context: "pipeline phase", comment: "Short label for scoring candidate frames." }),
   "selecting-in-memory": msg({ message: "Scoring in-memory candidates", context: "pipeline phase", comment: "Short label for candidate scoring in memory." }),
   "decoding-full-resolution": msg({ message: "Decoding full resolution", context: "pipeline phase", comment: "Short label for full-resolution decoding." }),
+  "parsing-telemetry": msg({ message: "Parsing telemetry", context: "pipeline phase", comment: "Short label for parsing source camera telemetry." }),
+  "copying-telemetry": msg({ message: "Packaging telemetry", context: "pipeline phase", comment: "Short label for copying source telemetry data streams." }),
+  "source-completed": msg({ message: "Source completed", context: "pipeline phase", comment: "Short label shown when one extraction source is complete." }),
   committing: msg({ message: "Committing output", context: "pipeline phase", comment: "Short label for writing output files." }),
   masking: msg({ message: "Mask inference", context: "pipeline phase", comment: "Short label for running mask inference." }),
   matching: msg({ message: "Image matching", context: "pipeline phase", comment: "Short label for matching images." }),
   "feature-extraction": msg({ message: "Feature extraction", context: "pipeline phase", comment: "Short label for extracting image features." }),
   bootstrap: msg({ message: "Bootstrap reconstruction", context: "pipeline phase", comment: "Short label for the initial reconstruction bootstrap." }),
+  "bootstrap-retry": msg({ message: "Bootstrap retry", context: "pipeline phase", comment: "Short label for a bounded bootstrap reconstruction retry." }),
   "final-mapping": msg({ message: "Final reconstruction", context: "pipeline phase", comment: "Short label for the final mapping/reconstruction pass." }),
+  "auto-seed-recovery": msg({ message: "Seed recovery", context: "pipeline phase", comment: "Short label for automatic reconstruction seed recovery." }),
+  "calibrated-matching": msg({ message: "Calibrated matching", context: "pipeline phase", comment: "Short label for matching with calibrated field-of-view pairs." }),
+  "global-mapping": msg({ message: "Global reconstruction", context: "pipeline phase", comment: "Short label for global mapper candidate reconstruction." }),
+  "orientation-ba": msg({ message: "Orientation bundle adjustment", context: "pipeline phase", comment: "Short label for external orientation-aware bundle adjustment." }),
+  "gravity-alignment": msg({ message: "Gravity alignment", context: "pipeline phase", comment: "Short label for aligning the final model to gravity." }),
+  "rig-configuring": msg({ message: "Configuring camera rig", context: "pipeline phase", comment: "Short label for writing and validating the COLMAP camera rig." }),
+  "focal-calibration": msg({ message: "Focal calibration", context: "pipeline phase", comment: "Short label for view-graph focal calibration." }),
+  "bootstrap-validation": msg({ message: "Bootstrap validation", context: "pipeline phase", comment: "Short label for selecting a valid bootstrap submodel." }),
+  "final-validation": msg({ message: "Model validation", context: "pipeline phase", comment: "Short label for validating the final camera-rig model." }),
+  "imu-calibration": msg({ message: "IMU calibration", context: "pipeline phase", comment: "Short label for estimating IMU and camera priors." }),
+  finalizing: msg({ message: "Finalizing model", context: "pipeline phase", comment: "Short label for exporting and reporting the final model." }),
   rig: msg({ message: "Camera-rig estimation", context: "pipeline phase", comment: "Short label for estimating the camera rig." }),
   completed: msg({ message: "Completed", context: "pipeline phase status", comment: "Short completed status label." }),
   cancelled: msg({ message: "Cancelled", context: "pipeline phase status", comment: "Short cancelled status label." }),
