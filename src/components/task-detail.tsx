@@ -19,8 +19,8 @@ import {
   processingRateLabel,
   sourceFromPath,
   sourceInspectionForPath,
-  stageDescription,
   stageLabel,
+  stageProgressDescription,
   stageStatusLabel,
   taskStageDuration,
   taskStageLabel,
@@ -136,7 +136,7 @@ function TaskSummary({
         </div>
         <div className="mt-4 flex flex-col gap-1 text-sm">
           <strong className="font-semibold text-foreground">{selectedStage.phase ? phaseLabel(selectedStage.phase) : stageStatusLabel(selectedStage.status)}</strong>
-          <p className="leading-relaxed break-anywhere text-muted-foreground">{selectedStage.message ? localiseUserMessage(selectedStage.message) : stageDescription(selectedStageDefinition)}</p>
+          <p className="leading-relaxed break-anywhere text-muted-foreground">{stageProgressDescription(selectedStage, selectedStageDefinition)}</p>
           {selectedStage.currentItem && <small className="leading-relaxed break-anywhere text-muted-foreground">{t`Current item: ${selectedStage.currentItem}`}</small>}
         </div>
         {(selectedStage.status === "running" || selectedStage.progress > 0) && <div className="mt-4 flex flex-col gap-2 [&_[data-slot=progress-track]]:h-1.25 [&_[data-slot=progress-value]]:hidden">

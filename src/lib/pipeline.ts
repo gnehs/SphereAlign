@@ -248,6 +248,16 @@ function stageDescription(stage: StageDefinition) {
   return translate(stage.description);
 }
 
+function stageProgressDescription(stage: StageState, definition: StageDefinition) {
+  if (stage.status === "running" && stage.phase === "final-mapping") {
+    if (stage.completed !== undefined && stage.total !== undefined) {
+      return t`Calculating camera positions and building the final 3D model (positions calculated for ${stage.completed} / ${stage.total} frame groups)`;
+    }
+    return t`Calculating camera positions and building the final 3D model`;
+  }
+  return stage.message ? localiseUserMessage(stage.message) : stageDescription(definition);
+}
+
 // Aggregate durations from three completed runs. Keeping the raw
 // observations makes the overall progress weighting auditable and easy to tune.
 const STAGE_OBSERVED_DURATION_MS: Record<StageKey, number> = {
@@ -1951,6 +1961,7 @@ export {
   STAGES,
   stageLabel,
   stageDescription,
+  stageProgressDescription,
   STAGE_OBSERVED_DURATION_MS,
   TOTAL_OBSERVED_DURATION_MS,
   MASK_CLASSES,

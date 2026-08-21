@@ -486,6 +486,16 @@ msgctxt "mask class"
 msgid "Bus"
 msgstr "公車"
 
+#: src/lib/pipeline.ts:256
+msgid "Calculating camera positions and building the final 3D model"
+msgstr "正在計算相機位置並建立最終 3D 模型"
+
+#. placeholder {0}: stage.completed
+#. placeholder {1}: stage.total
+#: src/lib/pipeline.ts:254
+msgid "Calculating camera positions and building the final 3D model (positions calculated for {0} / {1} frame groups)"
+msgstr "正在計算相機位置並建立最終 3D 模型（已完成 {0} / {1} 組影格的相機定位）"
+
 #: src/components/source-media.tsx:74
 msgid "Camera metadata could not be decoded from this file."
 msgstr "無法解碼這個檔案中的相機中繼資料。"

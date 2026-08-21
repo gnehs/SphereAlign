@@ -486,6 +486,16 @@ msgctxt "mask class"
 msgid "Bus"
 msgstr "Bus"
 
+#: src/lib/pipeline.ts:256
+msgid "Calculating camera positions and building the final 3D model"
+msgstr "Calculating camera positions and building the final 3D model"
+
+#. placeholder {0}: stage.completed
+#. placeholder {1}: stage.total
+#: src/lib/pipeline.ts:254
+msgid "Calculating camera positions and building the final 3D model (positions calculated for {0} / {1} frame groups)"
+msgstr "Calculating camera positions and building the final 3D model (positions calculated for {0} / {1} frame groups)"
+
 #: src/components/source-media.tsx:74
 msgid "Camera metadata could not be decoded from this file."
 msgstr "Camera metadata could not be decoded from this file."

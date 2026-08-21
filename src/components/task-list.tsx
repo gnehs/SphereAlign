@@ -25,11 +25,10 @@ import {
   formatDuration,
   formatEta,
   logCountLabel,
-  localiseUserMessage,
   phaseLabel,
   stageActionState,
-  stageDescription,
   stageLabel,
+  stageProgressDescription,
   stageStatusLabel,
   sourceFromPath,
   taskCreatedAtMs,
@@ -241,7 +240,7 @@ function TaskCard({
                     <Icon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", current.status === "running" && "text-primary")} />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <strong id={stageLabelId} className="text-sm font-medium text-foreground">{stageLabel(stage)}</strong>
-                      <small className="truncate text-sm text-muted-foreground">{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : current.message ? localiseUserMessage(current.message) : stageDescription(stage)}</small>
+                      <small className="truncate text-sm text-muted-foreground">{action.prerequisite ? t`Waiting for ${action.prerequisite} to finish` : stageProgressDescription(current, stage)}</small>
                       {current.status === "running" && (
                         <div className={cn("mt-1.5 flex w-[min(360px,100%)] items-center gap-2 [&_[data-slot=progress]]:min-w-20 [&_[data-slot=progress]]:flex-1 [&_[data-slot=progress-track]]:h-0.75 [&_[data-slot=progress-value]]:hidden [&>span]:w-7.5 [&>span]:text-right [&>span]:font-mono [&>span]:text-sm [&>span]:text-muted-foreground", stageProgress <= 0 && "[&_[data-slot=progress-indicator]]:!w-[30%] [&_[data-slot=progress-indicator]]:animate-[stage-progress-waiting_1.2s_ease-in-out_infinite]")}>
                           <Progress value={stageProgress} aria-label={t`${stageLabel(stage)} progress`}><ProgressValue /></Progress>
