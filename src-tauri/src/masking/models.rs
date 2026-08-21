@@ -11,6 +11,9 @@ use super::{CancelToken, MaskError, MaskResult};
 
 const YOLO_CACHE_PATH: &str = "ultralytics/yolo11s-seg-onnx/onnx/model.onnx";
 const SKYSEG_CACHE_PATH: &str = "JianyuanWang/skyseg/skyseg.onnx";
+const ALIKED_N16ROT_CACHE_PATH: &str = "colmap/3.13.0/aliked-n16rot.onnx";
+const ALIKED_N32_CACHE_PATH: &str = "colmap/3.13.0/aliked-n32.onnx";
+const ALIKED_LIGHTGLUE_CACHE_PATH: &str = "colmap/3.13.0/aliked-lightglue.onnx";
 
 // Keep the exact YOLO artifact already validated by gs360masker. The immutable
 // commit URL avoids silently accepting a replaced GitHub release asset.
@@ -23,6 +26,16 @@ const YOLO_SIZE: u64 = 40_680_531;
 const SKYSEG_DOWNLOAD_URL: &str = "https://huggingface.co/JianyuanWang/skyseg/resolve/3ba8c6df1d9ba9ff26f637c7ba9568ac11a9aa7f/skyseg.onnx";
 const SKYSEG_SHA256: &str = "ab9c34c64c3d821220a2886a4a06da4642ffa14d5b30e8d5339056a089aa1d39";
 const SKYSEG_SIZE: u64 = 175_997_079;
+
+const ALIKED_N16ROT_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx";
+const ALIKED_N16ROT_SHA256: &str = "39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547";
+const ALIKED_N16ROT_SIZE: u64 = 2_997_054;
+const ALIKED_N32_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx";
+const ALIKED_N32_SHA256: &str = "a077728a02d2de1a775c66df6de8cfeb7c6b51ca57572c64c680131c988c8b3c";
+const ALIKED_N32_SIZE: u64 = 4_205_634;
+const ALIKED_LIGHTGLUE_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx";
+const ALIKED_LIGHTGLUE_SHA256: &str = "b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d";
+const ALIKED_LIGHTGLUE_SIZE: u64 = 45_804_950;
 
 const YOLO_SPEC: DownloadSpec<'static> = DownloadSpec {
     label: "YOLO11 segmentation",
@@ -40,6 +53,30 @@ const SKYSEG_SPEC: DownloadSpec<'static> = DownloadSpec {
     size: SKYSEG_SIZE,
 };
 
+const ALIKED_N16ROT_SPEC: DownloadSpec<'static> = DownloadSpec {
+    label: "ALIKED-N16Rot",
+    relative_path: ALIKED_N16ROT_CACHE_PATH,
+    url: ALIKED_N16ROT_DOWNLOAD_URL,
+    sha256: ALIKED_N16ROT_SHA256,
+    size: ALIKED_N16ROT_SIZE,
+};
+
+const ALIKED_N32_SPEC: DownloadSpec<'static> = DownloadSpec {
+    label: "ALIKED-N32",
+    relative_path: ALIKED_N32_CACHE_PATH,
+    url: ALIKED_N32_DOWNLOAD_URL,
+    sha256: ALIKED_N32_SHA256,
+    size: ALIKED_N32_SIZE,
+};
+
+const ALIKED_LIGHTGLUE_SPEC: DownloadSpec<'static> = DownloadSpec {
+    label: "ALIKED LightGlue",
+    relative_path: ALIKED_LIGHTGLUE_CACHE_PATH,
+    url: ALIKED_LIGHTGLUE_DOWNLOAD_URL,
+    sha256: ALIKED_LIGHTGLUE_SHA256,
+    size: ALIKED_LIGHTGLUE_SIZE,
+};
+
 /// Byte-level progress for a model being downloaded on first use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelDownloadProgress {
@@ -55,6 +92,39 @@ pub struct ModelPaths {
     pub yolo: Option<PathBuf>,
     /// Sky segmentation model, when enabled.
     pub skyseg: Option<PathBuf>,
+}
+
+/// Resolve the selected official COLMAP weights, downloading and verifying any
+/// missing files in the same application-owned model root used by YOLO/SkySeg.
+pub fn resolve_aliked_models(
+    cache_dir: &Path,
+    use_n32: bool,
+    cancel: &CancelToken,
+    on_download: &dyn Fn(ModelDownloadProgress),
+) -> MaskResult<(PathBuf, PathBuf)> {
+    let roots = model_roots(None, Some(cache_dir));
+    let extractor_spec = if use_n32 {
+        &ALIKED_N32_SPEC
+    } else {
+        &ALIKED_N16ROT_SPEC
+    };
+    let extractor = resolve_required_model(
+        &roots,
+        Some(cache_dir),
+        &[extractor_spec.relative_path],
+        extractor_spec,
+        cancel,
+        on_download,
+    )?;
+    let matcher = resolve_required_model(
+        &roots,
+        Some(cache_dir),
+        &[ALIKED_LIGHTGLUE_SPEC.relative_path],
+        &ALIKED_LIGHTGLUE_SPEC,
+        cancel,
+        on_download,
+    )?;
+    Ok((extractor, matcher))
 }
 
 impl ModelPaths {
@@ -409,6 +479,22 @@ mod tests {
     use std::net::TcpListener;
     use std::thread;
     use tempfile::TempDir;
+
+    #[test]
+    fn aliked_downloads_are_pinned_to_the_official_colmap_release() {
+        for spec in [
+            ALIKED_N16ROT_SPEC,
+            ALIKED_N32_SPEC,
+            ALIKED_LIGHTGLUE_SPEC,
+        ] {
+            assert!(spec.url.starts_with(
+                "https://github.com/colmap/colmap/releases/download/3.13.0/"
+            ));
+            assert_eq!(spec.sha256.len(), 64);
+            assert!(spec.size > 0);
+            assert!(spec.relative_path.starts_with("colmap/3.13.0/"));
+        }
+    }
 
     #[test]
     fn resolves_only_the_models_required_by_enabled_filters() -> MaskResult<()> {

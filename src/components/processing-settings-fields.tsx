@@ -23,7 +23,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   candidateMultiplierFor,
   customLutPathIsInvalid,
-  featureModelPaths,
   gpuDeviceLabel,
   MASK_CLASSES,
   MASK_CLASS_LABELS,
@@ -40,7 +39,6 @@ export interface ProcessingSettingsFieldsProps {
   onSettingsChange: Dispatch<SetStateAction<PipelineSettings>>;
   doctor: DoctorReport;
   onChooseLut: () => void | Promise<void>;
-  onChooseFeatureModelDirectory: () => void | Promise<void>;
   onGpuPreferenceTouched: () => void;
   sourceColorInspection?: ColorInspectionSummary | null;
 }
@@ -54,7 +52,6 @@ export function ProcessingSettingsFields({
   onSettingsChange,
   doctor,
   onChooseLut,
-  onChooseFeatureModelDirectory,
   onGpuPreferenceTouched,
   sourceColorInspection,
 }: ProcessingSettingsFieldsProps) {
@@ -68,7 +65,6 @@ export function ProcessingSettingsFields({
   const lutPath = settings.extract.lutPath?.trim() ?? "";
   const lutPathInvalid = customLutPathIsInvalid(lutPath);
   const featurePipeline = settings.align.featurePipeline;
-  const usingAliked = featurePipeline !== "sift";
   const featurePipelineItems: Array<{ value: FeaturePipeline; label: string }> = [
     { value: "sift", label: t`SIFT (fast default)` },
     { value: "aliked-n32-lightglue", label: t`ALIKED-N32 + LightGlue` },
@@ -266,7 +262,6 @@ export function ProcessingSettingsFields({
                         align: {
                           ...current.align,
                           featurePipeline: nextPipeline,
-                          ...featureModelPaths(nextPipeline, current.align.featureModelDir ?? ""),
                           ...(nextPipeline !== "sift" && doctor.gpuAvailable === true ? { useGpu: true } : {}),
                         },
                       }));
@@ -293,34 +288,12 @@ export function ProcessingSettingsFields({
                     </Alert>
                   )}
                 </Field>
-                {usingAliked && (
-                  <Field className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5">
-                    <FieldLabel htmlFor="feature-model-directory"><Trans comment="Directory containing the ALIKED extractor and LightGlue ONNX model files.">ALIKED model folder</Trans></FieldLabel>
-                    <div className="flex items-center gap-2 [&_input]:flex-1">
-                      <Input
-                        id="feature-model-directory"
-                        value={settings.align.featureModelDir ?? ""}
-                        placeholder={t`Folder containing the ALIKED and LightGlue ONNX files`}
-                        onChange={(event) => {
-                          const featureModelDir = event.currentTarget.value;
-                          onSettingsChange((current) => ({
-                            ...current,
-                            align: {
-                              ...current.align,
-                              featureModelDir,
-                              ...featureModelPaths(current.align.featurePipeline, featureModelDir),
-                            },
-                          }));
-                        }}
-                      />
-                      <Button type="button" variant="outline" size="sm" onClick={() => void onChooseFeatureModelDirectory()}><Trans>Choose folder</Trans></Button>
-                    </div>
-                    <FieldDescription>
-                      {featurePipeline === "aliked-n32-lightglue"
-                        ? <Trans>Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>
-                        : <Trans>Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>}
-                    </FieldDescription>
-                  </Field>
+                {featurePipeline !== "sift" && (
+                  <FieldDescription>
+                    {featurePipeline === "aliked-n32-lightglue"
+                      ? <Trans>Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>
+                      : <Trans>Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>}
+                  </FieldDescription>
                 )}
                 <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                   <Switch

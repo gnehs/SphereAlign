@@ -2909,20 +2909,8 @@ msgstr "Usually improves matching and camera registration in low-texture or diff
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 
-msgid "ALIKED model folder"
-msgstr "ALIKED model folder"
+msgid "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 
-msgid "Folder containing the ALIKED and LightGlue ONNX files"
-msgstr "Folder containing the ALIKED and LightGlue ONNX files"
-
-msgid "Choose folder"
-msgstr "Choose folder"
-
-msgid "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
-msgstr "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
-
-msgid "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
-msgstr "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
-
-msgid "Choose the folder containing the required ALIKED and LightGlue ONNX models"
-msgstr "Choose the folder containing the required ALIKED and LightGlue ONNX models"
+msgid "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."

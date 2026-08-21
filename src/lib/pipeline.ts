@@ -73,9 +73,6 @@ interface PipelineSettings {
     gpuIndex: string;
     useIntraSourceLoopClosure: boolean;
     featurePipeline: FeaturePipeline;
-    featureModelDir?: string;
-    featureExtractorModelPath?: string;
-    featureMatcherModelPath?: string;
   };
 }
 
@@ -322,36 +319,6 @@ function featurePipelineFromUnknown(value: unknown): FeaturePipeline {
     : "sift";
 }
 
-function modelPath(modelDir: string, fileName: string) {
-  const trimmed = modelDir.trim().replace(/[\\/]+$/, "");
-  if (!trimmed) return undefined;
-  return `${trimmed}${trimmed.includes("\\") ? "\\" : "/"}${fileName}`;
-}
-
-function featureModelPaths(
-  pipeline: FeaturePipeline,
-  modelDir: string,
-): Pick<PipelineSettings["align"], "featureExtractorModelPath" | "featureMatcherModelPath"> {
-  if (pipeline === "sift" || !modelDir.trim()) {
-    return {
-      featureExtractorModelPath: undefined,
-      featureMatcherModelPath: undefined,
-    };
-  }
-  return {
-    featureExtractorModelPath: modelPath(
-      modelDir,
-      pipeline === "aliked-n32-lightglue" ? "aliked-n32.onnx" : "aliked-n16rot.onnx",
-    ),
-    featureMatcherModelPath: modelPath(modelDir, "aliked-lightglue.onnx"),
-  };
-}
-
-function alikedModelPathsAreMissing(align: PipelineSettings["align"]) {
-  return align.featurePipeline !== "sift"
-    && (!align.featureExtractorModelPath?.trim() || !align.featureMatcherModelPath?.trim());
-}
-
 function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
   if (!Number.isFinite(extract.baseFps) || extract.baseFps <= 0 || !Number.isFinite(extract.denseFps)) {
     return DEFAULT_CANDIDATE_MULTIPLIER;
@@ -376,16 +343,6 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
   const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : DEFAULT_SETTINGS.mask.yoloEnabled) && classes.length > 0;
   const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
   const featurePipeline = featurePipelineFromUnknown(align.featurePipeline);
-  const featureModelDir = typeof align.featureModelDir === "string" && align.featureModelDir.trim()
-    ? align.featureModelDir.trim()
-    : undefined;
-  const derivedModelPaths = featureModelDir ? featureModelPaths(featurePipeline, featureModelDir) : {};
-  const featureExtractorModelPath = typeof align.featureExtractorModelPath === "string" && align.featureExtractorModelPath.trim()
-    ? align.featureExtractorModelPath.trim()
-    : derivedModelPaths.featureExtractorModelPath;
-  const featureMatcherModelPath = typeof align.featureMatcherModelPath === "string" && align.featureMatcherModelPath.trim()
-    ? align.featureMatcherModelPath.trim()
-    : derivedModelPaths.featureMatcherModelPath;
   const rawGpuIndex = align.gpuIndex;
   const gpuIndex = typeof rawGpuIndex === "string"
     ? rawGpuIndex
@@ -417,9 +374,6 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
         ? align.useIntraSourceLoopClosure
         : DEFAULT_SETTINGS.align.useIntraSourceLoopClosure,
       featurePipeline,
-      ...(featureModelDir ? { featureModelDir } : {}),
-      ...(featureExtractorModelPath ? { featureExtractorModelPath } : {}),
-      ...(featureMatcherModelPath ? { featureMatcherModelPath } : {}),
     },
   };
 }
@@ -2037,8 +1991,6 @@ export {
   normaliseExtractColorMode,
   customLutPathIsInvalid,
   featurePipelineFromUnknown,
-  featureModelPaths,
-  alikedModelPathsAreMissing,
   candidateMultiplierFor,
   normalisePipelineSettings,
   selectAvailableGpu,

@@ -20,6 +20,7 @@ mod models;
 mod skyseg;
 
 pub use inference::YoloSegPipeline;
+pub(crate) use models::resolve_aliked_models;
 pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
 

@@ -950,7 +950,12 @@ fn colmap_quality_profile(settings: &Value) -> Result<ColmapQualityProfile, Stri
     }
 }
 
-fn feature_pipeline_config(settings: &Value) -> Result<FeaturePipelineConfig, String> {
+fn feature_pipeline_config(
+    settings: &Value,
+    model_cache_dir: Option<&Path>,
+    cancel: &CancelToken,
+    on_download: &dyn Fn(masking::ModelDownloadProgress),
+) -> Result<FeaturePipelineConfig, String> {
     let pipeline = match settings
         .pointer("/align/featurePipeline")
         .and_then(Value::as_str)
@@ -973,23 +978,53 @@ fn feature_pipeline_config(settings: &Value) -> Result<FeaturePipelineConfig, St
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
     };
-    let config = FeaturePipelineConfig {
-        pipeline,
-        extractor_model_path: read_path("/align/featureExtractorModelPath"),
-        matcher_model_path: read_path("/align/featureMatcherModelPath"),
-    };
-    if config.pipeline.is_aliked() {
-        for (label, path) in [
-            ("extractor", config.extractor_model_path.as_ref()),
-            ("matcher", config.matcher_model_path.as_ref()),
-        ] {
-            let path = path.ok_or_else(|| format!("ALIKED {label} model path is required"))?;
-            if !path.is_file() {
-                return Err(format!("ALIKED {label} model does not exist: {}", path.display()));
-            }
-        }
+    if !pipeline.is_aliked() {
+        return Ok(FeaturePipelineConfig {
+            pipeline,
+            extractor_model_path: None,
+            matcher_model_path: None,
+        });
     }
-    Ok(config)
+    let explicit_extractor = read_path("/align/featureExtractorModelPath");
+    let explicit_matcher = read_path("/align/featureMatcherModelPath");
+    match (explicit_extractor, explicit_matcher) {
+        (Some(extractor), Some(matcher)) => {
+            for (label, path) in [("extractor", &extractor), ("matcher", &matcher)] {
+                if !path.is_file() {
+                    return Err(format!(
+                        "explicit ALIKED {label} model does not exist: {}",
+                        path.display()
+                    ));
+                }
+            }
+            return Ok(FeaturePipelineConfig {
+                pipeline,
+                extractor_model_path: Some(extractor),
+                matcher_model_path: Some(matcher),
+            });
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(
+                "explicit ALIKED extractor and matcher model paths must be provided together"
+                    .to_owned(),
+            );
+        }
+        (None, None) => {}
+    }
+    let model_cache_dir = model_cache_dir
+        .ok_or_else(|| "無法取得應用程式模型資料夾，不能自動下載 ALIKED 模型".to_owned())?;
+    let models = masking::resolve_aliked_models(
+        model_cache_dir,
+        pipeline == FeaturePipeline::AlikedN32LightGlue,
+        cancel,
+        on_download,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(FeaturePipelineConfig {
+        pipeline,
+        extractor_model_path: Some(models.0),
+        matcher_model_path: Some(models.1),
+    })
 }
 
 fn mapper_mode(settings: &Value) -> Result<MapperMode, String> {
@@ -8389,7 +8424,43 @@ fn run_align(
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
     let quality_profile = colmap_quality_profile(&manifest.settings)?;
-    let feature_config = feature_pipeline_config(&manifest.settings)?;
+    let model_cache_dir = app.path().app_data_dir().ok().map(|path| path.join("models"));
+    let feature_config = feature_pipeline_config(
+        &manifest.settings,
+        model_cache_dir.as_deref(),
+        &control.mask_cancel,
+        &|download| {
+            let progress = if download.total == 0 {
+                0.0
+            } else {
+                download.downloaded as f32 / download.total as f32
+            };
+            let (base_progress, progress_span) = if download.label == "ALIKED LightGlue" {
+                (0.005, 0.015)
+            } else {
+                (0.0, 0.005)
+            };
+            emit_progress_detailed(
+                app,
+                id,
+                &StageName::Align,
+                "downloading-feature-model",
+                base_progress + progress.clamp(0.0, 0.99) * progress_span,
+                format!(
+                    "正在下載並驗證 {} 模型（{} / {} MB）",
+                    download.label,
+                    download.downloaded / 1_048_576,
+                    download.total.div_ceil(1_048_576)
+                ),
+                "running",
+                false,
+                Some(download.downloaded),
+                Some(download.total),
+                Some(download.label.to_owned()),
+                None,
+            );
+        },
+    )?;
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
@@ -12848,6 +12919,47 @@ mod tests {
         assert!(pairs.contains("lens0/source000_00000001.png lens1/source000_00000002.png"));
         assert!(pairs.contains("lens1/source000_00000001.png lens0/source000_00000002.png"));
         assert!(!pairs.contains(".DS_Store"));
+    }
+
+    #[test]
+    fn sift_feature_pipeline_does_not_require_a_model_cache() {
+        let config = super::feature_pipeline_config(
+            &json!({ "align": { "featurePipeline": "sift" } }),
+            None,
+            &CancelToken::new(),
+            &|_| panic!("SIFT must not download a model"),
+        )
+        .unwrap();
+
+        assert_eq!(config.pipeline, FeaturePipeline::Sift);
+        assert!(config.extractor_model_path.is_none());
+        assert!(config.matcher_model_path.is_none());
+    }
+
+    #[test]
+    fn explicit_aliked_model_paths_remain_supported() {
+        let temp = TempDir::new().unwrap();
+        let extractor = temp.path().join("aliked-n32.onnx");
+        let matcher = temp.path().join("aliked-lightglue.onnx");
+        fs::write(&extractor, b"extractor").unwrap();
+        fs::write(&matcher, b"matcher").unwrap();
+        let config = super::feature_pipeline_config(
+            &json!({
+                "align": {
+                    "featurePipeline": "aliked-n32-lightglue",
+                    "featureExtractorModelPath": extractor,
+                    "featureMatcherModelPath": matcher,
+                }
+            }),
+            None,
+            &CancelToken::new(),
+            &|_| panic!("explicit model paths must not download"),
+        )
+        .unwrap();
+
+        assert_eq!(config.pipeline, FeaturePipeline::AlikedN32LightGlue);
+        assert!(config.extractor_model_path.unwrap().is_file());
+        assert!(config.matcher_model_path.unwrap().is_file());
     }
 
     #[test]
