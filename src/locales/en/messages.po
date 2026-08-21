@@ -2884,3 +2884,45 @@ msgstr "Single-video loop closure"
 #: src/components/processing-settings-fields.tsx:258
 msgid "Turn this on if the video passes through the same place again."
 msgstr "Turn this on if the video passes through the same place again."
+
+msgid "Feature matching method"
+msgstr "Feature matching method"
+
+msgid "SIFT (fast default)"
+msgstr "SIFT (fast default)"
+
+msgid "ALIKED-N32 + LightGlue"
+msgstr "ALIKED-N32 + LightGlue"
+
+msgid "ALIKED-N16Rot + LightGlue"
+msgstr "ALIKED-N16Rot + LightGlue"
+
+msgid "Fastest and most mature option for typical scenes."
+msgstr "Fastest and most mature option for typical scenes."
+
+msgid "Slower, with a higher matching rate"
+msgstr "Slower, with a higher matching rate"
+
+msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
+msgstr "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
+
+msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
+msgstr "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
+
+msgid "ALIKED model folder"
+msgstr "ALIKED model folder"
+
+msgid "Folder containing the ALIKED and LightGlue ONNX files"
+msgstr "Folder containing the ALIKED and LightGlue ONNX files"
+
+msgid "Choose folder"
+msgstr "Choose folder"
+
+msgid "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+
+msgid "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+
+msgid "Choose the folder containing the required ALIKED and LightGlue ONNX models"
+msgstr "Choose the folder containing the required ALIKED and LightGlue ONNX models"

@@ -20,6 +20,7 @@ type StageKey = "extract" | "mask" | "align";
 type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
 type ExtractColorMode = "auto" | "logRec709" | "dlogMRec709" | "native";
+type FeaturePipeline = "sift" | "aliked-n32-lightglue" | "aliked-n16rot-lightglue";
 
 function translate(descriptor: MessageDescriptor) {
   return i18n._(descriptor);
@@ -71,6 +72,10 @@ interface PipelineSettings {
     useGpu: boolean;
     gpuIndex: string;
     useIntraSourceLoopClosure: boolean;
+    featurePipeline: FeaturePipeline;
+    featureModelDir?: string;
+    featureExtractorModelPath?: string;
+    featureMatcherModelPath?: string;
   };
 }
 
@@ -293,6 +298,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     useGpu: true,
     gpuIndex: "-1",
     useIntraSourceLoopClosure: false,
+    featurePipeline: "sift",
   },
 };
 const COLMAP_PATH_STORAGE_KEY = "spherealign.colmapPath";
@@ -308,6 +314,42 @@ function normaliseExtractColorMode(value: unknown): ExtractColorMode {
 function customLutPathIsInvalid(path?: string) {
   const trimmed = path?.trim() ?? "";
   return Boolean(trimmed) && !trimmed.toLowerCase().endsWith(".cube");
+}
+
+function featurePipelineFromUnknown(value: unknown): FeaturePipeline {
+  return value === "aliked-n32-lightglue" || value === "aliked-n16rot-lightglue"
+    ? value
+    : "sift";
+}
+
+function modelPath(modelDir: string, fileName: string) {
+  const trimmed = modelDir.trim().replace(/[\\/]+$/, "");
+  if (!trimmed) return undefined;
+  return `${trimmed}${trimmed.includes("\\") ? "\\" : "/"}${fileName}`;
+}
+
+function featureModelPaths(
+  pipeline: FeaturePipeline,
+  modelDir: string,
+): Pick<PipelineSettings["align"], "featureExtractorModelPath" | "featureMatcherModelPath"> {
+  if (pipeline === "sift" || !modelDir.trim()) {
+    return {
+      featureExtractorModelPath: undefined,
+      featureMatcherModelPath: undefined,
+    };
+  }
+  return {
+    featureExtractorModelPath: modelPath(
+      modelDir,
+      pipeline === "aliked-n32-lightglue" ? "aliked-n32.onnx" : "aliked-n16rot.onnx",
+    ),
+    featureMatcherModelPath: modelPath(modelDir, "aliked-lightglue.onnx"),
+  };
+}
+
+function alikedModelPathsAreMissing(align: PipelineSettings["align"]) {
+  return align.featurePipeline !== "sift"
+    && (!align.featureExtractorModelPath?.trim() || !align.featureMatcherModelPath?.trim());
 }
 
 function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
@@ -333,6 +375,17 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
     : DEFAULT_SETTINGS.mask.classes;
   const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : DEFAULT_SETTINGS.mask.yoloEnabled) && classes.length > 0;
   const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
+  const featurePipeline = featurePipelineFromUnknown(align.featurePipeline);
+  const featureModelDir = typeof align.featureModelDir === "string" && align.featureModelDir.trim()
+    ? align.featureModelDir.trim()
+    : undefined;
+  const derivedModelPaths = featureModelDir ? featureModelPaths(featurePipeline, featureModelDir) : {};
+  const featureExtractorModelPath = typeof align.featureExtractorModelPath === "string" && align.featureExtractorModelPath.trim()
+    ? align.featureExtractorModelPath.trim()
+    : derivedModelPaths.featureExtractorModelPath;
+  const featureMatcherModelPath = typeof align.featureMatcherModelPath === "string" && align.featureMatcherModelPath.trim()
+    ? align.featureMatcherModelPath.trim()
+    : derivedModelPaths.featureMatcherModelPath;
   const rawGpuIndex = align.gpuIndex;
   const gpuIndex = typeof rawGpuIndex === "string"
     ? rawGpuIndex
@@ -363,6 +416,10 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
       useIntraSourceLoopClosure: typeof align.useIntraSourceLoopClosure === "boolean"
         ? align.useIntraSourceLoopClosure
         : DEFAULT_SETTINGS.align.useIntraSourceLoopClosure,
+      featurePipeline,
+      ...(featureModelDir ? { featureModelDir } : {}),
+      ...(featureExtractorModelPath ? { featureExtractorModelPath } : {}),
+      ...(featureMatcherModelPath ? { featureMatcherModelPath } : {}),
     },
   };
 }
@@ -1939,6 +1996,7 @@ export type {
   StageStatus,
   DiagnosticStatus,
   ExtractColorMode,
+  FeaturePipeline,
   ColorInspection,
   ColorInspectionSummary,
   SourceIssueSeverity,
@@ -1978,6 +2036,9 @@ export {
   COLMAP_PATH_STORAGE_KEY,
   normaliseExtractColorMode,
   customLutPathIsInvalid,
+  featurePipelineFromUnknown,
+  featureModelPaths,
+  alikedModelPathsAreMissing,
   candidateMultiplierFor,
   normalisePipelineSettings,
   selectAvailableGpu,

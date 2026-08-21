@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   candidateMultiplierFor,
   customLutPathIsInvalid,
+  featureModelPaths,
   gpuDeviceLabel,
   MASK_CLASSES,
   MASK_CLASS_LABELS,
@@ -31,6 +32,7 @@ import {
   type ColorInspectionSummary,
   type DoctorReport,
   type PipelineSettings,
+  type FeaturePipeline,
 } from "@/lib/pipeline";
 
 export interface ProcessingSettingsFieldsProps {
@@ -38,6 +40,7 @@ export interface ProcessingSettingsFieldsProps {
   onSettingsChange: Dispatch<SetStateAction<PipelineSettings>>;
   doctor: DoctorReport;
   onChooseLut: () => void | Promise<void>;
+  onChooseFeatureModelDirectory: () => void | Promise<void>;
   onGpuPreferenceTouched: () => void;
   sourceColorInspection?: ColorInspectionSummary | null;
 }
@@ -51,6 +54,7 @@ export function ProcessingSettingsFields({
   onSettingsChange,
   doctor,
   onChooseLut,
+  onChooseFeatureModelDirectory,
   onGpuPreferenceTouched,
   sourceColorInspection,
 }: ProcessingSettingsFieldsProps) {
@@ -63,6 +67,13 @@ export function ProcessingSettingsFields({
   const detectedSources = sourceColorInspection?.files?.filter((file) => file.cameraModel || file.detectedProfile || file.recommendedLut) ?? [];
   const lutPath = settings.extract.lutPath?.trim() ?? "";
   const lutPathInvalid = customLutPathIsInvalid(lutPath);
+  const featurePipeline = settings.align.featurePipeline;
+  const usingAliked = featurePipeline !== "sift";
+  const featurePipelineItems: Array<{ value: FeaturePipeline; label: string }> = [
+    { value: "sift", label: t`SIFT (fast default)` },
+    { value: "aliked-n32-lightglue", label: t`ALIKED-N32 + LightGlue` },
+    { value: "aliked-n16rot-lightglue", label: t`ALIKED-N16Rot + LightGlue` },
+  ];
 
   return (
     <section className="min-h-0 overflow-hidden border-l max-[920px]:overflow-visible max-[920px]:border-t max-[920px]:border-l-0" aria-labelledby="task-processing-settings-title">
@@ -243,6 +254,74 @@ export function ProcessingSettingsFields({
             <FieldTitle id="alignment-settings-title"><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldTitle>
             <FieldContent>
               <div className="flex flex-col gap-2">
+                <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
+                  <FieldLabel htmlFor="feature-pipeline"><Trans comment="Select the local feature extractor and matcher used by COLMAP alignment.">Feature matching method</Trans></FieldLabel>
+                  <Select
+                    items={featurePipelineItems}
+                    value={featurePipeline}
+                    onValueChange={(value) => {
+                      const nextPipeline = (value ?? "sift") as FeaturePipeline;
+                      onSettingsChange((current) => ({
+                        ...current,
+                        align: {
+                          ...current.align,
+                          featurePipeline: nextPipeline,
+                          ...featureModelPaths(nextPipeline, current.align.featureModelDir ?? ""),
+                          ...(nextPipeline !== "sift" && doctor.gpuAvailable === true ? { useGpu: true } : {}),
+                        },
+                      }));
+                    }}
+                  >
+                    <SelectTrigger id="feature-pipeline" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {featurePipelineItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {featurePipeline === "sift" ? (
+                    <FieldDescription><Trans comment="Explain the default SIFT feature matching option.">Fastest and most mature option for typical scenes.</Trans></FieldDescription>
+                  ) : (
+                    <Alert>
+                      <AlertTriangle />
+                      <AlertTitle><Trans comment="Heading for the learned feature matching performance tradeoff.">Slower, with a higher matching rate</Trans></AlertTitle>
+                      <AlertDescription>
+                        {featurePipeline === "aliked-n32-lightglue"
+                          ? <Trans comment="Explain the ALIKED-N32 and LightGlue option.">Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer.</Trans>
+                          : <Trans comment="Explain the rotation-aware ALIKED-N16Rot and LightGlue option.">Usually improves matching under large viewpoint or rotation changes, but alignment takes longer.</Trans>}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </Field>
+                {usingAliked && (
+                  <Field className="min-h-7 gap-2 border-0 bg-transparent px-0 py-0.5">
+                    <FieldLabel htmlFor="feature-model-directory"><Trans comment="Directory containing the ALIKED extractor and LightGlue ONNX model files.">ALIKED model folder</Trans></FieldLabel>
+                    <div className="flex items-center gap-2 [&_input]:flex-1">
+                      <Input
+                        id="feature-model-directory"
+                        value={settings.align.featureModelDir ?? ""}
+                        placeholder={t`Folder containing the ALIKED and LightGlue ONNX files`}
+                        onChange={(event) => {
+                          const featureModelDir = event.currentTarget.value;
+                          onSettingsChange((current) => ({
+                            ...current,
+                            align: {
+                              ...current.align,
+                              featureModelDir,
+                              ...featureModelPaths(current.align.featurePipeline, featureModelDir),
+                            },
+                          }));
+                        }}
+                      />
+                      <Button type="button" variant="outline" size="sm" onClick={() => void onChooseFeatureModelDirectory()}><Trans>Choose folder</Trans></Button>
+                    </div>
+                    <FieldDescription>
+                      {featurePipeline === "aliked-n32-lightglue"
+                        ? <Trans>Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>
+                        : <Trans>Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>}
+                    </FieldDescription>
+                  </Field>
+                )}
                 <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                   <Switch
                     id="use-intra-source-loop-closure"

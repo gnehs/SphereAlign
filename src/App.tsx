@@ -32,6 +32,7 @@ import {
   deriveOutputPath,
   doctorReportText,
   emptyDoctor,
+  featureModelPaths,
   invokeSafely,
   localiseUserMessage,
   manifestFromUnknown,
@@ -529,6 +530,28 @@ function App() {
     }
   }, []);
 
+  const openFeatureModelDirectoryPicker = useCallback(async () => {
+    if (!IS_TAURI_RUNTIME) {
+      setToast("Browser preview does not read local model files; paste the model folder path directly");
+      return;
+    }
+    try {
+      const result = await openDialog({ directory: true, multiple: false });
+      if (typeof result === "string") {
+        setSettingsDraft((current) => ({
+          ...current,
+          align: {
+            ...current.align,
+            featureModelDir: result,
+            ...featureModelPaths(current.align.featurePipeline, result),
+          },
+        }));
+      }
+    } catch (error) {
+      console.info("[SphereAlign] feature model directory picker", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (!IS_TAURI_RUNTIME) return;
     let disposed = false;
@@ -1023,6 +1046,7 @@ function App() {
         onSourcePicker={openSourcePicker}
         onOutputPicker={openOutputPicker}
         onLutPicker={openLutPicker}
+        onFeatureModelDirectoryPicker={openFeatureModelDirectoryPicker}
         onGpuPreferenceTouched={() => { gpuPreferenceTouched.current = true; }}
         onSubmit={editingTaskId ? saveEditedTask : createTask}
       />

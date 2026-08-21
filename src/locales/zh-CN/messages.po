@@ -2884,3 +2884,45 @@ msgstr "单个视频长距离闭环"
 #: src/components/processing-settings-fields.tsx:258
 msgid "Turn this on if the video passes through the same place again."
 msgstr "如果视频中有再次经过同一地点，请开启此选项。"
+
+msgid "Feature matching method"
+msgstr "特征匹配方式"
+
+msgid "SIFT (fast default)"
+msgstr "SIFT（快速默认）"
+
+msgid "ALIKED-N32 + LightGlue"
+msgstr "ALIKED-N32 + LightGlue"
+
+msgid "ALIKED-N16Rot + LightGlue"
+msgstr "ALIKED-N16Rot + LightGlue"
+
+msgid "Fastest and most mature option for typical scenes."
+msgstr "一般场景中最快且最成熟的选项。"
+
+msgid "Slower, with a higher matching rate"
+msgstr "速度较慢，但匹配率较高"
+
+msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
+msgstr "通常能改善低纹理或困难场景的匹配与相机注册率。N32 是推荐的 ALIKED 选项，但对齐耗时更长。"
+
+msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
+msgstr "通常能改善大视角或旋转变化下的匹配，但对齐耗时更长。"
+
+msgid "ALIKED model folder"
+msgstr "ALIKED 模型文件夹"
+
+msgid "Folder containing the ALIKED and LightGlue ONNX files"
+msgstr "包含 ALIKED 与 LightGlue ONNX 文件的文件夹"
+
+msgid "Choose folder"
+msgstr "选择文件夹"
+
+msgid "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "需要 aliked-n32.onnx 和 aliked-lightglue.onnx。经过验证的加速方案使用 NVIDIA CUDA GPU。"
+
+msgid "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "需要 aliked-n16rot.onnx 和 aliked-lightglue.onnx。经过验证的加速方案使用 NVIDIA CUDA GPU。"
+
+msgid "Choose the folder containing the required ALIKED and LightGlue ONNX models"
+msgstr "请选择包含所需 ALIKED 与 LightGlue ONNX 模型的文件夹"

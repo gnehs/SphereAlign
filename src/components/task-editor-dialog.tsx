@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import {
   customLutPathIsInvalid,
+  alikedModelPathsAreMissing,
   localiseUserMessage,
   sourceFromPath,
   sourceInspectionForPath,
@@ -43,6 +44,7 @@ export interface TaskEditorDialogProps {
   onSourcePicker: () => void | Promise<void>;
   onOutputPicker: () => void | Promise<void>;
   onLutPicker: () => void | Promise<void>;
+  onFeatureModelDirectoryPicker: () => void | Promise<void>;
   onGpuPreferenceTouched: () => void;
   onSubmit: () => void | Promise<void>;
 }
@@ -55,6 +57,7 @@ export function TaskEditorDialog({
   onSourcePicker,
   onOutputPicker,
   onLutPicker,
+  onFeatureModelDirectoryPicker,
   onGpuPreferenceTouched,
   onSubmit,
 }: TaskEditorDialogProps) {
@@ -99,14 +102,17 @@ export function TaskEditorDialog({
   const taskNameInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const lutPathInvalid = customLutPathIsInvalid(settingsDraft.extract.lutPath);
+  const alikedModelsMissing = alikedModelPathsAreMissing(settingsDraft.align);
   const hasBlockingSourceErrors = selectedSources.some((source) => source.issues?.some((issue) => issue.severity === "error"));
-  const submitDisabled = submitting || !selectedSources.length || lutPathInvalid || hasBlockingSourceErrors;
+  const submitDisabled = submitting || !selectedSources.length || lutPathInvalid || alikedModelsMissing || hasBlockingSourceErrors;
   const submitDisabledReason = !selectedSources.length
     ? t`Select at least one panoramic source first`
     : hasBlockingSourceErrors
       ? t`Source inspection issues`
       : lutPathInvalid
         ? t`The custom LUT must be a .cube file`
+        : alikedModelsMissing
+          ? t`Choose the folder containing the required ALIKED and LightGlue ONNX models`
         : null;
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -175,6 +181,7 @@ export function TaskEditorDialog({
               sourceColorInspection={sourceColorInspection}
               doctor={doctor}
               onChooseLut={onLutPicker}
+              onChooseFeatureModelDirectory={onFeatureModelDirectoryPicker}
               onGpuPreferenceTouched={onGpuPreferenceTouched}
             />
           </div>

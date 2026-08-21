@@ -2884,3 +2884,45 @@ msgstr "単一動画の長距離ループ閉じ込み"
 #: src/components/processing-settings-fields.tsx:258
 msgid "Turn this on if the video passes through the same place again."
 msgstr "動画内で同じ場所を再び通る場合にオンにしてください。"
+
+msgid "Feature matching method"
+msgstr "特徴マッチング方式"
+
+msgid "SIFT (fast default)"
+msgstr "SIFT（高速な既定値）"
+
+msgid "ALIKED-N32 + LightGlue"
+msgstr "ALIKED-N32 + LightGlue"
+
+msgid "ALIKED-N16Rot + LightGlue"
+msgstr "ALIKED-N16Rot + LightGlue"
+
+msgid "Fastest and most mature option for typical scenes."
+msgstr "一般的なシーン向けの最速かつ最も成熟したオプションです。"
+
+msgid "Slower, with a higher matching rate"
+msgstr "処理は遅くなりますが、マッチング率が向上します"
+
+msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
+msgstr "低テクスチャーまたは難しいシーンで、マッチングとカメラ登録率が通常向上します。N32 は推奨の ALIKED オプションですが、位置合わせに時間がかかります。"
+
+msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
+msgstr "大きな視点変化や回転変化でのマッチングが通常向上しますが、位置合わせに時間がかかります。"
+
+msgid "ALIKED model folder"
+msgstr "ALIKED モデルフォルダー"
+
+msgid "Folder containing the ALIKED and LightGlue ONNX files"
+msgstr "ALIKED と LightGlue の ONNX ファイルを含むフォルダー"
+
+msgid "Choose folder"
+msgstr "フォルダーを選択"
+
+msgid "Requires aliked-n32.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "aliked-n32.onnx と aliked-lightglue.onnx が必要です。検証済みの高速化経路では NVIDIA CUDA GPU を使用します。"
+
+msgid "Requires aliked-n16rot.onnx and aliked-lightglue.onnx. The verified accelerated path uses an NVIDIA CUDA GPU."
+msgstr "aliked-n16rot.onnx と aliked-lightglue.onnx が必要です。検証済みの高速化経路では NVIDIA CUDA GPU を使用します。"
+
+msgid "Choose the folder containing the required ALIKED and LightGlue ONNX models"
+msgstr "必要な ALIKED と LightGlue の ONNX モデルを含むフォルダーを選択してください"
