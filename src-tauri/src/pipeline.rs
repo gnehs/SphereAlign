@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 28;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 29;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 5;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
@@ -4630,7 +4630,9 @@ struct RigBootstrapCamera {
     image_prefix: String,
     #[serde(default)]
     ref_sensor: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     cam_from_rig_rotation: Option<Vec<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     cam_from_rig_translation: Option<Vec<f64>>,
 }
 
@@ -8419,6 +8421,10 @@ fn run_align(
             .map_err(|error| format!("無法讀取 {}：{error}", rig_config_path.display()))?,
     )
     .map_err(|error| format!("rig_config.json 格式無效：{error}"))?;
+    // COLMAP treats a JSON node with a null value as an explicitly supplied
+    // sensor pose. Reference sensors must not contain cam_from_rig nodes at
+    // all, so normalize legacy files before invoking rig_configurator.
+    write_json_atomic(&rig_config_path, &rig_configs)?;
     let rig_mapping_plan = rig_mapping_plan(&rig_configs);
     let rig_preconfigured = rig_mapping_plan == RigMappingPlan::PreconfiguredSinglePass;
     let nominal_rig_prior = nominal_rig_prior_matches(&root, &rig_configs);
@@ -13234,6 +13240,41 @@ mod tests {
             .iter()
             .all(|camera| camera.image_prefix.starts_with("rig2/")));
         assert!(rig_camera_rotations(&configs).is_err());
+    }
+
+    #[test]
+    fn reference_sensor_serialization_omits_null_cam_from_rig_nodes() {
+        let config = RigBootstrapConfig {
+            cameras: vec![RigBootstrapCamera {
+                image_prefix: "lens0/".to_owned(),
+                ref_sensor: true,
+                cam_from_rig_rotation: None,
+                cam_from_rig_translation: None,
+            }],
+        };
+
+        let serialized = serde_json::to_value(vec![config]).unwrap();
+        let reference = &serialized[0]["cameras"][0];
+        assert!(reference.get("cam_from_rig_rotation").is_none());
+        assert!(reference.get("cam_from_rig_translation").is_none());
+
+        let legacy: Vec<RigBootstrapConfig> = serde_json::from_value(json!([{
+            "cameras": [{
+                "image_prefix": "lens0/",
+                "ref_sensor": true,
+                "cam_from_rig_rotation": null,
+                "cam_from_rig_translation": null
+            }]
+        }]))
+        .unwrap();
+        assert_eq!(legacy, vec![RigBootstrapConfig {
+            cameras: vec![RigBootstrapCamera {
+                image_prefix: "lens0/".to_owned(),
+                ref_sensor: true,
+                cam_from_rig_rotation: None,
+                cam_from_rig_translation: None,
+            }],
+        }]);
     }
 
     #[test]
