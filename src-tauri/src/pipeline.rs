@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 27;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 28;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 5;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
@@ -65,6 +65,11 @@ const MAX_AUTO_SEED_RECOVERY_ATTEMPTS: usize = 4;
 const MAX_AUTO_SEED_FRAME_GAP: usize = 16;
 const AUTO_SEED_RECOVERY_TRIGGER_RATIO: f64 = 0.45;
 const MIN_HEALTHY_REGISTRATION_RATIO: f64 = 0.50;
+// Continue a fragmented unknown-rig bootstrap only when coverage leaves enough
+// headroom to justify another mapper pass. The continuation starts from the
+// accepted model and fixes its existing frame poses, so this is substantially
+// cheaper and less drift-prone than the removed from-scratch second mapper.
+const RIG_CONTINUATION_RECOVERY_TRIGGER_RATIO: f64 = 0.90;
 const TELEMETRY_PARSE_PROGRESS_SHARE: f32 = 0.05;
 const CANDIDATE_SELECTION_PROGRESS_SHARE: f32 = 0.60;
 const FULL_RESOLUTION_PROGRESS_SHARE: f32 = 0.2;
@@ -902,7 +907,10 @@ fn effective_mapper_matches_checkpoint(
     }
     match requested_mode {
         MapperMode::Incremental => {
-            matches!(effective_mapper, "final_mapper" | "bootstrap_mapper")
+            matches!(
+                effective_mapper,
+                "final_mapper" | "bootstrap_mapper" | "rig_continuation_mapper"
+            )
         }
         MapperMode::Global => effective_mapper == "global_mapper",
         MapperMode::Auto => false,
@@ -3726,6 +3734,23 @@ fn run_mask(
     if summary.failed > 0 {
         return Err(format!("{} 個遮罩處理失敗，請查看處理紀錄", summary.failed));
     }
+    if summary.cancelled {
+        return Err("遮罩處理已取消；未完成輸出不會交給 COLMAP".to_owned());
+    }
+    if summary.succeeded != summary.total {
+        return Err(format!(
+            "遮罩輸出不完整：完成 {} / {} 張",
+            summary.succeeded, summary.total
+        ));
+    }
+    let verified = masking::verify_mask_output_coverage(&request)
+        .map_err(|error| format!("遮罩完整性驗證失敗：{error}"))?;
+    if verified != summary.total {
+        return Err(format!(
+            "遮罩完整性驗證數量不符：驗證 {verified} / {} 張",
+            summary.total
+        ));
+    }
     Ok(vec![root.join("masks").to_string_lossy().into_owned()])
 }
 
@@ -5387,6 +5412,11 @@ fn cleanup_align_artifacts(root: &Path, preserve_database: bool) -> Result<(), S
         root.join("metadata/.align-auto-seed-text"),
         root.join("metadata/.align-auto-seed-original"),
         root.join("metadata/auto_seed_recovery.json"),
+        root.join("metadata/.align-rig-continuation-seed-text"),
+        root.join("metadata/.align-rig-continuation-candidate"),
+        root.join("metadata/.align-rig-continuation-candidate-text"),
+        root.join("metadata/.align-rig-continuation-original"),
+        root.join("metadata/rig_continuation_recovery.json"),
     ];
     for attempt in 1..=MAX_AUTO_SEED_RECOVERY_ATTEMPTS {
         paths.push(root.join(format!("metadata/.align-auto-seed-retry-{attempt}")));
@@ -6257,16 +6287,27 @@ fn sparse_rig_model_exists(root: &Path) -> bool {
         .flatten()
         .any(|entry| {
             let model = entry.path();
-            model.is_dir()
-                && ["rigs", "cameras", "frames", "images", "points3D"]
-                    .iter()
-                    .all(|name| {
-                        ["bin", "txt"].iter().any(|extension| {
-                            fs::metadata(model.join(format!("{name}.{extension}")))
-                                .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
-                        })
-                    })
+            model.is_dir() && sparse_rig_model_files_exist(&model)
         })
+}
+
+fn sparse_rig_model_files_exist(model: &Path) -> bool {
+    ["rigs", "cameras", "frames", "images", "points3D"]
+        .iter()
+        .all(|name| {
+            ["bin", "txt"].iter().any(|extension| {
+                fs::metadata(model.join(format!("{name}.{extension}")))
+                    .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+            })
+        })
+}
+
+fn single_sparse_model_path(root: &Path) -> Option<PathBuf> {
+    if sparse_rig_model_files_exist(root) {
+        return Some(root.to_path_buf());
+    }
+    let models = sparse_model_directories(root);
+    (models.len() == 1 && sparse_rig_model_files_exist(&models[0])).then(|| models[0].clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6643,6 +6684,40 @@ fn mapper_args(
         args.push("--Mapper.ba_refine_sensor_from_rig".into());
         args.push("0".into());
     }
+    args
+}
+
+fn mapper_continuation_args(
+    db: &Path,
+    images: &Path,
+    output: &Path,
+    input_model: &Path,
+    use_gpu: bool,
+    gpu_index: &str,
+) -> Vec<String> {
+    let mut args = mapper_args(
+        db,
+        images,
+        output,
+        use_gpu,
+        gpu_index,
+        MapperOptions {
+            multiple_models: false,
+            initial_image_pair: None,
+            // The rig pose inferred from many shared frames is a stronger
+            // constraint than any single weak continuation image.
+            disable_sensor_refinement: true,
+        },
+    );
+    args.extend([
+        "--input_path".into(),
+        input_model.to_string_lossy().into_owned(),
+        // Preserve every accepted frame pose. COLMAP may register and
+        // triangulate additional frames, but cannot move the trusted seed and
+        // introduce path drift while doing so.
+        "--Mapper.fix_existing_frames".into(),
+        "1".into(),
+    ]);
     args
 }
 
@@ -8047,6 +8122,35 @@ fn evaluate_global_candidate_quality(
         candidate,
         issues,
     }
+}
+
+fn commit_guarded_sparse_candidate(
+    sparse: &Path,
+    candidate_root: &Path,
+    candidate_model: &Path,
+    backup: &Path,
+) -> Result<(), String> {
+    remove_align_artifact(backup)?;
+    fs::rename(sparse, backup)
+        .map_err(|error| format!("無法暫存目前 sparse model：{error}"))?;
+    let commit = (|| {
+        fs::create_dir_all(sparse).map_err(|error| format!("無法建立 sparse root：{error}"))?;
+        fs::rename(candidate_model, sparse.join("0"))
+            .map_err(|error| format!("無法提交 continuation candidate：{error}"))
+    })();
+    if let Err(error) = commit {
+        let _ = remove_align_artifact(sparse);
+        let rollback = fs::rename(backup, sparse)
+            .err()
+            .map(|rollback_error| format!("；原模型回復也失敗：{rollback_error}"))
+            .unwrap_or_default();
+        return Err(format!("{error}{rollback}"));
+    }
+    remove_align_artifact(backup)?;
+    if candidate_root.exists() {
+        remove_align_artifact(candidate_root)?;
+    }
+    Ok(())
 }
 
 fn rollback_calibrated_pair_transaction(
@@ -10223,6 +10327,264 @@ fn run_align(
             "info",
             "已直接提交 rig configurator 轉換後的 bootstrap 模型；不再從零執行第二次 mapper",
         );
+
+        // Unknown-rig bootstrap can yield several individually valid models.
+        // Starting over with the newly estimated rig previously regressed good
+        // reconstructions, so recovery now continues from the accepted model,
+        // fixes every existing frame pose, and commits only a quality-gated
+        // candidate. This normally costs far less than a second full mapper
+        // while recovering images from weak intervals without moving the
+        // trusted trajectory.
+        let recovery_enabled =
+            setting_bool(&manifest.settings, "/align/rigContinuationRecovery", true);
+        let recovery_trigger = setting_f64(
+            &manifest.settings,
+            "/align/rigContinuationTriggerRatio",
+            RIG_CONTINUATION_RECOVERY_TRIGGER_RATIO,
+        )
+        .clamp(MIN_HEALTHY_REGISTRATION_RATIO, 1.0);
+        let bootstrap_component_count =
+            sparse_model_directories(&root.join("sparse_bootstrap")).len();
+        let audit_path = root.join("metadata/rig_continuation_recovery.json");
+        if recovery_enabled && bootstrap_component_count > 1 {
+            let seed_text = root.join("metadata/.align-rig-continuation-seed-text");
+            remove_align_artifact(&seed_text)?;
+            let seed_quality = export_colmap_text_model(
+                app,
+                id,
+                &colmap,
+                &sparse.join("0"),
+                &seed_text,
+                control,
+            )
+            .and_then(|()| global_candidate_quality_metrics(&seed_text));
+            remove_align_artifact(&seed_text)?;
+            match seed_quality {
+                Ok(seed_quality) => {
+                    let seed_ratio = registration_ratio(
+                        seed_quality.complete_registered_rig_frames,
+                        rig_frame_total,
+                    );
+                    if seed_ratio < recovery_trigger {
+                        emit_log(
+                            app,
+                            id,
+                            "warning",
+                            format!(
+                                "bootstrap 產生 {bootstrap_component_count} 個子模型，主模型完整相機組覆蓋只有 {:.1}%；正在固定既有 frame pose 並做一次 continuation recovery",
+                                seed_ratio * 100.0
+                            ),
+                        );
+                        let candidate_root =
+                            root.join("metadata/.align-rig-continuation-candidate");
+                        let candidate_text =
+                            root.join("metadata/.align-rig-continuation-candidate-text");
+                        let backup = root.join("metadata/.align-rig-continuation-original");
+                        remove_align_artifact(&candidate_root)?;
+                        remove_align_artifact(&candidate_text)?;
+                        remove_align_artifact(&backup)?;
+                        fs::create_dir_all(&candidate_root).map_err(|error| error.to_string())?;
+                        let recovery_heartbeat = ProgressHeartbeat::start(
+                            app,
+                            id,
+                            StageName::Align,
+                            "rig-continuation-recovery",
+                            colmap_step_progress(4, 0.55),
+                            "正在固定既有軌跡並回收碎裂子模型影格",
+                            Some("rig_continuation_mapper".to_owned()),
+                            Some(seed_quality.complete_registered_rig_frames),
+                            Some(rig_frame_total),
+                        );
+                        let continuation_gpu_args = mapper_continuation_args(
+                            &db,
+                            &root.join("images"),
+                            &candidate_root,
+                            &sparse.join("0"),
+                            mapper_gpu,
+                            &mapper_gpu_index,
+                        );
+                        let continuation_cpu_args = mapper_continuation_args(
+                            &db,
+                            &root.join("images"),
+                            &candidate_root,
+                            &sparse.join("0"),
+                            false,
+                            &mapper_gpu_index,
+                        );
+                        let highest_registered = Cell::new(
+                            seed_quality.complete_registered_rig_frames,
+                        );
+                        let recovery_result = run_mapper_with_gpu_fallback(
+                            app,
+                            id,
+                            &colmap,
+                            &candidate_root,
+                            &continuation_gpu_args,
+                            &continuation_cpu_args,
+                            mapper_gpu,
+                            "rig_continuation_mapper",
+                            control,
+                            || {},
+                            |line| {
+                                let Some((image_id, registered)) =
+                                    parse_mapper_registration(line)
+                                else {
+                                    return;
+                                };
+                                highest_registered.set(
+                                    highest_registered.get().max(registered).min(rig_frame_total),
+                                );
+                                recovery_heartbeat.update(
+                                    colmap_step_progress(
+                                        4,
+                                        0.55
+                                            + 0.15 * highest_registered.get() as f32
+                                                / rig_frame_total.max(1) as f32,
+                                    ),
+                                    format!(
+                                        "continuation recovery 已註冊約 {} / {} 組影格",
+                                        highest_registered.get(),
+                                        rig_frame_total
+                                    ),
+                                    Some(format!("影像 #{image_id}")),
+                                    Some(highest_registered.get()),
+                                    Some(rig_frame_total),
+                                );
+                            },
+                        )
+                        .and_then(|()| {
+                            single_sparse_model_path(&candidate_root).ok_or_else(|| {
+                                "continuation mapper 未產生唯一的 rig sparse model".to_owned()
+                            })
+                        })
+                        .and_then(|candidate_model| {
+                            validate_colmap_configured_rig_model(
+                                app,
+                                id,
+                                &colmap,
+                                &root,
+                                &candidate_model,
+                                control,
+                            )?;
+                            export_colmap_text_model(
+                                app,
+                                id,
+                                &colmap,
+                                &candidate_model,
+                                &candidate_text,
+                                control,
+                            )?;
+                            let candidate_quality =
+                                global_candidate_quality_metrics(&candidate_text)?;
+                            remove_align_artifact(&candidate_text)?;
+                            let gate = evaluate_global_candidate_quality(
+                                seed_quality.clone(),
+                                candidate_quality,
+                            );
+                            let accepted = gate.accepted
+                                && mapper_quality_is_better(&gate.candidate, &gate.seed);
+                            if accepted {
+                                commit_guarded_sparse_candidate(
+                                    &sparse,
+                                    &candidate_root,
+                                    &candidate_model,
+                                    &backup,
+                                )?;
+                            } else {
+                                remove_align_artifact(&candidate_root)?;
+                            }
+                            Ok((gate, accepted))
+                        });
+                        drop(recovery_heartbeat);
+                        match recovery_result {
+                            Ok((gate, accepted)) => {
+                                write_json_atomic(
+                                    &audit_path,
+                                    &json!({
+                                        "schemaVersion": 1,
+                                        "status": if accepted { "accepted" } else { "rejected" },
+                                        "fixedExistingFrames": true,
+                                        "bootstrapComponentCount": bootstrap_component_count,
+                                        "triggerRatio": recovery_trigger,
+                                        "qualityGate": gate,
+                                    }),
+                                )?;
+                                if accepted {
+                                    effective_final_mapper_component =
+                                        "rig_continuation_mapper";
+                                    emit_log(
+                                        app,
+                                        id,
+                                        "info",
+                                        format!(
+                                            "continuation recovery 已通過品質閘門：完整相機組 {} → {} / {}；既有 frame pose 全程固定",
+                                            gate.seed.complete_registered_rig_frames,
+                                            gate.candidate.complete_registered_rig_frames,
+                                            rig_frame_total
+                                        ),
+                                    );
+                                } else {
+                                    emit_log(
+                                        app,
+                                        id,
+                                        "info",
+                                        "continuation recovery 未優於原模型，已保留原始 bootstrap 模型",
+                                    );
+                                }
+                            }
+                            Err(error) if cancelled_error(&error, control) => return Err(error),
+                            Err(error) => {
+                                let _ = remove_align_artifact(&candidate_root);
+                                let _ = remove_align_artifact(&candidate_text);
+                                let _ = remove_align_artifact(&backup);
+                                write_json_atomic(
+                                    &audit_path,
+                                    &json!({
+                                        "schemaVersion": 1,
+                                        "status": "failed-safe",
+                                        "fixedExistingFrames": true,
+                                        "bootstrapComponentCount": bootstrap_component_count,
+                                        "triggerRatio": recovery_trigger,
+                                        "seed": seed_quality,
+                                        "error": error,
+                                    }),
+                                )?;
+                                emit_log(
+                                    app,
+                                    id,
+                                    "warning",
+                                    format!(
+                                        "continuation recovery 失敗，已安全保留原模型：{error}"
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        remove_align_artifact(&audit_path)?;
+                        emit_log(
+                            app,
+                            id,
+                            "info",
+                            format!(
+                                "bootstrap 主模型完整相機組覆蓋 {:.1}% 已達 recovery 門檻，略過額外 mapper",
+                                seed_ratio * 100.0
+                            ),
+                        );
+                    }
+                }
+                Err(error) => {
+                    remove_align_artifact(&audit_path)?;
+                    emit_log(
+                        app,
+                        id,
+                        "warning",
+                        format!("無法評估 continuation recovery，保留原模型：{error}"),
+                    );
+                }
+            }
+        } else {
+            remove_align_artifact(&audit_path)?;
+        }
     }
     let rig_extrinsics_ready = rig_config_has_complete_sensor_poses(&rig_configs);
     let auto_calibrate_telemetry =
@@ -10854,9 +11216,13 @@ fn run_align(
             artifacts.push(path.to_string_lossy().into_owned());
         }
     }
-    let recovery_report_path = root.join("metadata/auto_seed_recovery.json");
-    if recovery_report_path.is_file() {
-        artifacts.push(recovery_report_path.to_string_lossy().into_owned());
+    for recovery_report_path in [
+        root.join("metadata/auto_seed_recovery.json"),
+        root.join("metadata/rig_continuation_recovery.json"),
+    ] {
+        if recovery_report_path.is_file() {
+            artifacts.push(recovery_report_path.to_string_lossy().into_owned());
+        }
     }
     let warnings = registration
         .and_then(RegistrationSummary::low_coverage_warning)
@@ -10894,7 +11260,8 @@ mod tests {
         has_valid_global_mapper_priors, invalidate_calibrated_prior_artifacts,
         is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
         keyframe_pruning_settings, load_candidate_selection_checkpoint, map_full_res_candidates,
-        mapper_args, mapper_gpu_index, mapper_mode, mapper_still_required_after_rig_setup,
+        mapper_args, mapper_continuation_args, mapper_gpu_index, mapper_mode,
+        mapper_still_required_after_rig_setup,
         mask_classes, mask_enabled, matches_importer_args, merge_pair_lists, parse_feature_name,
         parse_feature_progress, parse_gpu_index, parse_mapper_registration,
         parse_matching_progress, parse_showinfo_timestamp_ms, probe_duration_seconds,
@@ -11206,6 +11573,11 @@ mod tests {
             MapperMode::Incremental,
             false,
             Some("final_mapper")
+        ));
+        assert!(effective_mapper_matches_checkpoint(
+            MapperMode::Incremental,
+            false,
+            Some("rig_continuation_mapper")
         ));
         assert!(!effective_mapper_matches_checkpoint(
             MapperMode::Global,
@@ -11545,6 +11917,25 @@ mod tests {
             .windows(2)
             .any(|args| { args == ["--Mapper.ba_refine_sensor_from_rig", "0"] }));
         assert!(!mapper.iter().any(|arg| arg.contains("CASPAR")));
+
+        let continuation = mapper_continuation_args(
+            &db,
+            &images,
+            &sparse,
+            &root.join("seed/0"),
+            true,
+            mapper_index,
+        );
+        let expected_seed = root.join("seed/0").to_string_lossy().into_owned();
+        assert!(continuation.windows(2).any(|args| {
+            args == ["--input_path", expected_seed.as_str()]
+        }));
+        assert!(continuation
+            .windows(2)
+            .any(|args| args == ["--Mapper.fix_existing_frames", "1"]));
+        assert!(continuation
+            .windows(2)
+            .any(|args| args == ["--Mapper.ba_refine_sensor_from_rig", "0"]));
     }
 
     #[test]
@@ -12111,6 +12502,17 @@ mod tests {
         fs::write(temp.path().join("database.db-journal"), b"journal").unwrap();
         fs::create_dir_all(
             temp.path()
+                .join("metadata/.align-rig-continuation-candidate/0"),
+        )
+        .unwrap();
+        fs::write(
+            temp.path()
+                .join("metadata/rig_continuation_recovery.json"),
+            b"{}",
+        )
+        .unwrap();
+        fs::create_dir_all(
+            temp.path()
                 .join("metadata/.align-unconfigured-database.backup"),
         )
         .unwrap();
@@ -12128,6 +12530,14 @@ mod tests {
         assert!(!temp
             .path()
             .join("metadata/.align-unconfigured-database.backup")
+            .exists());
+        assert!(!temp
+            .path()
+            .join("metadata/.align-rig-continuation-candidate")
+            .exists());
+        assert!(!temp
+            .path()
+            .join("metadata/rig_continuation_recovery.json")
             .exists());
 
         cleanup_align_artifacts(temp.path(), false).unwrap();

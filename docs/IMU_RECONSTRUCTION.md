@@ -23,6 +23,7 @@ DJI drone schema 也可能攜帶 WGS-84 GPS、海拔、狀態及相對起飛高�
 2. Align 建立同時間 stereo、同鏡頭 `+1/+2`、必要 cross-lens temporal links。較長連結依時間／旋轉篩選；多來源 visual retrieval 會分別檢查兩顆原生 fisheye、保證抽到每段首尾，並為每個相鄰來源加入 32-frame 尾首 matching grid。單一壞 anchor 不會丟棄另一顆鏡頭已成功的候選；只有兩顆鏡頭都找不到任何候選時才回退舊 anchor graph。
 3. Matching 完成後會先從 COLMAP `two_view_geometries` 建立 verified graph。每個相鄰來源交界至少需要 3 組不同 frame pairs 通過幾何驗證，否則在 mapper 前 fail-closed，避免花數小時產生大量碎裂模型。接著才以 COLMAP `view_graph_calibrator` 更新 focal；程式會從 database round-trip 驗證所有 perspective cameras 的 `prior_focal_length` 與參數，並拒絕未變動的 `0.3 × max(width,height)` 預設猜值。
 4. 首次 `auto` 若沒有 calibration marker，先保留一個 incremental seed。程式會逐一評估各 bootstrap component，從每來源有效的 camera-from-world rotations 與 fused attitude 估 angular-speed time offset，再解 `A X = X B`；低樣本、低激發、單軸退化、低相關或高 residual 都會拒絕。每個候選與最後選擇都保存在稽核檔，不會混合不同 component 的座標系。
+   未知 rig bootstrap 若產生多個子模型且主模型完整 rig coverage 低於 90%，會從已接受模型追加一次 bounded continuation mapper。既有 frame pose 與已估 rig 外參固定，只允許註冊／三角化剩餘影格；candidate 必須實際優於 seed 並通過完整 rig coverage、points、track、reprojection 與 component 防退步閘才會交易式提交。失敗、無增益或品質退步都保留原 seed，不再從零盲跑第二次 mapper。
 5. 通過的來源會輸出 calibrated rig orientation manifest。gravity 由世界 down 經各鏡頭 `camera_from_world` 轉換後，寫入 COLMAP 4.1.1 `pose_priors`；位置與 covariance 缺值使用 NaN，既有有效位置 prior 會保留。
 6. 若 gravity coverage 至少 80%、rig 外參完整、focal prior 有效且 CLI options 可用，`auto` 會建立 global candidate。候選模型包含 rigs/frames、驗證成功，而且 complete-rig coverage、最大 component coverage、points/track support、reprojection error 與 component count 都通過相對 seed 的防退步閘才提交；失敗或退步時保留 seed。calibrated pair refresh 若無法完整 rollback database 與 `pairs.txt`，流程會 fail-closed，不會在不一致的 matching graph 上執行 global mapper。
 7. 實驗性的 fixed-rotation BA 只在上述 gate 與對應 COLMAP option 都通過時啟用。完整 SO(3) constraint 只會交給完成 capability handshake 的外部 orientation-aware BA executable，stock COLMAP 不會收到 quaternion prior。
@@ -64,6 +65,7 @@ A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 - `metadata/orientation_priors.json`: 單來源時是可供外部 BA 使用的 manifest；多來源時是 index，保留各來源不同 offset。
 - `metadata/global_mapper_priors.json`: database injection、focal/gravity coverage、calibration version 與代表性 offset marker。
 - `metadata/global_mapper_candidate.json`: requested/attempted 狀態、seed 與 candidate complete-rig 數，以及最後實際 mapper。
+- `metadata/rig_continuation_recovery.json`: 碎裂 bootstrap 的 fixed-frame continuation 是否觸發、seed/candidate 品質、gate 問題與最後是否提交。
 - `metadata/gravity_alignment.json`: 最終扶正狀態、向下向量語意、LichtFeld `+Y up` 目標、coverage、inliers、residual 與套用角度。
 - `metadata/gravity_alignment.sim3.txt`: 交給 COLMAP `model_transformer` 的 `scale qw qx qy qz tx ty tz` 旋轉；scale 固定 1、translation 固定 0。
 - `run-provenance.json`: run ID、輸入/COLMAP/CLI binary hash、Git commit、dirty 狀態與 align pipeline revision；路徑只保存 basename。

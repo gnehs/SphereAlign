@@ -998,6 +998,47 @@ fn collect_images_recursive(root: &Path, files: &mut Vec<PathBuf>) -> MaskResult
     Ok(())
 }
 
+/// Cheap terminal integrity check used by the stage orchestrator. The batch
+/// processor already validates L8 PNG contents when writing or resuming; this
+/// second pass intentionally reads headers only so a missing/truncated output
+/// cannot silently remove an image from COLMAP without decoding every 4K mask
+/// again.
+pub fn verify_mask_output_coverage(request: &MaskRequest) -> MaskResult<usize> {
+    validate_request(request)?;
+    let files = collect_images(&request.images_dir)?;
+    for input in &files {
+        let source_dimensions = ImageReader::open(input)
+            .and_then(|reader| reader.with_guessed_format())
+            .map_err(MaskError::from)?
+            .into_dimensions()
+            .map_err(MaskError::from)?;
+        let mask_path = output_path(request, input)?;
+        let mask_reader = ImageReader::open(&mask_path)
+            .and_then(|reader| reader.with_guessed_format())
+            .map_err(|error| {
+                MaskError::image(format!("missing or unreadable mask {}: {error}", mask_path.display()))
+            })?;
+        if mask_reader.format() != Some(ImageFormat::Png) {
+            return Err(MaskError::image(format!(
+                "mask is not PNG: {}",
+                mask_path.display()
+            )));
+        }
+        let mask_dimensions = mask_reader.into_dimensions().map_err(MaskError::from)?;
+        if mask_dimensions != source_dimensions {
+            return Err(MaskError::image(format!(
+                "mask dimensions {}x{} do not match source {}x{}: {}",
+                mask_dimensions.0,
+                mask_dimensions.1,
+                source_dimensions.0,
+                source_dimensions.1,
+                mask_path.display()
+            )));
+        }
+    }
+    Ok(files.len())
+}
+
 fn is_image_path(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -1357,6 +1398,26 @@ mod tests {
     }
 
     #[test]
+    fn terminal_coverage_check_rejects_a_missing_mask() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let request = request(&dir);
+        fs::create_dir_all(request.images_dir.join("lens0"))?;
+        let source = request.images_dir.join("lens0/frame.jpg");
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(8, 6, Rgb([100, 100, 100])).save(&source)?;
+        let engine = FakeEngine {
+            calls: AtomicUsize::new(0),
+            exclusion: 0,
+        };
+        process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
+        assert_eq!(verify_mask_output_coverage(&request)?, 1);
+
+        fs::remove_file(request.masks_dir.join("lens0/frame.png"))?;
+        let error = verify_mask_output_coverage(&request).unwrap_err();
+        assert!(error.to_string().contains("missing or unreadable mask"));
+        Ok(())
+    }
+
+    #[test]
     fn rejects_sources_that_map_to_the_same_png_mask() -> MaskResult<()> {
         let dir = TempDir::new()?;
         let request = request(&dir);
@@ -1375,6 +1436,7 @@ mod tests {
 
         assert!(error
             .to_string()
+            .replace('\\', "/")
             .contains("map to the same mask lens0/frame.png"));
         assert_eq!(engine.calls.load(Ordering::Relaxed), 0);
         Ok(())

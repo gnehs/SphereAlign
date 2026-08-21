@@ -139,9 +139,9 @@ Mask 明確停用 ONNX Runtime CPU execution-provider fallback。模型若無法
 - 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs；實體 rig 外參校正完成後，才加入固定、線性規模的 skip links 跨越短暫模糊或低紋理區段，避免未知外參 bootstrap 被長距配對改變，同時防止 final mapper 的局部註冊失敗永久切斷後續影格。
 - 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。
 - 有完整外參時，先執行 `rig_configurator` 再執行一次 mapper。
-- config 缺少外參時，先以獨立相機 bootstrap；COLMAP 可建立多個子模型，pipeline 會先偏好至少 3 組共同註冊同名雙鏡影格的候選，再以「已註冊影像數平方 × 共同影格數」平衡整體幾何覆蓋與 rig 校正樣本，避免選到共同影格比例高但過小、不穩定的模型。若自動候選皆不合格，最多再用 4 組已通過 two-view 幾何與 100-inlier 門檻的跨鏡 pair 作為初始 pair 重試；只有通過共同影格驗證後才寫入外參，最後允許 BA refinement 的 constrained mapper。
+- config 缺少外參時，先以獨立相機 bootstrap；COLMAP 可建立多個子模型，pipeline 會先偏好至少 3 組共同註冊同名雙鏡影格的候選，再以共同影格數與已註冊影像數選擇可靠的 rig calibration seed。若自動候選皆不合格，最多再用 4 組已通過 two-view 幾何與 100-inlier 門檻的跨鏡 pair 作為初始 pair 重試。當 bootstrap 確實碎裂且主模型完整 rig coverage 低於 90%，程式只追加一次 continuation mapper：沿用已驗證模型、固定所有既有 frame pose、固定 rig 外參並嘗試註冊剩餘影格；候選必須提升 coverage／points，且通過 component、track、reprojection 與 rig quality gate 才以交易方式取代 seed，否則保留原模型。這避免從零第二次 mapper 的時間與軌跡漂移。
 - 自訂 `rig_config.json` 會保留；只有缺少時才建立未知外參預設，或在內容精確等於舊版產生的共心 180° 預設時遷移。
-- Mask stage 完成時才傳入 COLMAP mask path；沒有 mask 也能單獨執行 Align。
+- Mask stage 只有在每張來源影像都有可讀、同尺寸 PNG mask 時才完成並傳入 COLMAP mask path；沒有啟用 mask 仍能單獨執行 Align。
 - 啟用 GPU 時，feature extraction、matching 與 Ceres bundle adjustment 都會使用對應 GPU 設定。
 - GPU stage 失敗時會依階段清理或還原未完整的資料庫／sparse output，再以 CPU 重試。
 - 目前固定使用 Ceres backend；Caspar 與本流程的 `OPENCV_FISHEYE` 相機模型不相容，因此不啟用。
