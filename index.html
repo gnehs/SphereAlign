@@ -8,7 +8,14 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Keep the native window draggable while the locale catalog and React app are loading. -->
+      <div
+        data-tauri-drag-region
+        aria-hidden="true"
+        style="position: fixed; inset: 0 0 auto; height: 52px; user-select: none; -webkit-user-select: none"
+      ></div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
