@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 26;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 27;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 5;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
@@ -3777,6 +3777,12 @@ const TEMPORAL_PAIR_MIN_ROTATION_DEG: f64 = 4.0;
 const TEMPORAL_RESCUE_OFFSETS: [usize; 3] = [8, 12, 16];
 const LOOP_RETRIEVAL_SEGMENT_FRAMES: usize = 32;
 const LOOP_RETRIEVAL_MAX_ANCHORS_PER_SEGMENT: usize = 20;
+const CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS: usize = 64;
+const CROSS_SOURCE_RETRIEVAL_FRAME_PAIRS: usize = 32;
+const CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES: usize = 32;
+const LEGACY_CROSS_SOURCE_ANCHORS: usize = 20;
+const MIN_VERIFIED_BOUNDARY_FRAME_PAIRS: usize = 3;
+const MIN_VERIFIED_GRAPH_PAIR_INLIERS: i64 = 15;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3834,6 +3840,21 @@ fn sequence_from_image_name(name: &str) -> Option<u64> {
         .and_then(|stem| stem.to_str())
         .and_then(|stem| stem.rsplit_once('_').map(|(_, sequence)| sequence))
         .and_then(|sequence| sequence.parse::<u64>().ok())
+}
+
+fn evenly_spaced_frames_including_endpoints<'a>(
+    frames: &[&'a String],
+    limit: usize,
+) -> Vec<&'a String> {
+    if frames.len() <= limit {
+        return frames.to_vec();
+    }
+    if limit <= 1 {
+        return frames.first().copied().into_iter().collect();
+    }
+    (0..limit)
+        .map(|index| frames[index * (frames.len() - 1) / (limit - 1)])
+        .collect()
 }
 
 fn load_frame_motion_metadata(root: &Path) -> BTreeMap<String, SourceFrameMotion> {
@@ -4307,51 +4328,88 @@ fn write_rig_and_pairs_with_options(
     let groups: Vec<(&str, Vec<&String>)> = sources
         .iter()
         .map(|(source, frames)| {
-            let step = (frames.len() / 20).max(1);
             (
                 *source,
-                frames.iter().copied().step_by(step).take(20).collect(),
+                evenly_spaced_frames_including_endpoints(
+                    frames,
+                    CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS,
+                ),
             )
         })
         .collect();
-    let retrieval_sources = groups
-        .iter()
-        .map(
-            |(source, frames)| crate::visual_retrieval::RetrievalSource {
-                source_id: (*source).to_owned(),
-                anchors: frames
-                    .iter()
-                    .map(|name| crate::visual_retrieval::RetrievalAnchor {
-                        frame_id: (*name).clone(),
-                        path: root.join("images/lens0").join(name),
-                        timestamp_ms: sequence_from_image_name(name).and_then(|sequence| {
-                            frame_motion
-                                .get(*source)
-                                .and_then(|motion| motion.frames.get(&sequence))
-                                .and_then(|frame| frame.timestamp_ms)
-                        }),
-                    })
-                    .collect(),
-            },
-        )
-        .collect::<Vec<_>>();
     let retrieval_report = (include_cross_source_pairs && use_visual_retrieval).then(|| {
-        let mut report = crate::visual_retrieval::retrieve_cross_source_candidates(
-            &retrieval_sources,
-            &crate::visual_retrieval::RetrievalConfig::default(),
-        );
-        report.make_paths_relative_to(root);
-        report
+        let config = crate::visual_retrieval::RetrievalConfig {
+            max_anchors_per_source: CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS,
+            max_frame_pairs_per_source_pair: CROSS_SOURCE_RETRIEVAL_FRAME_PAIRS,
+            ..crate::visual_retrieval::RetrievalConfig::default()
+        };
+        let mut combined = crate::visual_retrieval::RetrievalReport::default();
+        // A 360 scene bridge may be visible in only one physical fisheye at a
+        // recording boundary. Retrieve independently on both canonical lens
+        // streams, then expand the retained frame identities to all four lens
+        // combinations for COLMAP's own geometric verification.
+        for lens_index in 0..2 {
+            let retrieval_sources = groups
+                .iter()
+                .map(
+                    |(source, frames)| crate::visual_retrieval::RetrievalSource {
+                        source_id: (*source).to_owned(),
+                        anchors: frames
+                            .iter()
+                            .map(|name| crate::visual_retrieval::RetrievalAnchor {
+                                frame_id: (*name).clone(),
+                                path: root
+                                    .join(format!("images/lens{lens_index}"))
+                                    .join(name),
+                                timestamp_ms: sequence_from_image_name(name).and_then(|sequence| {
+                                    frame_motion
+                                        .get(*source)
+                                        .and_then(|motion| motion.frames.get(&sequence))
+                                        .and_then(|frame| frame.timestamp_ms)
+                                }),
+                            })
+                            .collect(),
+                    },
+                )
+                .collect::<Vec<_>>();
+            let report = crate::visual_retrieval::retrieve_cross_source_candidates(
+                &retrieval_sources,
+                &config,
+            );
+            combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
+            combined.source_pairs.extend(report.source_pairs);
+            combined.failed_descriptors.extend(report.failed_descriptors);
+        }
+        // One unreadable or textureless anchor must not discard successful
+        // candidates from the other physical lens. The deterministic adjacent
+        // boundary grid below is the fail-safe for source continuity; use the
+        // much larger legacy all-anchor grid only when retrieval found no
+        // usable cross-source candidate at all.
+        combined.fallback_to_legacy = combined.source_pairs.is_empty();
+        combined.make_paths_relative_to(root);
+        combined
     });
     let use_legacy_cross_source = include_cross_source_pairs
         && retrieval_report
             .as_ref()
             .is_none_or(crate::visual_retrieval::RetrievalReport::requires_fallback);
     if use_legacy_cross_source {
-        for left_index in 0..groups.len() {
-            for right_index in (left_index + 1)..groups.len() {
-                for left in &groups[left_index].1 {
-                    for right in &groups[right_index].1 {
+        let legacy_groups = sources
+            .iter()
+            .map(|(source, frames)| {
+                (
+                    *source,
+                    evenly_spaced_frames_including_endpoints(
+                        frames,
+                        LEGACY_CROSS_SOURCE_ANCHORS,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        for left_index in 0..legacy_groups.len() {
+            for right_index in (left_index + 1)..legacy_groups.len() {
+                for left in &legacy_groups[left_index].1 {
+                    for right in &legacy_groups[right_index].1 {
                         for left_lens in 0..2 {
                             for right_lens in 0..2 {
                                 pairs.insert(format!(
@@ -4373,6 +4431,48 @@ fn write_rig_and_pairs_with_options(
                     ));
                 }
             }
+        }
+    }
+
+    // Input sources preserve the user's recording order as source000,
+    // source001, ... . Recording boundaries are stronger evidence than a
+    // whole-video appearance summary: the previous tail and next head are
+    // expected to overlap even when a corridor or repeated texture makes a
+    // global descriptor prefer the wrong place. Add a bounded exhaustive grid
+    // over those boundary windows on both physical lenses. For the default
+    // window this is at most 4096 pairs per transition, still linear in the
+    // number of recordings and small beside the source-local temporal graph.
+    let mut boundary_pair_report = Vec::new();
+    if include_cross_source_pairs {
+        let ordered_sources = sources.iter().collect::<Vec<_>>();
+        for adjacent in ordered_sources.windows(2) {
+            let (left_source, left_frames) = adjacent[0];
+            let (right_source, right_frames) = adjacent[1];
+            let left_start = left_frames
+                .len()
+                .saturating_sub(CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES);
+            let left_boundary = &left_frames[left_start..];
+            let right_boundary =
+                &right_frames[..right_frames.len().min(CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES)];
+            let pair_count_before = pairs.len();
+            for left in left_boundary {
+                for right in right_boundary {
+                    for left_lens in 0..2 {
+                        for right_lens in 0..2 {
+                            pairs.insert(format!(
+                                "lens{left_lens}/{left} lens{right_lens}/{right}"
+                            ));
+                        }
+                    }
+                }
+            }
+            boundary_pair_report.push(json!({
+                "sourceA": left_source,
+                "sourceB": right_source,
+                "tailFrames": left_boundary.len(),
+                "headFrames": right_boundary.len(),
+                "addedPairs": pairs.len() - pair_count_before,
+            }));
         }
     }
 
@@ -4466,6 +4566,17 @@ fn write_rig_and_pairs_with_options(
         fs::write(
             root.join("metadata/cross_source_retrieval.json"),
             serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if include_cross_source_pairs {
+        fs::write(
+            root.join("metadata/cross_source_boundaries.json"),
+            serde_json::to_vec_pretty(&json!({
+                "windowFrames": CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES,
+                "transitions": boundary_pair_report,
+            }))
+            .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
     }
@@ -5362,6 +5473,197 @@ fn colmap_image_pair_id(image_id1: i64, image_id2: i64) -> i64 {
         (image_id2, image_id1)
     };
     smaller * COLMAP_MAX_IMAGE_ID + larger
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct VerifiedBoundaryTransition {
+    source_a: String,
+    source_b: String,
+    verified_frame_pairs: usize,
+    required_frame_pairs: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct VerifiedPairGraphReport {
+    image_count: usize,
+    verified_pair_count: usize,
+    connected_component_count: usize,
+    largest_component_image_count: usize,
+    largest_component_coverage_ratio: f64,
+    boundary_transitions: Vec<VerifiedBoundaryTransition>,
+}
+
+impl VerifiedPairGraphReport {
+    fn failed_boundaries(&self) -> Vec<&VerifiedBoundaryTransition> {
+        self.boundary_transitions
+            .iter()
+            .filter(|transition| {
+                transition.verified_frame_pairs < transition.required_frame_pairs
+            })
+            .collect()
+    }
+}
+
+fn union_find_root(parents: &mut [usize], mut index: usize) -> usize {
+    while parents[index] != index {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    index
+}
+
+fn verified_pair_graph_report(database: &Path) -> Result<VerifiedPairGraphReport, String> {
+    let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("無法唯讀開啟 COLMAP 資料庫 {}：{error}", database.display()))?;
+    let mut image_statement = connection
+        .prepare("SELECT image_id, name FROM images ORDER BY name")
+        .map_err(|error| format!("無法讀取 COLMAP images 表：{error}"))?;
+    let images = image_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP images 表：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("無法解析 COLMAP images 表：{error}"))?;
+
+    let mut image_indexes = HashMap::new();
+    let mut identities = HashMap::<i64, (String, String)>::new();
+    let mut source_frames = BTreeMap::<String, BTreeSet<String>>::new();
+    for (index, (image_id, name)) in images.iter().enumerate() {
+        let Some(frame) = Path::new(name).file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let source = source_name_from_image(frame).to_owned();
+        image_indexes.insert(*image_id, index);
+        identities.insert(*image_id, (source.clone(), frame.to_owned()));
+        source_frames
+            .entry(source)
+            .or_default()
+            .insert(frame.to_owned());
+    }
+
+    struct BoundaryState {
+        source_a: String,
+        source_b: String,
+        tail: BTreeSet<String>,
+        head: BTreeSet<String>,
+        verified: BTreeSet<(String, String)>,
+    }
+    let ordered_sources = source_frames.iter().collect::<Vec<_>>();
+    let mut boundaries = Vec::new();
+    for adjacent in ordered_sources.windows(2) {
+        let (source_a, frames_a) = adjacent[0];
+        let (source_b, frames_b) = adjacent[1];
+        boundaries.push(BoundaryState {
+            source_a: source_a.clone(),
+            source_b: source_b.clone(),
+            tail: frames_a
+                .iter()
+                .rev()
+                .take(CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES)
+                .cloned()
+                .collect(),
+            head: frames_b
+                .iter()
+                .take(CROSS_SOURCE_BOUNDARY_WINDOW_FRAMES)
+                .cloned()
+                .collect(),
+            verified: BTreeSet::new(),
+        });
+    }
+
+    let mut parents = (0..images.len()).collect::<Vec<_>>();
+    let mut component_sizes = vec![1_usize; images.len()];
+    let mut verified_pair_count = 0_usize;
+    let mut geometry_statement = connection
+        .prepare("SELECT pair_id, rows, config FROM two_view_geometries")
+        .map_err(|error| format!("無法讀取 COLMAP two_view_geometries 表：{error}"))?;
+    let geometries = geometry_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| format!("無法查詢 COLMAP two_view_geometries 表：{error}"))?;
+    for geometry in geometries {
+        let (pair_id, rows, config) =
+            geometry.map_err(|error| format!("無法解析 COLMAP two_view_geometries：{error}"))?;
+        if rows < MIN_VERIFIED_GRAPH_PAIR_INLIERS || !matches!(config, 2 | 3 | 4 | 5 | 6 | 9)
+        {
+            continue;
+        }
+        let image_id1 = pair_id / COLMAP_MAX_IMAGE_ID;
+        let image_id2 = pair_id % COLMAP_MAX_IMAGE_ID;
+        let (Some(&index1), Some(&index2)) =
+            (image_indexes.get(&image_id1), image_indexes.get(&image_id2))
+        else {
+            continue;
+        };
+        verified_pair_count += 1;
+        let root1 = union_find_root(&mut parents, index1);
+        let root2 = union_find_root(&mut parents, index2);
+        if root1 != root2 {
+            let (large, small) = if component_sizes[root1] >= component_sizes[root2] {
+                (root1, root2)
+            } else {
+                (root2, root1)
+            };
+            parents[small] = large;
+            component_sizes[large] += component_sizes[small];
+        }
+
+        let (Some((source1, frame1)), Some((source2, frame2))) =
+            (identities.get(&image_id1), identities.get(&image_id2))
+        else {
+            continue;
+        };
+        for boundary in &mut boundaries {
+            if source1 == &boundary.source_a
+                && source2 == &boundary.source_b
+                && boundary.tail.contains(frame1)
+                && boundary.head.contains(frame2)
+            {
+                boundary.verified.insert((frame1.clone(), frame2.clone()));
+            } else if source2 == &boundary.source_a
+                && source1 == &boundary.source_b
+                && boundary.tail.contains(frame2)
+                && boundary.head.contains(frame1)
+            {
+                boundary.verified.insert((frame2.clone(), frame1.clone()));
+            }
+        }
+    }
+
+    let mut component_counts = BTreeMap::<usize, usize>::new();
+    for index in 0..images.len() {
+        let root = union_find_root(&mut parents, index);
+        *component_counts.entry(root).or_default() += 1;
+    }
+    let largest_component_image_count = component_counts.values().copied().max().unwrap_or(0);
+    Ok(VerifiedPairGraphReport {
+        image_count: images.len(),
+        verified_pair_count,
+        connected_component_count: component_counts.len(),
+        largest_component_image_count,
+        largest_component_coverage_ratio: if images.is_empty() {
+            0.0
+        } else {
+            largest_component_image_count as f64 / images.len() as f64
+        },
+        boundary_transitions: boundaries
+            .into_iter()
+            .map(|boundary| VerifiedBoundaryTransition {
+                source_a: boundary.source_a,
+                source_b: boundary.source_b,
+                verified_frame_pairs: boundary.verified.len(),
+                required_frame_pairs: MIN_VERIFIED_BOUNDARY_FRAME_PAIRS,
+            })
+            .collect(),
+    })
 }
 
 fn verified_bootstrap_initial_pairs(
@@ -8745,6 +9047,62 @@ fn run_align(
         "matching".to_owned(),
         matching_started.elapsed().as_secs_f64() * 1000.0,
     );
+    let verified_graph = verified_pair_graph_report(&db)?;
+    fs::write(
+        root.join("metadata/verified_pair_graph.json"),
+        serde_json::to_vec_pretty(&verified_graph).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    emit_log(
+        app,
+        id,
+        "info",
+        format!(
+            "COLMAP verified graph：{} 組有效 pairs、{} 個 components，最大 component 覆蓋 {:.1}% 影像",
+            verified_graph.verified_pair_count,
+            verified_graph.connected_component_count,
+            verified_graph.largest_component_coverage_ratio * 100.0
+        ),
+    );
+    for transition in &verified_graph.boundary_transitions {
+        emit_log(
+            app,
+            id,
+            if transition.verified_frame_pairs >= transition.required_frame_pairs {
+                "info"
+            } else {
+                "warning"
+            },
+            format!(
+                "片段交界 {} → {}：{} 組 frame pairs 通過幾何驗證（最低 {}）",
+                transition.source_a,
+                transition.source_b,
+                transition.verified_frame_pairs,
+                transition.required_frame_pairs
+            ),
+        );
+    }
+    let require_boundary_connectivity =
+        setting_bool(&manifest.settings, "/align/requireBoundaryConnectivity", true);
+    let failed_boundaries = verified_graph.failed_boundaries();
+    if require_boundary_connectivity && !failed_boundaries.is_empty() {
+        let failures = failed_boundaries
+            .iter()
+            .map(|transition| {
+                format!(
+                    "{}→{}（{} / {}）",
+                    transition.source_a,
+                    transition.source_b,
+                    transition.verified_frame_pairs,
+                    transition.required_frame_pairs
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("、");
+        return Err(format!(
+            "COLMAP matching 後的片段交界仍未連通：{failures}。已在 mapper 前停止，避免產生大量碎裂模型；請檢查交界清晰度、遮罩或改進候選配對。若素材刻意不連續，可設定 align.requireBoundaryConnectivity=false"
+        ));
+    }
     let calibrate_focal_prior =
         setting_bool(&manifest.settings, "/align/calibrateFocalPrior", false);
     if calibrate_focal_before_bootstrap(
@@ -8884,6 +9242,20 @@ fn run_align(
             let last_bootstrap_emit = Cell::new(None);
             let mut bootstrap_gpu_warning_emitted = false;
             let bootstrap_total = independent_image_total.max(1);
+            let bootstrap_heartbeat = ProgressHeartbeat::start(
+                app,
+                id,
+                StageName::Align,
+                "bootstrap",
+                colmap_step_progress(2, 0.0),
+                format!(
+                    "正在建立獨立鏡頭初始模型，尚未收到第一筆註冊進度（共 {} 張影像）",
+                    bootstrap_total
+                ),
+                Some("bootstrap_mapper".to_owned()),
+                Some(0),
+                Some(bootstrap_total),
+            );
             let bootstrap_gpu_args = mapper_args(
                 &db,
                 &root.join("images"),
@@ -8921,6 +9293,16 @@ fn run_align(
                 || {
                     highest_registered.set(0);
                     last_bootstrap_emit.set(None);
+                    bootstrap_heartbeat.update(
+                        colmap_step_progress(2, 0.0),
+                        format!(
+                            "bootstrap GPU 路徑失敗，正在以 CPU 重新開始（共 {} 張影像）",
+                            bootstrap_total
+                        ),
+                        Some("bootstrap_mapper".to_owned()),
+                        Some(0),
+                        Some(bootstrap_total),
+                    );
                 },
                 |line| {
                     maybe_log_mapper_gpu_cpu_fallback(
@@ -8949,18 +9331,19 @@ fn run_align(
                         return;
                     }
                     last_bootstrap_emit.set(Some(Instant::now()));
-                    emit_colmap_progress(
-                        app,
-                        id,
-                        "bootstrap",
-                        2,
-                        0.60 * highest_registered.get() as f32 / bootstrap_total as f32,
+                    bootstrap_heartbeat.update(
+                        colmap_step_progress(
+                            2,
+                            0.60 * highest_registered.get() as f32 / bootstrap_total as f32,
+                        ),
                         format!(
-                            "正在建立獨立鏡頭初始模型，已註冊約 {} / {} 張影像",
+                            "正在建立獨立鏡頭初始模型，目前最大子模型已註冊約 {} / {} 張影像；若數字暫停，COLMAP 可能正在做 bundle adjustment",
                             highest_registered.get(),
                             bootstrap_total
                         ),
                         Some(format!("影像 #{image_id}")),
+                        Some(highest_registered.get()),
+                        Some(bootstrap_total),
                     );
                 },
             )?;
@@ -9478,6 +9861,20 @@ fn run_align(
         } else {
             "final_mapper"
         };
+        let final_mapper_heartbeat = ProgressHeartbeat::start(
+            app,
+            id,
+            StageName::Align,
+            "final-mapping",
+            colmap_step_progress(4, 0.0),
+            format!(
+                "正在重建最終模型，尚未收到第一筆註冊進度（共 {} 組影格）",
+                final_total
+            ),
+            Some(final_mapper_component.to_owned()),
+            Some(0),
+            Some(final_total),
+        );
         run_mapper_with_gpu_fallback(
             app,
             id,
@@ -9491,6 +9888,16 @@ fn run_align(
             || {
                 highest_registered.set(0);
                 last_final_mapper_emit.set(None);
+                final_mapper_heartbeat.update(
+                    colmap_step_progress(4, 0.0),
+                    format!(
+                        "{} GPU 路徑失敗，正在以 CPU 重新開始（共 {} 組影格）",
+                        final_mapper_component, final_total
+                    ),
+                    Some(final_mapper_component.to_owned()),
+                    Some(0),
+                    Some(final_total),
+                );
             },
             |line| {
                 maybe_log_mapper_gpu_cpu_fallback(
@@ -9514,18 +9921,19 @@ fn run_align(
                     return;
                 }
                 last_final_mapper_emit.set(Some(Instant::now()));
-                emit_colmap_progress(
-                    app,
-                    id,
-                    "final-mapping",
-                    4,
-                    0.50 * highest_registered.get() as f32 / final_total as f32,
+                final_mapper_heartbeat.update(
+                    colmap_step_progress(
+                        4,
+                        0.50 * highest_registered.get() as f32 / final_total as f32,
+                    ),
                     format!(
-                        "正在重建最終模型，已註冊約 {} / {} 組影格",
+                        "正在重建最終模型，已註冊約 {} / {} 組影格；若數字暫停，COLMAP 可能正在做 bundle adjustment",
                         highest_registered.get(),
                         final_total
                     ),
                     Some(format!("影像 #{image_id}")),
+                    Some(highest_registered.get()),
+                    Some(final_total),
                 );
             },
         )?;
@@ -10437,6 +10845,8 @@ fn run_align(
         benchmark_path.to_string_lossy().into_owned(),
     ];
     for path in [
+        root.join("metadata/cross_source_boundaries.json"),
+        root.join("metadata/verified_pair_graph.json"),
         root.join("metadata/gravity_alignment.json"),
         root.join("metadata/gravity_alignment.sim3.txt"),
     ] {
@@ -10478,6 +10888,7 @@ mod tests {
         commit_configured_rig_model, complete_registered_dual_fisheye_frames,
         create_colmap_database_backup, cross_source_pair_lines, dual_fisheye_registration_totals,
         effective_mapper_matches_checkpoint, evaluate_global_candidate_quality,
+        evenly_spaced_frames_including_endpoints,
         expected_candidate_frames, extract_frame_settings, extraction_completed_count,
         feature_extractor_args, global_mapper_args, global_mapper_prerequisite_error,
         has_valid_global_mapper_priors, invalidate_calibrated_prior_artifacts,
@@ -10495,10 +10906,11 @@ mod tests {
         selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
+        verified_pair_graph_report,
         view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
-        write_rig_and_pairs, AlignCheckpoint, ColmapFraction, ColmapQualityProfile,
-        ExtractionStage, FeaturePipeline, FeaturePipelineConfig, GlobalCandidateQualityMetrics,
-        GlobalMapperOptions, JobControl,
+        write_rig_and_pairs, write_rig_and_pairs_with_options, AlignCheckpoint, ColmapFraction,
+        ColmapQualityProfile, ExtractionStage, FeaturePipeline, FeaturePipelineConfig,
+        GlobalCandidateQualityMetrics, GlobalMapperOptions, JobControl,
         JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent, RawFrameMessage,
         RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
         RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
@@ -10519,7 +10931,7 @@ mod tests {
     use crate::color::ValidatedLut;
     use crate::doctor::ColmapCapabilities;
     use crate::masking::CancelToken;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -12013,6 +12425,52 @@ mod tests {
     }
 
     #[test]
+    fn evenly_spaced_retrieval_anchors_keep_both_endpoints() {
+        let owned = (0..101).map(|index| format!("frame{index:03}"));
+        let owned = owned.collect::<Vec<_>>();
+        let frames = owned.iter().collect::<Vec<_>>();
+        let selected = evenly_spaced_frames_including_endpoints(&frames, 20);
+        assert_eq!(selected.len(), 20);
+        assert_eq!(selected.first().map(|value| value.as_str()), Some("frame000"));
+        assert_eq!(selected.last().map(|value| value.as_str()), Some("frame100"));
+    }
+
+    #[test]
+    fn adjacent_recordings_receive_a_dense_tail_to_head_pair_grid() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for source in 0..2 {
+                for sequence in 1..=200 {
+                    fs::write(
+                        temp.path().join("images").join(lens).join(format!(
+                            "source{source:03}_{sequence:08}.png"
+                        )),
+                        b"frame",
+                    )
+                    .unwrap();
+                }
+            }
+        }
+
+        write_rig_and_pairs_with_options(temp.path(), false, false, true).unwrap();
+        let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        // These frames are deliberately not both members of the 20-frame
+        // legacy anchor grid. Their pair exists only because the preceding
+        // tail and following head receive a deterministic boundary window.
+        assert!(pairs.contains(
+            "lens0/source000_00000191.png lens1/source001_00000011.png"
+        ));
+        let report: Value = serde_json::from_slice(
+            &fs::read(temp.path().join("metadata/cross_source_boundaries.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["windowFrames"], 32);
+        assert_eq!(report["transitions"][0]["tailFrames"], 32);
+        assert_eq!(report["transitions"][0]["headFrames"], 32);
+    }
+
+    #[test]
     fn motion_metadata_prunes_only_optional_temporal_pairs() {
         let temp = tempfile::tempdir().unwrap();
         for lens in ["lens0", "lens1"] {
@@ -12667,6 +13125,61 @@ mod tests {
             vec![0, 1, 2, 3]
         );
         assert!(pairs.iter().all(|pair| pair.geometry_config != 6));
+    }
+
+    #[test]
+    fn verified_pair_graph_requires_distinct_frame_bridges_at_each_boundary() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("database.db");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE images (image_id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE two_view_geometries (
+                    pair_id INTEGER PRIMARY KEY,
+                    rows INTEGER NOT NULL,
+                    config INTEGER NOT NULL
+                 );",
+            )
+            .unwrap();
+        for (image_id, name) in [
+            (1_i64, "lens0/source000_00000001.jpg"),
+            (2, "lens0/source000_00000002.jpg"),
+            (3, "lens0/source000_00000003.jpg"),
+            (4, "lens0/source001_00000001.jpg"),
+            (5, "lens0/source001_00000002.jpg"),
+            (6, "lens0/source001_00000003.jpg"),
+            (101, "lens1/source000_00000001.jpg"),
+            (102, "lens1/source000_00000002.jpg"),
+            (103, "lens1/source000_00000003.jpg"),
+            (104, "lens1/source001_00000001.jpg"),
+            (105, "lens1/source001_00000002.jpg"),
+            (106, "lens1/source001_00000003.jpg"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO images(image_id, name) VALUES (?1, ?2)",
+                    rusqlite::params![image_id, name],
+                )
+                .unwrap();
+        }
+        for (left, right) in [(1_i64, 4_i64), (2, 5), (3, 6), (101, 104)] {
+            connection
+                .execute(
+                    "INSERT INTO two_view_geometries(pair_id, rows, config) VALUES (?1, 80, 3)",
+                    rusqlite::params![colmap_image_pair_id(left, right)],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let report = verified_pair_graph_report(&database).unwrap();
+        assert_eq!(report.boundary_transitions.len(), 1);
+        assert_eq!(report.boundary_transitions[0].verified_frame_pairs, 3);
+        assert!(report.failed_boundaries().is_empty());
+        // The fourth verified geometry is a second lens observation of an
+        // existing frame bridge and must not inflate boundary confidence.
+        assert_eq!(report.verified_pair_count, 4);
     }
 
     #[test]
