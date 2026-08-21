@@ -2865,3 +2865,22 @@ msgstr "YOLOと空のフィルタリングは無効です。マスキングを�
 #: src/components/processing-settings-fields.tsx:199
 msgid "YOLO object filtering"
 msgstr "YOLOオブジェクトフィルタリング"
+
+#: src/components/processing-settings-fields.tsx:262
+msgid "Possible incorrect matches"
+msgstr "誤ったマッチングの可能性"
+
+#. Warn that visually repetitive scenes can cause a false loop closure.
+#: src/components/processing-settings-fields.tsx:263
+msgid "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
+msgstr "外観が似た廊下や物体を再訪と誤認し、誤ったマッチングが生じる場合があります。"
+
+#. Find long-distance revisits within one source video to help close a reconstruction loop.
+#: src/components/processing-settings-fields.tsx:257
+msgid "Single-video loop closure"
+msgstr "単一動画の長距離ループ閉じ込み"
+
+#. Explain when the optional single-video loop-closure setting is useful.
+#: src/components/processing-settings-fields.tsx:258
+msgid "Turn this on if the video passes through the same place again."
+msgstr "動画内で同じ場所を再び通る場合にオンにしてください。"

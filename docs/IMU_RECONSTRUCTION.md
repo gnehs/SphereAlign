@@ -35,7 +35,7 @@ DJI drone schema 也可能攜帶 WGS-84 GPS、海拔、狀態及相對起飛高�
 
 ## 產品設定
 
-一般 SphereAlign 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面只保留影格率、清晰度過濾、遮罩及 GPU 選項；不再顯示或保存下列實驗設定。
+一般 SphereAlign 任務固定採用實測的 B 流程：keyframe pruning（5°／200 ms／600 ms／0.08）、多來源 visual retrieval 與 incremental mapper。產品介面保留影格率、清晰度過濾、遮罩、單一影片長距離 loop closure 及 GPU 選項；不再顯示或保存其餘實驗設定。
 
 一般任務預設開啟 Align 後 gravity 扶正。它與下列 Global Mapper 實驗設定分離，因此 incremental fallback 仍可輸出地面朝下的訓練資料集；缺少或未通過校正的 telemetry 只會產生明確的 skipped 診斷，不會破壞已驗證的視覺模型。
 
@@ -46,6 +46,7 @@ A／B／C benchmark CLI 仍可在獨立測試專案中明確傳入：
 - `autoCalibrateTelemetry`: 是否從 incremental seed 自動估時間與座標轉換。
 - `calibrateFocalPrior`: 是否執行 view graph focal calibration。
 - `useVisualRetrieval`: 多來源是否使用低解析 visual retrieval。
+- `useIntraSourceLoopClosure`: 是否對單一影片啟用分段式長距離 visual retrieval；預設關閉，適合確實重複經過同一地點的影片，但重複走廊或相似物件可能產生錯誤回訪候選。
 - `requireBoundaryConnectivity`: 是否要求每個相鄰錄影片段的尾首交界通過 verified-graph gate；產品預設為 `true`，只有刻意輸入不連續素材時才應關閉。
 - `useCalibratedFovPairs`: 有 calibration 時是否用 FOV overlap 篩 optional cross-lens pairs。
 - `fixedRotationBa`: 略過 joint rotation optimization 的實驗模式。

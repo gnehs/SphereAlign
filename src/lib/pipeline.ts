@@ -70,6 +70,7 @@ interface PipelineSettings {
   align: {
     useGpu: boolean;
     gpuIndex: string;
+    useIntraSourceLoopClosure: boolean;
   };
 }
 
@@ -291,6 +292,7 @@ const DEFAULT_SETTINGS: PipelineSettings = {
   align: {
     useGpu: true,
     gpuIndex: "-1",
+    useIntraSourceLoopClosure: false,
   },
 };
 const COLMAP_PATH_STORAGE_KEY = "spherealign.colmapPath";
@@ -358,6 +360,9 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
     align: {
       useGpu: typeof align.useGpu === "boolean" ? align.useGpu : DEFAULT_SETTINGS.align.useGpu,
       gpuIndex,
+      useIntraSourceLoopClosure: typeof align.useIntraSourceLoopClosure === "boolean"
+        ? align.useIntraSourceLoopClosure
+        : DEFAULT_SETTINGS.align.useIntraSourceLoopClosure,
     },
   };
 }

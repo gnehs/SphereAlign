@@ -4131,12 +4131,13 @@ fn calibrated_pair_overlap(
 
 #[cfg(test)]
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
-    write_rig_and_pairs_with_options(root, true, false, true)
+    write_rig_and_pairs_with_options(root, true, true, false, true)
 }
 
 fn write_rig_and_pairs_with_options(
     root: &Path,
     use_visual_retrieval: bool,
+    use_intra_source_loop_closure: bool,
     use_calibrated_fov: bool,
     include_cross_source_pairs: bool,
 ) -> Result<u64, String> {
@@ -4539,7 +4540,7 @@ fn write_rig_and_pairs_with_options(
             loop_source_groups.push(segments);
         }
     }
-    let mut loop_retrieval_report = use_visual_retrieval.then(|| {
+    let mut loop_retrieval_report = use_intra_source_loop_closure.then(|| {
         let mut combined = crate::visual_retrieval::RetrievalReport::default();
         for segments in &loop_source_groups {
             let report = crate::visual_retrieval::retrieve_cross_source_candidates(
@@ -4605,12 +4606,15 @@ fn write_rig_and_pairs_with_options(
         )
         .map_err(|error| error.to_string())?;
     }
+    let loop_retrieval_path = root.join("metadata/intra_source_loop_retrieval.json");
     if let Some(report) = &loop_retrieval_report {
         fs::write(
-            root.join("metadata/intra_source_loop_retrieval.json"),
+            &loop_retrieval_path,
             serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
+    } else if loop_retrieval_path.is_file() {
+        fs::remove_file(&loop_retrieval_path).map_err(|error| error.to_string())?;
     }
     fs::write(
         root.join("metadata/pairs.txt"),
@@ -7886,7 +7890,7 @@ fn refresh_calibrated_pair_matches(
     // would resurrect local pairs deliberately removed by calibrated FOV;
     // letting the generator fall back would also inject a legacy anchor grid.
     let calibrated_pairs = (|| {
-        write_rig_and_pairs_with_options(root, false, use_calibrated_fov, false)?;
+        write_rig_and_pairs_with_options(root, false, false, use_calibrated_fov, false)?;
         let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
         let original_cross_source_pairs = cross_source_pair_lines(&original_pairs)?;
         let calibrated_pairs = merge_pair_lists(&original_cross_source_pairs, &refreshed_pairs)?;
@@ -8389,12 +8393,18 @@ fn run_align(
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
+    let use_intra_source_loop_closure = setting_bool(
+        &manifest.settings,
+        "/align/useIntraSourceLoopClosure",
+        false,
+    );
     let use_calibrated_fov_pairs =
         setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", false);
     let pair_graph_started = Instant::now();
     let rig_frame_count = write_rig_and_pairs_with_options(
         &root,
         use_visual_retrieval,
+        use_intra_source_loop_closure,
         use_calibrated_fov_pairs,
         true,
     )?;
@@ -12869,7 +12879,7 @@ mod tests {
             }
         }
 
-        write_rig_and_pairs_with_options(temp.path(), false, false, true).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, true).unwrap();
         let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
         // These frames are deliberately not both members of the 20-frame
         // legacy anchor grid. Their pair exists only because the preceding
@@ -12884,6 +12894,36 @@ mod tests {
         assert_eq!(report["windowFrames"], 32);
         assert_eq!(report["transitions"][0]["tailFrames"], 32);
         assert_eq!(report["transitions"][0]["headFrames"], 32);
+    }
+
+    #[test]
+    fn intra_source_loop_retrieval_is_controlled_independently() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=40 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"frame",
+                )
+                .unwrap();
+            }
+        }
+
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, false).unwrap();
+        let report = temp
+            .path()
+            .join("metadata/intra_source_loop_retrieval.json");
+        assert!(!report.exists());
+
+        write_rig_and_pairs_with_options(temp.path(), false, true, false, false).unwrap();
+        assert!(report.is_file());
+
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, false).unwrap();
+        assert!(!report.exists());
     }
 
     #[test]

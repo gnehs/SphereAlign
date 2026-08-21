@@ -818,6 +818,7 @@ fn settings_a(gpu_index: &str) -> Value {
                 "autoCalibrateTelemetry": false,
                 "calibrateFocalPrior": false,
                 "useVisualRetrieval": false,
+                "useIntraSourceLoopClosure": false,
                 "useCalibratedFovPairs": false,
                 "exportRollingShutterTrajectory": false
             }
@@ -844,6 +845,7 @@ fn settings_b(gpu_index: &str) -> Value {
                 "autoCalibrateTelemetry": false,
                 "calibrateFocalPrior": false,
                 "useVisualRetrieval": true,
+                "useIntraSourceLoopClosure": true,
                 "useCalibratedFovPairs": false,
                 "exportRollingShutterTrajectory": false
             }

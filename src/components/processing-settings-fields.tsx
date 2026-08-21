@@ -243,6 +243,28 @@ export function ProcessingSettingsFields({
             <FieldTitle id="alignment-settings-title"><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldTitle>
             <FieldContent>
               <div className="flex flex-col gap-2">
+                <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
+                  <Switch
+                    id="use-intra-source-loop-closure"
+                    size="sm"
+                    checked={settings.align.useIntraSourceLoopClosure}
+                    onCheckedChange={(checked) => onSettingsChange((current) => ({
+                      ...current,
+                      align: { ...current.align, useIntraSourceLoopClosure: checked },
+                    }))}
+                  />
+                  <FieldContent>
+                    <FieldLabel htmlFor="use-intra-source-loop-closure"><Trans comment="Find long-distance revisits within one source video to help close a reconstruction loop.">Single-video loop closure</Trans></FieldLabel>
+                    <FieldDescription><Trans comment="Explain when the optional single-video loop-closure setting is useful.">Turn this on if the video passes through the same place again.</Trans></FieldDescription>
+                    {settings.align.useIntraSourceLoopClosure && (
+                      <Alert>
+                        <AlertTriangle />
+                        <AlertTitle><Trans>Possible incorrect matches</Trans></AlertTitle>
+                        <AlertDescription><Trans comment="Warn that visually repetitive scenes can cause a false loop closure.">Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches.</Trans></AlertDescription>
+                      </Alert>
+                    )}
+                  </FieldContent>
+                </Field>
                 <Field orientation="horizontal" className="mt-2.5 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal" data-disabled={doctor.gpuAvailable === false || undefined}>
                   <Switch
                     id="use-gpu"

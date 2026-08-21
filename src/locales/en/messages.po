@@ -2865,3 +2865,22 @@ msgstr "YOLO and sky filtering are disabled; masking was skipped"
 #: src/components/processing-settings-fields.tsx:199
 msgid "YOLO object filtering"
 msgstr "YOLO object filtering"
+
+#: src/components/processing-settings-fields.tsx:262
+msgid "Possible incorrect matches"
+msgstr "Possible incorrect matches"
+
+#. Warn that visually repetitive scenes can cause a false loop closure.
+#: src/components/processing-settings-fields.tsx:263
+msgid "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
+msgstr "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
+
+#. Find long-distance revisits within one source video to help close a reconstruction loop.
+#: src/components/processing-settings-fields.tsx:257
+msgid "Single-video loop closure"
+msgstr "Single-video loop closure"
+
+#. Explain when the optional single-video loop-closure setting is useful.
+#: src/components/processing-settings-fields.tsx:258
+msgid "Turn this on if the video passes through the same place again."
+msgstr "Turn this on if the video passes through the same place again."
