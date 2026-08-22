@@ -4398,7 +4398,12 @@ fn write_rig_and_pairs_with_options(
             )
         })
         .collect();
-    let retrieval_report = (include_cross_source_pairs && use_visual_retrieval).then(|| {
+    // Cross-source retrieval cannot produce a candidate for a single source.
+    // Avoid decoding up to 128 full-resolution fisheye anchors only to return
+    // an empty report; on large images that made Align appear stuck before its
+    // first useful progress event.
+    let retrieval_report =
+        (include_cross_source_pairs && use_visual_retrieval && groups.len() >= 2).then(|| {
         let config = crate::visual_retrieval::RetrievalConfig {
             max_anchors_per_source: CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS,
             max_frame_pairs_per_source_pair: CROSS_SOURCE_RETRIEVAL_FRAME_PAIRS,
@@ -4623,12 +4628,15 @@ fn write_rig_and_pairs_with_options(
         }
     }
     fs::create_dir_all(root.join("metadata")).map_err(|e| e.to_string())?;
+    let cross_source_retrieval_path = root.join("metadata/cross_source_retrieval.json");
     if let Some(report) = &retrieval_report {
         fs::write(
-            root.join("metadata/cross_source_retrieval.json"),
+            &cross_source_retrieval_path,
             serde_json::to_vec_pretty(report).map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?;
+    } else if cross_source_retrieval_path.is_file() {
+        fs::remove_file(&cross_source_retrieval_path).map_err(|error| error.to_string())?;
     }
     if include_cross_source_pairs {
         fs::write(
@@ -8472,6 +8480,17 @@ fn run_align(
     let use_calibrated_fov_pairs =
         setting_bool(&manifest.settings, "/align/useCalibratedFovPairs", false);
     let pair_graph_started = Instant::now();
+    let pair_graph_heartbeat = ProgressHeartbeat::start(
+        app,
+        id,
+        StageName::Align,
+        "building-pair-graph",
+        0.02,
+        "正在建立影像配對圖",
+        None,
+        None,
+        None,
+    );
     let rig_frame_count = write_rig_and_pairs_with_options(
         &root,
         use_visual_retrieval,
@@ -8479,6 +8498,7 @@ fn run_align(
         use_calibrated_fov_pairs,
         true,
     )?;
+    drop(pair_graph_heartbeat);
     phase_durations_ms.insert(
         "pairGraph".to_owned(),
         pair_graph_started.elapsed().as_secs_f64() * 1000.0,
@@ -13036,6 +13056,32 @@ mod tests {
 
         write_rig_and_pairs_with_options(temp.path(), false, false, false, false).unwrap();
         assert!(!report.exists());
+    }
+
+    #[test]
+    fn single_source_skips_cross_source_visual_retrieval() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for sequence in 1..=2 {
+                fs::write(
+                    temp.path()
+                        .join("images")
+                        .join(lens)
+                        .join(format!("source000_{sequence:08}.png")),
+                    b"not an image",
+                )
+                .unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        let report = temp.path().join("metadata/cross_source_retrieval.json");
+        fs::write(&report, b"stale").unwrap();
+
+        write_rig_and_pairs_with_options(temp.path(), true, false, false, true).unwrap();
+
+        assert!(!report.exists());
+        assert!(temp.path().join("metadata/pairs.txt").is_file());
     }
 
     #[test]
