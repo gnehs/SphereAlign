@@ -52,29 +52,36 @@ pub struct CaptureBundle {
 /// A camera-family initialization pose used only when the two physical lenses
 /// cannot bootstrap independently. This is deliberately separate from
 /// `rig_extrinsics`: it is a nominal bootstrap prior rather than factory
-/// calibration. The unobservable zero baseline must remain fixed during the
-/// initial reconstruction.
+/// calibration. Its zero baseline is only an initialization; mapper bundle
+/// adjustment must remain free to recover the real CMOS-center offset.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RigBootstrapPoseHint {
     pub cam_from_rig_rotation: [f64; 4],
     pub cam_from_rig_translation: [f64; 3],
     pub provenance: &'static str,
+    pub refine_sensor_from_rig: bool,
 }
 
-/// Return the nominal back-to-back layout defined by an adapter. Insta360's
-/// native dual-fisheye tracks use opposite optical axes with the reference
-/// lens convention represented by a 180-degree Y rotation. The physical lens
-/// baseline is intentionally initialized at zero because monocular SfM has no
-/// metric scale at this point.
+/// Return the nominal back-to-back layout defined by an adapter. Native
+/// dual-fisheye tracks from the supported 360 camera families use opposite
+/// optical axes with the reference-lens convention represented by a
+/// 180-degree Y rotation. The physical lens baseline is intentionally
+/// initialized at zero because monocular SfM has no metric scale at this
+/// point. Keeping a refinable rig from the first mapper pass is substantially
+/// safer than deriving it after two independently drifting reconstructions.
 pub fn rig_bootstrap_pose_hint(adapter: &str) -> Option<RigBootstrapPoseHint> {
-    matches!(
-        adapter,
-        "Insta360DualTrackAdapter" | "Insta360PairedInsvAdapter"
-    )
-    .then_some(RigBootstrapPoseHint {
+    let (provenance, refine_sensor_from_rig) = match adapter {
+        "Insta360DualTrackAdapter" | "Insta360PairedInsvAdapter" => {
+            ("insta360-adapter-nominal-back-to-back-v1", false)
+        }
+        "DjiOsmo360Adapter" => ("dji-osmo-360-adapter-nominal-back-to-back-v1", true),
+        _ => return None,
+    };
+    Some(RigBootstrapPoseHint {
         cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
         cam_from_rig_translation: [0.0, 0.0, 0.0],
-        provenance: "insta360-adapter-nominal-back-to-back-v1",
+        provenance,
+        refine_sensor_from_rig,
     })
 }
 
@@ -476,6 +483,7 @@ mod tests {
             cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
             cam_from_rig_translation: [0.0, 0.0, 0.0],
             provenance: "insta360-adapter-nominal-back-to-back-v1",
+            refine_sensor_from_rig: false,
         };
         assert_eq!(
             rig_bootstrap_pose_hint("Insta360DualTrackAdapter"),
@@ -485,7 +493,19 @@ mod tests {
             rig_bootstrap_pose_hint("Insta360PairedInsvAdapter"),
             Some(expected)
         );
-        assert_eq!(rig_bootstrap_pose_hint("DjiOsmo360Adapter"), None);
+    }
+
+    #[test]
+    fn dji_osmo_360_exposes_a_rigid_back_to_back_bootstrap_pose() {
+        assert_eq!(
+            rig_bootstrap_pose_hint("DjiOsmo360Adapter"),
+            Some(RigBootstrapPoseHint {
+                cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
+                cam_from_rig_translation: [0.0, 0.0, 0.0],
+                provenance: "dji-osmo-360-adapter-nominal-back-to-back-v1",
+                refine_sensor_from_rig: true,
+            })
+        );
     }
 
     #[test]
