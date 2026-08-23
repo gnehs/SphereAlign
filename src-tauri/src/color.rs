@@ -23,6 +23,11 @@ pub const DJI_DLOG_M_LUT_SHA256: &str =
     "b18162854ab47702068410c33afa98a8cb6eef159fc5a04ce0e65fad0fd8947e";
 pub const DJI_DLOG_M_LUT_SIZE: u64 = 1_042_315;
 pub const DJI_DLOG_M_LUT_FILE_NAME: &str = "dji-osmo-360-d-log-m-to-rec709-v1.cube";
+
+// This is the verified first-generation Osmo 360 LUT. DJI's help article lists
+// Osmo 360 II as a separate LUT product, but its current II download page has
+// no downloadable cube URL. Keep the generations separate and fail closed for
+// II until DJI publishes an independently verifiable asset.
 pub const INSTA360_LUT_ARCHIVE_URL: &str =
     "https://file.insta360.com/static/25781783d5bca22fc519007723fe2ab1/Insta360-LUT.zip";
 pub const INSTA360_LUT_ARCHIVE_SHA256: &str =
@@ -297,11 +302,13 @@ pub fn detect_from_probe_with_camera(
         .or_else(|| infer_camera_model(path, &metadata));
     let normalized_model = camera_model
         .as_deref()
-        .map(normalize_marker)
+        .map(normalize_camera_model)
         .unwrap_or_default();
-    let is_dji_osmo_360 = normalized_model.contains("djiosmo360") || normalized_model == "osmo360";
+    let dji_osmo_360_model = dji_osmo_360_model(&normalized_model);
+    let is_dji_osmo_360 = dji_osmo_360_model.is_some();
+    let has_verified_dji_lut = dji_osmo_360_model == Some("DJI Osmo 360");
     let insta360_lut = insta360_lut_spec_for_model(&normalized_model);
-    let model_recommendation = if is_dji_osmo_360 {
+    let model_recommendation = if has_verified_dji_lut {
         Some(dji_lut_recommendation())
     } else {
         insta360_lut.map(insta360_lut_recommendation)
@@ -324,21 +331,27 @@ pub fn detect_from_probe_with_camera(
         } else {
             0.55
         };
-        let reason = if filename_dlog {
+        let mut reasons = vec![if filename_dlog {
             "filename stem ends in _D, the DJI D-Log M naming convention".to_owned()
         } else {
             format!(
                 "ffprobe/DJI metadata contains explicit D-Log M marker ({dlog_count} evidence{})",
                 if dlog_count == 1 { "" } else { "s" }
             )
-        };
+        }];
+        if dji_osmo_360_model == Some("DJI Osmo 360 II") {
+            reasons.push(
+                "DJI Osmo 360 II was identified, but no independently verified II LUT is available; auto mode keeps native pixels"
+                    .to_owned(),
+            );
+        }
         return ColorDetection {
             detected_profile: ColorProfile::DlogM,
             confidence,
-            reasons: vec![reason],
-            should_apply: is_dji_osmo_360 && confidence >= AUTO_APPLY_CONFIDENCE,
+            reasons,
+            should_apply: has_verified_dji_lut && confidence >= AUTO_APPLY_CONFIDENCE,
             camera_model,
-            recommended_lut: is_dji_osmo_360.then(dji_lut_recommendation),
+            recommended_lut: has_verified_dji_lut.then(dji_lut_recommendation),
         };
     }
 
@@ -464,7 +477,7 @@ pub fn detect_from_probe_with_camera(
             reasons,
             should_apply: false,
             camera_model,
-            recommended_lut: is_dji_osmo_360.then(dji_lut_recommendation),
+            recommended_lut: has_verified_dji_lut.then(dji_lut_recommendation),
         };
     }
 
@@ -614,13 +627,27 @@ fn normalize_marker(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn infer_camera_model(_path: &Path, metadata: &[(String, String)]) -> Option<String> {
+fn normalize_camera_model(value: &str) -> String {
+    normalize_marker(
+        &value
+            .replace('Ⅱ', "II")
+            .replace('ⅱ', "ii")
+            .replace("第二代", "II")
+            .replace("二代", "II"),
+    )
+}
+
+fn infer_camera_model(path: &Path, metadata: &[(String, String)]) -> Option<String> {
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
     let joined = metadata
         .iter()
         .map(|(key, value)| format!("{key} {value}"))
         .collect::<Vec<_>>()
         .join(" ");
-    let normalized = normalize_marker(&joined);
+    let normalized = normalize_camera_model(&joined);
     if normalized.contains("djiavata360") || normalized.contains("avata360") {
         return Some("DJI Avata 360".to_owned());
     }
@@ -645,8 +672,41 @@ fn infer_camera_model(_path: &Path, metadata: &[(String, String)]) -> Option<Str
     if normalized.contains("insta360sphere") {
         return Some("Insta360 Sphere".to_owned());
     }
-    if normalized.contains("djiosmo360") || normalized.contains("osmo360") {
+    if dji_osmo_360_model(&normalized) == Some("DJI Osmo 360 II") {
+        return Some("DJI Osmo 360 II".to_owned());
+    }
+    if dji_osmo_360_model(&normalized).is_some() {
         return Some("DJI Osmo 360".to_owned());
+    }
+    // DJI's own second-generation filename prefix is useful for captures whose
+    // ffprobe metadata omits a camera model. Keep this narrowly scoped: a
+    // renamed generic `osmo360_D` file must never unlock a generation-specific
+    // LUT recommendation.
+    let normalized_filename = normalize_camera_model(filename);
+    if normalized_filename.starts_with("osmo360iicam") {
+        return Some("DJI Osmo 360 II".to_owned());
+    }
+    None
+}
+
+fn dji_osmo_360_model(normalized: &str) -> Option<&'static str> {
+    let is_osmo_360_ii = normalized.contains("djiosmo360ii")
+        || normalized.contains("djiosmo3602")
+        || normalized.contains("djiosmo360markii")
+        || normalized.contains("djiosmo360mark2")
+        || normalized.contains("djiosmo360mkii")
+        || normalized.contains("djiosmo360gen2")
+        || normalized.contains("osmo360ii")
+        || normalized.contains("osmo3602")
+        || normalized.contains("osmo360markii")
+        || normalized.contains("osmo360mark2")
+        || normalized.contains("osmo360mkii")
+        || normalized.contains("osmo360gen2");
+    if is_osmo_360_ii {
+        return Some("DJI Osmo 360 II");
+    }
+    if normalized.contains("djiosmo360") || normalized.contains("osmo360") {
+        return Some("DJI Osmo 360");
     }
     None
 }
@@ -1252,6 +1312,82 @@ mod tests {
         assert_eq!(result.detected_profile, ColorProfile::DlogM);
         assert!(result.should_apply);
         assert!(result.confidence > 0.9);
+    }
+
+    #[test]
+    fn osmo_360_ii_filename_and_encoder_fail_closed_without_ii_lut() {
+        let path = Path::new("OSMO360_II_CAM_20260816131609_0026_D.OSV");
+        let result = detect_from_probe(
+            path,
+            &json!({
+                "format": {"tags": {"encoder": "Osmo 360 II"}},
+                "streams": [{"color_space": "bt709", "color_transfer": "bt709"}]
+            }),
+        );
+        assert_eq!(result.detected_profile, ColorProfile::DlogM);
+        assert!(!result.should_apply);
+        assert_eq!(result.camera_model.as_deref(), Some("DJI Osmo 360 II"));
+        assert!(result.recommended_lut.is_none());
+        assert!(result
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("no independently verified II LUT") }));
+
+        let filename_only = detect_from_probe(path, &json!({}));
+        assert_eq!(
+            filename_only.camera_model.as_deref(),
+            Some("DJI Osmo 360 II")
+        );
+        assert_eq!(filename_only.detected_profile, ColorProfile::DlogM);
+        assert!(!filename_only.should_apply);
+        assert!(filename_only.recommended_lut.is_none());
+    }
+
+    #[test]
+    fn osmo_360_ii_model_aliases_fail_closed_without_ii_lut() {
+        for model in [
+            "DJI Osmo 360 II",
+            "Osmo 360 2",
+            "Osmo 360 Ⅱ",
+            "DJI Osmo 360 Mark II",
+            "DJI Osmo 360 MK II",
+        ] {
+            let result =
+                detect_from_probe_with_model(Path::new("capture_D.OSV"), &json!({}), Some(model));
+            assert_eq!(result.detected_profile, ColorProfile::DlogM, "{model}");
+            assert!(!result.should_apply, "{model}");
+            assert_eq!(result.camera_model.as_deref(), Some(model), "{model}");
+            assert!(result.recommended_lut.is_none(), "{model}");
+        }
+    }
+
+    #[test]
+    fn first_generation_dji_lut_does_not_leak_to_osmo_360_ii() {
+        let first_generation = detect_from_probe_with_model(
+            Path::new("capture_D.OSV"),
+            &json!({}),
+            Some("DJI Osmo 360"),
+        );
+        let second_generation = detect_from_probe_with_model(
+            Path::new("capture_D.OSV"),
+            &json!({}),
+            Some("DJI Osmo 360 II"),
+        );
+        let first_lut = first_generation.recommended_lut.as_ref().unwrap();
+        assert_eq!(first_lut.id, "dji-osmo-360-dlogm-rec709-v1");
+        assert!(second_generation.recommended_lut.is_none());
+        assert!(!second_generation.should_apply);
+    }
+
+    #[test]
+    fn renamed_osmo_filename_cannot_unlock_first_generation_lut() {
+        for filename in ["DJI_OSMO360_capture_D.OSV", "osmo360_D.OSV"] {
+            let result = detect_from_probe(Path::new(filename), &json!({}));
+            assert_eq!(result.detected_profile, ColorProfile::DlogM, "{filename}");
+            assert!(result.camera_model.is_none(), "{filename}");
+            assert!(result.recommended_lut.is_none(), "{filename}");
+            assert!(!result.should_apply, "{filename}");
+        }
     }
 
     #[test]

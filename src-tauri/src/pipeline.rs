@@ -47,8 +47,8 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 29;
-const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 5;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 30;
+const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 6;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
 const FEATURE_MAX_NUM_FEATURES: usize = 10_240;
@@ -131,6 +131,7 @@ struct FeatureFingerprintPayload {
     quality_profile: &'static str,
     include_masks: bool,
     color_metadata_sha256: Option<String>,
+    factory_intrinsics: Option<telemetry::DjiFactoryIntrinsics>,
     files: Vec<AlignFileIdentity>,
 }
 
@@ -2693,6 +2694,77 @@ fn build_frame_motion_metadata(
     metadata
 }
 
+fn capture_stream_dimensions(capture: &CaptureBundle, lens: &LensStream) -> Option<(u32, u32)> {
+    let source = capture
+        .source_probes
+        .iter()
+        .find(|source| source.path == lens.source_path)?;
+    source
+        .probe
+        .get("streams")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|stream| {
+            stream.get("codec_type").and_then(Value::as_str) == Some("video")
+                && stream
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|index| usize::try_from(index).ok())
+                    == Some(lens.ffmpeg_stream_index)
+        })
+        .and_then(|stream| {
+            Some((
+                u32::try_from(stream.get("width")?.as_u64()?).ok()?,
+                u32::try_from(stream.get("height")?.as_u64()?).ok()?,
+            ))
+        })
+}
+
+fn verified_factory_intrinsics_for_capture(
+    capture: &CaptureBundle,
+) -> Option<telemetry::DjiFactoryIntrinsics> {
+    if capture.adapter != "DjiOsmo360Adapter" || capture.vendor != "DJI" {
+        return None;
+    }
+    let profile = telemetry::read_dji_factory_intrinsics(&capture.telemetry_path)
+        .ok()
+        .flatten()?;
+    if !profile.is_valid() {
+        return None;
+    }
+    let expected_size = (profile.width, profile.height);
+    let lens_sizes = capture
+        .lenses
+        .iter()
+        .map(|lens| capture_stream_dimensions(capture, lens))
+        .collect::<Option<Vec<_>>>()?;
+    lens_sizes
+        .iter()
+        .all(|size| *size == expected_size)
+        .then_some(profile)
+}
+
+fn read_factory_intrinsics_profile(root: &Path) -> Option<telemetry::DjiFactoryIntrinsics> {
+    let capture =
+        serde_json::from_slice::<Value>(&fs::read(root.join("metadata/capture.json")).ok()?)
+            .ok()?;
+    if capture
+        .get("factoryIntrinsicsValidatedForColmap")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return None;
+    }
+    let profile = capture
+        .get("factoryIntrinsics")
+        .filter(|value| !value.is_null())
+        .and_then(|value| {
+            serde_json::from_value::<telemetry::DjiFactoryIntrinsics>(value.clone()).ok()
+        })?;
+    profile.is_valid().then_some(profile)
+}
+
 fn run_extract(
     app: &AppHandle,
     id: &str,
@@ -2737,9 +2809,35 @@ fn run_extract(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let captures = camera_adapter::resolve_capture_bundles(probed_sources)?;
+    let mut captures = camera_adapter::resolve_capture_bundles(probed_sources)?;
     if captures.is_empty() {
         return Err("沒有可辨識的雙魚眼 capture bundle".to_owned());
+    }
+    let capture_factory_profiles = captures
+        .iter()
+        .map(verified_factory_intrinsics_for_capture)
+        .collect::<Vec<_>>();
+    // COLMAP is configured as one camera per image folder.  Applying one
+    // factory profile to a mixed-source job would silently calibrate at least
+    // one source with the wrong model, so require every source to expose the
+    // same verified OQ102 profile before enabling the capability.
+    let factory_intrinsics = capture_factory_profiles
+        .iter()
+        .cloned()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|profiles| {
+            let first = profiles.first()?.clone();
+            profiles
+                .iter()
+                .all(|profile| profile.semantically_eq(&first))
+                .then_some(first)
+        });
+    for (capture, profile) in captures.iter_mut().zip(capture_factory_profiles.iter()) {
+        capture.factory_intrinsics = factory_intrinsics.as_ref().is_some_and(|selected| {
+            profile
+                .as_ref()
+                .is_some_and(|candidate| candidate.semantically_eq(selected))
+        });
     }
     let total_sources = captures.len();
     let source_groups = captures
@@ -3632,8 +3730,10 @@ fn run_extract(
         "raw-data-streams-preserved"
     };
     fs::write(metadata.join("capture.json"), serde_json::to_vec_pretty(&json!({
-        "schemaVersion": 7, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
+        "schemaVersion": 8, "canonicalProjection": "native_fisheye", "sources": manifest.input_paths,
         "sourceGroups": source_groups,
+        "factoryIntrinsics": factory_intrinsics,
+        "factoryIntrinsicsValidatedForColmap": factory_intrinsics.is_some(),
         "lensCount": 2, "baseFps": base_fps, "candidateFps": candidate_fps,
         "requestedDenseFps": dense_fps, "skipBlurry": skip_blurry,
         "candidateImageFormat": CANDIDATE_IMAGE_FORMAT,
@@ -5342,6 +5442,7 @@ fn build_feature_fingerprint(
         color_metadata_sha256: Some(optional_file_sha256(
             &root.join("metadata/color_profiles.json"),
         )?),
+        factory_intrinsics: read_factory_intrinsics_profile(root),
         files,
     };
     let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -6567,6 +6668,7 @@ fn feature_extractor_args(
     use_masks: bool,
     quality_profile: ColmapQualityProfile,
     feature_config: &FeaturePipelineConfig,
+    factory_intrinsics: Option<&telemetry::DjiFactoryIntrinsics>,
 ) -> Vec<String> {
     let mut args = vec![
         "feature_extractor".into(),
@@ -6578,19 +6680,35 @@ fn feature_extractor_args(
         "1".into(),
         "--ImageReader.camera_model".into(),
         FEATURE_CAMERA_MODEL.into(),
+    ];
+    if let Some(profile) = factory_intrinsics.filter(|profile| profile.is_valid()) {
+        args.extend([
+            "--ImageReader.camera_params".into(),
+            profile
+                .camera_params()
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ]);
+    } else {
         // COLMAP otherwise initializes an EXIF-less 3840 px fisheye at its
         // perspective-camera default of 4608 px (factor 1.2).  An equidistant
         // 180–190° circular fisheye starts near width / pi, so 0.3 gives the
         // mapper a physically plausible basin while distortion remains free.
-        "--ImageReader.default_focal_length_factor".into(),
-        FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR.to_string(),
+        args.extend([
+            "--ImageReader.default_focal_length_factor".into(),
+            FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR.to_string(),
+        ]);
+    }
+    args.extend([
         "--FeatureExtraction.type".into(),
         feature_config.pipeline.extractor_type().into(),
         "--FeatureExtraction.use_gpu".into(),
         if use_gpu { "1".into() } else { "0".into() },
         "--FeatureExtraction.gpu_index".into(),
         gpu_index.to_owned(),
-    ];
+    ]);
     if feature_config.pipeline == FeaturePipeline::Sift {
         args.extend([
             "--SiftExtraction.max_num_features".into(),
@@ -8524,6 +8642,7 @@ fn run_align(
             );
         },
     )?;
+    let factory_intrinsics = read_factory_intrinsics_profile(&root);
     let use_gravity_prior = setting_bool(&manifest.settings, "/align/useGravityPrior", false);
     let fixed_rotation_ba = setting_bool(&manifest.settings, "/align/fixedRotationBa", false);
     let use_visual_retrieval = setting_bool(&manifest.settings, "/align/useVisualRetrieval", true);
@@ -9017,26 +9136,26 @@ fn run_align(
     }
     let mapper_gpu_index = mapper_gpu_index(&gpu_index).to_owned();
     let feature_started = Instant::now();
-    let feature_gpu_args =
-        feature_extractor_args(
-            &root,
-            &db,
-            true,
-            &gpu_index,
-            use_masks,
-            quality_profile,
-            &feature_config,
-        );
-    let feature_cpu_args =
-        feature_extractor_args(
-            &root,
-            &db,
-            false,
-            &gpu_index,
-            use_masks,
-            quality_profile,
-            &feature_config,
-        );
+    let feature_gpu_args = feature_extractor_args(
+        &root,
+        &db,
+        true,
+        &gpu_index,
+        use_masks,
+        quality_profile,
+        &feature_config,
+        factory_intrinsics.as_ref(),
+    );
+    let feature_cpu_args = feature_extractor_args(
+        &root,
+        &db,
+        false,
+        &gpu_index,
+        use_masks,
+        quality_profile,
+        &feature_config,
+        factory_intrinsics.as_ref(),
+    );
     if feature_cache_reusable {
         let (expected, completed) = feature_cache_counts.unwrap_or((0, 0));
         emit_log(
@@ -11416,35 +11535,34 @@ mod tests {
         commit_configured_rig_model, complete_registered_dual_fisheye_frames,
         create_colmap_database_backup, cross_source_pair_lines, dual_fisheye_registration_totals,
         effective_mapper_matches_checkpoint, evaluate_global_candidate_quality,
-        evenly_spaced_frames_including_endpoints,
-        expected_candidate_frames, extract_frame_settings, extraction_completed_count,
-        feature_extractor_args, global_mapper_args, global_mapper_prerequisite_error,
-        has_valid_global_mapper_priors, invalidate_calibrated_prior_artifacts,
-        is_mapper_gpu_cpu_fallback_line, is_rig_pose_derivation_failure_line,
-        keyframe_pruning_settings, load_candidate_selection_checkpoint, map_full_res_candidates,
-        mapper_args, mapper_continuation_args, mapper_gpu_index, mapper_mode,
-        mapper_still_required_after_rig_setup,
-        mask_classes, mask_enabled, matches_importer_args, merge_pair_lists, parse_feature_name,
-        parse_feature_progress, parse_gpu_index, parse_mapper_registration,
-        parse_matching_progress, parse_showinfo_timestamp_ms, probe_duration_seconds,
-        nominal_rig_prior_matches, read_raw_frames, registered_rig_image_names, replace_stage_settings,
-        reset_capabilities_for_stage_start, restore_colmap_database_backup,
-        rig_bootstrap_shared_frame_count, rig_camera_rotations,
+        evenly_spaced_frames_including_endpoints, expected_candidate_frames,
+        extract_frame_settings, extraction_completed_count, feature_extractor_args,
+        global_mapper_args, global_mapper_prerequisite_error, has_valid_global_mapper_priors,
+        invalidate_calibrated_prior_artifacts, is_mapper_gpu_cpu_fallback_line,
+        is_rig_pose_derivation_failure_line, keyframe_pruning_settings,
+        load_candidate_selection_checkpoint, map_full_res_candidates, mapper_args,
+        mapper_continuation_args, mapper_gpu_index, mapper_mode,
+        mapper_still_required_after_rig_setup, mask_classes, mask_enabled, matches_importer_args,
+        merge_pair_lists, nominal_rig_prior_matches, parse_feature_name, parse_feature_progress,
+        parse_gpu_index, parse_mapper_registration, parse_matching_progress,
+        parse_showinfo_timestamp_ms, probe_duration_seconds, read_raw_frames,
+        registered_rig_image_names, replace_stage_settings, reset_capabilities_for_stage_start,
+        restore_colmap_database_backup, rig_bootstrap_shared_frame_count, rig_camera_rotations,
         rig_config_has_complete_sensor_poses, rig_configs_from_camera_extrinsics, rig_mapping_plan,
         rollback_calibrated_pair_transaction, select_best_bootstrap_candidate,
         selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
-        verified_pair_graph_report,
+        verified_factory_intrinsics_for_capture, verified_pair_graph_report,
         view_graph_calibrator_retry_args, with_hwaccel_auto, write_candidate_selection_checkpoint,
         write_rig_and_pairs, write_rig_and_pairs_with_options, AlignCheckpoint, ColmapFraction,
         ColmapQualityProfile, ExtractionStage, FeaturePipeline, FeaturePipelineConfig,
-        GlobalCandidateQualityMetrics, GlobalMapperOptions, JobControl,
-        JobManager, LogEvent, MapperMode, MapperOptions, ProgressEvent, RawFrameMessage,
-        RegistrationSummary, RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate,
-        RigMappingPlan, StageName, StartStageRequest, StreamingCandidateSelector,
-        CANDIDATE_FRAME_BYTES, CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE,
-        CANDIDATE_STREAM_WIDTH, DJI_DRONE_CALIBRATION_PROFILE, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG,
+        GlobalCandidateQualityMetrics, GlobalMapperOptions, JobControl, JobManager, LogEvent,
+        MapperMode, MapperOptions, ProgressEvent, RawFrameMessage, RegistrationSummary,
+        RigBootstrapCamera, RigBootstrapConfig, RigBootstrapModelCandidate, RigMappingPlan,
+        StageName, StartStageRequest, StreamingCandidateSelector, CANDIDATE_FRAME_BYTES,
+        CANDIDATE_IMAGE_FORMAT, CANDIDATE_PROXY_SIZE, CANDIDATE_STREAM_WIDTH,
+        DJI_DRONE_CALIBRATION_PROFILE, DJI_DRONE_MAX_HAND_EYE_RESIDUAL_DEG,
         STANDARD_IMU_CALIBRATION_PROFILE,
     };
 
@@ -11497,6 +11615,40 @@ mod tests {
         ]
     }
     use tempfile::TempDir;
+
+    #[test]
+    #[ignore = "requires GS360_TEST_OSV and ffprobe"]
+    fn validates_real_oq102_factory_intrinsics_against_both_lenses() {
+        let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
+        let output = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+            ])
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let probe: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let inspection = crate::telemetry::inspect_source(&source).unwrap();
+        let captures = crate::camera_adapter::resolve_capture_bundles(vec![
+            crate::camera_adapter::ProbedSource {
+                path: source.clone(),
+                probe,
+                camera_model: inspection.camera_model,
+                color_profile: inspection.color_profile,
+            },
+        ])
+        .unwrap();
+        assert_eq!(captures.len(), 1);
+        let profile = verified_factory_intrinsics_for_capture(&captures[0]).unwrap();
+        assert_eq!((profile.width, profile.height), (3840, 3840));
+        assert!(profile.is_valid());
+    }
 
     #[test]
     #[ignore = "requires GS360_TEST_OSV and GS360_TEST_PROJECT"]
@@ -11965,6 +12117,7 @@ mod tests {
             true,
             ColmapQualityProfile::Tuned,
             &sift_feature_config(),
+            None,
         );
         assert!(feature
             .windows(2)
@@ -12001,6 +12154,7 @@ mod tests {
             false,
             ColmapQualityProfile::Baseline,
             &sift_feature_config(),
+            None,
         );
         assert!(baseline_feature
             .windows(2)
@@ -12008,6 +12162,47 @@ mod tests {
         assert!(!baseline_feature
             .iter()
             .any(|arg| arg == "--SiftExtraction.peak_threshold"));
+
+        let factory_profile = crate::telemetry::DjiFactoryIntrinsics {
+            schema_version: crate::telemetry::DJI_FACTORY_INTRINSICS_SCHEMA_VERSION,
+            camera_model: "OPENCV_FISHEYE".to_owned(),
+            width: 3840,
+            height: 3840,
+            fx: 1143.9465,
+            fy: 1143.9465,
+            cx: 1920.0,
+            cy: 1920.0,
+            distortion_coefficients: [0.1551311, 0.1371409, -0.0938614, 0.0041704],
+            source_schema: "dvtm_oq102.proto".to_owned(),
+        };
+        let factory_feature = feature_extractor_args(
+            root,
+            &db,
+            false,
+            "0",
+            false,
+            ColmapQualityProfile::Tuned,
+            &sift_feature_config(),
+            Some(&factory_profile),
+        );
+        assert!(factory_feature.windows(2).any(|args| {
+            args == [
+                "--ImageReader.camera_params",
+                "1143.9465,1143.9465,1920,1920,0.1551311,0.1371409,-0.0938614,0.0041704",
+            ]
+        }));
+        assert!(!factory_feature
+            .iter()
+            .any(|arg| arg == "--ImageReader.default_focal_length_factor"));
+        let camera_params_index = factory_feature
+            .iter()
+            .position(|arg| arg == "--ImageReader.camera_params")
+            .unwrap();
+        let extraction_index = factory_feature
+            .iter()
+            .position(|arg| arg == "--FeatureExtraction.type")
+            .unwrap();
+        assert!(camera_params_index + 2 <= extraction_index);
 
         let matching = matches_importer_args(
             root,
@@ -12118,6 +12313,7 @@ mod tests {
             false,
             ColmapQualityProfile::Baseline,
             &config,
+            None,
         );
         assert!(feature
             .windows(2)
@@ -12636,6 +12832,38 @@ mod tests {
                 "COLMAP 4.1.1",
                 false,
                 ColmapQualityProfile::Tuned,
+                &sift_feature_config(),
+            )
+            .unwrap()
+        );
+        let factory_profile = crate::telemetry::DjiFactoryIntrinsics {
+            schema_version: crate::telemetry::DJI_FACTORY_INTRINSICS_SCHEMA_VERSION,
+            camera_model: "OPENCV_FISHEYE".to_owned(),
+            width: 3840,
+            height: 3840,
+            fx: 1143.9465,
+            fy: 1143.9465,
+            cx: 1920.0,
+            cy: 1920.0,
+            distortion_coefficients: [0.1551311, 0.1371409, -0.0938614, 0.0041704],
+            source_schema: "dvtm_oq102.proto".to_owned(),
+        };
+        fs::write(
+            temp.path().join("metadata/capture.json"),
+            serde_json::to_vec(&json!({
+                "factoryIntrinsicsValidatedForColmap": true,
+                "factoryIntrinsics": factory_profile,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_ne!(
+            baseline,
+            build_feature_fingerprint(
+                temp.path(),
+                "COLMAP 4.1.1",
+                false,
+                ColmapQualityProfile::Baseline,
                 &sift_feature_config(),
             )
             .unwrap()

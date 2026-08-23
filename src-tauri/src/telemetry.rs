@@ -1,7 +1,7 @@
 //! Safe, normalized telemetry export for supported video containers.
 //!
-//! DJI Osmo 360 currently exposes fused attitude through telemetry-parser's
-//! `dvtm_oq101` decoder. Raw data streams are still preserved independently;
+//! DJI Osmo 360 exposes fused attitude through telemetry-parser's DJI schemas
+//! (including the newer `dvtm_OQ102` stream). Raw data streams are still preserved independently;
 //! these quaternions must not be treated as COLMAP camera qvec values without
 //! an explicit, verified sensor-to-camera coordinate transform.
 
@@ -589,6 +589,133 @@ pub struct TelemetryInspection {
     pub fused_attitude_sample_count: usize,
 }
 
+/// Factory clip calibration that is safe to pass to COLMAP's
+/// `OPENCV_FISHEYE` camera model.
+///
+/// DJI stores the four fisheye coefficients and a single digital focal
+/// length in OQ102's clip metadata.  The metadata explicitly documents that
+/// the focal length is shared by x/y, while the principal point is derived
+/// from the verified sensor mode dimensions.  This profile deliberately
+/// excludes pano-dewarp fields and `cam_extri_q`: neither carries enough
+/// information here to be a complete COLMAP rig calibration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjiFactoryIntrinsics {
+    pub schema_version: u32,
+    pub camera_model: String,
+    pub width: u32,
+    pub height: u32,
+    pub fx: f64,
+    pub fy: f64,
+    pub cx: f64,
+    pub cy: f64,
+    pub distortion_coefficients: [f64; 4],
+    pub source_schema: String,
+}
+
+pub const DJI_FACTORY_INTRINSICS_SCHEMA_VERSION: u32 = 1;
+
+impl DjiFactoryIntrinsics {
+    fn from_oq102_clip_meta(clip: &DjiTelemetryClipMeta, source_schema: &str) -> Option<Self> {
+        let sensor = clip.sensor_res.as_ref()?;
+        let width = sensor.sensor_width;
+        let height = sensor.sensor_height;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let fx = f64::from(clip.digital_focal_length.as_ref()?.focal_length);
+        if !fx.is_finite() || fx <= 0.0 {
+            return None;
+        }
+        let coefficients = clip
+            .distortion_coefficients
+            .as_ref()?
+            .coefficients
+            .as_slice();
+        if coefficients.len() != 4 || coefficients.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let profile = Self {
+            schema_version: DJI_FACTORY_INTRINSICS_SCHEMA_VERSION,
+            camera_model: "OPENCV_FISHEYE".to_owned(),
+            width,
+            height,
+            fx,
+            fy: fx,
+            cx: f64::from(width) / 2.0,
+            cy: f64::from(height) / 2.0,
+            distortion_coefficients: std::array::from_fn(|index| f64::from(coefficients[index])),
+            source_schema: source_schema.trim().to_ascii_lowercase(),
+        };
+        profile.is_valid().then_some(profile)
+    }
+
+    /// Validate the profile before serializing it into a capture manifest or
+    /// passing its parameters to an external COLMAP process.
+    pub fn is_valid(&self) -> bool {
+        self.schema_version == DJI_FACTORY_INTRINSICS_SCHEMA_VERSION
+            && self.camera_model == "OPENCV_FISHEYE"
+            && self.source_schema == "dvtm_oq102.proto"
+            && self.width > 0
+            && self.height > 0
+            && self.fx.is_finite()
+            && self.fx > 0.0
+            && self.fy.is_finite()
+            && self.fy > 0.0
+            && (self.fx - self.fy).abs() <= f64::EPSILON
+            && self.cx.is_finite()
+            && self.cy.is_finite()
+            && (self.cx - f64::from(self.width) / 2.0).abs() <= f64::EPSILON
+            && (self.cy - f64::from(self.height) / 2.0).abs() <= f64::EPSILON
+            && self
+                .distortion_coefficients
+                .iter()
+                .all(|value| value.is_finite())
+    }
+
+    /// Compare two profiles at the precision relevant to COLMAP.  DJI stores
+    /// these values as float32, so a tiny encoder/decoder rounding difference
+    /// must not make otherwise identical mixed-source captures fail closed;
+    /// materially different calibration still does.
+    pub fn semantically_eq(&self, other: &Self) -> bool {
+        const RELATIVE_TOLERANCE: f64 = 1.0e-6;
+        let close = |left: f64, right: f64| {
+            let scale = left.abs().max(right.abs()).max(1.0);
+            (left - right).abs() <= RELATIVE_TOLERANCE * scale
+        };
+        self.is_valid()
+            && other.is_valid()
+            && self.schema_version == other.schema_version
+            && self.camera_model == other.camera_model
+            && self.source_schema == other.source_schema
+            && self.width == other.width
+            && self.height == other.height
+            && close(self.fx, other.fx)
+            && close(self.fy, other.fy)
+            && close(self.cx, other.cx)
+            && close(self.cy, other.cy)
+            && self
+                .distortion_coefficients
+                .iter()
+                .zip(other.distortion_coefficients.iter())
+                .all(|(left, right)| close(*left, *right))
+    }
+
+    /// COLMAP's `OPENCV_FISHEYE` parameter order: fx, fy, cx, cy, k1..k4.
+    pub fn camera_params(&self) -> [f64; 8] {
+        [
+            self.fx,
+            self.fy,
+            self.cx,
+            self.cy,
+            self.distortion_coefficients[0],
+            self.distortion_coefficients[1],
+            self.distortion_coefficients[2],
+            self.distortion_coefficients[3],
+        ]
+    }
+}
+
 /// Inspect source metadata without creating a normalized telemetry artifact.
 ///
 /// telemetry-parser reads bounded beginning/end chunks for format detection
@@ -723,6 +850,54 @@ struct DjiProductMeta {
     stream_meta: Option<DjiStreamMeta>,
 }
 
+#[derive(Clone, PartialEq, Message)]
+struct DjiOq102ProductMeta {
+    #[prost(message, optional, tag = "2")]
+    stream_meta: Option<DjiOq102StreamMeta>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiOq102StreamMeta {
+    #[prost(message, optional, tag = "5")]
+    pano_dewarp_params: Option<DjiPanoDewarpParams>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DjiProductSchema {
+    Oq101,
+    Oq102,
+    Avata360,
+    Wa530,
+    Wm169,
+    Unknown,
+}
+
+impl DjiProductSchema {
+    fn from_proto_file_name(proto_file_name: &str) -> Self {
+        let schema = proto_file_name.to_ascii_lowercase();
+        if schema.contains("oq102") {
+            Self::Oq102
+        } else if schema.contains("oq101") {
+            Self::Oq101
+        } else if schema.contains("avata360") {
+            Self::Avata360
+        } else if schema.contains("wa530") {
+            Self::Wa530
+        } else if schema.contains("wm169") {
+            Self::Wm169
+        } else {
+            Self::Unknown
+        }
+    }
+
+    fn has_schema_aware_decoder(self) -> bool {
+        // The pinned telemetry-parser does not have a generated AVATA360
+        // module; keep that product on the existing schema-aware fallback
+        // path even though its field layout is known here.
+        matches!(self, Self::Oq101 | Self::Oq102 | Self::Wa530 | Self::Wm169)
+    }
+}
+
 /// DJI product schemas share a stable protobuf envelope even when a new
 /// camera ships before telemetry-parser has added its generated product
 /// module.  Keep this deliberately partial: prost ignores unknown fields and
@@ -740,6 +915,83 @@ struct DjiTelemetryProductMeta {
 struct DjiTelemetryClipMeta {
     #[prost(message, optional, tag = "1")]
     clip_meta_header: Option<DjiTelemetryClipMetaHeader>,
+    #[prost(message, optional, tag = "3")]
+    distortion_coefficients: Option<DjiTelemetryLensDistortionCoefficients>,
+    #[prost(message, optional, tag = "6")]
+    digital_focal_length: Option<DjiTelemetryDigitalFocalLength>,
+    #[prost(message, optional, tag = "12")]
+    sensor_res: Option<DjiTelemetrySensorRes>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetrySensorRes {
+    #[prost(uint32, tag = "1")]
+    sensor_width: u32,
+    #[prost(uint32, tag = "2")]
+    sensor_height: u32,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryDigitalFocalLength {
+    #[prost(float, tag = "1")]
+    focal_length: f32,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DjiTelemetryLensDistortionCoefficients {
+    #[prost(float, repeated, tag = "1")]
+    coefficients: Vec<f32>,
+}
+
+/// Read the verified OQ102 clip-level intrinsics from an OSV metadata track.
+///
+/// The callback keeps scanning until a complete, valid profile is found: DJI
+/// may emit more than one clip metadata record, and an incomplete record must
+/// not disable a later complete one.  Unknown products are intentionally
+/// ignored so this function cannot accidentally apply another DJI schema's
+/// field numbers to an OQ102 profile.
+pub fn read_dji_factory_intrinsics(
+    input_path: &Path,
+) -> Result<Option<DjiFactoryIntrinsics>, String> {
+    let mut stream = fs::File::open(input_path).map_err(|error| error.to_string())?;
+    let size = usize::try_from(stream.metadata().map_err(|error| error.to_string())?.len())
+        .map_err(|_| "source is too large for factory intrinsics inspection".to_owned())?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_after_found = cancel.clone();
+    let mut found = None;
+    telemetry_parser::util::get_metadata_track_samples(
+        &mut stream,
+        size,
+        true,
+        |_, data, _, _| {
+            if found.is_some() {
+                return;
+            }
+            let Ok(meta) = DjiTelemetryProductMeta::decode(data) else {
+                return;
+            };
+            let Some(clip) = meta.clip_meta else {
+                return;
+            };
+            let Some(header) = clip.clip_meta_header.as_ref() else {
+                return;
+            };
+            let schema = DjiProductSchema::from_proto_file_name(&header.proto_file_name);
+            if schema != DjiProductSchema::Oq102 {
+                return;
+            }
+            let Some(profile) =
+                DjiFactoryIntrinsics::from_oq102_clip_meta(&clip, &header.proto_file_name)
+            else {
+                return;
+            };
+            found = Some(profile);
+            cancel_after_found.store(true, Ordering::Release);
+        },
+        cancel,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(found)
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -892,15 +1144,13 @@ enum DjiAttitudeLayout {
 }
 
 fn dji_attitude_layout(proto_file_name: &str) -> DjiAttitudeLayout {
-    let schema = proto_file_name.to_ascii_lowercase();
-    if schema.contains("oq101") || schema.contains("avata360") {
-        DjiAttitudeLayout::MultiTag2
-    } else if schema.contains("wa530") {
-        DjiAttitudeLayout::SingleTag4
-    } else if schema.contains("wm169") {
-        DjiAttitudeLayout::SingleTag2
-    } else {
-        DjiAttitudeLayout::Auto
+    match DjiProductSchema::from_proto_file_name(proto_file_name) {
+        DjiProductSchema::Oq101 | DjiProductSchema::Oq102 | DjiProductSchema::Avata360 => {
+            DjiAttitudeLayout::MultiTag2
+        }
+        DjiProductSchema::Wa530 => DjiAttitudeLayout::SingleTag4,
+        DjiProductSchema::Wm169 => DjiAttitudeLayout::SingleTag2,
+        DjiProductSchema::Unknown => DjiAttitudeLayout::Auto,
     }
 }
 
@@ -908,24 +1158,31 @@ fn decode_dji_camera_attitude(
     payload: &[u8],
     proto_file_name: &str,
 ) -> Option<DjiTelemetryQuaternion> {
-    let schema = proto_file_name.to_ascii_lowercase();
-    if schema.contains("avata360") {
-        DjiAvata360CameraFrameMeta::decode(payload)
-            .ok()?
-            .camera_attitude
-    } else if schema.contains("oq101") {
-        DjiOq101CameraFrameMeta::decode(payload)
-            .ok()?
-            .camera_attitude
-    } else {
-        DjiAvata360CameraFrameMeta::decode(payload)
-            .ok()
-            .and_then(|camera| camera.camera_attitude)
-            .or_else(|| {
-                DjiOq101CameraFrameMeta::decode(payload)
-                    .ok()
-                    .and_then(|camera| camera.camera_attitude)
-            })
+    match DjiProductSchema::from_proto_file_name(proto_file_name) {
+        // OQ102's FrameMetaOfCamera has no camera quaternion.  In particular,
+        // field 5 is DigitalZoomRatio and field 9 is ColorTempAtmosphere; do
+        // not reinterpret either message as the OQ101/AVATA360 quaternion.
+        DjiProductSchema::Oq102 => None,
+        DjiProductSchema::Avata360 => {
+            DjiAvata360CameraFrameMeta::decode(payload)
+                .ok()?
+                .camera_attitude
+        }
+        DjiProductSchema::Oq101 => {
+            DjiOq101CameraFrameMeta::decode(payload)
+                .ok()?
+                .camera_attitude
+        }
+        DjiProductSchema::Wa530 | DjiProductSchema::Wm169 | DjiProductSchema::Unknown => {
+            DjiAvata360CameraFrameMeta::decode(payload)
+                .ok()
+                .and_then(|camera| camera.camera_attitude)
+                .or_else(|| {
+                    DjiOq101CameraFrameMeta::decode(payload)
+                        .ok()
+                        .and_then(|camera| camera.camera_attitude)
+                })
+        }
     }
 }
 
@@ -1324,6 +1581,23 @@ struct DjiFallbackAttitude {
     samples: Vec<QuaternionSample>,
 }
 
+/// Convert DJI's power-up-relative frame timestamp to the relative timeline
+/// used by the normalized export.  The upstream DJI parser documents
+/// `FrameMetaHeader.frame_timestamp` as microseconds; do not substitute the
+/// metadata-track presentation timestamp, which is only a video callback
+/// approximation and can drift from the IMU frame clock.
+fn dji_frame_timestamp_ms(
+    header: Option<&DjiTelemetryFrameMetaHeader>,
+    first_frame_timestamp_us: &mut Option<u64>,
+    fallback_timestamp_ms: f64,
+) -> f64 {
+    let Some(header) = header else {
+        return fallback_timestamp_ms;
+    };
+    let first = *first_frame_timestamp_us.get_or_insert(header.frame_timestamp_us);
+    (i128::from(header.frame_timestamp_us) - i128::from(first)) as f64 / 1_000.0
+}
+
 fn parse_dji_fused_attitude_fallback(
     input_path: &Path,
     source_size: usize,
@@ -1355,13 +1629,11 @@ fn parse_dji_fused_attitude_fallback(
             let Some(frame) = meta.frame_meta else {
                 return;
             };
-            let frame_timestamp_ms = frame
-                .frame_meta_header
-                .map(|header| {
-                    let first = *first_frame_timestamp_us.get_or_insert(header.frame_timestamp_us);
-                    (i128::from(header.frame_timestamp_us) - i128::from(first)) as f64 / 1000.0
-                })
-                .unwrap_or(info.timestamp_ms);
+            let frame_timestamp_ms = dji_frame_timestamp_ms(
+                frame.frame_meta_header.as_ref(),
+                &mut first_frame_timestamp_us,
+                info.timestamp_ms,
+            );
             let layout = dji_attitude_layout(&proto_file_name);
             let camera_attitude = frame
                 .camera_frame_meta
@@ -1494,6 +1766,26 @@ impl DjiDewarpParams {
     }
 }
 
+fn decode_dji_pano_dewarp(data: &[u8], schema: DjiProductSchema) -> Option<DjiPanoDewarpParams> {
+    match schema {
+        // OQ102 moved pano_dewarp_params from StreamMeta field 6 (OQ101) to
+        // field 5.  Keep this dispatch explicit so an OQ101 decoder cannot
+        // silently report an empty calibration for the newer camera.
+        DjiProductSchema::Oq102 => {
+            DjiOq102ProductMeta::decode(data)
+                .ok()?
+                .stream_meta?
+                .pano_dewarp_params
+        }
+        _ => {
+            DjiProductMeta::decode(data)
+                .ok()?
+                .stream_meta?
+                .pano_dewarp_params
+        }
+    }
+}
+
 fn optical_occlusions_from_pano(params: DjiPanoDewarpParams) -> Option<LensOpticalOcclusions> {
     let lens0 = params
         .native_refine_master
@@ -1518,6 +1810,7 @@ pub fn read_dji_optical_occlusions(
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_after_found = cancel.clone();
     let mut found = None;
+    let mut schema = DjiProductSchema::Unknown;
     telemetry_parser::util::get_metadata_track_samples(
         &mut stream,
         size,
@@ -1526,13 +1819,17 @@ pub fn read_dji_optical_occlusions(
             if found.is_some() {
                 return;
             }
-            let Ok(parsed) = DjiProductMeta::decode(data) else {
-                return;
+            if let Ok(meta) = DjiTelemetryProductMeta::decode(data) {
+                if let Some(header) = meta.clip_meta.and_then(|clip| clip.clip_meta_header) {
+                    schema = DjiProductSchema::from_proto_file_name(&header.proto_file_name);
+                }
+            }
+            let params = match schema {
+                DjiProductSchema::Unknown => decode_dji_pano_dewarp(data, DjiProductSchema::Oq102)
+                    .or_else(|| decode_dji_pano_dewarp(data, DjiProductSchema::Oq101)),
+                _ => decode_dji_pano_dewarp(data, schema),
             };
-            let Some(params) = parsed
-                .stream_meta
-                .and_then(|stream| stream.pano_dewarp_params)
-            else {
+            let Some(params) = params else {
                 return;
             };
             found = optical_occlusions_from_pano(params);
@@ -1634,9 +1931,8 @@ where
         None
     };
     if let Some(fallback) = dji_fallback {
-        let schema = fallback.proto_file_name.to_ascii_lowercase();
-        let upstream_schema_supported =
-            schema.contains("oq101") || schema.contains("wm169") || schema.contains("wa530");
+        let schema = DjiProductSchema::from_proto_file_name(&fallback.proto_file_name);
+        let upstream_schema_supported = schema.has_schema_aware_decoder();
         if !upstream_schema_supported || (normalized_imu.is_empty() && fused_attitude.is_empty()) {
             // telemetry-parser's pinned DJI dispatcher defaults unknown product
             // schemas to WM169. Never accept that ambiguous result: use the
@@ -2224,6 +2520,14 @@ mod tests {
     #[test]
     fn dji_schema_dispatch_covers_known_product_families() {
         assert_eq!(
+            DjiProductSchema::from_proto_file_name("dvtm_OQ102.proto"),
+            DjiProductSchema::Oq102
+        );
+        assert_eq!(
+            dji_attitude_layout("dvtm_OQ102.proto"),
+            DjiAttitudeLayout::MultiTag2
+        );
+        assert_eq!(
             dji_attitude_layout("dvtm_oq101.proto"),
             DjiAttitudeLayout::MultiTag2
         );
@@ -2243,6 +2547,76 @@ mod tests {
             dji_attitude_layout("dvtm_future_camera.proto"),
             DjiAttitudeLayout::Auto
         );
+    }
+
+    #[test]
+    fn oq102_factory_intrinsics_require_complete_finite_clip_metadata() {
+        let clip = DjiTelemetryClipMeta {
+            clip_meta_header: Some(DjiTelemetryClipMetaHeader {
+                proto_file_name: "dvtm_OQ102.proto".to_owned(),
+                product_name: "Osmo 360 II".to_owned(),
+            }),
+            distortion_coefficients: Some(DjiTelemetryLensDistortionCoefficients {
+                coefficients: vec![0.1551311, 0.1371409, -0.0938614, 0.0041704],
+            }),
+            digital_focal_length: Some(DjiTelemetryDigitalFocalLength {
+                focal_length: 1143.9465,
+            }),
+            sensor_res: Some(DjiTelemetrySensorRes {
+                sensor_width: 3840,
+                sensor_height: 3840,
+            }),
+        };
+        let profile =
+            DjiFactoryIntrinsics::from_oq102_clip_meta(&clip, "dvtm_OQ102.proto").unwrap();
+        assert!(profile.is_valid());
+        assert_eq!(profile.camera_model, "OPENCV_FISHEYE");
+        assert_eq!(profile.camera_params().len(), 8);
+        assert_eq!(profile.cx, 1920.0);
+        assert_eq!(profile.cy, 1920.0);
+
+        let mut incomplete = clip.clone();
+        incomplete
+            .distortion_coefficients
+            .as_mut()
+            .unwrap()
+            .coefficients
+            .pop();
+        assert!(
+            DjiFactoryIntrinsics::from_oq102_clip_meta(&incomplete, "dvtm_OQ102.proto").is_none()
+        );
+
+        let mut non_finite = clip;
+        non_finite
+            .digital_focal_length
+            .as_mut()
+            .unwrap()
+            .focal_length = f32::NAN;
+        assert!(
+            DjiFactoryIntrinsics::from_oq102_clip_meta(&non_finite, "dvtm_OQ102.proto").is_none()
+        );
+    }
+
+    #[test]
+    fn oq102_factory_profiles_compare_with_float32_tolerance() {
+        let profile = DjiFactoryIntrinsics {
+            schema_version: DJI_FACTORY_INTRINSICS_SCHEMA_VERSION,
+            camera_model: "OPENCV_FISHEYE".to_owned(),
+            width: 3840,
+            height: 3840,
+            fx: 1143.9465,
+            fy: 1143.9465,
+            cx: 1920.0,
+            cy: 1920.0,
+            distortion_coefficients: [0.1551311, 0.1371409, -0.0938614, 0.0041704],
+            source_schema: "dvtm_oq102.proto".to_owned(),
+        };
+        let mut rounded = profile.clone();
+        rounded.fx += 1.0e-7;
+        rounded.fy += 1.0e-7;
+        assert!(profile.semantically_eq(&rounded));
+        rounded.distortion_coefficients[0] += 1.0e-3;
+        assert!(!profile.semantically_eq(&rounded));
     }
 
     #[test]
@@ -2271,6 +2645,87 @@ mod tests {
     }
 
     #[test]
+    fn dji_frame_timestamp_uses_signed_microsecond_delta() {
+        let first_header = DjiTelemetryFrameMetaHeader {
+            frame_sequence: 0,
+            frame_timestamp_us: 2_726_821_400,
+            stream_id: 0,
+        };
+        let next_header = DjiTelemetryFrameMetaHeader {
+            frame_sequence: 1,
+            frame_timestamp_us: 2_726_838_083,
+            stream_id: 0,
+        };
+        let earlier_header = DjiTelemetryFrameMetaHeader {
+            frame_sequence: 2,
+            frame_timestamp_us: 2_726_820_900,
+            stream_id: 0,
+        };
+        let mut first_timestamp_us = None;
+        assert_eq!(
+            dji_frame_timestamp_ms(Some(&first_header), &mut first_timestamp_us, f64::NAN),
+            0.0
+        );
+        assert_eq!(
+            dji_frame_timestamp_ms(Some(&next_header), &mut first_timestamp_us, f64::NAN),
+            16.683
+        );
+        assert_eq!(
+            dji_frame_timestamp_ms(Some(&earlier_header), &mut first_timestamp_us, f64::NAN),
+            -0.5
+        );
+        assert_eq!(
+            dji_frame_timestamp_ms(None, &mut first_timestamp_us, 7.25),
+            7.25
+        );
+    }
+
+    #[test]
+    fn dji_dewarp_dispatch_uses_oq102_stream_field_five() {
+        let dewarp = DjiDewarpParams {
+            cx: 2.0,
+            cy: 2.0,
+            width: 4.0,
+            height: 4.0,
+            occlusion_pt_x: vec![0.0, 4.0],
+            occlusion_pt_y: vec![1.0, 3.0],
+        };
+        let params = DjiPanoDewarpParams {
+            native_refine_slave: Some(dewarp.clone()),
+            native_refine_master: Some(dewarp.clone()),
+            native_slave: None,
+            native_master: None,
+        };
+        let oq102 = DjiOq102ProductMeta {
+            stream_meta: Some(DjiOq102StreamMeta {
+                pano_dewarp_params: Some(params.clone()),
+            }),
+        }
+        .encode_to_vec();
+        let decoded = decode_dji_pano_dewarp(&oq102, DjiProductSchema::Oq102).unwrap();
+        assert_eq!(decoded, params);
+        assert!(optical_occlusions_from_pano(decoded).is_some());
+
+        let oq101 = DjiProductMeta {
+            stream_meta: Some(DjiStreamMeta {
+                pano_dewarp_params: Some(params.clone()),
+            }),
+        }
+        .encode_to_vec();
+        assert!(decode_dji_pano_dewarp(&oq101, DjiProductSchema::Oq101).is_some());
+        assert!(decode_dji_pano_dewarp(&oq101, DjiProductSchema::Oq102).is_none());
+    }
+
+    #[test]
+    fn oq102_camera_metadata_does_not_decode_as_camera_attitude() {
+        // OQ102 field 5 is DigitalZoomRatio; this payload resembles the
+        // field-number reuse that previously made the AVATA360 decoder report
+        // false camera quaternions.
+        let digital_zoom_ratio = [0x2a, 0x02, 0x08, 0x01];
+        assert!(decode_dji_camera_attitude(&digital_zoom_ratio, "dvtm_OQ102.proto").is_none());
+    }
+
+    #[test]
     fn avata360_stabilized_camera_attitude_decodes_from_product_frame() {
         let expected = DjiTelemetryQuaternion {
             w: 0.5,
@@ -2296,7 +2751,11 @@ mod tests {
     #[ignore = "requires GS360_TEST_OSV"]
     fn parses_real_osmo_optical_occlusions() {
         let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
-        assert!(read_dji_optical_occlusions(&source).unwrap().is_some());
+        // OQ102 stores the pano dewarp payload at StreamMeta field 5, and the
+        // supplied capture has valid intrinsics but no calibrated occlusion
+        // curve (both 14-point arrays are all zero).  The parser must accept
+        // the dewarp record without manufacturing an optical boundary.
+        assert!(read_dji_optical_occlusions(&source).unwrap().is_none());
     }
 
     #[test]
@@ -2379,6 +2838,7 @@ mod tests {
         let mut imu_tag2_count = 0usize;
         let mut imu_tag4_count = 0usize;
         let mut camera_attitude_count = 0usize;
+        let mut proto_file_name = String::new();
         let mut gps_count = 0usize;
         let mut relative_altitude_count = 0usize;
         let mut camera_quaternion_paths = std::collections::BTreeMap::new();
@@ -2406,6 +2866,7 @@ mod tests {
                 };
                 if let Some(header) = meta.clip_meta.and_then(|clip| clip.clip_meta_header) {
                     clip_count += 1;
+                    proto_file_name = header.proto_file_name.clone();
                     println!("schema={} model={}", header.proto_file_name, header.product_name);
                 }
                 if let Some(frame) = meta.frame_meta {
@@ -2418,7 +2879,7 @@ mod tests {
                             &mut camera_quaternion_paths,
                         );
                         camera_attitude_count += usize::from(
-                            decode_dji_camera_attitude(camera.as_slice(), "dvtm_AVATA360.proto")
+                            decode_dji_camera_attitude(camera.as_slice(), &proto_file_name)
                                 .is_some(),
                         );
                     }
@@ -2468,6 +2929,10 @@ mod tests {
         println!("camera quaternion paths={camera_quaternion_paths:?}");
         assert!(clip_count > 0);
         assert!(frame_count > 0);
+        assert_eq!(proto_file_name.to_ascii_lowercase(), "dvtm_oq102.proto");
+        assert_eq!(imu_tag2_count, frame_count);
+        assert_eq!(imu_tag4_count, 0);
+        assert_eq!(camera_attitude_count, 0);
     }
 
     #[test]
@@ -2483,6 +2948,24 @@ mod tests {
             .is_some_and(|model| !model.is_empty()));
         assert!(first.fused_attitude_sample_count > 0);
         let normalized = read_normalized_telemetry(&output).unwrap();
+        if normalized
+            .camera_model
+            .as_deref()
+            .is_some_and(|model| model == "Osmo 360 II")
+        {
+            assert!(normalized.parser.contains("dvtm_OQ102.proto"));
+            assert!(normalized.parser.contains("imu-frame/fused-attitude"));
+            assert_eq!(normalized.normalized_imu_sample_count, 0);
+            assert_eq!(normalized.fused_attitude_sample_count, 131_442);
+            assert_eq!(
+                normalized.attitude_diagnostics.first_timestamp_ms,
+                Some(0.0)
+            );
+            assert!(normalized
+                .attitude_diagnostics
+                .last_timestamp_ms
+                .is_some_and(|timestamp| timestamp > 131_000.0));
+        }
         if normalized
             .camera_model
             .as_deref()
@@ -2521,6 +3004,25 @@ mod tests {
             first.fused_attitude_sample_count,
             normalized.attitude_diagnostics
         );
+    }
+
+    #[test]
+    #[ignore = "requires GS360_TEST_OSV to point to a real supported DJI capture"]
+    fn reads_real_oq102_factory_intrinsics() {
+        let source = PathBuf::from(std::env::var("GS360_TEST_OSV").expect("GS360_TEST_OSV"));
+        let profile = read_dji_factory_intrinsics(&source).unwrap().unwrap();
+        assert!(profile.is_valid());
+        assert_eq!(profile.source_schema, "dvtm_oq102.proto");
+        assert_eq!((profile.width, profile.height), (3840, 3840));
+        assert!((profile.fx - 1143.9465).abs() < 1.0e-3);
+        let expected_distortion = [0.1551311, 0.1371409, -0.0938614, 0.0041704];
+        assert!(profile
+            .distortion_coefficients
+            .iter()
+            .zip(expected_distortion)
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-6));
+        assert_eq!(profile.camera_model, "OPENCV_FISHEYE");
+        assert_eq!(profile.camera_params().len(), 8);
     }
 
     #[test]

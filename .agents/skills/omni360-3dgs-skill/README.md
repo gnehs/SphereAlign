@@ -4,7 +4,7 @@
 
 ## 目前實作
 
-- DJI Osmo 360 `.OSV` 自動辨識
+- DJI Osmo 360 / Osmo 360 II `.OSV` 自動辨識
 - 保留兩路原始 3840x3840 fisheye，不先 stitch
 - 低解析度全片分析
 - 模糊 / sharpness 過濾與鄰近 frame 修復
@@ -15,7 +15,9 @@
 - 線性規模 temporal + cross-lens pair list
 - COLMAP `OPENCV_FISHEYE`
 - dual-camera rig bootstrap -> infer rig -> second-pass fixed-rig reconstruction
-- 保存 telemetry-parser 的原始 telemetry / normalized IMU
+- 保存 telemetry-parser 的原始 telemetry / normalized IMU；Osmo 360 II 的 OQ102 fused attitude 由 DJI envelope fallback 解碼
+- 已驗證的 Osmo 360 II clip factory `OPENCV_FISHEYE` intrinsics（`fx=fy`、中心、`k1..k4`）可供 COLMAP；全零 optical-occlusion 會回退魚眼圓形遮罩
+- II D-Log M 可辨識但沒有獨立驗證的官方 II LUT，auto 保留原生像素；`cam_extri_q` 不宣稱為 factory rig extrinsics
 - CameraAdapter contract，未來可接 Insta360 / GoPro MAX
 
 ## 重要設計
@@ -94,7 +96,7 @@ double-extension file.
 
 ## IMU 現況
 
-Osmo 360 的 DJI metadata (`dvtm_oq101`) 有 fused attitude、accelerometer、IMU sampling rate 等資料。第一版 pipeline 會保留下來。
+第一代 Osmo 360 的 DJI metadata (`dvtm_oq101`) 有 fused attitude、accelerometer、IMU sampling rate 等資料；Osmo 360 II sample 則使用 OQ102 DJI envelope fallback。兩者的 pipeline 都會保留原始時間軸與 normalized telemetry。已通過檢查的 II clip lens metadata 會另外提供 `OPENCV_FISHEYE` factory profile；不完整的 `cam_extri_q` 不會被升格為 rig 外參。
 
 下一層整合是把經過**座標系驗證**的 per-lens gravity 寫進 COLMAP `PosePrior.gravity`，再用 Global Mapper 的 gravity-aware rotation averaging。這比直接把 DJI quaternion 當 COLMAP qvec 安全。
 
@@ -102,15 +104,15 @@ Osmo 360 的 DJI metadata (`dvtm_oq101`) 有 fused attitude、accelerometer、IM
 
 ## Smoke test
 
-已用對話中的 DJI Osmo 360 樣本實跑：
+已用 DJI Osmo 360 II `.OSV` 樣本實跑並驗證：
 
-- 22 source frames
-- 2 raw fisheye streams
-- adaptive selector 選出 3 個 timestamp
-- 兩顆 lens 都成功同步輸出 3 張 full-resolution fisheye
-- 成功產生 static fisheye masks 與 13 組 constrained pairs
+- 2 路 3840×3840 原生 HEVC fisheye streams
+- OQ102 fused attitude 可解析並通過時間軸／單調性檢查
+- clip-level factory `OPENCV_FISHEYE` profile 可供 COLMAP 使用
+- optical-occlusion 全零時正確回退到魚眼圓形遮罩
+- D-Log M 可辨識且 auto 不套用未驗證的 II LUT
 
-此環境沒有 COLMAP binary / telemetry-parser Python package，因此沒有在這裡完成 SfM stage；pipeline 對這兩者會在 `doctor.py` 清楚標示。
+完整 SfM 品質仍需依實際場景與硬體另行 benchmark；上述項目是 metadata、抽幀與校正契約的實機驗證，不代表所有素材都能得到相同的重建品質。
 
 ## References
 

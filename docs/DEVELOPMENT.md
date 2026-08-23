@@ -3,7 +3,7 @@
 本文件收錄 SphereAlign 的開發環境、建置方式、處理管線、輸出結構與目前技術界線。產品定位與功能特色請回到 [README](../README.md)。
 
 > [!WARNING]
-> 專案仍在開發中，目前以 DJI Osmo 360 與 Insta360 作為正式支援與驗證範圍。程式雖能辨識部分其他影片容器，但不代表這些來源具有相同的雙影像串流、校正資訊或相容性保證。
+> 專案仍在開發中，目前以 DJI Osmo 360（包含 Osmo 360 II 實機樣本）與 Insta360 作為正式支援與驗證範圍。程式雖能辨識部分其他影片容器，但不代表這些來源具有相同的雙影像串流、校正資訊或相容性保證。
 
 ## 技術棧
 
@@ -79,7 +79,9 @@ pnpm version:check
 
 ## 輸入契約
 
-正式支援的來源是 DJI Osmo 360 `.OSV` 與 Insta360 `.INSV`。來源會先經由相機 adapter 正規化成兩顆實體鏡頭：單檔雙 track 的 INSV 取前兩路 video stream；較舊的 Insta360 雙檔素材則配對檔名中的 `_00_` 與 `_10_`，各自取唯一的 video stream。Extract 輸出分別作為 `lens0` 與 `lens1`，兩側鏡頭必須保持同名、同數量的同步影格。
+正式支援的來源是 DJI Osmo 360 `.OSV` 與 Insta360 `.INSV`。目前已用 Osmo 360 II 實際樣本驗證兩路 3840×3840 HEVC 魚眼串流與 OQ102 fused attitude。來源會先經由相機 adapter 正規化成兩顆實體鏡頭：單檔雙 track 的 INSV 取前兩路 video stream；較舊的 Insta360 雙檔素材則配對檔名中的 `_00_` 與 `_10_`，各自取唯一的 video stream。Extract 輸出分別作為 `lens0` 與 `lens1`，兩側鏡頭必須保持同名、同數量的同步影格。
+
+對已驗證的 DJI clip metadata，adapter 只在影像尺寸相符且欄位通過有限性檢查時提供 factory `OPENCV_FISHEYE` intrinsics（`fx=fy`、中心與 `k1..k4`）。OQ102 的 optical-occlusion curve 若全為零，代表沒有可用的固定遮擋資訊，mask 會回退到魚眼圓形；流程不會猜 dewarp 單位或投影模型。Osmo 360 II 的 D-Log M 可辨識，但因尚無可獨立驗證的官方 II LUT，auto 不套 LUT、保留原生像素。
 
 檔案選擇器與來源檢查器也能辨識 `.mp4`、`.mov`、`.mkv`、`.avi`、`.webm`、`.m4v`、`.mts`、`.m2ts` 與 `.ts`。這些格式只代表容器可被檢查，仍不視為正式支援的相機來源；未提供相機 adapter 的一般容器必須自行確保雙鏡頭串流、同步與校正語意。
 
@@ -98,7 +100,7 @@ pnpm version:check
 - 最終檔名固定為 `sourceNNN_########.jpg`，兩側鏡頭使用完全相同的檔名。
 - FFmpeg 會先嘗試自動硬體解碼；失敗時清理未完成輸出，再回退 CPU 軟體解碼。
 - 候選 checkpoint 只保存分數與選擇結果，不保存候選影像。最終影格使用 partial file、雙鏡配對回滾與原子 metadata commit。
-- 原始來源 data stream 以 stream copy 保存；來源 adapter 提供的 metadata 另輸出標準化摘要與融合姿態。DJI metadata 目前可產生較完整的 telemetry，Insta360 若素材未提供可驗證的相機校正或 IMU 欄位，會保留明確的 unavailable/unknown 狀態。
+- 原始來源 data stream 以 stream copy 保存；來源 adapter 提供的 metadata 另輸出標準化摘要與融合姿態。DJI OQ101/OQ102 metadata 目前可產生較完整的 telemetry 與（若通過檢查）clip factory intrinsics；Insta360 若素材未提供可驗證的相機校正或 IMU 欄位，會保留明確的 unavailable/unknown 狀態。
 
 ### Mask
 
@@ -134,10 +136,10 @@ Mask 明確停用 ONNX Runtime CPU execution-provider fallback。模型若無法
 
 - 最低支援 COLMAP 4.1.1，不提供舊版參數相容層。
 - 使用 SIFT 與 `OPENCV_FISHEYE`，每個 lens 對應一台 camera。
-- 無 EXIF 焦距時，以 `default_focal_length_factor=0.3` 初始化。
+- 若 adapter 提供尺寸相符、經驗證的 clip factory intrinsics，直接以 `OPENCV_FISHEYE` 參數初始化；沒有可用 profile 時，才以 `default_focal_length_factor=0.3` 初始化並交由 COLMAP 估計。
 - 每張影像最多 8192 個 features；每個 image pair 最多 8192 個 matches。
 - 同時間的 `lens0` / `lens1` 使用相同檔名，並建立受限的跨鏡與時間鄰近 pairs；實體 rig 外參校正完成後，才加入固定、線性規模的 skip links 跨越短暫模糊或低紋理區段，避免未知外參 bootstrap 被長距配對改變，同時防止 final mapper 的局部註冊失敗永久切斷後續影格。
-- 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。
+- 預設 rig 不假設兩顆實體鏡頭共心或精確相差 180°；兩鏡外參先由無 rig constraint 的 bootstrap reconstruction 估計。Osmo 360 II 的 `cam_extri_q` 只有旋轉且缺少完整座標／平移語意，因此不當作 factory rig extrinsics。
 - 有完整外參時，先執行 `rig_configurator` 再執行一次 mapper。
 - config 缺少外參時，先以獨立相機 bootstrap；COLMAP 可建立多個子模型，pipeline 會先偏好至少 3 組共同註冊同名雙鏡影格的候選，再以共同影格數與已註冊影像數選擇可靠的 rig calibration seed。若自動候選皆不合格，最多再用 4 組已通過 two-view 幾何與 100-inlier 門檻的跨鏡 pair 作為初始 pair 重試。當 bootstrap 確實碎裂且主模型完整 rig coverage 低於 90%，程式只追加一次 continuation mapper：沿用已驗證模型、固定所有既有 frame pose、固定 rig 外參並嘗試註冊剩餘影格；候選必須提升 coverage／points，且通過 component、track、reprojection 與 rig quality gate 才以交易方式取代 seed，否則保留原模型。這避免從零第二次 mapper 的時間與軌跡漂移。
 - 自訂 `rig_config.json` 會保留；只有缺少時才建立未知外參預設，或在內容精確等於舊版產生的共心 180° 預設時遷移。
@@ -199,8 +201,9 @@ SphereAlign 自行開發的原始碼採用 `AGPL-3.0-only` 授權。第三方程
 
 ## 目前界線
 
-- 正式支援範圍是 DJI Osmo 360 `.OSV` 與 Insta360 `.INSV`（包含單檔雙 track，以及可依 `_00_`／`_10_` 配對的雙檔素材）；其他相機、鏡頭配置與一般雙串流影片尚未驗證。
+- 正式支援範圍是 DJI Osmo 360 `.OSV`（包含已驗證的 Osmo 360 II 樣本）與 Insta360 `.INSV`（包含單檔雙 track，以及可依 `_00_`／`_10_` 配對的雙檔素材）；其他相機、鏡頭配置與一般雙串流影片尚未驗證。
 - 不提供 equirectangular 預覽器或拼接輸出；核心輸出是原生雙魚眼 COLMAP 專案。
+- Osmo 360 II 的 D-Log M 可辨識，但沒有獨立驗證的官方 II LUT 時，auto 保留原生像素；`cam_extri_q` 不足以構成 factory rig extrinsics，仍由視覺 bootstrap 估計。
 - 不會自動安裝 FFmpeg、ffprobe 或 COLMAP。
 - 首次使用 Mask 時可能需要網路下載所需模型；素材本身不會為此上傳。
 - macOS／Windows 的預設 Mask provider 不等於所有模型都能完整硬體執行，失敗時會明確回報。

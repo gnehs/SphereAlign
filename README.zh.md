@@ -5,7 +5,7 @@
 </div>
 
 > [!WARNING]
-> **目前還在開發階段。** 目前已支援 **DJI Osmo 360**（`.OSV`）與 **Insta360**（`.INSV`）部分型號，其他的可能會動，但是我沒有相關裝置或是檔案，因此沒有詳細測試過。
+> **目前還在開發階段。** 目前已支援 **DJI Osmo 360**（`.OSV`，包含已驗證的 **Osmo 360 II** 樣本）與 **Insta360**（`.INSV`）部分型號，其他的可能會動，但是我沒有相關裝置或是檔案，因此沒有詳細測試過。
 
 ![SphereAlign 從雙魚眼全景影片挑選畫面、遮掉干擾、對齊相機並建立稀疏的三維重建結果](assets/readme/workflow-hero.png)
 
@@ -18,6 +18,12 @@
 | 挑選畫面 | 產生遮罩 | 3D 重建 |
 | --- | --- | --- |
 | 自動排除模糊影格，並從原始素材中挑選適合訓練的影格。 | 自動偵測並遮罩人物、腳踏車與常見車輛，減少移動物體對訓練結果的干擾。 | 將雙鏡頭作為 Rig 進行配對，並由 COLMAP 計算並推測相機位置。 |
+
+### DJI Osmo 360 II 驗證狀態
+
+已用 Osmo 360 II 的實際 `.OSV` 樣本驗證：兩路原生 3840×3840 HEVC 魚眼串流、OQ102 fused attitude metadata，以及可供 COLMAP 使用、經驗證的 clip-level `OPENCV_FISHEYE` factory profile（焦距、光學中心與 `k1..k4`）。若 optical-occlusion metadata 全為零，流程會安全回退到魚眼圓形遮罩。
+
+可辨識 II 的 D-Log M 標記，但目前沒有可獨立驗證的官方 II LUT，因此自動處理會保留原生像素。`cam_extri_q` 只保留為不完整的旋轉提示，不宣稱是 factory rig extrinsics；Rig 仍由視覺 bootstrap 估計。
 
 ## 如何使用 / 下載
 

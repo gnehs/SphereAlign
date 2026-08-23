@@ -6,7 +6,7 @@
 </div>
 
 > [!WARNING]
-> **This project is still under development.** SphereAlign currently supports some **DJI Osmo 360** (`.OSV`) and **Insta360** (`.INSV`) models. Other models or formats may work, but I do not have the corresponding devices or files, so they have not been thoroughly tested.
+> **This project is still under development.** SphereAlign currently supports some **DJI Osmo 360** (`.OSV`), including a verified **Osmo 360 II** sample, and **Insta360** (`.INSV`) models. Other models or formats may work, but I do not have the corresponding devices or files, so they have not been thoroughly tested.
 
 ![SphereAlign selects frames from dual-fisheye panoramic video, masks distractions, aligns cameras, and builds a sparse 3D reconstruction](assets/readme/workflow-hero.png)
 
@@ -19,6 +19,12 @@ SphereAlign brings all these steps into a single interface. Simply add one or mo
 | Select frames | Generate masks | 3D reconstruction |
 | --- | --- | --- |
 | Automatically discard blurry frames and select footage suitable for training. | Automatically detect and mask people, bicycles, and common vehicles to reduce interference from moving objects in the training results. | Pair the two lenses as a rig and let COLMAP calculate and infer the camera positions. |
+
+### DJI Osmo 360 II verification
+
+A real `.OSV` sample from the Osmo 360 II has been verified with two native 3840×3840 HEVC fisheye streams, OQ102 fused-attitude metadata, and a validated clip-level `OPENCV_FISHEYE` factory profile (focal length, optical center, and `k1..k4`). If the optical-occlusion metadata is all zero, the pipeline safely falls back to the circular fisheye mask.
+
+The II D-Log M marker is recognized, but no independently verified official II LUT is bundled, so automatic processing keeps native pixels. `cam_extri_q` is retained only as an incomplete rotation hint; it is not advertised as factory rig extrinsics, and visual bootstrap still estimates the rig.
 
 ## How to use and download
 

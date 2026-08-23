@@ -1,6 +1,6 @@
 ---
 name: omni360-3dgs
-description: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3DGS 使用的資料集。保留原生雙魚眼、IMU、rig、mask 與自適應 keyframe，並以可插拔 CameraAdapter 支援 DJI Osmo 360、未來 Insta360 / GoPro MAX 等相機。
+description: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3DGS 使用的資料集。保留原生雙魚眼、IMU、rig、mask 與自適應 keyframe，並以可插拔 CameraAdapter 支援 DJI Osmo 360（含 Osmo 360 II）、未來 Insta360 / GoPro MAX 等相機。
 ---
 
 # Omni360 -> 3DGS Skill
@@ -57,9 +57,9 @@ description: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3
 
 核心程式只依賴以上 contract。
 
-## DJI Osmo 360
+## DJI Osmo 360 / Osmo 360 II
 
-第一版 adapter：`DjiOsmo360Adapter`。
+adapter：`DjiOsmo360Adapter`。
 
 已確認 `.OSV` 可包含：
 
@@ -72,7 +72,9 @@ description: 一鍵把 360 相機原始素材轉成可供 COLMAP / LichtFeld / 3
 - frame timestamps
 - lens metadata / focal / distortion（依素材 metadata 可用性）
 
-優先使用 `telemetry-parser` 的 `dvtm_oq101` 支援，不自行猜 protobuf 欄位。
+第一代素材優先使用 `telemetry-parser` 的 `dvtm_oq101` 支援；Osmo 360 II 另以已驗證的 OQ102 DJI envelope fallback 讀取 fused attitude 與 clip lens metadata，不自行猜未知 protobuf 欄位。已確認的 II sample 是兩路 3840×3840 HEVC；若 clip metadata 的尺寸相符且數值有限，factory intrinsics 會以 `OPENCV_FISHEYE`（`fx=fy`、中心、`k1..k4`）提供給 COLMAP。OQ102 optical-occlusion curve 全零時回退到魚眼圓形遮罩。
+
+Osmo 360 II 的 D-Log M 可辨識，但沒有獨立驗證的官方 II LUT 時，auto 保留原生像素。`cam_extri_q` 只有不完整的旋轉資訊，不能當作 factory rig extrinsics；兩鏡外參仍由視覺 bootstrap 估計。
 
 ## Default command
 
@@ -127,6 +129,6 @@ OUTPUT/
 - 讀 `config.example.yaml`，不要把參數 hard-code。
 - 長素材先 `--no-sfm` 驗證抽幀與 mask，再正式跑 SfM。
 - 若 initial SfM registration < `validation.min_registered_ratio`，先檢查 pair coverage、blur rejection 與 intrinsics，不要直接增加 3DGS steps。
-- 若 fisheye intrinsics 無 factory metadata，使用 COLMAP fisheye model估計；不要改成 pinhole 假裝 distortion 不存在。
+- 若 fisheye intrinsics 沒有通過尺寸／數值驗證的 factory metadata，使用 COLMAP fisheye model 估計；不要改成 pinhole 假裝 distortion 不存在。
 
 更多設計細節見 `references/`。
