@@ -1017,7 +1017,10 @@ pub fn verify_mask_output_coverage(request: &MaskRequest) -> MaskResult<usize> {
         let mask_reader = ImageReader::open(&mask_path)
             .and_then(|reader| reader.with_guessed_format())
             .map_err(|error| {
-                MaskError::image(format!("missing or unreadable mask {}: {error}", mask_path.display()))
+                MaskError::image(format!(
+                    "missing or unreadable mask {}: {error}",
+                    mask_path.display()
+                ))
             })?;
         if mask_reader.format() != Some(ImageFormat::Png) {
             return Err(MaskError::image(format!(

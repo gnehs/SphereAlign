@@ -158,11 +158,14 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
         .to_string_lossy()
         .into_owned();
     if feature_pipeline != "sift" {
-        let directory = model_dir.as_ref().ok_or_else(|| {
-            "--model-dir is required for an ALIKED feature pipeline".to_owned()
-        })?;
+        let directory = model_dir
+            .as_ref()
+            .ok_or_else(|| "--model-dir is required for an ALIKED feature pipeline".to_owned())?;
         if !directory.is_dir() {
-            return Err(format!("model directory does not exist: {}", directory.display()));
+            return Err(format!(
+                "model directory does not exist: {}",
+                directory.display()
+            ));
         }
         let extractor = if feature_pipeline == "aliked-n32-lightglue" {
             "aliked-n32.onnx"
@@ -172,7 +175,10 @@ fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {
         for name in [extractor, "aliked-lightglue.onnx"] {
             let path = directory.join(name);
             if !path.is_file() {
-                return Err(format!("required ONNX model does not exist: {}", path.display()));
+                return Err(format!(
+                    "required ONNX model does not exist: {}",
+                    path.display()
+                ));
             }
         }
     }
@@ -279,12 +285,14 @@ fn run_abc(app: &AppHandle, args: AbcArgs) -> Result<(), String> {
             } else {
                 "aliked-n16rot.onnx"
             };
-            feature_settings["featureExtractorModelPath"] = json!(
-                model_dir.join(extractor_name).to_string_lossy().into_owned()
-            );
-            feature_settings["featureMatcherModelPath"] = json!(
-                model_dir.join("aliked-lightglue.onnx").to_string_lossy().into_owned()
-            );
+            feature_settings["featureExtractorModelPath"] = json!(model_dir
+                .join(extractor_name)
+                .to_string_lossy()
+                .into_owned());
+            feature_settings["featureMatcherModelPath"] = json!(model_dir
+                .join("aliked-lightglue.onnx")
+                .to_string_lossy()
+                .into_owned());
         }
         merge(&mut settings, json!({ "align": feature_settings }));
         let project_path = args.output_root.join(name);

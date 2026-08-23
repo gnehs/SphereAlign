@@ -559,7 +559,11 @@ impl ProgressHeartbeat {
                     &stage,
                     &phase,
                     state.progress,
-                    format!("{}（已等待 {} 秒）", state.message, started.elapsed().as_secs()),
+                    format!(
+                        "{}（已等待 {} 秒）",
+                        state.message,
+                        started.elapsed().as_secs()
+                    ),
                     "running",
                     false,
                     state.completed,
@@ -2799,8 +2803,8 @@ fn run_extract(
             let camera_model = telemetry_inspection
                 .as_ref()
                 .and_then(|inspection| inspection.camera_model.clone());
-            let color_profile = telemetry_inspection
-                .and_then(|inspection| inspection.color_profile);
+            let color_profile =
+                telemetry_inspection.and_then(|inspection| inspection.color_profile);
             Ok(ProbedSource {
                 path,
                 probe,
@@ -3047,11 +3051,7 @@ fn run_extract(
             id,
             &StageName::Extract,
             "parsing-telemetry",
-            source_stage_progress(
-                source_index,
-                total_sources,
-                TELEMETRY_PARSE_PROGRESS_SHARE,
-            ),
+            source_stage_progress(source_index, total_sources, TELEMETRY_PARSE_PROGRESS_SHARE),
             format!("來源 {} 的 telemetry 準備完成", source_index + 1),
             "running",
             false,
@@ -3108,11 +3108,7 @@ fn run_extract(
                 id,
                 &StageName::Extract,
                 "selecting-in-memory",
-                source_stage_progress(
-                    source_index,
-                    total_sources,
-                    TELEMETRY_PARSE_PROGRESS_SHARE,
-                ),
+                source_stage_progress(source_index, total_sources, TELEMETRY_PARSE_PROGRESS_SHARE),
                 format!(
                     "正在記憶體中同步解碼並評分來源 {} 的雙魚眼候選影格",
                     source_index + 1
@@ -3432,8 +3428,7 @@ fn run_extract(
                 + CANDIDATE_SELECTION_PROGRESS_SHARE
                 + FULL_RESOLUTION_PROGRESS_SHARE,
         );
-        let source_scale =
-            FRAME_COMMIT_PROGRESS_SHARE / total_sources as f32;
+        let source_scale = FRAME_COMMIT_PROGRESS_SHARE / total_sources as f32;
         let commit_summary = extraction::extract_selected_pairs(
             &commit_request,
             || cancelled.load(Ordering::Acquire),
@@ -3539,8 +3534,7 @@ fn run_extract(
                     "running",
                     false,
                     Some(
-                        (job_index + usize::from(fraction >= 1.0))
-                            .min(telemetry_job_total) as u64,
+                        (job_index + usize::from(fraction >= 1.0)).min(telemetry_job_total) as u64,
                     ),
                     Some(telemetry_job_total as u64),
                     Some(current_source.clone()),
@@ -3635,8 +3629,7 @@ fn run_extract(
                         source_index,
                         total_sources,
                         telemetry_copy_base
-                            + TELEMETRY_COPY_PROGRESS_SHARE
-                                * (job_index as f32 + fraction)
+                            + TELEMETRY_COPY_PROGRESS_SHARE * (job_index as f32 + fraction)
                                 / telemetry_job_total.max(1) as f32,
                     ),
                     format!(
@@ -3663,8 +3656,7 @@ fn run_extract(
             });
             match result {
                 Ok(()) => {
-                    fs::rename(&partial_path, &final_path)
-                        .map_err(|error| error.to_string())?;
+                    fs::rename(&partial_path, &final_path).map_err(|error| error.to_string())?;
                     telemetry_streams.push(json!({
                         "sourceIndex": source_index,
                         "inputIndex": input_index,
@@ -4344,12 +4336,12 @@ fn write_rig_and_pairs_with_options(
             || unknown_default.clone(),
             |hint| {
                 json!([{"cameras":[
-                    {"image_prefix":"lens0/","ref_sensor":true},
-                    {
-                        "image_prefix":"lens1/",
-                        "cam_from_rig_rotation":hint.cam_from_rig_rotation,
-                        "cam_from_rig_translation":hint.cam_from_rig_translation
-                    }]}])
+                {"image_prefix":"lens0/","ref_sensor":true},
+                {
+                    "image_prefix":"lens1/",
+                    "cam_from_rig_rotation":hint.cam_from_rig_rotation,
+                    "cam_from_rig_translation":hint.cam_from_rig_translation
+                }]}])
             },
         );
         write_json_atomic(&rig_config, &selected_config)?;
@@ -4378,8 +4370,7 @@ fn write_rig_and_pairs_with_options(
                         marker.get("refineSensorFromRig").and_then(Value::as_bool)
                     ),
                     (Some(true), Some(false)) | (Some(false), Some(true))
-                )
-                    && marker.get("rigConfig") == existing_rig_config.as_ref()
+                ) && marker.get("rigConfig") == existing_rig_config.as_ref()
             });
         if !marker_matches {
             remove_align_artifact(&nominal_prior_path)?;
@@ -4542,57 +4533,59 @@ fn write_rig_and_pairs_with_options(
     // first useful progress event.
     let retrieval_report =
         (include_cross_source_pairs && use_visual_retrieval && groups.len() >= 2).then(|| {
-        let config = crate::visual_retrieval::RetrievalConfig {
-            max_anchors_per_source: CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS,
-            max_frame_pairs_per_source_pair: CROSS_SOURCE_RETRIEVAL_FRAME_PAIRS,
-            ..crate::visual_retrieval::RetrievalConfig::default()
-        };
-        let mut combined = crate::visual_retrieval::RetrievalReport::default();
-        // A 360 scene bridge may be visible in only one physical fisheye at a
-        // recording boundary. Retrieve independently on both canonical lens
-        // streams, then expand the retained frame identities to all four lens
-        // combinations for COLMAP's own geometric verification.
-        for lens_index in 0..2 {
-            let retrieval_sources = groups
-                .iter()
-                .map(
-                    |(source, frames)| crate::visual_retrieval::RetrievalSource {
-                        source_id: (*source).to_owned(),
-                        anchors: frames
-                            .iter()
-                            .map(|name| crate::visual_retrieval::RetrievalAnchor {
-                                frame_id: (*name).clone(),
-                                path: root
-                                    .join(format!("images/lens{lens_index}"))
-                                    .join(name),
-                                timestamp_ms: sequence_from_image_name(name).and_then(|sequence| {
-                                    frame_motion
-                                        .get(*source)
-                                        .and_then(|motion| motion.frames.get(&sequence))
-                                        .and_then(|frame| frame.timestamp_ms)
-                                }),
-                            })
-                            .collect(),
-                    },
-                )
-                .collect::<Vec<_>>();
-            let report = crate::visual_retrieval::retrieve_cross_source_candidates(
-                &retrieval_sources,
-                &config,
-            );
-            combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
-            combined.source_pairs.extend(report.source_pairs);
-            combined.failed_descriptors.extend(report.failed_descriptors);
-        }
-        // One unreadable or textureless anchor must not discard successful
-        // candidates from the other physical lens. The deterministic adjacent
-        // boundary grid below is the fail-safe for source continuity; use the
-        // much larger legacy all-anchor grid only when retrieval found no
-        // usable cross-source candidate at all.
-        combined.fallback_to_legacy = combined.source_pairs.is_empty();
-        combined.make_paths_relative_to(root);
-        combined
-    });
+            let config = crate::visual_retrieval::RetrievalConfig {
+                max_anchors_per_source: CROSS_SOURCE_RETRIEVAL_ANCHORS_PER_LENS,
+                max_frame_pairs_per_source_pair: CROSS_SOURCE_RETRIEVAL_FRAME_PAIRS,
+                ..crate::visual_retrieval::RetrievalConfig::default()
+            };
+            let mut combined = crate::visual_retrieval::RetrievalReport::default();
+            // A 360 scene bridge may be visible in only one physical fisheye at a
+            // recording boundary. Retrieve independently on both canonical lens
+            // streams, then expand the retained frame identities to all four lens
+            // combinations for COLMAP's own geometric verification.
+            for lens_index in 0..2 {
+                let retrieval_sources = groups
+                    .iter()
+                    .map(
+                        |(source, frames)| crate::visual_retrieval::RetrievalSource {
+                            source_id: (*source).to_owned(),
+                            anchors: frames
+                                .iter()
+                                .map(|name| crate::visual_retrieval::RetrievalAnchor {
+                                    frame_id: (*name).clone(),
+                                    path: root.join(format!("images/lens{lens_index}")).join(name),
+                                    timestamp_ms: sequence_from_image_name(name).and_then(
+                                        |sequence| {
+                                            frame_motion
+                                                .get(*source)
+                                                .and_then(|motion| motion.frames.get(&sequence))
+                                                .and_then(|frame| frame.timestamp_ms)
+                                        },
+                                    ),
+                                })
+                                .collect(),
+                        },
+                    )
+                    .collect::<Vec<_>>();
+                let report = crate::visual_retrieval::retrieve_cross_source_candidates(
+                    &retrieval_sources,
+                    &config,
+                );
+                combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
+                combined.source_pairs.extend(report.source_pairs);
+                combined
+                    .failed_descriptors
+                    .extend(report.failed_descriptors);
+            }
+            // One unreadable or textureless anchor must not discard successful
+            // candidates from the other physical lens. The deterministic adjacent
+            // boundary grid below is the fail-safe for source continuity; use the
+            // much larger legacy all-anchor grid only when retrieval found no
+            // usable cross-source candidate at all.
+            combined.fallback_to_legacy = combined.source_pairs.is_empty();
+            combined.make_paths_relative_to(root);
+            combined
+        });
     let use_legacy_cross_source = include_cross_source_pairs
         && retrieval_report
             .as_ref()
@@ -4603,10 +4596,7 @@ fn write_rig_and_pairs_with_options(
             .map(|(source, frames)| {
                 (
                     *source,
-                    evenly_spaced_frames_including_endpoints(
-                        frames,
-                        LEGACY_CROSS_SOURCE_ANCHORS,
-                    ),
+                    evenly_spaced_frames_including_endpoints(frames, LEGACY_CROSS_SOURCE_ANCHORS),
                 )
             })
             .collect::<Vec<_>>();
@@ -4663,9 +4653,8 @@ fn write_rig_and_pairs_with_options(
                 for right in right_boundary {
                     for left_lens in 0..2 {
                         for right_lens in 0..2 {
-                            pairs.insert(format!(
-                                "lens{left_lens}/{left} lens{right_lens}/{right}"
-                            ));
+                            pairs
+                                .insert(format!("lens{left_lens}/{left} lens{right_lens}/{right}"));
                         }
                     }
                 }
@@ -5734,9 +5723,7 @@ impl VerifiedPairGraphReport {
     fn failed_boundaries(&self) -> Vec<&VerifiedBoundaryTransition> {
         self.boundary_transitions
             .iter()
-            .filter(|transition| {
-                transition.verified_frame_pairs < transition.required_frame_pairs
-            })
+            .filter(|transition| transition.verified_frame_pairs < transition.required_frame_pairs)
             .collect()
     }
 }
@@ -5827,8 +5814,7 @@ fn verified_pair_graph_report(database: &Path) -> Result<VerifiedPairGraphReport
     for geometry in geometries {
         let (pair_id, rows, config) =
             geometry.map_err(|error| format!("無法解析 COLMAP two_view_geometries：{error}"))?;
-        if rows < MIN_VERIFIED_GRAPH_PAIR_INLIERS || !matches!(config, 2 | 3 | 4 | 5 | 6 | 9)
-        {
+        if rows < MIN_VERIFIED_GRAPH_PAIR_INLIERS || !matches!(config, 2 | 3 | 4 | 5 | 6 | 9) {
             continue;
         }
         let image_id1 = pair_id / COLMAP_MAX_IMAGE_ID;
@@ -6058,10 +6044,7 @@ fn auto_seed_initial_pairs(
         camera_images.sort_by(|left, right| left.1.cmp(&right.1));
         let camera_image_count = camera_images.len();
         for (ordinal, (image_id, name)) in camera_images.into_iter().enumerate() {
-            image_metadata.insert(
-                image_id,
-                (camera_index, ordinal, camera_image_count, name),
-            );
+            image_metadata.insert(image_id, (camera_index, ordinal, camera_image_count, name));
         }
     }
 
@@ -6117,19 +6100,13 @@ fn auto_seed_initial_pairs(
         .collect::<Vec<_>>();
 
     candidates.sort_by(|left, right| {
-        left
-            .timeline_segment
+        left.timeline_segment
             .cmp(&right.timeline_segment)
             .then_with(|| {
                 let rank = |config| if matches!(config, 2 | 9) { 2 } else { 1 };
                 rank(right.geometry_config).cmp(&rank(left.geometry_config))
             })
-            .then_with(|| {
-                right
-                    .frame_gap
-                    .min(8)
-                    .cmp(&left.frame_gap.min(8))
-            })
+            .then_with(|| right.frame_gap.min(8).cmp(&left.frame_gap.min(8)))
             .then_with(|| right.inlier_count.cmp(&left.inlier_count))
             .then_with(|| left.image_names.cmp(&right.image_names))
     });
@@ -6738,7 +6715,10 @@ fn feature_extractor_args(
         };
         args.extend([
             option.into(),
-            model.expect("validated ALIKED extractor model").to_string_lossy().into_owned(),
+            model
+                .expect("validated ALIKED extractor model")
+                .to_string_lossy()
+                .into_owned(),
         ]);
     }
     if quality_profile == ColmapQualityProfile::Tuned
@@ -8161,10 +8141,7 @@ fn refresh_calibrated_pair_matches(
                 };
                 let completed = fraction.current.min(fraction.total);
                 heartbeat.update(
-                    colmap_step_progress(
-                        4,
-                        0.70 + 0.05 * completed as f32 / fraction.total as f32,
-                    ),
+                    colmap_step_progress(4, 0.70 + 0.05 * completed as f32 / fraction.total as f32),
                     format!(
                         "正在依校正後的 FOV 重新配對特徵（{} / {}）",
                         completed, fraction.total
@@ -8353,8 +8330,7 @@ fn commit_guarded_sparse_candidate(
     backup: &Path,
 ) -> Result<(), String> {
     remove_align_artifact(backup)?;
-    fs::rename(sparse, backup)
-        .map_err(|error| format!("無法暫存目前 sparse model：{error}"))?;
+    fs::rename(sparse, backup).map_err(|error| format!("無法暫存目前 sparse model：{error}"))?;
     let commit = (|| {
         fs::create_dir_all(sparse).map_err(|error| format!("無法建立 sparse root：{error}"))?;
         fs::rename(candidate_model, sparse.join("0"))
@@ -8605,7 +8581,11 @@ fn run_align(
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
     let quality_profile = colmap_quality_profile(&manifest.settings)?;
-    let model_cache_dir = app.path().app_data_dir().ok().map(|path| path.join("models"));
+    let model_cache_dir = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|path| path.join("models"));
     let feature_config = feature_pipeline_config(
         &manifest.settings,
         model_cache_dir.as_deref(),
@@ -8780,14 +8760,13 @@ fn run_align(
     };
     let fingerprint =
         build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
-    let feature_fingerprint =
-        build_feature_fingerprint(
-            &root,
-            &colmap_version,
-            use_masks,
-            quality_profile,
-            &feature_config,
-        )?;
+    let feature_fingerprint = build_feature_fingerprint(
+        &root,
+        &colmap_version,
+        use_masks,
+        quality_profile,
+        &feature_config,
+    )?;
     let checkpoint_present = checkpoint_path.exists();
     let checkpoint = load_align_checkpoint(&checkpoint_path);
     let external_orientation_requested = manifest
@@ -9467,8 +9446,11 @@ fn run_align(
             ),
         );
     }
-    let require_boundary_connectivity =
-        setting_bool(&manifest.settings, "/align/requireBoundaryConnectivity", true);
+    let require_boundary_connectivity = setting_bool(
+        &manifest.settings,
+        "/align/requireBoundaryConnectivity",
+        true,
+    );
     let failed_boundaries = verified_graph.failed_boundaries();
     if require_boundary_connectivity && !failed_boundaries.is_empty() {
         let failures = failed_boundaries
@@ -9832,10 +9814,12 @@ fn run_align(
                         control,
                         || {},
                         |line| {
-                            let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                            let Some((image_id, registered)) = parse_mapper_registration(line)
+                            else {
                                 return;
                             };
-                            let image_fraction = registered.min(independent_image_total.max(1)) as f32
+                            let image_fraction = registered.min(independent_image_total.max(1))
+                                as f32
                                 / independent_image_total.max(1) as f32;
                             let attempt_fraction =
                                 (retry_index as f32 + image_fraction) / retry_total as f32;
@@ -10349,14 +10333,7 @@ fn run_align(
         if mapper_mode == MapperMode::Incremental {
             let recovery_report_path = root.join("metadata/auto_seed_recovery.json");
             let scratch_text = root.join("metadata/.align-auto-seed-text");
-            export_colmap_text_model(
-                app,
-                id,
-                &colmap,
-                &sparse.join("0"),
-                &scratch_text,
-                control,
-            )?;
+            export_colmap_text_model(app, id, &colmap, &sparse.join("0"), &scratch_text, control)?;
             let initial_quality = global_candidate_quality_metrics(&scratch_text)?;
             remove_align_artifact(&scratch_text)?;
             let initial_ratio = registration_ratio(
@@ -10439,11 +10416,12 @@ fn run_align(
                         control,
                         || {},
                         |line| {
-                            let Some((image_id, registered)) = parse_mapper_registration(line) else {
+                            let Some((image_id, registered)) = parse_mapper_registration(line)
+                            else {
                                 return;
                             };
-                            let registration_fraction = registered.min(final_total) as f32
-                                / final_total as f32;
+                            let registration_fraction =
+                                registered.min(final_total) as f32 / final_total as f32;
                             let fraction = (attempt_index as f32 + registration_fraction)
                                 / attempt_total as f32;
                             recovery_heartbeat.update(
@@ -10527,15 +10505,16 @@ fn run_align(
                 if let Some(selected_root) = best_root {
                     let original_root = root.join("metadata/.align-auto-seed-original");
                     remove_align_artifact(&original_root)?;
-                    fs::rename(&sparse, &original_root).map_err(|error| {
-                        format!("無法暫存原始低覆蓋 sparse model：{error}")
-                    })?;
+                    fs::rename(&sparse, &original_root)
+                        .map_err(|error| format!("無法暫存原始低覆蓋 sparse model：{error}"))?;
                     if let Err(error) = fs::rename(&selected_root, &sparse) {
                         let rollback = fs::rename(&original_root, &sparse)
                             .err()
                             .map(|rollback_error| format!("；回復也失敗：{rollback_error}"))
                             .unwrap_or_default();
-                        return Err(format!("無法提交自動 seed recovery 模型：{error}{rollback}"));
+                        return Err(format!(
+                            "無法提交自動 seed recovery 模型：{error}{rollback}"
+                        ));
                     }
                     remove_align_artifact(&original_root)?;
                     final_calibrated_sensor_count = validate_colmap_configured_rig_model(
@@ -10630,15 +10609,9 @@ fn run_align(
         if recovery_enabled && bootstrap_component_count > 1 {
             let seed_text = root.join("metadata/.align-rig-continuation-seed-text");
             remove_align_artifact(&seed_text)?;
-            let seed_quality = export_colmap_text_model(
-                app,
-                id,
-                &colmap,
-                &sparse.join("0"),
-                &seed_text,
-                control,
-            )
-            .and_then(|()| global_candidate_quality_metrics(&seed_text));
+            let seed_quality =
+                export_colmap_text_model(app, id, &colmap, &sparse.join("0"), &seed_text, control)
+                    .and_then(|()| global_candidate_quality_metrics(&seed_text));
             remove_align_artifact(&seed_text)?;
             match seed_quality {
                 Ok(seed_quality) => {
@@ -10692,9 +10665,8 @@ fn run_align(
                             false,
                             &mapper_gpu_index,
                         );
-                        let highest_registered = Cell::new(
-                            seed_quality.complete_registered_rig_frames,
-                        );
+                        let highest_registered =
+                            Cell::new(seed_quality.complete_registered_rig_frames);
                         let recovery_result = run_mapper_with_gpu_fallback(
                             app,
                             id,
@@ -10707,20 +10679,21 @@ fn run_align(
                             control,
                             || {},
                             |line| {
-                                let Some((image_id, registered)) =
-                                    parse_mapper_registration(line)
+                                let Some((image_id, registered)) = parse_mapper_registration(line)
                                 else {
                                     return;
                                 };
                                 highest_registered.set(
-                                    highest_registered.get().max(registered).min(rig_frame_total),
+                                    highest_registered
+                                        .get()
+                                        .max(registered)
+                                        .min(rig_frame_total),
                                 );
                                 recovery_heartbeat.update(
                                     colmap_step_progress(
                                         4,
-                                        0.55
-                                            + 0.15 * highest_registered.get() as f32
-                                                / rig_frame_total.max(1) as f32,
+                                        0.55 + 0.15 * highest_registered.get() as f32
+                                            / rig_frame_total.max(1) as f32,
                                     ),
                                     format!(
                                         "continuation recovery 已註冊約 {} / {} 組影格",
@@ -10791,8 +10764,7 @@ fn run_align(
                                     }),
                                 )?;
                                 if accepted {
-                                    effective_final_mapper_component =
-                                        "rig_continuation_mapper";
+                                    effective_final_mapper_component = "rig_continuation_mapper";
                                     emit_log(
                                         app,
                                         id,
@@ -11526,8 +11498,7 @@ fn run_align(
 mod tests {
     use super::{
         auto_seed_initial_pairs, balanced_select_expression, build_align_fingerprint,
-        build_feature_fingerprint,
-        calibrate_focal_before_bootstrap, calibrate_imu_sources,
+        build_feature_fingerprint, calibrate_focal_before_bootstrap, calibrate_imu_sources,
         calibrated_pair_refresh_requires_fail_closed, can_reuse_align_result,
         can_reuse_feature_database, candidate_ffmpeg_args, candidate_image_names,
         cleanup_align_artifacts, cleanup_obsolete_candidate_cache, cleanup_stale_full_res_dirs,
@@ -12284,9 +12255,9 @@ mod tests {
             mapper_index,
         );
         let expected_seed = root.join("seed/0").to_string_lossy().into_owned();
-        assert!(continuation.windows(2).any(|args| {
-            args == ["--input_path", expected_seed.as_str()]
-        }));
+        assert!(continuation
+            .windows(2)
+            .any(|args| { args == ["--input_path", expected_seed.as_str()] }));
         assert!(continuation
             .windows(2)
             .any(|args| args == ["--Mapper.fix_existing_frames", "1"]));
@@ -12896,8 +12867,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            temp.path()
-                .join("metadata/rig_continuation_recovery.json"),
+            temp.path().join("metadata/rig_continuation_recovery.json"),
             b"{}",
         )
         .unwrap();
@@ -13272,8 +13242,14 @@ mod tests {
         let frames = owned.iter().collect::<Vec<_>>();
         let selected = evenly_spaced_frames_including_endpoints(&frames, 20);
         assert_eq!(selected.len(), 20);
-        assert_eq!(selected.first().map(|value| value.as_str()), Some("frame000"));
-        assert_eq!(selected.last().map(|value| value.as_str()), Some("frame100"));
+        assert_eq!(
+            selected.first().map(|value| value.as_str()),
+            Some("frame000")
+        );
+        assert_eq!(
+            selected.last().map(|value| value.as_str()),
+            Some("frame100")
+        );
     }
 
     #[test]
@@ -13284,9 +13260,10 @@ mod tests {
             for source in 0..2 {
                 for sequence in 1..=200 {
                     fs::write(
-                        temp.path().join("images").join(lens).join(format!(
-                            "source{source:03}_{sequence:08}.png"
-                        )),
+                        temp.path()
+                            .join("images")
+                            .join(lens)
+                            .join(format!("source{source:03}_{sequence:08}.png")),
                         b"frame",
                     )
                     .unwrap();
@@ -13299,9 +13276,7 @@ mod tests {
         // These frames are deliberately not both members of the 20-frame
         // legacy anchor grid. Their pair exists only because the preceding
         // tail and following head receive a deterministic boundary window.
-        assert!(pairs.contains(
-            "lens0/source000_00000191.png lens1/source001_00000011.png"
-        ));
+        assert!(pairs.contains("lens0/source000_00000191.png lens1/source001_00000011.png"));
         let report: Value = serde_json::from_slice(
             &fs::read(temp.path().join("metadata/cross_source_boundaries.json")).unwrap(),
         )
@@ -13748,14 +13723,17 @@ mod tests {
             }]
         }]))
         .unwrap();
-        assert_eq!(legacy, vec![RigBootstrapConfig {
-            cameras: vec![RigBootstrapCamera {
-                image_prefix: "lens0/".to_owned(),
-                ref_sensor: true,
-                cam_from_rig_rotation: None,
-                cam_from_rig_translation: None,
-            }],
-        }]);
+        assert_eq!(
+            legacy,
+            vec![RigBootstrapConfig {
+                cameras: vec![RigBootstrapCamera {
+                    image_prefix: "lens0/".to_owned(),
+                    ref_sensor: true,
+                    cam_from_rig_rotation: None,
+                    cam_from_rig_translation: None,
+                }],
+            }]
+        );
     }
 
     #[test]
@@ -14153,7 +14131,10 @@ mod tests {
             &fs::read(temp.path().join("rig_config.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(rig_mapping_plan(&configs), RigMappingPlan::PreconfiguredSinglePass);
+        assert_eq!(
+            rig_mapping_plan(&configs),
+            RigMappingPlan::PreconfiguredSinglePass
+        );
         assert_eq!(
             configs[0].cameras[1].cam_from_rig_rotation,
             Some(vec![0.0, 0.0, 1.0, 0.0])
@@ -14519,9 +14500,7 @@ mod tests {
             .all(|path| *path == "capture/selected.filter"));
         assert!(!args.iter().any(|arg| arg.contains("eq(n,")));
         assert!(args.windows(2).any(|pair| pair == ["-progress", "pipe:1"]));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["-stats_period", "0.5"]));
+        assert!(args.windows(2).any(|pair| pair == ["-stats_period", "0.5"]));
         assert!(args.iter().any(|arg| arg == "-nostats"));
     }
 
@@ -14529,7 +14508,10 @@ mod tests {
     fn ffmpeg_progress_parser_accepts_only_frame_updates() {
         assert_eq!(super::parse_ffmpeg_progress_frame("frame=1771"), Some(1771));
         assert_eq!(super::parse_ffmpeg_progress_frame("frame=  42\r"), Some(42));
-        assert_eq!(super::parse_ffmpeg_progress_frame("progress=continue"), None);
+        assert_eq!(
+            super::parse_ffmpeg_progress_frame("progress=continue"),
+            None
+        );
         assert_eq!(super::parse_ffmpeg_progress_frame("frame=N/A"), None);
         assert_eq!(
             super::parse_ffmpeg_progress_time_seconds("out_time_us=1250000"),

@@ -27,14 +27,19 @@ const SKYSEG_DOWNLOAD_URL: &str = "https://huggingface.co/JianyuanWang/skyseg/re
 const SKYSEG_SHA256: &str = "ab9c34c64c3d821220a2886a4a06da4642ffa14d5b30e8d5339056a089aa1d39";
 const SKYSEG_SIZE: u64 = 175_997_079;
 
-const ALIKED_N16ROT_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx";
-const ALIKED_N16ROT_SHA256: &str = "39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547";
+const ALIKED_N16ROT_DOWNLOAD_URL: &str =
+    "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n16rot.onnx";
+const ALIKED_N16ROT_SHA256: &str =
+    "39c423d0a6f03d39ec89d3d1d61853765c2fb6a8b8381376c703e5758778a547";
 const ALIKED_N16ROT_SIZE: u64 = 2_997_054;
-const ALIKED_N32_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx";
+const ALIKED_N32_DOWNLOAD_URL: &str =
+    "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-n32.onnx";
 const ALIKED_N32_SHA256: &str = "a077728a02d2de1a775c66df6de8cfeb7c6b51ca57572c64c680131c988c8b3c";
 const ALIKED_N32_SIZE: u64 = 4_205_634;
-const ALIKED_LIGHTGLUE_DOWNLOAD_URL: &str = "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx";
-const ALIKED_LIGHTGLUE_SHA256: &str = "b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d";
+const ALIKED_LIGHTGLUE_DOWNLOAD_URL: &str =
+    "https://github.com/colmap/colmap/releases/download/3.13.0/aliked-lightglue.onnx";
+const ALIKED_LIGHTGLUE_SHA256: &str =
+    "b9a5de7204648b18a8cf5dcac819f9d30de1a5961ef03756803c8b86c2dceb8d";
 const ALIKED_LIGHTGLUE_SIZE: u64 = 45_804_950;
 
 const YOLO_SPEC: DownloadSpec<'static> = DownloadSpec {
@@ -482,14 +487,10 @@ mod tests {
 
     #[test]
     fn aliked_downloads_are_pinned_to_the_official_colmap_release() {
-        for spec in [
-            ALIKED_N16ROT_SPEC,
-            ALIKED_N32_SPEC,
-            ALIKED_LIGHTGLUE_SPEC,
-        ] {
-            assert!(spec.url.starts_with(
-                "https://github.com/colmap/colmap/releases/download/3.13.0/"
-            ));
+        for spec in [ALIKED_N16ROT_SPEC, ALIKED_N32_SPEC, ALIKED_LIGHTGLUE_SPEC] {
+            assert!(spec
+                .url
+                .starts_with("https://github.com/colmap/colmap/releases/download/3.13.0/"));
             assert_eq!(spec.sha256.len(), 64);
             assert!(spec.size > 0);
             assert!(spec.relative_path.starts_with("colmap/3.13.0/"));

@@ -170,9 +170,10 @@ fn prefer_windows_colmap_executable(path: PathBuf) -> Result<PathBuf, String> {
         .unwrap_or_else(|| Path::new(""))
         .join("bin")
         .join("COLMAP.exe");
-    executable.is_file().then_some(executable).ok_or_else(|| {
-        "COLMAP.bat 無法直接使用；請選擇官方可攜版 bin\\COLMAP.exe".to_owned()
-    })
+    executable
+        .is_file()
+        .then_some(executable)
+        .ok_or_else(|| "COLMAP.bat 無法直接使用；請選擇官方可攜版 bin\\COLMAP.exe".to_owned())
 }
 
 /// Resolve COLMAP from an explicit local preference or, when it is empty, the
@@ -1736,7 +1737,11 @@ esac
         let temp = tempfile::tempdir().expect("temporary directory");
         let directory = temp.path().join("COLMAP portable");
         fs::create_dir_all(&directory).expect("portable directory");
-        let path = directory.join(if cfg!(windows) { "COLMAP.exe" } else { "colmap" });
+        let path = directory.join(if cfg!(windows) {
+            "COLMAP.exe"
+        } else {
+            "colmap"
+        });
         fs::write(&path, b"test executable").expect("test executable");
 
         assert_eq!(
