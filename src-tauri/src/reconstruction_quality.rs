@@ -158,7 +158,13 @@ fn quantile(values: &mut [f64], fraction: f64) -> Option<f64> {
 
 fn artifact_identity(root: &Path) -> Result<Vec<ArtifactIdentity>, String> {
     let mut paths = vec![PathBuf::from("database.db")];
-    for path in ["database.db-wal", "metadata/mask_run.json"] {
+    // A read-only SQLite connection can create an empty WAL/SHM pair. It has
+    // no database content and must not make the audit invalidate itself.
+    // Nonempty WAL files still participate so committed writes are detected.
+    if fs::metadata(root.join("database.db-wal")).is_ok_and(|meta| meta.len() > 0) {
+        paths.push(PathBuf::from("database.db-wal"));
+    }
+    for path in ["metadata/mask_run.json"] {
         if root.join(path).is_file() { paths.push(PathBuf::from(path)); }
     }
     for folder in ["images/lens0", "images/lens1", "masks/lens0", "masks/lens1"] {
@@ -366,7 +372,10 @@ pub fn audit(root: &Path, use_masks: bool, cancel: &CancelToken) -> Result<Quali
     if !report.issues.is_empty() { report.status = "issues_found".into(); }
     report.artifact_identity = artifact_identity(root)?;
     if report.artifact_identity != starting_identity {
-        return Err("重建資料在品質檢查期間發生變更，請停止其他寫入後重新檢查".into());
+        let changed: BTreeSet<_> = starting_identity.iter().filter(|entry| !report.artifact_identity.contains(entry))
+            .chain(report.artifact_identity.iter().filter(|entry| !starting_identity.contains(entry)))
+            .map(|entry| entry.path.as_str()).collect();
+        return Err(format!("重建資料在品質檢查期間發生變更（{}），請停止其他寫入後重新檢查", changed.into_iter().take(8).collect::<Vec<_>>().join("、")));
     }
     Ok(report)
 }
@@ -423,6 +432,24 @@ mod tests {
         }
         fs::write(text.join("points3D.txt"), point_text).unwrap();
         temp
+    }
+
+    #[test]
+    fn wal_database_audit_does_not_invalidate_itself_when_reader_creates_empty_sidecars() {
+        let temp = fixture();
+        let db_path = temp.path().join("database.db");
+        let db = Connection::open(&db_path).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+        drop(db);
+        assert!(!temp.path().join("database.db-wal").exists());
+        let report = audit(temp.path(), true, &CancelToken::new()).unwrap();
+        assert_eq!(report.status, "needs_visual_review");
+        fs::write(temp.path().join(REPORT_PATH), serde_json::to_vec(&report).unwrap()).unwrap();
+        assert_eq!(read_report(temp.path()).unwrap().unwrap().status, "needs_visual_review");
+        // A real committed WAL change must still invalidate the report.
+        let writer = Connection::open(&db_path).unwrap();
+        writer.execute("UPDATE images SET name='changed' WHERE image_id=1", []).unwrap();
+        assert_eq!(read_report(temp.path()).unwrap().unwrap().status, "stale");
     }
 
     #[test]

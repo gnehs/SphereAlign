@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 31;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 32;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 6;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
@@ -1208,21 +1208,11 @@ fn run_child(
     let stdout = stdout_reader.join().unwrap_or_default();
     let stderr = stderr_reader.join().unwrap_or_default();
     if !status.success() {
-        let stderr = String::from_utf8_lossy(&stderr);
-        let detail = stderr
-            .lines()
-            .rev()
-            .take(12)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(if detail.trim().is_empty() {
-            format!("{} 結束，狀態碼 {:?}", program.display(), status.code())
-        } else {
-            detail
-        });
+        return Err(child_failure_message(
+            program, args, status,
+            &String::from_utf8_lossy(&stderr),
+            &String::from_utf8_lossy(&stdout),
+        ));
     }
     if !stdout.is_empty() {
         let summary = String::from_utf8_lossy(&stdout);
@@ -1353,16 +1343,43 @@ where
     }
     if !status.success() {
         let detail = stderr_tail.into_iter().collect::<Vec<_>>().join("\n");
-        return Err(if detail.trim().is_empty() {
-            format!("{} 結束，狀態碼 {:?}", program.display(), status.code())
-        } else {
-            detail
-        });
+        return Err(child_failure_message(
+            program, args, status, &detail,
+            last_stdout.as_deref().unwrap_or(""),
+        ));
     }
     if let Some(last) = last_stdout {
         emit_log(app, id, "info", last.trim());
     }
     Ok(())
+}
+
+fn child_failure_message(
+    program: &Path,
+    args: &[String],
+    status: std::process::ExitStatus,
+    stderr: &str,
+    stdout: &str,
+) -> String {
+    let executable = program.file_name().unwrap_or(program.as_os_str()).to_string_lossy();
+    let command = args.first()
+        .filter(|arg| !arg.starts_with('-') && !arg.contains(['/', '\\']))
+        .map(|arg| format!(" {arg}"))
+        .unwrap_or_default();
+    let exit = status.code()
+        .map(|code| format!("退出碼 {code} / 0x{:08X}", code as u32))
+        .unwrap_or_else(|| status.to_string());
+    let mut message = format!("{executable}{command} 執行失敗（{exit}）");
+    for (label, output) in [("stderr", stderr), ("stdout", stdout)] {
+        let tail = output.lines()
+            .filter(|line| !line.trim().is_empty())
+            .rev().take(12).collect::<Vec<_>>()
+            .into_iter().rev().collect::<Vec<_>>().join("\n");
+        if !tail.is_empty() {
+            message.push_str(&format!("\n{label}:\n{tail}"));
+        }
+    }
+    message
 }
 
 fn cancelled_error(error: &str, control: &JobControl) -> bool {
@@ -1400,6 +1417,13 @@ where
             );
             reset_before_cpu_retry()?;
             run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
+                .map_err(|cpu_error| {
+                    if cancelled_error(&cpu_error, control) {
+                        cpu_error
+                    } else {
+                        format!("GPU 嘗試：{error}\nCPU 重試：{cpu_error}")
+                    }
+                })
         }
     }
 }
@@ -1444,6 +1468,13 @@ where
             })?;
             reset_progress_before_cpu_retry();
             run_child_with_output(app, id, program, cpu_args, control, &mut on_line)
+                .map_err(|cpu_error| {
+                    if cancelled_error(&cpu_error, control) {
+                        cpu_error
+                    } else {
+                        format!("GPU 嘗試：{error}\nCPU 重試：{cpu_error}")
+                    }
+                })
         }
     }
 }
@@ -4402,7 +4433,7 @@ fn write_rig_and_pairs_with_window(
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .is_some_and(|marker| {
                 marker.get("schemaVersion").and_then(Value::as_u64) == Some(1)
-                    && marker.get("rigConfig") == existing_rig_config.as_ref()
+                    && rig_config_values_match(marker.get("rigConfig"), existing_rig_config.as_ref())
                     && marker.get("provenance").and_then(Value::as_str)
                         != Some(hint.provenance)
             })
@@ -4457,7 +4488,8 @@ fn write_rig_and_pairs_with_window(
                         marker.get("refineSensorFromRig").and_then(Value::as_bool)
                     ),
                     (Some(true), Some(false)) | (Some(false), Some(true))
-                ) && marker.get("rigConfig") == existing_rig_config.as_ref()
+                ) && marker.get("schemaVersion").and_then(Value::as_u64) == Some(1)
+                    && rig_config_values_match(marker.get("rigConfig"), existing_rig_config.as_ref())
             });
         if !marker_matches {
             remove_align_artifact(&nominal_prior_path)?;
@@ -4992,6 +5024,18 @@ fn rig_mapping_plan(configs: &[RigBootstrapConfig]) -> RigMappingPlan {
         RigMappingPlan::PreconfiguredSinglePass
     } else {
         RigMappingPlan::BootstrapThenConfigure
+    }
+}
+
+// COLMAP setup persists serde defaults such as ref_sensor:false. Compare the
+// poses, not the JSON representation, so reruns retain the generated prior.
+fn rig_config_values_match(left: Option<&Value>, right: Option<&Value>) -> bool {
+    let parse = |value: Option<&Value>| {
+        value.and_then(|value| serde_json::from_value::<Vec<RigBootstrapConfig>>(value.clone()).ok())
+    };
+    match (parse(left), parse(right)) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
     }
 }
 
@@ -14329,6 +14373,71 @@ mod tests {
         };
         assert!(low.low_coverage_warning().is_some());
         assert!(healthy.low_coverage_warning().is_none());
+    }
+
+    #[test]
+    fn child_failure_retains_exit_code_and_both_output_streams() {
+        #[cfg(windows)]
+        let status = {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(1)
+        };
+        #[cfg(unix)]
+        let status = {
+            use std::os::unix::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(1 << 8)
+        };
+        let message = super::child_failure_message(
+            Path::new("colmap.exe"), &["mapper".to_owned()], status,
+            "Finding good initial image pair", "last stdout diagnostic",
+        );
+        assert!(message.contains("colmap.exe mapper"));
+        assert!(message.contains("0x00000001"));
+        assert!(message.contains("Finding good initial image pair"));
+        assert!(message.contains("last stdout diagnostic"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn child_failure_retains_windows_exception_code() {
+        use std::os::windows::process::ExitStatusExt;
+        let message = super::child_failure_message(
+            Path::new("colmap.exe"), &["mapper".to_owned()],
+            std::process::ExitStatus::from_raw(0xC0000005), "ordinary progress line", "",
+        );
+        assert!(message.contains("0xC0000005"));
+        assert!(message.contains("ordinary progress line"));
+    }
+
+    #[test]
+    fn nominal_prior_survives_normalized_rerun_but_not_user_pose_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(temp.path().join("metadata/capture.json"), serde_json::to_vec(&json!({
+            "sourceGroups": [{"adapter": "DjiOsmo360Adapter"}]
+        })).unwrap()).unwrap();
+        write_rig_and_pairs(temp.path()).unwrap();
+        let config_path = temp.path().join("rig_config.json");
+        let mut configs: Vec<RigBootstrapConfig> = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        // This is the same normalization performed before rig configuration.
+        fs::write(&config_path, serde_json::to_vec(&configs).unwrap()).unwrap();
+        write_rig_and_pairs(temp.path()).unwrap();
+        assert!(nominal_rig_prior_matches(temp.path(), &configs));
+        let marker: Value = serde_json::from_slice(&fs::read(temp.path().join("metadata/nominal_rig_prior.json")).unwrap()).unwrap();
+        assert_eq!(marker["refineSensorFromRig"], true);
+
+        configs[0].cameras[1].cam_from_rig_translation = Some(vec![0.0, 0.01, -0.0363]);
+        let user_config = serde_json::to_vec(&configs).unwrap();
+        fs::write(&config_path, &user_config).unwrap();
+        write_rig_and_pairs(temp.path()).unwrap();
+        assert!(!temp.path().join("metadata/nominal_rig_prior.json").exists());
+        assert_eq!(fs::read(&config_path).unwrap(), user_config);
     }
 
     #[test]
