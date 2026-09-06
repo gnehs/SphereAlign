@@ -17,6 +17,25 @@ src/locales/*/messages.js
 __pycache__/
 *.py[cod]
 
+# Local model/tool downloads and reconstruction experiments
+/.cache/
+/.tools/
+/.work/
+/.tmp/
+/.codex-rebuild/
+/smoke-outputs/
+
+# Machine-specific experiment launchers and root-level scratch diagnostics.
+# Maintained scripts, tests, and curated evidence remain visible to Git.
+/run/
+/.*.py
+/tmp-*.json
+
+# Python environments and test/tool caches
+.venv/
+.pytest_cache/
+.ruff_cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
