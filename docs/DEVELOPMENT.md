@@ -7,6 +7,8 @@
 
 ## 技術棧
 
+對齊與遮罩的參數依據、品質檢查及輸出格式，見[重建經驗整合](RECONSTRUCTION_EXPERIENCE.md)。
+
 - Tauri 2 desktop shell
 - React 19、TypeScript、Vite 7
 - Rust stable

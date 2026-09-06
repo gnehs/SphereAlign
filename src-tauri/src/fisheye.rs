@@ -12,7 +12,7 @@
 /// physical image disc.
 pub const DJI_VALID_RADIUS_RATIO: f64 = 0.5;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct OpticalOcclusion {
     center_x_ratio: f64,
     center_y_ratio: f64,
@@ -106,7 +106,7 @@ impl OpticalOcclusion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct LensOpticalOcclusions {
     pub lens0: OpticalOcclusion,
     pub lens1: OpticalOcclusion,

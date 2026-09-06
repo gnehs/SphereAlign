@@ -18,11 +18,15 @@
 mod inference;
 mod models;
 mod skyseg;
+mod tiles;
+mod provenance;
 
 pub use inference::YoloSegPipeline;
 pub(crate) use models::resolve_aliked_models;
 pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;
+pub use tiles::{read_calibration, FisheyeCamera};
+pub use provenance::review_summary;
 
 use image::imageops::FilterType;
 use image::{
@@ -158,6 +162,14 @@ pub struct MaskRequest {
     pub classes: Vec<String>,
     pub mask_sky: bool,
     pub confidence: f32,
+    /// One upright inference or a union of four quarter-turn YOLO inferences.
+    pub rotations: u32,
+    /// Semantic dilation in inference pixels (native proxy or perspective tile).
+    pub dilation: u32,
+    /// Calibrated perspective mode, keyed by lens/source. Empty uses native inference.
+    pub calibrated_cameras: BTreeMap<String, FisheyeCamera>,
+    /// Optional reviewed, binary keep masks. Black pixels are always preserved.
+    pub additional_masks_dir: Option<PathBuf>,
     /// Radius as a ratio of the shorter source dimension.
     pub valid_radius_ratio: f32,
     /// DJI optical calibration keyed by extraction filename prefix.
@@ -184,6 +196,10 @@ impl Default for MaskRequest {
             classes: Vec::new(),
             mask_sky: false,
             confidence: YOLO_CONFIDENCE_THRESHOLD,
+            rotations: 1,
+            dilation: 0,
+            calibrated_cameras: BTreeMap::new(),
+            additional_masks_dir: None,
             valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
             optical_occlusions: BTreeMap::new(),
             skip_verified: true,
@@ -388,6 +404,22 @@ pub fn process_mask_batch(
     on_progress: impl Fn(MaskProgress) + Sync,
 ) -> MaskResult<MaskSummary> {
     validate_request(request)?;
+    // Resolve the actual weights before deciding whether a previous result can
+    // be reused. This does not create an ONNX session. A model/configuration
+    // change must never be hidden by a dimension-only mask cache hit.
+    let mut resolved = request.clone();
+    if !request.classes.is_empty() || request.mask_sky {
+        let paths = ModelPaths::resolve(request.model_dir.as_deref(), request.model_cache_dir.as_deref(),
+            request.yolo_model.as_deref(), request.skyseg_model.as_deref(), !request.classes.is_empty(),
+            request.mask_sky, cancel, &|event| on_progress(MaskProgress {
+                index: 0, total: 0, completed: 0, input: request.images_dir.clone(),
+                mask_path: request.masks_dir.clone(), stage: MaskStage::LoadingModel,
+                fraction: 0.01, message: format!("正在確認 {} 模型（{} / {} bytes）", event.label, event.downloaded, event.total),
+            }))?;
+        resolved.yolo_model = paths.yolo;
+        resolved.skyseg_model = paths.skyseg;
+    }
+    let request = &resolved;
     if request.skip_verified {
         if let Some(summary) = skip_fully_verified_batch(request, cancel, &on_progress)? {
             return Ok(summary);
@@ -495,6 +527,7 @@ fn skip_fully_verified_batch(
     cancel: &CancelToken,
     on_progress: &impl Fn(MaskProgress),
 ) -> MaskResult<Option<MaskSummary>> {
+    let signature = provenance::request_signature(request)?;
     let files = collect_images(&request.images_dir)?;
     let total = files.len();
     let summary = |skipped, cancelled| MaskSummary {
@@ -535,7 +568,9 @@ fn skip_fully_verified_batch(
             Err(_) => return Ok(None),
         };
         let (width, height) = image.dimensions();
-        if !is_valid_mask_file(mask_path, width, height) {
+        if !is_valid_mask_file(mask_path, width, height)
+            || !provenance::can_reuse(request, input, mask_path, &signature)
+        {
             return Ok(None);
         }
         on_progress(MaskProgress {
@@ -615,7 +650,9 @@ where
     E: MaskEngine + ?Sized,
 {
     let files = collect_images(&request.images_dir)?;
+    let signature = provenance::request_signature(request)?;
     let total = files.len();
+    let projection_cache = tiles::ProjectionCache::default();
     if total == 0 {
         return Ok(MaskSummary {
             total,
@@ -642,6 +679,8 @@ where
             .map(|(index, input)| {
                 process_one_image(
                     request,
+                    &signature,
+                    &projection_cache,
                     cancel,
                     engine,
                     &on_progress,
@@ -694,6 +733,8 @@ enum FileOutcome {
 #[allow(clippy::too_many_arguments)]
 fn process_one_image<E>(
     request: &MaskRequest,
+    signature: &str,
+    projection_cache: &tiles::ProjectionCache,
     cancel: &CancelToken,
     engine: &E,
     on_progress: &(impl Fn(MaskProgress) + Sync),
@@ -771,7 +812,9 @@ where
             .ok()
             .and_then(|reader| reader.into_dimensions().ok());
         if let Some((width, height)) = source_dimensions {
-            if is_valid_mask_file(&mask_path, width, height) {
+            if is_valid_mask_file(&mask_path, width, height)
+                && provenance::can_reuse(request, input, &mask_path, signature)
+            {
                 let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
                 report(
                     MaskStage::Skipped,
@@ -784,6 +827,14 @@ where
         }
     }
 
+    let starting_identity = match provenance::identity(request, input, signature) {
+        Ok(identity) => identity,
+        Err(error) => {
+            let count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            report(MaskStage::Failed, count as f32 / total as f32, count, &error.to_string());
+            return FileOutcome::Failed(error.to_string());
+        }
+    };
     let image = match ImageReader::open(input)
         .and_then(|reader| reader.with_guessed_format())
         .map_err(MaskError::from)
@@ -804,7 +855,15 @@ where
     };
 
     let (width, height) = image.dimensions();
-    let image = resize_for_mask_working_resolution(image);
+    let relative = input.strip_prefix(&request.images_dir).unwrap_or(input).to_string_lossy().replace('\\', "/");
+    let camera = tiles::camera_group(&relative).and_then(|key| request.calibrated_cameras.get(&key));
+    if !request.calibrated_cameras.is_empty() && camera.is_none() {
+        let message = format!("No calibrated camera for {relative}; calibration must match this source and lens");
+        let count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(MaskStage::Failed, count as f32 / total as f32, count, &message);
+        return FileOutcome::Failed(message);
+    }
+    let image = if camera.is_some() { image } else { resize_for_mask_working_resolution(image) };
     let (mask_width, mask_height) = image.dimensions();
 
     report(
@@ -813,12 +872,11 @@ where
         completed.load(Ordering::Acquire),
         "正在執行 YOLO11／SkySeg 推論",
     );
-    let exclusions = match engine.generate_exclusion_mask(
-        &image,
-        &request.classes,
-        request.confidence,
-        request.mask_sky,
-        cancel,
+    let exclusions = match camera.map_or_else(
+        || infer_rotations(engine, &image, request, request.mask_sky, cancel).map(|mut mask| {
+            dilate_exclusions(&mut mask, request.dilation); mask
+        }),
+        |camera| tiles::infer(&image, camera, request, engine, cancel, projection_cache),
     ) {
         Ok(mask) => mask,
         Err(MaskError::Cancelled) => {
@@ -869,14 +927,9 @@ where
     }
 
     let optical_occlusion = optical_occlusion_for_input(request, input);
-    let keep = build_keep_mask(
-        mask_width,
-        mask_height,
-        request.valid_radius_ratio,
-        optical_occlusion,
-        &exclusions.data,
-    );
-    let keep = match resize_binary_mask(keep, mask_width, mask_height, width, height) {
+    // Only semantic masks are resized. Compose the calibrated optical boundary
+    // at native resolution so an empty semantic result preserves it exactly.
+    let exclusions = match resize_binary_mask(exclusions.data, mask_width, mask_height, width, height) {
         Ok(mask) => mask,
         Err(error) => {
             let message = error.to_string();
@@ -890,6 +943,12 @@ where
             return FileOutcome::Failed(message);
         }
     };
+    let mut keep = build_keep_mask(width, height, request.valid_radius_ratio, optical_occlusion, &exclusions);
+    if let Err(error) = provenance::merge_additional_mask(request, input, width, height, &mut keep) {
+        let count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(MaskStage::Failed, count as f32 / total as f32, count, &error.to_string());
+        return FileOutcome::Failed(error.to_string());
+    }
     report(
         MaskStage::Writing,
         completed.load(Ordering::Acquire) as f32 / total as f32,
@@ -906,6 +965,11 @@ where
             &message,
         );
         return FileOutcome::Failed(message);
+    }
+    if let Err(error) = provenance::commit(request, input, &mask_path, signature, &starting_identity, &keep) {
+        let count = completed.fetch_add(1, Ordering::AcqRel) + 1;
+        report(MaskStage::Failed, count as f32 / total as f32, count, &error.to_string());
+        return FileOutcome::Failed(error.to_string());
     }
 
     let completed_count = completed.fetch_add(1, Ordering::AcqRel) + 1;
@@ -940,6 +1004,25 @@ fn validate_request(request: &MaskRequest) -> MaskResult<()> {
         return Err(MaskError::invalid_input(
             "valid_radius_ratio must be finite and in [0, 1]",
         ));
+    }
+    if !matches!(request.rotations, 1 | 4) || request.dilation > 16 {
+        return Err(MaskError::invalid_input("rotations must be 1 or 4; dilation must be 0..16 inference pixels"));
+    }
+    for camera in request.calibrated_cameras.values() { camera.validate()?; }
+    if !request.calibrated_cameras.is_empty() {
+        for input in collect_images(&request.images_dir)? {
+            let relative = input.strip_prefix(&request.images_dir).unwrap_or(&input).to_string_lossy().replace('\\', "/");
+            let camera = tiles::camera_group(&relative).and_then(|key| request.calibrated_cameras.get(&key))
+                .ok_or_else(|| MaskError::invalid_input(format!("no calibrated camera bound to {relative}")))?;
+            if image::image_dimensions(&input)? != (camera.width, camera.height) {
+                return Err(MaskError::invalid_input(format!("native dimensions differ from calibration: {relative}")));
+            }
+        }
+    }
+    if let Some(additional) = &request.additional_masks_dir {
+        if !additional.is_dir() || additional.canonicalize().ok() == request.masks_dir.canonicalize().ok() {
+            return Err(MaskError::invalid_input("additional masks must be an existing directory separate from the output"));
+        }
     }
     Ok(())
 }
@@ -999,11 +1082,8 @@ fn collect_images_recursive(root: &Path, files: &mut Vec<PathBuf>) -> MaskResult
     Ok(())
 }
 
-/// Cheap terminal integrity check used by the stage orchestrator. The batch
-/// processor already validates L8 PNG contents when writing or resuming; this
-/// second pass intentionally reads headers only so a missing/truncated output
-/// cannot silently remove an image from COLMAP without decoding every 4K mask
-/// again.
+/// Terminal integrity check. Decoding is necessary: a valid PNG header can
+/// conceal a truncated payload or a non-binary keep mask.
 pub fn verify_mask_output_coverage(request: &MaskRequest) -> MaskResult<usize> {
     validate_request(request)?;
     let files = collect_images(&request.images_dir)?;
@@ -1038,6 +1118,9 @@ pub fn verify_mask_output_coverage(request: &MaskRequest) -> MaskResult<usize> {
                 source_dimensions.1,
                 mask_path.display()
             )));
+        }
+        if !is_valid_mask_file(&mask_path, source_dimensions.0, source_dimensions.1) {
+            return Err(MaskError::image(format!("invalid binary PNG mask: {}", mask_path.display())));
         }
     }
     Ok(files.len())
@@ -1266,6 +1349,49 @@ fn is_valid_mask_file(path: &Path, width: u32, height: u32) -> bool {
         return false;
     };
     image.dimensions() == (width, height) && image.color() == ColorType::L8
+        && image.as_bytes().iter().all(|value| matches!(value, 0 | 255))
+}
+
+fn validate_segmentation(mask: &SegmentationMask, dimensions: (u32, u32)) -> MaskResult<()> {
+    if (mask.width, mask.height) != dimensions || mask.data.len() != dimensions.0 as usize * dimensions.1 as usize {
+        return Err(MaskError::inference("segmentation dimensions do not match inference image"));
+    }
+    Ok(())
+}
+
+fn infer_rotations<E: MaskEngine + ?Sized>(engine: &E, image: &DynamicImage, request: &MaskRequest,
+    mask_sky: bool, cancel: &CancelToken) -> MaskResult<SegmentationMask> {
+    if cancel.is_cancelled() { return Err(MaskError::Cancelled); }
+    let mut result = engine.generate_exclusion_mask(image, &request.classes, request.confidence, mask_sky, cancel)?;
+    validate_segmentation(&result, image.dimensions())?;
+    if !request.classes.is_empty() && request.rotations == 4 {
+        for turn in 1..4 {
+            if cancel.is_cancelled() { return Err(MaskError::Cancelled); }
+            let rotated = match turn { 1 => image.rotate90(), 2 => image.rotate180(), _ => image.rotate270() };
+            let mask = engine.generate_exclusion_mask(&rotated, &request.classes, request.confidence, false, cancel)?;
+            validate_segmentation(&mask, rotated.dimensions())?;
+            let gray = image::GrayImage::from_raw(mask.width, mask.height, mask.data)
+                .ok_or_else(|| MaskError::inference("invalid rotated mask"))?;
+            let restored = match turn { 1 => image::imageops::rotate270(&gray), 2 => image::imageops::rotate180(&gray), _ => image::imageops::rotate90(&gray) };
+            for (pixel, rotated) in result.data.iter_mut().zip(restored.into_raw()) { *pixel |= rotated; }
+        }
+    }
+    for value in &mut result.data { *value = if *value == 0 { 0 } else { 255 }; }
+    Ok(result)
+}
+
+fn dilate_exclusions(mask: &mut SegmentationMask, radius: u32) {
+    if radius == 0 { return; }
+    let (w, h) = (mask.width as usize, mask.height as usize);
+    let r = radius as usize;
+    // Two separable passes give a square dilation in O(radius * pixels).
+    let mut horizontal = vec![0; mask.data.len()];
+    for y in 0..h { for x in 0..w {
+        if mask.data[y*w + x.saturating_sub(r)..y*w + (x+r+1).min(w)].iter().any(|v| *v != 0) { horizontal[y*w+x] = 255; }
+    }}
+    for y in 0..h { for x in 0..w {
+        mask.data[y*w+x] = if (y.saturating_sub(r)..(y+r+1).min(h)).any(|row| horizontal[row*w+x] != 0) { 255 } else { 0 };
+    }}
 }
 
 fn emit_progress(
@@ -1505,6 +1631,70 @@ mod tests {
     }
 
     #[test]
+    fn mask_receipts_invalidate_changed_settings_images_weights_and_nonbinary_outputs() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = request(&dir);
+        fs::create_dir_all(request.images_dir.join("lens0"))?;
+        let input = request.images_dir.join("lens0/frame.png");
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(8, 8, Rgb([100, 100, 100])).save(&input)?;
+        request.yolo_model = Some(dir.path().join("model.onnx"));
+        fs::write(request.yolo_model.as_ref().unwrap(), b"version one")?;
+        let engine = FakeEngine { calls: AtomicUsize::new(0), exclusion: 0 };
+        let run = |request: &MaskRequest| process_mask_batch_with_engine(request, &CancelToken::new(), &engine, |_| {});
+        assert_eq!(run(&request)?.skipped, 0);
+        assert_eq!(run(&request)?.skipped, 1);
+        request.confidence = 0.10;
+        assert_eq!(run(&request)?.skipped, 0);
+        fs::write(request.yolo_model.as_ref().unwrap(), b"version two")?;
+        assert_eq!(run(&request)?.skipped, 0);
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(8, 8, Rgb([110, 100, 100])).save(&input)?;
+        assert_eq!(run(&request)?.skipped, 0);
+        ImageBuffer::<Luma<u8>, _>::from_pixel(8, 8, Luma([128])).save(request.masks_dir.join("lens0/frame.png"))?;
+        assert!(verify_mask_output_coverage(&request).is_err());
+        assert_eq!(run(&request)?.skipped, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn rotations_restore_rectangular_coordinates_and_dilation_stays_semantic() -> MaskResult<()> {
+        struct Corner;
+        impl MaskEngine for Corner {
+            fn generate_exclusion_mask(&self, image: &DynamicImage, _: &[String], _: f32, _: bool, _: &CancelToken) -> MaskResult<SegmentationMask> {
+                let mut data = vec![0; (image.width()*image.height()) as usize]; data[0] = 255;
+                SegmentationMask::new(image.width(), image.height(), data)
+            }
+        }
+        let request = MaskRequest { classes: vec!["person".into()], rotations: 4, ..Default::default() };
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(8, 4, Rgb([100,100,100])));
+        let mut mask = infer_rotations(&Corner, &image, &request, false, &CancelToken::new())?;
+        assert_eq!(mask.data.iter().enumerate().filter_map(|(i,v)| (*v != 0).then_some(i)).collect::<Vec<_>>(), vec![0,7,24,31]);
+        dilate_exclusions(&mut mask, 1);
+        assert_eq!(mask.data.iter().filter(|v| **v != 0).count(), 16);
+        Ok(())
+    }
+
+    #[test]
+    fn extra_masks_preserve_reviewed_exclusions_and_invalidate_resume() -> MaskResult<()> {
+        let dir = TempDir::new()?;
+        let mut request = request(&dir);
+        fs::create_dir_all(request.images_dir.join("lens0"))?;
+        request.additional_masks_dir = Some(dir.path().join("reviewed"));
+        let extra = request.additional_masks_dir.as_ref().unwrap().join("lens0");
+        fs::create_dir_all(&extra)?;
+        let input = request.images_dir.join("lens0/frame.png");
+        ImageBuffer::<Rgb<u8>, _>::from_pixel(8, 8, Rgb([100,100,100])).save(&input)?;
+        let mut manual = ImageBuffer::<Luma<u8>, _>::from_pixel(8, 8, Luma([255]));
+        manual.put_pixel(4,4,Luma([0])); manual.save(extra.join("frame.png"))?;
+        let engine = FakeEngine { calls: AtomicUsize::new(0), exclusion: 0 };
+        process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
+        assert_eq!(image::open(request.masks_dir.join("lens0/frame.png"))?.into_luma8().get_pixel(4,4)[0], 0);
+        manual.put_pixel(3,3,Luma([0])); manual.save(extra.join("frame.png"))?;
+        assert_eq!(process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?.skipped, 0);
+        assert_eq!(image::open(request.masks_dir.join("lens0/frame.png"))?.into_luma8().get_pixel(3,3)[0], 0);
+        Ok(())
+    }
+
+    #[test]
     fn selects_dji_calibration_by_source_prefix_and_lens_folder() {
         let dir = TempDir::new().unwrap();
         let mut request = request(&dir);
@@ -1576,17 +1766,18 @@ mod tests {
         let dir = TempDir::new()?;
         let mut request = request(&dir);
         request.classes = vec!["person".to_string()];
-        request.yolo_model = Some(dir.path().join("missing-yolo.onnx"));
+        request.yolo_model = Some(dir.path().join("fixture-yolo.onnx"));
+        fs::write(request.yolo_model.as_ref().unwrap(), b"fixture not a loadable ONNX model")?;
         fs::create_dir_all(request.images_dir.join("lens0"))?;
         fs::create_dir_all(request.masks_dir.join("lens0"))?;
 
         ImageBuffer::<Rgb<u8>, _>::from_pixel(2, 2, Rgb([100, 100, 100]))
             .save(request.images_dir.join("lens0/frame.jpg"))?;
-        ImageBuffer::<Luma<u8>, _>::from_pixel(2, 2, Luma([255]))
-            .save(request.masks_dir.join("lens0/frame.png"))?;
+        let engine = FakeEngine { calls: AtomicUsize::new(0), exclusion: 0 };
+        process_mask_batch_with_engine(&request, &CancelToken::new(), &engine, |_| {})?;
 
-        // The explicit model path is missing. Reaching model discovery would
-        // fail, so success proves the verified outputs are handled first.
+        // Resolving/hashing the weights is required. A session must not be
+        // loaded for an unchanged batch (the dummy weights cannot be loaded).
         let summary = process_mask_batch(&request, &CancelToken::new(), |_| {})?;
         assert_eq!(summary.total, 1);
         assert_eq!(summary.succeeded, 1);
@@ -1666,6 +1857,34 @@ mod tests {
 
         let engine = NativeMaskEngine::load(&request, &CancelToken::new(), &|_| {})?;
         assert!(engine.skyseg.is_some());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires production YOLO, calibrated model, native image, and GPU"]
+    fn processes_calibrated_views_with_production_model_and_reuses_receipt() -> MaskResult<()> {
+        let image = PathBuf::from(std::env::var_os("GS360_TEST_PERSON_IMAGE").expect("native image required"));
+        let model = PathBuf::from(std::env::var_os("GS360_TEST_CALIBRATION_MODEL").expect("calibration required"));
+        let lens = std::env::var("GS360_TEST_LENS").unwrap_or_else(|_| "lens1".into());
+        let temp = TempDir::new()?;
+        let mut request = request(&temp);
+        let input = request.images_dir.join(&lens).join(image.file_name().unwrap());
+        fs::create_dir_all(input.parent().unwrap())?;
+        fs::copy(&image, &input)?;
+        request.classes = vec!["person".into()];
+        request.yolo_model = Some(PathBuf::from(std::env::var_os("GS360_TEST_YOLO_MODEL").expect("YOLO required")));
+        request.execution_provider = Some(std::env::var("GS360_TEST_GPU_PROVIDER").unwrap_or_else(|_| "DirectML".into()));
+        request.calibrated_cameras = read_calibration(&model)?;
+        request.rotations = 4;
+        request.confidence = 0.10;
+        request.dilation = 2;
+        let summary = process_mask_batch(&request, &CancelToken::new(), |_| {})?;
+        assert_eq!(summary.succeeded,1, "{:?}",summary.failures);
+        assert_eq!(summary.failed,0);
+        let dimensions = image::image_dimensions(&input)?;
+        assert!(is_valid_mask_file(&output_path(&request,&input)?,dimensions.0,dimensions.1));
+        let resumed = process_mask_batch(&request, &CancelToken::new(), |_| {})?;
+        assert_eq!(resumed.skipped,1);
         Ok(())
     }
 

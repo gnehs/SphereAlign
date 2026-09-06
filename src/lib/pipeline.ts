@@ -21,6 +21,7 @@ type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
 type ExtractColorMode = "auto" | "logRec709" | "dlogMRec709" | "native";
 type FeaturePipeline = "sift" | "aliked-n32-lightglue" | "aliked-n16rot-lightglue";
+type MapperMode = "incremental" | "auto" | "global";
 
 function translate(descriptor: MessageDescriptor) {
   return i18n._(descriptor);
@@ -67,12 +68,19 @@ interface PipelineSettings {
     colorMode: ExtractColorMode;
     lutPath?: string;
   };
-  mask: { yoloEnabled: boolean; classes: string[]; maskSky: boolean; modelDir: string };
+  mask: {
+    yoloEnabled: boolean; classes: string[]; maskSky: boolean; modelDir: string;
+    lensValid: boolean; confidence: number; rotations: 1 | 4; dilation: number;
+    projection: "native" | "calibrated-tiles";
+    calibrationModelPath: string; additionalMaskPath: string;
+  };
   align: {
     useGpu: boolean;
     gpuIndex: string;
     useIntraSourceLoopClosure: boolean;
     featurePipeline: FeaturePipeline;
+    mapperMode: MapperMode;
+    temporalWindow: number;
   };
 }
 
@@ -290,12 +298,16 @@ const DEFAULT_SETTINGS: PipelineSettings = {
     skipBlurry: true,
     colorMode: "auto",
   },
-  mask: { yoloEnabled: false, classes: [], maskSky: false, modelDir: "" },
+  mask: { yoloEnabled: false, classes: [], maskSky: false, modelDir: "", lensValid: true,
+    confidence: 0.25, rotations: 1, dilation: 0, projection: "native",
+    calibrationModelPath: "", additionalMaskPath: "" },
   align: {
     useGpu: true,
     gpuIndex: "-1",
     useIntraSourceLoopClosure: false,
     featurePipeline: "sift",
+    mapperMode: "incremental",
+    temporalWindow: 5,
   },
 };
 const COLMAP_PATH_STORAGE_KEY = "spherealign.colmapPath";
@@ -319,6 +331,10 @@ function featurePipelineFromUnknown(value: unknown): FeaturePipeline {
     : "sift";
 }
 
+function mapperModeFromUnknown(value: unknown): MapperMode {
+  return value === "auto" || value === "global" ? value : "incremental";
+}
+
 function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
   if (!Number.isFinite(extract.baseFps) || extract.baseFps <= 0 || !Number.isFinite(extract.denseFps)) {
     return DEFAULT_CANDIDATE_MULTIPLIER;
@@ -340,7 +356,7 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
   const classes = Array.isArray(mask.classes)
     ? mask.classes.filter((item): item is string => typeof item === "string" && MASK_CLASSES.includes(item))
     : DEFAULT_SETTINGS.mask.classes;
-  const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : DEFAULT_SETTINGS.mask.yoloEnabled) && classes.length > 0;
+  const yoloEnabled = (typeof mask.yoloEnabled === "boolean" ? mask.yoloEnabled : classes.length > 0) && classes.length > 0;
   const align = source.align && typeof source.align === "object" ? source.align as Record<string, unknown> : {};
   const featurePipeline = featurePipelineFromUnknown(align.featurePipeline);
   const rawGpuIndex = align.gpuIndex;
@@ -366,6 +382,13 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
       classes,
       maskSky: typeof mask.maskSky === "boolean" ? mask.maskSky : DEFAULT_SETTINGS.mask.maskSky,
       modelDir: typeof mask.modelDir === "string" ? mask.modelDir : DEFAULT_SETTINGS.mask.modelDir,
+      lensValid: typeof mask.lensValid === "boolean" ? mask.lensValid : true,
+      confidence: finiteNumber(mask.confidence, 0.25, 0.01, 1),
+      rotations: mask.rotations === 4 ? 4 : 1,
+      dilation: Math.round(finiteNumber(mask.dilation, 0, 0, 16)),
+      projection: mask.projection === "calibrated-tiles" ? "calibrated-tiles" : "native",
+      calibrationModelPath: typeof mask.calibrationModelPath === "string" ? mask.calibrationModelPath : "",
+      additionalMaskPath: typeof mask.additionalMaskPath === "string" ? mask.additionalMaskPath : "",
     },
     align: {
       useGpu: typeof align.useGpu === "boolean" ? align.useGpu : DEFAULT_SETTINGS.align.useGpu,
@@ -374,6 +397,8 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
         ? align.useIntraSourceLoopClosure
         : DEFAULT_SETTINGS.align.useIntraSourceLoopClosure,
       featurePipeline,
+      mapperMode: mapperModeFromUnknown(align.mapperMode),
+      temporalWindow: Math.round(finiteNumber(align.temporalWindow, 5, 2, 30)),
     },
   };
 }
@@ -1953,6 +1978,7 @@ export type {
   DiagnosticStatus,
   ExtractColorMode,
   FeaturePipeline,
+  MapperMode,
   ColorInspection,
   ColorInspectionSummary,
   SourceIssueSeverity,
@@ -1993,6 +2019,7 @@ export {
   normaliseExtractColorMode,
   customLutPathIsInvalid,
   featurePipelineFromUnknown,
+  mapperModeFromUnknown,
   candidateMultiplierFor,
   normalisePipelineSettings,
   selectAvailableGpu,

@@ -49,6 +49,8 @@ import {
   taskProgress,
   taskStageDuration,
   type AutoPipelineRun,
+  type FeaturePipeline,
+  type MapperMode,
   type LogEventPayload,
   type ProgressEventPayload,
   type StageKey,
@@ -817,6 +819,36 @@ function App() {
     }
   }, [bindJobToTask, colmapPath, settingsDraft, updateTaskStage]);
 
+  const changeTaskFeaturePipeline = useCallback((task: Task, featurePipeline: FeaturePipeline) => {
+    updateTask(task.projectId, (current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        align: {
+          ...current.settings.align,
+          featurePipeline,
+          ...(featurePipeline !== "sift" ? { useGpu: true } : {}),
+        },
+      },
+    }));
+    setToast(featurePipeline === "sift" ? "Alignment will use SIFT on the next run" : "Alignment will use ALIKED and LightGlue on the next run");
+  }, [setToast, updateTask]);
+
+  const changeTaskMapperMode = useCallback((task: Task, mapperMode: MapperMode) => {
+    updateTask(task.projectId, (current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        align: { ...current.settings.align, mapperMode },
+      },
+    }));
+    setToast(mapperMode === "incremental"
+      ? "Alignment will use the COLMAP incremental mapper on the next run"
+      : mapperMode === "auto"
+        ? "Alignment will try validated GLOMAP and preserve the incremental fallback"
+        : "Alignment will require GLOMAP and validated priors on the next run");
+  }, [setToast, updateTask]);
+
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
     if (!IS_TAURI_RUNTIME) { setToast("Browser preview does not cancel backend work"); return; }
     const autoRun = autoPipelineRuns.current[task.projectId];
@@ -1000,6 +1032,8 @@ function App() {
             setTaskDetailOpen(true);
           }}
           onStageAction={handleStageAction}
+          onFeaturePipelineChange={changeTaskFeaturePipeline}
+          onMapperModeChange={changeTaskMapperMode}
         />
       </main>
 

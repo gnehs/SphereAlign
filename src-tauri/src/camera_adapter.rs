@@ -52,8 +52,8 @@ pub struct CaptureBundle {
 /// A camera-family initialization pose used only when the two physical lenses
 /// cannot bootstrap independently. This is deliberately separate from
 /// `rig_extrinsics`: it is a nominal bootstrap prior rather than factory
-/// calibration. Its zero baseline is only an initialization; mapper bundle
-/// adjustment must remain free to recover the real CMOS-center offset.
+/// calibration. A camera-family hint may include a nominal physical baseline;
+/// it must not be presented as factory-calibrated extrinsics.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RigBootstrapPoseHint {
     pub cam_from_rig_rotation: [f64; 4],
@@ -65,21 +65,32 @@ pub struct RigBootstrapPoseHint {
 /// Return the nominal back-to-back layout defined by an adapter. Native
 /// dual-fisheye tracks from the supported 360 camera families use opposite
 /// optical axes with the reference-lens convention represented by a
-/// 180-degree Y rotation. The physical lens baseline is intentionally
-/// initialized at zero because monocular SfM has no metric scale at this
-/// point. Keeping a refinable rig from the first mapper pass is substantially
-/// safer than deriving it after two independently drifting reconstructions.
+/// 180-degree Y rotation. Keeping a preconfigured rig from the first mapper
+/// pass is substantially safer than deriving it after two independently
+/// drifting reconstructions. DJI's 36.3 mm front-to-back body dimension is
+/// retained as a nominal optical-center baseline: a colocated approximation
+/// creates visible duplicate geometry near the fisheye seam. This remains a
+/// family-level bootstrap value, not factory calibration for an individual
+/// camera.
 pub fn rig_bootstrap_pose_hint(adapter: &str) -> Option<RigBootstrapPoseHint> {
-    let (provenance, refine_sensor_from_rig) = match adapter {
+    let (provenance, refine_sensor_from_rig, translation) = match adapter {
         "Insta360DualTrackAdapter" | "Insta360PairedInsvAdapter" => {
-            ("insta360-adapter-nominal-back-to-back-v1", false)
+            (
+                "insta360-adapter-nominal-back-to-back-v1",
+                false,
+                [0.0, 0.0, 0.0],
+            )
         }
-        "DjiOsmo360Adapter" => ("dji-osmo-360-adapter-nominal-back-to-back-v1", true),
+        "DjiOsmo360Adapter" => (
+            "dji-osmo-360-adapter-nominal-back-to-back-36.3mm-v2",
+            true,
+            [0.0, 0.0, -0.0363],
+        ),
         _ => return None,
     };
     Some(RigBootstrapPoseHint {
         cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
-        cam_from_rig_translation: [0.0, 0.0, 0.0],
+        cam_from_rig_translation: translation,
         provenance,
         refine_sensor_from_rig,
     })
@@ -104,6 +115,15 @@ pub fn is_supported_source(path: &Path) -> bool {
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase())
         .is_some_and(|extension| SUPPORTED_SOURCE_EXTENSIONS.contains(&extension.as_str()))
+}
+
+/// Only the camera adapter decides whether a container exposes DJI optical
+/// calibration. The stage orchestrator consumes the normalized lens curves.
+pub fn optical_occlusions(path: &Path) -> Result<Option<crate::fisheye::LensOpticalOcclusions>, String> {
+    if !path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("osv")) {
+        return Ok(None);
+    }
+    crate::telemetry::read_dji_optical_occlusions(path)
 }
 
 fn is_insv(path: &Path) -> bool {
@@ -496,13 +516,13 @@ mod tests {
     }
 
     #[test]
-    fn dji_osmo_360_exposes_a_rigid_back_to_back_bootstrap_pose() {
+    fn dji_osmo_360_exposes_a_back_to_back_pose_with_nominal_baseline() {
         assert_eq!(
             rig_bootstrap_pose_hint("DjiOsmo360Adapter"),
             Some(RigBootstrapPoseHint {
                 cam_from_rig_rotation: [0.0, 0.0, 1.0, 0.0],
-                cam_from_rig_translation: [0.0, 0.0, 0.0],
-                provenance: "dji-osmo-360-adapter-nominal-back-to-back-v1",
+                cam_from_rig_translation: [0.0, 0.0, -0.0363],
+                provenance: "dji-osmo-360-adapter-nominal-back-to-back-36.3mm-v2",
                 refine_sensor_from_rig: true,
             })
         );

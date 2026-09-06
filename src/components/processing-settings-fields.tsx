@@ -2,7 +2,8 @@ import { i18n, type MessageDescriptor } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertTriangle, X } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,7 @@ import {
   type DoctorReport,
   type PipelineSettings,
   type FeaturePipeline,
+  type MapperMode,
 } from "@/lib/pipeline";
 
 export interface ProcessingSettingsFieldsProps {
@@ -55,6 +57,14 @@ export function ProcessingSettingsFields({
   onGpuPreferenceTouched,
   sourceColorInspection,
 }: ProcessingSettingsFieldsProps) {
+  const [maskPathError, setMaskPathError] = useState("");
+  const chooseMaskFolder = async (key: "calibrationModelPath" | "additionalMaskPath") => {
+    try {
+      const path = await open({ directory: true, multiple: false });
+      if (typeof path === "string") onSettingsChange((current) => ({ ...current, mask: { ...current.mask, [key]: path } }));
+      setMaskPathError("");
+    } catch (error) { setMaskPathError(String(error)); }
+  };
   const candidateMultiplier = candidateMultiplierFor(settings.extract);
   const candidateFps = settings.extract.baseFps * candidateMultiplier;
   const colorMode = settings.extract.colorMode;
@@ -69,6 +79,11 @@ export function ProcessingSettingsFields({
     { value: "sift", label: t`SIFT (fast default)` },
     { value: "aliked-n32-lightglue", label: t`ALIKED-N32 + LightGlue` },
     { value: "aliked-n16rot-lightglue", label: t`ALIKED-N16Rot + LightGlue` },
+  ];
+  const mapperModeItems: Array<{ value: MapperMode; label: string }> = [
+    { value: "incremental", label: t`COLMAP incremental mapper` },
+    { value: "auto", label: t`GLOMAP with validated fallback` },
+    { value: "global", label: t`GLOMAP only` },
   ];
 
   return (
@@ -190,6 +205,11 @@ export function ProcessingSettingsFields({
           <Field aria-labelledby="masking-settings-title">
             <FieldTitle id="masking-settings-title"><Trans context="settings section" comment="Pipeline stage settings for creating masks.">Masking</Trans></FieldTitle>
             <FieldContent>
+              <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
+                <Checkbox id="mask-lens-valid" checked={settings.mask.lensValid}
+                  onCheckedChange={(checked) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, lensValid: checked === true } }))} />
+                <FieldLabel htmlFor="mask-lens-valid"><Trans>Exclude lens border and camera body</Trans></FieldLabel>
+              </Field>
               <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal">
                 <Checkbox
                   id="mask-yolo"
@@ -241,7 +261,67 @@ export function ProcessingSettingsFields({
                 <FieldLabel htmlFor="mask-sky"><Trans comment="Enable SkySeg sky masks.">Sky filtering</Trans></FieldLabel>
               </Field>
               {settings.mask.maskSky && <FieldDescription>{t`Use SkySeg to generate sky masks.`}</FieldDescription>}
-              {!settings.mask.yoloEnabled && !settings.mask.maskSky && (
+              <Button variant="outline" size="sm" className="mt-2 self-start" onClick={() => onSettingsChange((current) => ({
+                ...current, mask: { ...current.mask, lensValid: true, yoloEnabled: true,
+                  classes: Array.from(new Set([...current.mask.classes, "person"])), confidence: current.mask.projection === "calibrated-tiles" ? 0.10 : 0.50, rotations: 4, dilation: 2 },
+              }))}><Trans>Apply crowded-scene settings</Trans></Button>
+              <FieldDescription><Trans>Uses four orientations and a 2-pixel expansion. Confidence is 0.50 for native views or 0.10 for calibrated views. Review people and static scene detail before alignment.</Trans></FieldDescription>
+              {(settings.mask.yoloEnabled || settings.mask.maskSky) && <details className="mt-2 rounded-md border px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium"><Trans>Mask refinement</Trans></summary>
+                <FieldGroup className="mt-3 gap-3">
+                  <Field>
+                    <FieldLabel htmlFor="mask-projection"><Trans>Detection views</Trans></FieldLabel>
+                    <Select value={settings.mask.projection} items={[
+                      { value: "native", label: t`Native fisheye` },
+                      { value: "calibrated-tiles", label: t`Five calibrated perspective views` },
+                    ]} onValueChange={(value) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, projection: value === "calibrated-tiles" ? value : "native" } }))}>
+                      <SelectTrigger id="mask-projection"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectGroup>
+                        <SelectItem value="native"><Trans>Native fisheye</Trans></SelectItem>
+                        <SelectItem value="calibrated-tiles"><Trans>Five calibrated perspective views</Trans></SelectItem>
+                      </SelectGroup></SelectContent>
+                    </Select>
+                    <FieldDescription><Trans>Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images.</Trans></FieldDescription>
+                  </Field>
+                  {settings.mask.projection === "calibrated-tiles" && <Field>
+                    <FieldLabel htmlFor="mask-calibration-path"><Trans>Calibration model folder</Trans></FieldLabel>
+                    <div className="flex gap-2"><Input id="mask-calibration-path" value={settings.mask.calibrationModelPath}
+                      onChange={(event) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, calibrationModelPath: event.target.value } }))} />
+                      <Button variant="outline" onClick={() => void chooseMaskFolder("calibrationModelPath")}><Trans>Browse</Trans></Button></div>
+                    <FieldDescription><Trans>Choose a COLMAP text model with cameras.txt and images.txt from these captures. Camera dimensions and source/lens bindings must match.</Trans></FieldDescription>
+                  </Field>}
+                  <Field>
+                    <FieldLabel htmlFor="mask-confidence"><Trans>Detection confidence</Trans></FieldLabel>
+                    <Input id="mask-confidence" type="number" min={0.01} max={1} step={0.01} value={settings.mask.confidence}
+                      onChange={(event) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, confidence: Math.min(1, Math.max(0.01, Number(event.target.value) || 0.01)) } }))} />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <Checkbox id="mask-four-rotations" checked={settings.mask.rotations === 4}
+                      onCheckedChange={(checked) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, rotations: checked ? 4 : 1 } }))} />
+                    <FieldLabel htmlFor="mask-four-rotations"><Trans>Detect objects in four orientations</Trans></FieldLabel>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="mask-dilation"><Trans>Expand exclusions (inference pixels)</Trans></FieldLabel>
+                    <Input id="mask-dilation" type="number" min={0} max={16} step={1} value={settings.mask.dilation}
+                      onChange={(event) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, dilation: Math.round(Math.min(16, Math.max(0, Number(event.target.value) || 0))) } }))} />
+                  </Field>
+                </FieldGroup>
+              </details>}
+              <details className="mt-2 rounded-md border px-3 py-2">
+                <summary className="cursor-pointer text-sm font-medium"><Trans>Additional reviewed masks</Trans></summary>
+                <Field className="mt-3">
+                  <FieldLabel htmlFor="mask-additional-path"><Trans>Extra exclusion folder</Trans></FieldLabel>
+                  <div className="flex gap-2"><Input id="mask-additional-path" value={settings.mask.additionalMaskPath}
+                    onChange={(event) => onSettingsChange((current) => ({ ...current, mask: { ...current.mask, additionalMaskPath: event.target.value } }))} />
+                    <Button variant="outline" onClick={() => void chooseMaskFolder("additionalMaskPath")}><Trans>Browse</Trans></Button></div>
+                  <FieldDescription><Trans>Optional binary PNGs at original resolution, arranged in lens folders. Black regions are added to the generated exclusions.</Trans></FieldDescription>
+                </Field>
+              </details>
+              {maskPathError && <p className="text-sm text-destructive" role="alert">{maskPathError}</p>}
+              {!settings.mask.yoloEnabled && !settings.mask.maskSky && settings.mask.lensValid && (
+                <FieldDescription><Trans>Only lens and camera-body masks are generated; no detection model is needed.</Trans></FieldDescription>
+              )}
+              {!settings.mask.yoloEnabled && !settings.mask.maskSky && !settings.mask.lensValid && !settings.mask.additionalMaskPath && (
                 <FieldDescription>{t`Masking is disabled; alignment starts after frame extraction.`}</FieldDescription>
               )}
             </FieldContent>
@@ -250,6 +330,12 @@ export function ProcessingSettingsFields({
             <FieldTitle id="alignment-settings-title"><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldTitle>
             <FieldContent>
               <div className="flex flex-col gap-2">
+                <Field>
+                  <FieldLabel htmlFor="temporal-window"><Trans>Neighboring frame pairs</Trans></FieldLabel>
+                  <Input id="temporal-window" type="number" min={2} max={30} step={1} value={settings.align.temporalWindow}
+                    onChange={(event) => onSettingsChange((current) => ({ ...current, align: { ...current.align, temporalWindow: Math.round(Math.min(30, Math.max(2, Number(event.target.value) || 2))) } }))} />
+                  <FieldDescription><Trans>Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification.</Trans></FieldDescription>
+                </Field>
                 <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                   <FieldLabel htmlFor="feature-pipeline"><Trans comment="Select the local feature extractor and matcher used by COLMAP alignment.">Feature matching method</Trans></FieldLabel>
                   <Select
@@ -295,6 +381,40 @@ export function ProcessingSettingsFields({
                       : <Trans>Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>}
                   </FieldDescription>
                 )}
+                <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
+                  <FieldLabel htmlFor="mapper-mode"><Trans comment="Select the mapper that estimates camera poses after feature matching.">Camera pose solver</Trans></FieldLabel>
+                  <Select
+                    items={mapperModeItems}
+                    value={settings.align.mapperMode}
+                    onValueChange={(value) => {
+                      const nextMode = (value ?? "incremental") as MapperMode;
+                      onSettingsChange((current) => ({
+                        ...current,
+                        align: { ...current.align, mapperMode: nextMode },
+                      }));
+                    }}
+                  >
+                    <SelectTrigger id="mapper-mode" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {mapperModeItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {settings.align.mapperMode === "incremental" && (
+                    <FieldDescription><Trans>The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity.</Trans></FieldDescription>
+                  )}
+                  {settings.align.mapperMode === "auto" && (
+                    <FieldDescription><Trans>Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass.</Trans></FieldDescription>
+                  )}
+                  {settings.align.mapperMode === "global" && (
+                    <Alert>
+                      <AlertTriangle />
+                      <AlertTitle><Trans>Validated priors required</Trans></AlertTitle>
+                      <AlertDescription><Trans>Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors.</Trans></AlertDescription>
+                    </Alert>
+                  )}
+                </Field>
                 <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
                   <Switch
                     id="use-intra-source-loop-closure"

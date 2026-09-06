@@ -15,6 +15,7 @@ mod pipeline;
 mod process;
 mod project;
 mod reconstruction_benchmark;
+mod reconstruction_quality;
 mod telemetry;
 mod visual_retrieval;
 
@@ -63,6 +64,21 @@ fn load_project(path: String) -> Result<ProjectManifest, String> {
 }
 
 #[tauri::command]
+async fn read_reconstruction_quality(project_path: String) -> Result<Option<reconstruction_quality::QualityReport>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = project::load(project_path)?;
+        reconstruction_quality::read_report(std::path::Path::new(&manifest.output_path))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn audit_existing_alignment(app: tauri::AppHandle, jobs: tauri::State<'_, JobManager>, project_path: String, colmap_path: Option<String>) -> Result<reconstruction_quality::QualityReport, String> {
+    let manager = jobs.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || pipeline::audit_existing_alignment(&app, &manager, &project_path, colmap_path.as_deref()))
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn start_stage(
     app: tauri::AppHandle,
     jobs: tauri::State<'_, JobManager>,
@@ -108,6 +124,8 @@ pub fn run() {
             create_project,
             update_queued_project,
             load_project,
+            read_reconstruction_quality,
+            audit_existing_alignment,
             start_stage,
             cancel_job,
             generate_benchmark_report

@@ -24,6 +24,12 @@ struct AbcArgs {
     model_dir: Option<PathBuf>,
 }
 
+#[derive(Debug)]
+struct RerunAlignArgs {
+    project_root: PathBuf,
+    colmap: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VariantResult {
@@ -64,6 +70,7 @@ pub fn run(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
     };
     match command {
         "abc" => run_abc(app, parse_abc(&args[1..])?),
+        "rerun-align" => run_rerun_align(app, parse_rerun_align(&args[1..])?),
         "help" | "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
@@ -73,7 +80,75 @@ pub fn run(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
 }
 
 fn usage() -> String {
-    "Usage: spherealign-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned] [--feature-pipeline sift|aliked-n16rot-lightglue|aliked-n32-lightglue] [--model-dir <directory>]".to_owned()
+    "Usage:\n  spherealign-cli abc --input <capture.osv> [--input <capture.osv> ...] --output-root <new-or-empty-directory> --colmap <colmap.exe> [--gpu-index 0] [--variants A,B,C] [--profile-override baseline|tuned] [--feature-pipeline sift|aliked-n16rot-lightglue|aliked-n32-lightglue] [--model-dir <directory>]\n  spherealign-cli rerun-align --project <existing-project-directory> [--colmap <colmap.exe>]".to_owned()
+}
+
+fn parse_rerun_align(args: &[String]) -> Result<RerunAlignArgs, String> {
+    let mut project_root = None;
+    let mut colmap = None;
+    let mut index = 0;
+    while index < args.len() {
+        let key = &args[index];
+        let value = args
+            .get(index + 1)
+            .ok_or_else(|| format!("missing value for {key}"))?;
+        match key.as_str() {
+            "--project" => project_root = Some(PathBuf::from(value)),
+            "--colmap" => colmap = Some(value.clone()),
+            other => return Err(format!("unknown option: {other}\n{}", usage())),
+        }
+        index += 2;
+    }
+    let project_root = project_root.ok_or_else(|| "--project is required".to_owned())?;
+    if !project_root.join("project.json").is_file() {
+        return Err(format!(
+            "SphereAlign project.json does not exist: {}",
+            project_root.display()
+        ));
+    }
+    if let Some(path) = &colmap {
+        if !Path::new(path).is_file() {
+            return Err(format!("COLMAP executable does not exist: {path}"));
+        }
+    }
+    Ok(RerunAlignArgs {
+        project_root,
+        colmap,
+    })
+}
+
+fn run_rerun_align(app: &AppHandle, args: RerunAlignArgs) -> Result<(), String> {
+    let manifest = project::load(&args.project_root)?;
+    let manager = JobManager::default();
+    let response = pipeline::start_stage(
+        app.clone(),
+        &manager,
+        StartStageRequest {
+            project_path: manifest.root_path.clone(),
+            stage: StageName::Align,
+            mode: Some("retry".to_owned()),
+            settings: Some(manifest.settings.clone()),
+            colmap_path: args.colmap,
+        },
+    )?;
+    println!("started align: {}", response.job_id);
+    while manager.is_running() {
+        thread::sleep(Duration::from_millis(500));
+    }
+    let completed = project::load(&manifest.root_path)?;
+    let checkpoint = completed.stage(&StageName::Align);
+    match checkpoint.status {
+        StageStatus::Completed => {
+            println!("completed align: {}", checkpoint.message);
+            Ok(())
+        }
+        StageStatus::Failed | StageStatus::Cancelled => {
+            Err(format!("align did not complete: {}", checkpoint.message))
+        }
+        StageStatus::Pending | StageStatus::Running => {
+            Err("align stopped without a terminal manifest status".to_owned())
+        }
+    }
 }
 
 fn parse_abc(args: &[String]) -> Result<AbcArgs, String> {

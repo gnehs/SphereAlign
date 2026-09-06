@@ -47,7 +47,7 @@ const ALIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 // Bump this when matching or mapping semantics change while the underlying
 // feature database remains reusable. Keeping it separate from the checkpoint
 // schema lets an upgrade invalidate sparse/match output without redoing SIFT.
-pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 30;
+pub(crate) const ALIGN_PIPELINE_REVISION: u32 = 31;
 const FEATURE_FINGERPRINT_SCHEMA_VERSION: u32 = 6;
 const FEATURE_CAMERA_MODEL: &str = "OPENCV_FISHEYE";
 const FEATURE_DEFAULT_FOCAL_LENGTH_FACTOR: f64 = 0.3;
@@ -739,7 +739,7 @@ pub fn start_stage(
             StageName::Extract => {
                 run_extract(&app, &id, &manifest, &control).map(StageRunOutput::plain)
             }
-            StageName::Mask => run_mask(&app, &id, &manifest, &control).map(StageRunOutput::plain),
+            StageName::Mask => run_mask(&app, &id, &manifest, &control),
             StageName::Align => run_align(
                 &app,
                 &id,
@@ -1142,7 +1142,9 @@ fn mask_classes(settings: &Value) -> Vec<String> {
 }
 
 fn mask_enabled(settings: &Value) -> bool {
-    !mask_classes(settings).is_empty() || setting_bool(settings, "/mask/maskSky", false)
+    setting_bool(settings, "/mask/lensValid", true)
+        || !mask_classes(settings).is_empty() || setting_bool(settings, "/mask/maskSky", false)
+        || settings.pointer("/mask/additionalMaskPath").and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty())
 }
 
 fn run_child(
@@ -1593,6 +1595,15 @@ fn selected_ffmpeg_filter(
         .map(|filter| format!(",format=gbrp10le,{filter}"))
         .unwrap_or_default();
     format!("setpts=PTS-STARTPTS,fps={candidate_fps}{lut_filter},select={select}")
+}
+
+fn should_auto_calibrate_telemetry(settings: &Value, requested_mode: MapperMode) -> bool {
+    // `auto` is now a product-facing GLOMAP mode, so selecting it must be
+    // sufficient to build and validate the incremental calibration seed.
+    // Preserve the legacy flag for benchmark/CLI configurations that request
+    // this calibration while using another mapper mode.
+    requested_mode == MapperMode::Auto
+        || setting_bool(settings, "/align/autoCalibrateTelemetry", false)
 }
 
 fn selected_ffmpeg_args(
@@ -3759,10 +3770,10 @@ fn run_mask(
     id: &str,
     manifest: &ProjectManifest,
     control: &JobControl,
-) -> Result<Vec<String>, String> {
+) -> Result<StageRunOutput, String> {
     if !mask_enabled(&manifest.settings) {
         emit_log(app, id, "info", "未啟用 YOLO 或天空過濾，已略過遮罩階段");
-        return Ok(Vec::new());
+        return Ok(StageRunOutput::plain(Vec::new()));
     }
     let root = PathBuf::from(&manifest.output_path);
     let classes = mask_classes(&manifest.settings);
@@ -3770,14 +3781,10 @@ fn run_mask(
     let mut optical_occlusions = BTreeMap::new();
     for (source_index, raw_input) in manifest.input_paths.iter().enumerate() {
         let input = PathBuf::from(raw_input);
-        let is_osv = input
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("osv"));
-        if !is_osv || !input.is_file() {
+        if !input.is_file() || !setting_bool(&manifest.settings, "/mask/lensValid", true) {
             continue;
         }
-        match telemetry::read_dji_optical_occlusions(&input) {
+        match camera_adapter::optical_occlusions(&input) {
             Ok(Some(calibrations)) => {
                 optical_occlusions.insert(format!("source{source_index:03}_"), calibrations);
             }
@@ -3811,16 +3818,27 @@ fn run_mask(
                 .join("models"),
         )
     };
+    let calibrated_cameras = if manifest.settings.pointer("/mask/projection").and_then(Value::as_str) == Some("calibrated-tiles") {
+        let path = manifest.settings.pointer("/mask/calibrationModelPath").and_then(Value::as_str)
+            .filter(|path| !path.trim().is_empty())
+            .ok_or("校正視角遮罩需要指定包含 cameras.txt 與 images.txt 的 COLMAP 校正模型資料夾")?;
+        masking::read_calibration(Path::new(path)).map_err(|error| error.to_string())?
+    } else { BTreeMap::new() };
     let request = MaskRequest {
         images_dir: root.join("images"),
         masks_dir: root.join("masks"),
         classes,
         mask_sky,
-        confidence: YOLO_CONFIDENCE_THRESHOLD,
-        valid_radius_ratio: DJI_VALID_RADIUS_RATIO as f32,
+        confidence: setting_f64(&manifest.settings, "/mask/confidence", f64::from(YOLO_CONFIDENCE_THRESHOLD)) as f32,
+        rotations: mask_integer_setting(&manifest.settings, "/mask/rotations", 1)?,
+        dilation: mask_integer_setting(&manifest.settings, "/mask/dilation", 0)?,
+        calibrated_cameras,
+        additional_masks_dir: manifest.settings.pointer("/mask/additionalMaskPath").and_then(Value::as_str)
+            .filter(|path| !path.trim().is_empty()).map(PathBuf::from),
+        valid_radius_ratio: if setting_bool(&manifest.settings, "/mask/lensValid", true) { DJI_VALID_RADIUS_RATIO as f32 } else { 1.0 },
         optical_occlusions,
         // Resume partial runs without repeating expensive inference. The mask
-        // module skips only when both outputs decode and match the source size.
+        // module verifies binary pixels and source/config/model/output hashes.
         skip_verified: true,
         model_dir: manifest
             .settings
@@ -3878,7 +3896,27 @@ fn run_mask(
             summary.total
         ));
     }
-    Ok(vec![root.join("masks").to_string_lossy().into_owned()])
+    let report = root.join("metadata/mask_run.json");
+    let review = masking::review_summary(&request).map_err(|error| error.to_string())?;
+    write_json_atomic(&report, &json!({"schemaVersion": 1, "settings": manifest.settings.get("mask"),
+        "summary": summary, "verifiedImages": verified, "blackMeans": "exclude",
+        "visualReview": "needs_visual_review", "calibratedCameraGroups": request.calibrated_cameras.keys().collect::<Vec<_>>(),
+        "dilationUnits": "inference-pixels", "receipts": "masks/**/*.png.receipt.json", "review": review}))?;
+    let mut output = StageRunOutput::plain(vec![root.join("masks").to_string_lossy().into_owned(), report.to_string_lossy().into_owned()]);
+    if review.heavily_masked_count > 0 {
+        let warning = format!("{} 張影像遮罩排除超過 60% 畫面，其中 {} 張超過 90%；請核對人物與牆面、柱子等靜態細節，候選清單位於 mask_run.json", review.heavily_masked_count, review.nearly_empty_count);
+        emit_log(app, id, "warning", &warning);
+        output.warnings.push(warning);
+    }
+    Ok(output)
+}
+
+fn mask_integer_setting(settings: &Value, pointer: &str, default: u32) -> Result<u32, String> {
+    match settings.pointer(pointer) {
+        None => Ok(default),
+        Some(value) => value.as_u64().and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| format!("{pointer} 必須是非負整數")),
+    }
 }
 
 fn is_supported_colmap_image(path: &Path) -> bool {
@@ -4258,7 +4296,7 @@ fn calibrated_pair_overlap(
 
 #[cfg(test)]
 fn write_rig_and_pairs(root: &Path) -> Result<u64, String> {
-    write_rig_and_pairs_with_options(root, true, true, false, true)
+    write_rig_and_pairs_with_options(root, true, true, false, true, true)
 }
 
 fn write_rig_and_pairs_with_options(
@@ -4267,7 +4305,25 @@ fn write_rig_and_pairs_with_options(
     use_intra_source_loop_closure: bool,
     use_calibrated_fov: bool,
     include_cross_source_pairs: bool,
+    suppress_nominal_cross_lens_pairs: bool,
 ) -> Result<u64, String> {
+    let window = fs::read(root.join("metadata/pair_policy.json")).ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|policy| policy.get("temporalWindow").and_then(Value::as_u64))
+        .unwrap_or(5) as usize;
+    write_rig_and_pairs_with_window(root, use_visual_retrieval, use_intra_source_loop_closure,
+        use_calibrated_fov, include_cross_source_pairs, suppress_nominal_cross_lens_pairs, window)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_rig_and_pairs_with_window(
+    root: &Path, use_visual_retrieval: bool, use_intra_source_loop_closure: bool,
+    use_calibrated_fov: bool, include_cross_source_pairs: bool,
+    suppress_nominal_cross_lens_pairs: bool, temporal_window: usize,
+) -> Result<u64, String> {
+    if !(2..=30).contains(&temporal_window) {
+        return Err("相鄰配對範圍必須介於 2 至 30 個實體影格".to_owned());
+    }
     let rig_config = root.join("rig_config.json");
     let nominal_prior_path = root.join("metadata/nominal_rig_prior.json");
     let unknown_default = json!([{"cameras":[
@@ -4276,6 +4332,19 @@ fn write_rig_and_pairs_with_options(
     {"image_prefix":"lens0/","ref_sensor":true},
     {
         "image_prefix":"lens1/",
+        "cam_from_rig_rotation":[0.0,0.0,1.0,0.0],
+        "cam_from_rig_translation":[0.0,0.0,0.0]
+    }]}]);
+    // Older runs persisted the same generated zero-baseline default back out
+    // of COLMAP with an explicit `ref_sensor: false` on the secondary camera.
+    // Treat that serialization as the deprecated app default too; otherwise
+    // the adapter's physical baseline can never migrate into an existing
+    // project even during a full Align retry.
+    let deprecated_colocated_persisted = json!([{"cameras":[
+    {"image_prefix":"lens0/","ref_sensor":true},
+    {
+        "image_prefix":"lens1/",
+        "ref_sensor":false,
         "cam_from_rig_rotation":[0.0,0.0,1.0,0.0],
         "cam_from_rig_translation":[0.0,0.0,0.0]
     }]}]);
@@ -4322,10 +4391,28 @@ fn write_rig_and_pairs_with_options(
             })
             .as_deref()
             == Some("bootstrap_mapper");
+    // A nominal adapter pose is app-generated and versioned. When a newer
+    // adapter corrects that pose (for example by replacing a colocated DJI
+    // approximation with a physical baseline), migrate only a config that is
+    // still paired with its generated marker. User-authored rigs have no such
+    // marker and remain untouched.
+    let outdated_generated_nominal = nominal_hint.is_some_and(|hint| {
+        fs::read(&nominal_prior_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|marker| {
+                marker.get("schemaVersion").and_then(Value::as_u64) == Some(1)
+                    && marker.get("rigConfig") == existing_rig_config.as_ref()
+                    && marker.get("provenance").and_then(Value::as_str)
+                        != Some(hint.provenance)
+            })
+    });
     let replace_generated_default = existing_rig_config.as_ref().is_none_or(|config| {
         config == &unknown_default
             || config == &deprecated_colocated_default
+            || config == &deprecated_colocated_persisted
             || legacy_generated_bootstrap
+            || outdated_generated_nominal
     });
     if replace_generated_default {
         // Replace only configs generated by the app. Camera adapters may
@@ -4381,7 +4468,8 @@ fn write_rig_and_pairs_with_options(
     // matchers can return confident look-alikes across opposite views and
     // bias the refinable sensor pose. Retain a cross-sensor temporal pair only
     // when calibrated view directions explicitly confirm overlap.
-    let suppress_unverified_cross_lens_pairs = nominal_hint.is_some();
+    let suppress_unverified_cross_lens_pairs =
+        nominal_hint.is_some() && suppress_nominal_cross_lens_pairs;
     let lens1 = root.join("images/lens1");
     let mut names: Vec<String> = fs::read_dir(root.join("images/lens0"))
         .map_err(|e| e.to_string())?
@@ -4408,7 +4496,7 @@ fn write_rig_and_pairs_with_options(
             pairs.insert(format!("lens0/{name} lens1/{name}"));
         }
         let source_motion = frame_motion.get(source_name_from_image(name));
-        for (offset, neighbor) in names.iter().skip(index + 1).take(5).enumerate() {
+        for (offset, neighbor) in names.iter().skip(index + 1).take(temporal_window).enumerate() {
             let offset = offset + 1;
             if source_name_from_image(name) != source_name_from_image(neighbor) {
                 // Cross-source loop closure is intentionally left to the
@@ -4419,7 +4507,7 @@ fn write_rig_and_pairs_with_options(
             // Same-sensor +1/+2 are the minimum temporal chain. An unknown
             // rig also keeps cross-lens +1 as a visual bridge; a nominal
             // back-to-back rig already supplies that bridge geometrically.
-            if offset <= 2 {
+            if offset <= 2 || offset > 5 {
                 pairs.insert(format!("lens0/{name} lens0/{neighbor}"));
                 pairs.insert(format!("lens1/{name} lens1/{neighbor}"));
             } else {
@@ -4448,7 +4536,7 @@ fn write_rig_and_pairs_with_options(
                 calibrated_pair_overlap(&calibrated_camera_orientations, 0, name, 1, neighbor);
             let overlap_10 =
                 calibrated_pair_overlap(&calibrated_camera_orientations, 1, name, 0, neighbor);
-            if !suppress_unverified_cross_lens_pairs || overlap_01 == Some(true) {
+            if (!suppress_unverified_cross_lens_pairs && offset <= 5) || overlap_01 == Some(true) {
                 conditional_temporal_pair(
                     &mut pairs,
                     0,
@@ -4460,7 +4548,7 @@ fn write_rig_and_pairs_with_options(
                     overlap_01,
                 );
             }
-            if !suppress_unverified_cross_lens_pairs || overlap_10 == Some(true) {
+            if (!suppress_unverified_cross_lens_pairs && offset <= 5) || overlap_10 == Some(true) {
                 conditional_temporal_pair(
                     &mut pairs,
                     1,
@@ -4710,8 +4798,19 @@ fn write_rig_and_pairs_with_options(
     let mut loop_retrieval_report = use_intra_source_loop_closure.then(|| {
         let mut combined = crate::visual_retrieval::RetrievalReport::default();
         for segments in &loop_source_groups {
+            // On a return pass a wall may move from the front lens to the
+            // rear lens. Retrieve both physical views against both views of
+            // other segments, then geometrically verify the retained pairs.
+            let views = segments.iter().flat_map(|segment| (0..2).map(move |lens| {
+                let mut view = segment.clone();
+                view.source_id = format!("{}#lens{lens}", segment.source_id);
+                for anchor in &mut view.anchors {
+                    anchor.path = root.join(format!("images/lens{lens}")).join(&anchor.frame_id);
+                }
+                view
+            })).collect::<Vec<_>>();
             let report = crate::visual_retrieval::retrieve_cross_source_candidates(
-                segments,
+                &views,
                 &crate::visual_retrieval::RetrievalConfig::default(),
             );
             combined.evaluated_source_pair_count += report.evaluated_source_pair_count;
@@ -4786,6 +4885,13 @@ fn write_rig_and_pairs_with_options(
     } else if loop_retrieval_path.is_file() {
         fs::remove_file(&loop_retrieval_path).map_err(|error| error.to_string())?;
     }
+    write_json_atomic(&root.join("metadata/pair_policy.json"), &json!({
+        "schemaVersion": 1, "temporalWindow": temporal_window,
+        "distanceUnit": "selected-physical-frame-order-within-source",
+        "sameLensRescueOffsets": TEMPORAL_RESCUE_OFFSETS,
+        "loopClosure": use_intra_source_loop_closure,
+        "loopLensCombinations": "same-and-cross-lens", "candidatePairs": pairs.len(),
+        "acceptance": "geometric-verification-required"}))?;
     fs::write(
         root.join("metadata/pairs.txt"),
         pairs.into_iter().collect::<Vec<_>>().join("\n") + "\n",
@@ -5697,6 +5803,14 @@ fn nominal_rig_prior_refines_sensor(root: &Path, configs: &[RigBootstrapConfig])
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .and_then(|marker| marker.get("refineSensorFromRig").and_then(Value::as_bool))
         == Some(true)
+}
+
+fn should_disable_sensor_refinement(
+    rig_preconfigured: bool,
+    refine_nominal_rig: bool,
+    feature_pipeline: FeaturePipeline,
+) -> bool {
+    rig_preconfigured && (!refine_nominal_rig || feature_pipeline.is_aliked())
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -8086,7 +8200,14 @@ fn refresh_calibrated_pair_matches(
     // would resurrect local pairs deliberately removed by calibrated FOV;
     // letting the generator fall back would also inject a legacy anchor grid.
     let calibrated_pairs = (|| {
-        write_rig_and_pairs_with_options(root, false, false, use_calibrated_fov, false)?;
+        write_rig_and_pairs_with_options(
+            root,
+            false,
+            false,
+            use_calibrated_fov,
+            false,
+            feature_config.pipeline.is_aliked(),
+        )?;
         let refreshed_pairs = fs::read(&pairs_path).map_err(|error| error.to_string())?;
         let original_cross_source_pairs = cross_source_pair_lines(&original_pairs)?;
         let calibrated_pairs = merge_pair_lists(&original_cross_source_pairs, &refreshed_pairs)?;
@@ -8577,6 +8698,21 @@ fn run_align(
     let colmap = crate::doctor::resolve_colmap(custom_colmap_path)?;
     let root = PathBuf::from(&manifest.output_path);
     recover_gravity_alignment_transaction(&root)?;
+    let use_masks = mask_enabled(&manifest.settings);
+    if use_masks && !matches!(manifest.stage(&StageName::Mask).status, StageStatus::Completed) {
+        return Err("請先完成遮罩階段，再開始對齊；不能略過尚未完成的遮罩".into());
+    }
+    let mask_report_path = root.join("metadata/mask_run.json");
+    if use_masks && mask_report_path.is_file() {
+        let report: Value = serde_json::from_slice(&fs::read(&mask_report_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        if report.get("settings") != manifest.settings.get("mask") {
+            return Err("遮罩設定已變更，請先重跑遮罩以重建相符的特徵與配對".into());
+        }
+    }
+    let preflight = ProgressHeartbeat::start(app, id, StageName::Align, "input-validation", 0.01,
+        "正在檢查雙鏡頭名稱、時間戳、原始尺寸與二值遮罩", None, None, None);
+    crate::reconstruction_quality::validate_capture(&root, use_masks, &control.mask_cancel)?;
+    drop(preflight);
     let gpu_index = parse_gpu_index(&manifest.settings)?;
     let requested_gpu = setting_bool(&manifest.settings, "/align/useGpu", true);
     let requested_mapper_mode = mapper_mode(&manifest.settings)?;
@@ -8645,12 +8781,14 @@ fn run_align(
         None,
         None,
     );
-    let rig_frame_count = write_rig_and_pairs_with_options(
+    let rig_frame_count = write_rig_and_pairs_with_window(
         &root,
         use_visual_retrieval,
         use_intra_source_loop_closure,
         use_calibrated_fov_pairs,
         true,
+        feature_config.pipeline.is_aliked(),
+        mask_integer_setting(&manifest.settings, "/align/temporalWindow", 5)? as usize,
     )?;
     drop(pair_graph_heartbeat);
     phase_durations_ms.insert(
@@ -8684,18 +8822,18 @@ fn run_align(
     let rig_preconfigured = rig_mapping_plan == RigMappingPlan::PreconfiguredSinglePass;
     let nominal_rig_prior = nominal_rig_prior_matches(&root, &rig_configs);
     let refine_nominal_rig = nominal_rig_prior_refines_sensor(&root, &rig_configs);
-    // Factory/user calibration is fixed. The adapter's nominal back-to-back
-    // pose is only a safe initialization: its zero baseline must remain
-    // refinable so bundle adjustment can recover the real CMOS-center offset.
-    let disable_sensor_refinement = rig_preconfigured && !refine_nominal_rig;
+    // Factory/user calibration is fixed. DJI's nominal back-to-back pose can
+    // refine its CMOS-center offset with geometrically conservative SIFT.
+    // Learned ALIKED matching keeps the nominal sensor pose fixed so a small
+    // number of confident opposite-view look-alikes cannot bend the rig.
+    let disable_sensor_refinement = should_disable_sensor_refinement(
+        rig_preconfigured,
+        refine_nominal_rig,
+        feature_config.pipeline,
+    );
     let db = root.join("database.db");
     let sparse = root.join("sparse");
     let unconfigured_database_backup = root.join("metadata/.align-unconfigured-database.backup");
-    let use_masks = mask_enabled(&manifest.settings)
-        && matches!(
-            manifest.stage(&StageName::Mask).status,
-            StageStatus::Completed
-        );
     let checkpoint_path = root.join("metadata/align.checkpoint.json");
     let colmap_version = crate::doctor::command_version(&colmap)
         .ok_or_else(|| "無法讀取 COLMAP 版本；Align 需要 COLMAP 4.1.1 以上".to_owned())?;
@@ -8860,6 +8998,8 @@ fn run_align(
         None
     };
     if reuse_candidate && cached_validation_error.is_none() {
+        export_colmap_text_model(app, id, &colmap, &sparse.join("0"), &root.join("metadata/final-model-text"), control)?;
+        let quality = write_reconstruction_quality(&root, use_masks, control)?;
         let reused_effective_mapper = checkpoint
             .as_ref()
             .and_then(|value| value.effective_mapper.as_deref())
@@ -8889,6 +9029,7 @@ fn run_align(
             db.to_string_lossy().into_owned(),
             root.join("rig_config.json").to_string_lossy().into_owned(),
             sparse.to_string_lossy().into_owned(),
+            root.join(crate::reconstruction_quality::REPORT_PATH).to_string_lossy().into_owned(),
         ];
         for path in [
             root.join("metadata/gravity_alignment.json"),
@@ -8900,10 +9041,11 @@ fn run_align(
             }
         }
         let registration = registration_summary_from_text_model(&root, rig_frame_count);
-        let warnings = registration
+        let mut warnings: Vec<String> = registration
             .and_then(RegistrationSummary::low_coverage_warning)
             .into_iter()
             .collect();
+        warnings.push(quality_warning(&quality));
         return Ok(StageRunOutput {
             artifacts,
             registration,
@@ -10841,7 +10983,7 @@ fn run_align(
     }
     let rig_extrinsics_ready = rig_config_has_complete_sensor_poses(&rig_configs);
     let auto_calibrate_telemetry =
-        setting_bool(&manifest.settings, "/align/autoCalibrateTelemetry", false);
+        should_auto_calibrate_telemetry(&manifest.settings, requested_mapper_mode);
     if requested_mapper_mode == MapperMode::Auto
         && mapper_mode == MapperMode::Incremental
         && auto_calibrate_telemetry
@@ -11349,15 +11491,6 @@ fn run_align(
             "effectiveMapper": effective_final_mapper_component,
         }),
     )?;
-    let final_fingerprint =
-        build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
-    write_align_checkpoint(
-        &checkpoint_path,
-        &final_fingerprint,
-        &feature_fingerprint,
-        true,
-        Some(effective_final_mapper_component),
-    )?;
     let final_text_model = root.join("metadata/final-model-text");
     let finalization_heartbeat = ProgressHeartbeat::start(
         app,
@@ -11405,6 +11538,12 @@ fn run_align(
         &benchmark_request,
         &benchmark_path,
     )?;
+    finalization_heartbeat.update(colmap_step_progress(4, 0.99), "正在逐張核對特徵、3D 觀測、原生重投影與來源覆蓋",
+        Some("quality-audit".into()), None, None);
+    let quality = write_reconstruction_quality(&root, use_masks, control)?;
+    // A completed checkpoint is written only after the final reports exist.
+    let final_fingerprint = build_align_fingerprint(&root, &manifest.settings, &colmap_version, use_masks)?;
+    write_align_checkpoint(&checkpoint_path, &final_fingerprint, &feature_fingerprint, true, Some(effective_final_mapper_component))?;
     emit_log(
         app,
         id,
@@ -11458,6 +11597,7 @@ fn run_align(
         root.join("rig_config.json").to_string_lossy().into_owned(),
         sparse.to_string_lossy().into_owned(),
         benchmark_path.to_string_lossy().into_owned(),
+        root.join(crate::reconstruction_quality::REPORT_PATH).to_string_lossy().into_owned(),
     ];
     for path in [
         root.join("metadata/cross_source_boundaries.json"),
@@ -11477,10 +11617,11 @@ fn run_align(
             artifacts.push(recovery_report_path.to_string_lossy().into_owned());
         }
     }
-    let warnings = registration
+    let mut warnings: Vec<String> = registration
         .and_then(RegistrationSummary::low_coverage_warning)
         .into_iter()
         .collect();
+    warnings.push(quality_warning(&quality));
     Ok(StageRunOutput {
         artifacts,
         registration,
@@ -11492,6 +11633,44 @@ fn run_align(
         )]),
         warnings,
     })
+}
+
+/// Audit an existing model without changing camera poses or rerunning SfM.
+pub fn audit_existing_alignment(app: &AppHandle, manager: &JobManager, project_path: &str, colmap_path: Option<&str>) -> Result<crate::reconstruction_quality::QualityReport, String> {
+    let manifest = project::load(project_path)?;
+    let id = job_id();
+    let control = JobControl { cancelled: Arc::new(AtomicBool::new(false)), mask_cancel: CancelToken::new() };
+    manager.insert(id.clone(), control.clone())?;
+    let _completion = JobCompletionGuard { manager: manager.clone(), id: id.clone() };
+    let root = Path::new(&manifest.output_path);
+    let model = root.join("sparse/0");
+    if !model.is_dir() { return Err("找不到既有 sparse/0 模型，請先完成對齊".into()); }
+    let colmap = crate::doctor::resolve_colmap(colmap_path)?;
+    let use_masks = mask_enabled(&manifest.settings);
+    crate::reconstruction_quality::validate_capture(root, use_masks, &control.mask_cancel)?;
+    export_colmap_text_model(app, &id, &colmap, &model, &root.join("metadata/final-model-text"), &control)?;
+    // Return diagnostics even when feature identity is invalid, so the UI can
+    // display the finding. The alignment stage itself fails on that condition.
+    let report = crate::reconstruction_quality::audit(root, use_masks, &control.mask_cancel)?;
+    write_json_atomic(&root.join(crate::reconstruction_quality::REPORT_PATH), &report)?;
+    Ok(report)
+}
+
+fn quality_warning(report: &crate::reconstruction_quality::QualityReport) -> String {
+    if report.status == "issues_found" {
+        format!("對齊運算完成，但品質檢查發現 {} 項問題；請查看重建品質報告，修正後再進行 tile 訓練", report.issues.len())
+    } else {
+        "對齊資料檢查完成，仍需核對門框、牆面、跨來源尺度與 tile 接縫；尚未通過視覺驗收".into()
+    }
+}
+
+fn write_reconstruction_quality(root: &Path, use_masks: bool, control: &JobControl) -> Result<crate::reconstruction_quality::QualityReport, String> {
+    let report = crate::reconstruction_quality::audit(root, use_masks, &control.mask_cancel)?;
+    write_json_atomic(&root.join(crate::reconstruction_quality::REPORT_PATH), &report)?;
+    if report.observations.invalid_feature_coordinates > 0 || report.observations.invalid_track_references > 0 {
+        return Err("最終模型的特徵座標或 3D track 索引與資料庫不相容；已保留品質報告，禁止沿用此結果".into());
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -11521,7 +11700,9 @@ mod tests {
         restore_colmap_database_backup, rig_bootstrap_shared_frame_count, rig_camera_rotations,
         rig_config_has_complete_sensor_poses, rig_configs_from_camera_extrinsics, rig_mapping_plan,
         rollback_calibrated_pair_transaction, select_best_bootstrap_candidate,
-        selected_ffmpeg_args, setting_bool, source_stage_progress, sparse_model_directories,
+        selected_ffmpeg_args, setting_bool, should_disable_sensor_refinement,
+        should_auto_calibrate_telemetry,
+        source_stage_progress, sparse_model_directories,
         synchronized_candidate_count, validate_rig_bootstrap_registration,
         validate_rigs_text_sensor_poses, verified_bootstrap_initial_pairs,
         verified_factory_intrinsics_for_capture, verified_pair_graph_report,
@@ -12014,7 +12195,7 @@ mod tests {
     #[test]
     fn mask_settings_support_independent_yolo_and_sky_filters() {
         let all_off = json!({
-            "mask": { "yoloEnabled": false, "classes": ["person"], "maskSky": false }
+            "mask": { "yoloEnabled": false, "classes": ["person"], "maskSky": false, "lensValid": false }
         });
         assert!(!mask_enabled(&all_off));
         assert!(mask_classes(&all_off).is_empty());
@@ -13160,6 +13341,30 @@ mod tests {
     }
 
     #[test]
+    fn temporal_window_uses_selected_frames_and_survives_calibrated_refresh() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for source in 0..2 { for index in 0..32 {
+                let name = format!("source{source:03}_{:08}.png", index * 100 + 1);
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }}
+        }
+        let write = |window| super::write_rig_and_pairs_with_window(temp.path(),false,false,false,false,false,window).unwrap();
+        write(5);
+        let short = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        let pair = "lens0/source000_00000001.png lens0/source000_00001401.png";
+        assert!(!short.contains(pair));
+        write(15);
+        let wide = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        assert!(wide.contains(pair));
+        assert!(!wide.lines().any(|line| line.contains("source000") && line.contains("source001")));
+        super::write_rig_and_pairs_with_options(temp.path(),false,false,false,false,false).unwrap();
+        assert_eq!(wide,fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap());
+        assert!(super::write_rig_and_pairs_with_window(temp.path(),false,false,false,false,false,31).is_err());
+    }
+
+    #[test]
     fn pair_list_connects_multiple_source_recordings() {
         let temp = tempfile::tempdir().unwrap();
         for lens in ["lens0", "lens1"] {
@@ -13271,7 +13476,7 @@ mod tests {
             }
         }
 
-        write_rig_and_pairs_with_options(temp.path(), false, false, false, true).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, true, false).unwrap();
         let pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
         // These frames are deliberately not both members of the 20-frame
         // legacy anchor grid. Their pair exists only because the preceding
@@ -13303,16 +13508,16 @@ mod tests {
             }
         }
 
-        write_rig_and_pairs_with_options(temp.path(), false, false, false, false).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, false, false).unwrap();
         let report = temp
             .path()
             .join("metadata/intra_source_loop_retrieval.json");
         assert!(!report.exists());
 
-        write_rig_and_pairs_with_options(temp.path(), false, true, false, false).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), false, true, false, false, false).unwrap();
         assert!(report.is_file());
 
-        write_rig_and_pairs_with_options(temp.path(), false, false, false, false).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), false, false, false, false, false).unwrap();
         assert!(!report.exists());
     }
 
@@ -13336,7 +13541,7 @@ mod tests {
         let report = temp.path().join("metadata/cross_source_retrieval.json");
         fs::write(&report, b"stale").unwrap();
 
-        write_rig_and_pairs_with_options(temp.path(), true, false, false, true).unwrap();
+        write_rig_and_pairs_with_options(temp.path(), true, false, false, true, false).unwrap();
 
         assert!(!report.exists());
         assert!(temp.path().join("metadata/pairs.txt").is_file());
@@ -13640,6 +13845,22 @@ mod tests {
             MapperMode::Global
         );
         assert!(mapper_mode(&json!({"align": {"mapperMode": "bogus"}})).is_err());
+    }
+
+    #[test]
+    fn auto_mapper_mode_enables_its_required_calibration_pipeline() {
+        assert!(should_auto_calibrate_telemetry(
+            &json!({}),
+            MapperMode::Auto
+        ));
+        assert!(!should_auto_calibrate_telemetry(
+            &json!({}),
+            MapperMode::Incremental
+        ));
+        assert!(should_auto_calibrate_telemetry(
+            &json!({"align": {"autoCalibrateTelemetry": true}}),
+            MapperMode::Incremental
+        ));
     }
 
     #[test]
@@ -14196,7 +14417,7 @@ mod tests {
         );
         assert_eq!(
             configs[0].cameras[1].cam_from_rig_translation,
-            Some(vec![0.0, 0.0, 0.0])
+            Some(vec![0.0, 0.0, -0.0363])
         );
         assert!(nominal_rig_prior_matches(temp.path(), &configs));
         let marker: Value = serde_json::from_slice(
@@ -14211,6 +14432,130 @@ mod tests {
             marker.get("mappingLocked").and_then(Value::as_bool),
             Some(false)
         );
+        assert!(should_disable_sensor_refinement(
+            true,
+            true,
+            FeaturePipeline::AlikedN16RotLightGlue
+        ));
+        assert!(!should_disable_sensor_refinement(
+            true,
+            true,
+            FeaturePipeline::Sift
+        ));
+
+        write_rig_and_pairs_with_options(temp.path(), true, true, false, true, false).unwrap();
+        let sift_pairs = fs::read_to_string(temp.path().join("metadata/pairs.txt")).unwrap();
+        assert!(sift_pairs.contains("lens0/frame0001.png lens1/frame0001.png"));
+    }
+
+    #[test]
+    fn dji_generated_colocated_prior_migrates_to_nominal_physical_baseline() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(
+            temp.path().join("metadata/capture.json"),
+            serde_json::to_vec(&json!({
+                "sourceGroups": [{"adapter": "DjiOsmo360Adapter"}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let old_config = json!([{"cameras": [
+            {"image_prefix": "lens0/", "ref_sensor": true},
+            {
+                "image_prefix": "lens1/",
+                "cam_from_rig_rotation": [0.0, 0.0, 1.0, 0.0],
+                "cam_from_rig_translation": [0.0, 0.0, 0.0]
+            }
+        ]}]);
+        fs::write(
+            temp.path().join("rig_config.json"),
+            serde_json::to_vec(&old_config).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("metadata/nominal_rig_prior.json"),
+            serde_json::to_vec(&json!({
+                "schemaVersion": 1,
+                "provenance": "dji-osmo-360-adapter-nominal-back-to-back-v1",
+                "rigConfig": old_config,
+                "mappingLocked": false,
+                "refineSensorFromRig": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+
+        let configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+            &fs::read(temp.path().join("rig_config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            configs[0].cameras[1].cam_from_rig_translation,
+            Some(vec![0.0, 0.0, -0.0363])
+        );
+        let marker: Value = serde_json::from_slice(
+            &fs::read(temp.path().join("metadata/nominal_rig_prior.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            marker.get("provenance").and_then(Value::as_str),
+            Some("dji-osmo-360-adapter-nominal-back-to-back-36.3mm-v2")
+        );
+    }
+
+    #[test]
+    fn dji_persisted_colocated_database_rig_migrates_without_marker() {
+        let temp = tempfile::tempdir().unwrap();
+        for lens in ["lens0", "lens1"] {
+            fs::create_dir_all(temp.path().join("images").join(lens)).unwrap();
+            for name in ["frame0001.png", "frame0002.png"] {
+                fs::write(temp.path().join("images").join(lens).join(name), b"frame").unwrap();
+            }
+        }
+        fs::create_dir_all(temp.path().join("metadata")).unwrap();
+        fs::write(
+            temp.path().join("metadata/capture.json"),
+            serde_json::to_vec(&json!({
+                "sourceGroups": [{"adapter": "DjiOsmo360Adapter"}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("rig_config.json"),
+            serde_json::to_vec(&json!([{"cameras": [
+                {"image_prefix": "lens0/", "ref_sensor": true},
+                {
+                    "image_prefix": "lens1/",
+                    "ref_sensor": false,
+                    "cam_from_rig_rotation": [0.0, 0.0, 1.0, 0.0],
+                    "cam_from_rig_translation": [0.0, 0.0, 0.0]
+                }
+            ]}]))
+            .unwrap(),
+        )
+        .unwrap();
+
+        write_rig_and_pairs(temp.path()).unwrap();
+
+        let configs = serde_json::from_slice::<Vec<RigBootstrapConfig>>(
+            &fs::read(temp.path().join("rig_config.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            configs[0].cameras[1].cam_from_rig_translation,
+            Some(vec![0.0, 0.0, -0.0363])
+        );
+        assert!(nominal_rig_prior_matches(temp.path(), &configs));
     }
 
     #[test]
