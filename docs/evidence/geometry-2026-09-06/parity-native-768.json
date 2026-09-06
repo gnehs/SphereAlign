@@ -1,0 +1,34 @@
+{
+  "scope": "single_synthetic_pattern_not_provider_certification",
+  "heads": {
+    "points": {
+      "relativeL2": 2.0847571584877467e-06,
+      "maxAbs": 7.748603820800781e-06
+    },
+    "normal": {
+      "relativeL2": 1.7958403743998124e-05,
+      "maxAbs": 0.00011579692363739014
+    },
+    "mask": {
+      "relativeL2": 1.2359859479397444e-07,
+      "maxAbs": 1.7285346984863281e-06
+    },
+    "metric_scale": {
+      "relativeL2": 7.279424343122946e-07,
+      "maxAbs": 5.960464477539062e-07
+    }
+  },
+  "normalAngleDeg": {
+    "median": 0.0005742095899238266,
+    "p99": 0.003526665207541923,
+    "max": 0.0067922564388218365
+  },
+  "validityDisagreementFraction": 0.0,
+  "nearThresholdPixels": 0,
+  "knownFocalDiagnostic": {
+    "fx": 320,
+    "referenceShift": -1.0548828443086684,
+    "nativeShift": -1.0548834486469922,
+    "positiveZRelativeL2": 6.107656781901278e-06
+  }
+}

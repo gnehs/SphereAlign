@@ -1,0 +1,2 @@
+$ node scripts/sync-version.mjs --check "0.1.0"
+All application versions are 0.1.0.

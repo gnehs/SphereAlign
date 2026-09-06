@@ -22,6 +22,7 @@ mod tiles;
 mod provenance;
 
 pub use inference::YoloSegPipeline;
+pub(crate) use inference::{session_builder_for_provider, register_execution_provider_with_cache};
 pub(crate) use models::resolve_aliked_models;
 pub use models::{ModelDownloadProgress, ModelPaths};
 pub use skyseg::SkysegPipeline;

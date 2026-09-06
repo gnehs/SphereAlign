@@ -6,6 +6,7 @@ mod color;
 mod doctor;
 mod extraction;
 mod fisheye;
+pub mod geometry;
 mod gravity_alignment;
 mod imu_calibration;
 mod masking;
@@ -98,6 +99,39 @@ fn cancel_job(jobs: tauri::State<'_, JobManager>, job_id: String) -> bool {
 }
 
 #[tauri::command]
+async fn geometry_preflight(project_path: String, settings: geometry::draft::Settings) -> Result<geometry::draft::Preflight, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = project::load(project_path)?;
+        geometry::draft::preflight(std::path::Path::new(&manifest.output_path), &settings)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn start_geometry(jobs: tauri::State<'_, JobManager>, project_path: String, settings: geometry::draft::Settings) -> Result<String, String> {
+    let manager = jobs.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.start_geometry(project_path, settings)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn geometry_status(jobs: tauri::State<'_, JobManager>, project_path: String) -> Result<serde_json::Value, String> {
+    let manager = jobs.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = project::load(&project_path)?;
+        let runs = geometry::draft::list(std::path::Path::new(&manifest.output_path))?;
+        Ok(serde_json::json!({"runs": runs, "busy": manager.is_running(), "job": manager.geometry_job().filter(|j| j.project_path == project_path)}))
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn geometry_preview(project_path: String, run_id: String, frame_id: u32, kind: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        let manifest = project::load(project_path)?;
+        geometry::draft::preview(std::path::Path::new(&manifest.output_path), &run_id, frame_id, &kind)
+    }).await.map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
 fn generate_benchmark_report(
     project_path: String,
     variant: reconstruction_benchmark::BenchmarkVariant,
@@ -134,6 +168,10 @@ pub fn run() {
             audit_existing_alignment,
             start_stage,
             cancel_job,
+            geometry_preflight,
+            start_geometry,
+            geometry_status,
+            geometry_preview,
             generate_benchmark_report
         ])
         .run(app_context())

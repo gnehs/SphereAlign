@@ -203,6 +203,8 @@ SphereAlign 自行開發的原始碼採用 `AGPL-3.0-only` 授權。第三方程
 
 ## 目前界線
 
+Geometry 已接上獨立草稿面板、原生 DirectML 模型推論、取消／雜湊續跑與原始解析度預覽；預設關閉，不改既有三階段排程。一般執行不需 Python。所有結果保留為尚未驗證的草稿，品質 screening、COLMAP 尺度对齊與訓練啟用留待接續共同驗收。操作與格式見 [Geometry priors](GEOMETRY_PRIORS.md)，模型／訓練邊界見[模型契約](GEOMETRY_MODEL_CONTRACT.md)、[相容性](GEOMETRY_COMPATIBILITY.md)與[實測報告](GEOMETRY_BENCHMARKS.md)。
+
 - 正式支援範圍是 DJI Osmo 360 `.OSV`（包含已驗證的 Osmo 360 II 樣本）與 Insta360 `.INSV`（包含單檔雙 track，以及可依 `_00_`／`_10_` 配對的雙檔素材）；其他相機、鏡頭配置與一般雙串流影片尚未驗證。
 - 不提供 equirectangular 預覽器或拼接輸出；核心輸出是原生雙魚眼 COLMAP 專案。
 - Osmo 360 II 的 D-Log M 可辨識，但沒有獨立驗證的官方 II LUT 時，auto 保留原生像素；`cam_extri_q` 不足以構成 factory rig extrinsics，仍由視覺 bootstrap 估計。

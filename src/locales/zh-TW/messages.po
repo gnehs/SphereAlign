@@ -65,12 +65,12 @@ msgstr ""
 #~ msgstr "- 處理器："
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/components/task-detail.tsx:177
+#: src/components/task-detail.tsx:179
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {# 筆} other {# 筆}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/components/task-detail.tsx:158
+#: src/components/task-detail.tsx:160
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# 個檔案} other {# 個檔案}}"
 
@@ -105,6 +105,12 @@ msgstr "{0} / {1}"
 msgid "{0} items/sec"
 msgstr "{0} 個項目/秒"
 
+#. placeholder {0}: preflight.selected
+#. placeholder {1}: preflight.registered
+#: src/components/geometry-drafts.tsx:139
+msgid "{0} of {1} registered images"
+msgstr "已選擇 {0}／{1} 張已註冊影像"
+
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
 #: src/lib/pipeline.ts:1164
@@ -118,8 +124,8 @@ msgstr "{0} 的整體時間進度"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/components/task-detail.tsx:144
 #: src/components/task-detail.tsx:145
+#: src/components/task-detail.tsx:146
 #: src/components/task-list.tsx:251
 msgid "{0} progress"
 msgstr "{0} 進度"
@@ -443,6 +449,10 @@ msgctxt "mask class"
 msgid "Bicycle"
 msgstr "自行車"
 
+#: src/components/geometry-drafts.tsx:171
+msgid "Blue → green → red: near → far, with a separate display scale for each image. Black pixels are invalid. Colours are not comparable between images."
+msgstr "藍 → 綠 → 紅代表由近到遠，每張影像使用獨立的顯示尺度。黑色像素無效，不同影像的顏色無法直接比較。"
+
 #. Short label for the initial reconstruction bootstrap.
 #: src/lib/pipeline.ts:982
 msgctxt "pipeline phase"
@@ -490,6 +500,7 @@ msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 記憶體中候選影格的硬體與軟體解碼皆失敗：硬體錯誤：{0}；軟體錯誤：{1}"
 
+#: src/components/geometry-drafts.tsx:127
 #: src/components/processing-settings-fields.tsx:278
 #: src/components/processing-settings-fields.tsx:304
 msgid "Browse"
@@ -630,11 +641,16 @@ msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "相機組估算"
 
+#: src/components/geometry-drafts.tsx:102
+msgid "Camera-space normals"
+msgstr "相機座標法線"
+
 #. Short project recovery status indicating that processing can continue.
 #: src/lib/pipeline.ts:586
 msgid "Can be resumed"
 msgstr "可繼續"
 
+#: src/components/geometry-drafts.tsx:150
 #: src/components/task-alignment-settings.tsx:65
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
@@ -643,7 +659,7 @@ msgid "Cancel"
 msgstr "取消"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/components/task-detail.tsx:255
+#: src/components/task-detail.tsx:257
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "取消整個任務"
@@ -748,6 +764,10 @@ msgstr "再次檢查環境"
 msgid "Check existing model"
 msgstr "檢查既有模型"
 
+#: src/components/geometry-drafts.tsx:135
+msgid "Check inputs"
+msgstr "檢查輸入"
+
 #: src/lib/pipeline.ts:643
 msgid "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
 msgstr "檢查 COLMAP CUDA 組建，以及是否有可用的 NVIDIA GPU"
@@ -844,7 +864,7 @@ msgstr "清除自訂 LUT"
 #. Label for the button that closes the dialog from the footer.
 #: src/components/settings-sheet.tsx:179
 #: src/components/task-detail-panel.tsx:231
-#: src/components/task-detail.tsx:256
+#: src/components/task-detail.tsx:258
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
 #: src/components/ui/sheet.tsx:84
@@ -950,6 +970,10 @@ msgstr "請先完成 {0}"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "請先完成 {prerequisite}"
 
+#: src/components/geometry-drafts.tsx:116
+msgid "Complete alignment to use the final registered cameras and original images."
+msgstr "完成對齊後，即可使用最終註冊的相機與原始影像。"
+
 #: src/components/task-list.tsx:312
 #: src/lib/pipeline.ts:1863
 msgid "Completed"
@@ -1052,7 +1076,7 @@ msgid "CUDA status not confirmed"
 msgstr "尚未確認 CUDA 狀態"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/components/task-detail.tsx:141
+#: src/components/task-detail.tsx:142
 msgid "Current item: {0}"
 msgstr "目前項目：{0}"
 
@@ -1061,7 +1085,7 @@ msgstr "目前項目：{0}"
 msgid "Current stage: {0}"
 msgstr "目前階段：{0}"
 
-#: src/components/task-detail.tsx:135
+#: src/components/task-detail.tsx:136
 msgid "Current work"
 msgstr "目前工作"
 
@@ -1125,6 +1149,14 @@ msgstr "診斷動作"
 msgid "Diagnostics copied; you can paste them into a bug report"
 msgstr "診斷資料已複製；你可以將其貼到錯誤回報中"
 
+#: src/components/geometry-drafts.tsx:123
+msgid "Download pinned model automatically"
+msgstr "自動下載指定版本模型"
+
+#: src/components/geometry-drafts.tsx:153
+msgid "Draft runs"
+msgstr "草稿紀錄"
+
 #: src/App.tsx:2915
 #~ msgid "Drop OSV media or an unfinished project folder"
 #~ msgstr "拖放 OSV 媒體或未完成的專案資料夾"
@@ -1165,7 +1197,7 @@ msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "雙魚眼影格、內部參數與 IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
-#: src/components/task-detail.tsx:185
+#: src/components/task-detail.tsx:187
 msgid "Duration {0}"
 msgstr "持續時間 {0}"
 
@@ -1189,10 +1221,14 @@ msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "編輯已排入佇列的任務"
 
-#: src/components/task-detail.tsx:149
+#: src/components/task-detail.tsx:150
 #: src/components/task-list.tsx:224
 msgid "Elapsed"
 msgstr "經過時間"
+
+#: src/components/geometry-drafts.tsx:114
+msgid "Enable Geometry generation"
+msgstr "啟用 Geometry 草稿產生"
 
 #: src/components/alignment-settings-fields.tsx:155
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
@@ -1217,7 +1253,11 @@ msgstr "偵測到支援 CUDA 的 NVIDIA GPU 時預設啟用；如果執行失敗
 msgid "Error"
 msgstr "錯誤"
 
-#: src/components/task-detail.tsx:150
+#: src/components/geometry-drafts.tsx:139
+msgid "Estimated output"
+msgstr "預估輸出空間"
+
+#: src/components/task-detail.tsx:151
 #: src/components/task-list.tsx:225
 msgid "Estimated remaining"
 msgstr "預估剩餘時間"
@@ -1272,6 +1312,10 @@ msgstr "已發現現有遮罩"
 #: src/components/processing-settings-fields.tsx:292
 msgid "Expand exclusions (inference pixels)"
 msgstr "擴張排除區域（推論像素）"
+
+#: src/components/geometry-drafts.tsx:109
+msgid "Experimental draft"
+msgstr "實驗性草稿"
 
 #. Progress message during final model export.
 #: src/lib/pipeline.ts:548
@@ -1466,6 +1510,10 @@ msgstr "完成模型輸出"
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "首次使用：正在下載 {model} 模型（{percent}%）"
 
+#: src/components/geometry-drafts.tsx:141
+msgid "First-run model storage"
+msgstr "首次執行模型空間"
+
 #: src/components/processing-settings-fields.tsx:264
 #: src/components/processing-settings-fields.tsx:269
 msgid "Five calibrated perspective views"
@@ -1554,6 +1602,14 @@ msgstr "影格擷取：執行中"
 msgid "Frames and telemetry completed for source {source}"
 msgstr "來源 {source} 的影格與遙測資料已完成"
 
+#: src/components/geometry-drafts.tsx:136
+msgid "Generate / resume draft"
+msgstr "產生／續跑草稿"
+
+#: src/components/geometry-drafts.tsx:111
+msgid "Generate native-resolution normals and range for quality review. These drafts are unverified and are not enabled for training."
+msgstr "產生原始解析度的法線與距離圖，供後續品質檢查。草稿尚未通過驗證，也不會啟用於訓練。"
+
 #. Progress message during final report generation.
 #: src/lib/pipeline.ts:549
 msgid "Generating the final reconstruction quality report"
@@ -1589,6 +1645,10 @@ msgctxt "pipeline phase"
 msgid "Gravity alignment"
 msgstr "重力對齊"
 
+#: src/components/geometry-drafts.tsx:172
+msgid "Green: valid · black: outside lens · amber: source mask · grey: model/recovery invalid · magenta: perspective disagreement"
+msgstr "綠色：有效支援 · 黑色：鏡頭範圍外 · 琥珀色：來源遮罩 · 灰色：模型／深度恢復無效 · 洋紅色：透視視角不一致"
+
 #: src/components/source-media.tsx:46
 msgid "Ground correction may be unavailable"
 msgstr "地面校正可能無法使用"
@@ -1614,6 +1674,10 @@ msgstr "未回報硬體解碼狀態"
 msgid "Image feature extraction completed"
 msgstr "影像特徵擷取已完成"
 
+#: src/components/geometry-drafts.tsx:130
+msgid "Image limit (0 = all)"
+msgstr "影像數量上限（0 為全部）"
+
 #. Short label for matching images.
 #: src/lib/pipeline.ts:979
 msgctxt "pipeline phase"
@@ -1624,6 +1688,10 @@ msgstr "影像匹配"
 #: src/lib/pipeline.ts:590
 msgid "Image matching completed"
 msgstr "影像匹配已完成"
+
+#: src/components/geometry-drafts.tsx:133
+msgid "Images are selected in name order. Validity measures model support, not accuracy. Range has not been aligned to the reconstruction scale."
+msgstr "依檔名順序選取影像。有效性表示模型有可用輸出，不代表準確率；距離尚未對齊重建尺度。"
 
 #. Backend alignment progress message while importing constrained matches.
 #: src/lib/pipeline.ts:591
@@ -1655,6 +1723,10 @@ msgstr "進行中"
 #: src/App.tsx:2781
 #~ msgid "In progress and finished"
 #~ msgstr "進行中與已完成"
+
+#: src/components/geometry-drafts.tsx:173
+msgid "Inference details"
+msgstr "推論細節"
 
 #: src/lib/pipeline.ts:756
 msgid "Initial-model coverage is low; trying a more reliable starting position ({current} / {total})"
@@ -1952,6 +2024,11 @@ msgstr "缺少 aliked-n32.onnx 或 aliked-lightglue.onnx 時會自動下載到�
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "缺少必要工具會阻擋部分階段。請先處理下方標示為「需要注意」的項目。"
 
+#: src/components/geometry-drafts.tsx:122
+#: src/components/geometry-drafts.tsx:123
+msgid "Model file (optional)"
+msgstr "模型檔案（選填）"
+
 #: src/lib/pipeline.ts:806
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "模型已由 {provider} 載入；已停用 CPU 推論備援"
@@ -1961,6 +2038,14 @@ msgstr "模型已由 {provider} 載入；已停用 CPU 推論備援"
 msgctxt "pipeline phase"
 msgid "Model validation"
 msgstr "模型驗證"
+
+#: src/components/geometry-drafts.tsx:103
+msgid "Model validity"
+msgstr "模型有效性"
+
+#: src/components/geometry-drafts.tsx:131
+msgid "Model validity threshold"
+msgstr "模型有效性門檻"
 
 #. Object class that can be excluded from reconstruction masks.
 #: src/lib/pipeline.ts:287
@@ -2091,7 +2176,7 @@ msgstr "尚未記錄"
 msgid "Not reported"
 msgstr "未回報"
 
-#: src/components/task-detail.tsx:148
+#: src/components/task-detail.tsx:149
 #: src/components/task-list.tsx:223
 msgid "Not reported yet"
 msgstr "尚未回報"
@@ -2100,7 +2185,7 @@ msgstr "尚未回報"
 msgid "Not run yet"
 msgstr "尚未執行"
 
-#: src/components/task-detail.tsx:152
+#: src/components/task-detail.tsx:153
 msgid "Not specified"
 msgstr "未指定"
 
@@ -2136,6 +2221,10 @@ msgstr "僅產生鏡頭與機身遮罩，無須偵測模型。"
 #: src/components/task-editor-dialog.tsx:206
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "只會移除任務與佇列狀態；不會刪除現有輸出資料夾。"
+
+#: src/components/geometry-drafts.tsx:161
+msgid "Open draft folder"
+msgstr "開啟草稿資料夾"
 
 #. Open an existing resumable project.
 #. Open an existing resumable project.
@@ -2176,6 +2265,10 @@ msgstr "方向約束光束法平差"
 msgid "Orientation metadata is unavailable"
 msgstr "方向中繼資料無法使用"
 
+#: src/components/geometry-drafts.tsx:102
+msgid "Original RGB"
+msgstr "原始 RGB"
+
 #. DJI Osmo 360 source media files.
 #: src/components/task-list.tsx:342
 msgid "Osmo 360 source files"
@@ -2186,7 +2279,7 @@ msgstr "Osmo 360 原始檔"
 #~ msgstr "OSV / 雙魚眼影片"
 
 #. Output folder or artifact location.
-#: src/components/task-detail.tsx:152
+#: src/components/task-detail.tsx:153
 msgctxt "output metric"
 msgid "Output"
 msgstr "輸出"
@@ -2197,7 +2290,7 @@ msgctxt "output destination"
 msgid "Output folder"
 msgstr "輸出資料夾"
 
-#: src/components/task-detail.tsx:240
+#: src/components/task-detail.tsx:242
 #: src/components/task-list.tsx:158
 msgid "Output not specified"
 msgstr "未指定輸出"
@@ -2259,6 +2352,10 @@ msgctxt "mask class"
 msgid "Person"
 msgstr "人物"
 
+#: src/components/geometry-drafts.tsx:104
+msgid "Perspective {f}"
+msgstr "透視視角 {f}"
+
 #: src/components/processing-settings-fields.tsx:272
 msgid "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 msgstr "透視視角可減少偵測時的魚眼變形；排除區域會映射回原始影像。"
@@ -2294,6 +2391,10 @@ msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "準備中"
 
+#: src/components/geometry-drafts.tsx:145
+msgid "Preparing Geometry"
+msgstr "正在準備 Geometry"
+
 #: src/App.tsx:1832
 #: src/App.tsx:1975
 #~ msgid "Preparing work"
@@ -2305,6 +2406,7 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "準備工作"
 
+#: src/components/geometry-drafts.tsx:166
 #: src/components/task-list.tsx:155
 msgid "Preview"
 msgstr "預覽"
@@ -2326,7 +2428,7 @@ msgstr "已新增預覽任務：{name}"
 msgid "Preview task updated"
 msgstr "預覽任務已更新"
 
-#: src/components/task-detail.tsx:148
+#: src/components/task-detail.tsx:149
 #: src/components/task-list.tsx:223
 msgid "Processed"
 msgstr "已處理"
@@ -2341,8 +2443,8 @@ msgid "Processing pairing block {current} / {total}"
 msgstr "正在處理配對區塊 {current} / {total}"
 
 #: src/components/task-detail-panel.tsx:257
-#: src/components/task-detail.tsx:177
-#: src/components/task-detail.tsx:178
+#: src/components/task-detail.tsx:179
+#: src/components/task-detail.tsx:180
 msgid "Processing records"
 msgstr "處理記錄"
 
@@ -2355,6 +2457,10 @@ msgstr "處理設定"
 msgid "Project folder"
 msgstr "專案資料夾"
 
+#: src/components/geometry-drafts.tsx:170
+msgid "Quality acceptance: not tested"
+msgstr "品質驗收：尚未測試"
+
 #: src/App.tsx:2780
 #~ msgid "Queued"
 #~ msgstr "已排入佇列"
@@ -2364,7 +2470,7 @@ msgid "Queued task updated"
 msgstr "已更新佇列任務"
 
 #. Estimated processing throughput, not network speed.
-#: src/components/task-detail.tsx:151
+#: src/components/task-detail.tsx:152
 msgid "Rate (estimated)"
 msgstr "速率（預估）"
 
@@ -2388,6 +2494,22 @@ msgstr "重建品質"
 #: src/lib/pipeline.ts:585
 msgid "Recovering project information"
 msgstr "正在復原專案資訊"
+
+#: src/components/geometry-drafts.tsx:165
+msgid "Registered image"
+msgstr "已註冊影像"
+
+#: src/components/geometry-drafts.tsx:174
+msgid "Rejection counts (lens / mask / model / overlap)"
+msgstr "排除像素數（鏡頭外／遮罩／模型／視角重疊）"
+
+#: src/components/geometry-drafts.tsx:103
+msgid "Rejection reasons"
+msgstr "無效原因"
+
+#: src/components/geometry-drafts.tsx:102
+msgid "Relative range · false colour"
+msgstr "相對距離 · 偽彩色"
 
 #. FOV means field of view.
 #: src/lib/pipeline.ts:543
@@ -2441,6 +2563,10 @@ msgstr "繼續"
 #: src/components/task-list.tsx:344
 msgid "Resume an unfinished reconstruction task"
 msgstr "繼續未完成的重建任務"
+
+#: src/components/geometry-drafts.tsx:162
+msgid "Resume this configuration"
+msgstr "續跑此設定"
 
 #: src/lib/pipeline.ts:1854
 msgid "Retry"
@@ -2771,7 +2897,7 @@ msgid "Sources"
 msgstr "來源"
 
 #. Source media included in this reconstruction task.
-#: src/components/task-detail.tsx:158
+#: src/components/task-detail.tsx:160
 msgctxt "source section"
 msgid "Sources"
 msgstr "來源"
@@ -2859,6 +2985,10 @@ msgstr "停止 {0}"
 #: src/lib/pipeline.ts:1157
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "已停止於第 {0} / {1} 個階段 · {label}"
+
+#: src/components/geometry-drafts.tsx:150
+msgid "Stopping after current GPU call…"
+msgstr "目前 GPU 推論結束後停止…"
 
 #. placeholder {0}: localiseUserMessage(doctor.summary)
 #: src/App.tsx:1603
@@ -2962,6 +3092,10 @@ msgstr "已找到可執行檔，但尚未確認完整的對齊工作流程"
 #: src/components/source-media.tsx:62
 msgid "The file may have been moved, renamed, or deleted."
 msgstr "檔案可能已移動、重新命名或刪除。"
+
+#: src/components/geometry-drafts.tsx:159
+msgid "The final reconstruction has changed. Generate a new draft before reviewing this dataset."
+msgstr "最終重建已變更，請重新產生草稿再檢查此資料集。"
 
 #: src/lib/pipeline.ts:667
 msgid "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"
@@ -3085,7 +3219,7 @@ msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "所選 global_mapper 未提供 gravity rotation averaging 選項；global-gravity 模式無法使用"
 
-#: src/components/task-detail.tsx:187
+#: src/components/task-detail.tsx:189
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "尚無處理記錄；開始執行後，每個階段及其目前位置會顯示於此。"
 
@@ -3103,6 +3237,10 @@ msgstr "目前的來源介面卡不支援這種檔案類型。"
 msgid "This folder has no source video; masking or alignment can run directly on existing frames"
 msgstr "此資料夾沒有來源影片；可直接對現有影格執行遮罩處理或對齊"
 
+#: src/components/geometry-drafts.tsx:148
+msgid "This job belongs to another process. Stop it in that process."
+msgstr "此工作由另一個程序執行，請在該程序中停止。"
+
 #. Project metadata was reconstructed from files already on disk.
 #. Project metadata was reconstructed from files already on disk.
 #: src/lib/pipeline.ts:523
@@ -3119,7 +3257,7 @@ msgstr "不支援此來源格式"
 msgid "This task has already started"
 msgstr "此任務已經開始"
 
-#: src/components/task-detail.tsx:159
+#: src/components/task-detail.tsx:161
 msgid "This task has no recorded source files."
 msgstr "此任務沒有已記錄的原始檔。"
 
@@ -3306,6 +3444,10 @@ msgstr "通常能改善低紋理或困難場景的匹配與相機註冊率。N32
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "通常能改善大視角或旋轉變化下的匹配，但對齊會花更久時間。"
 
+#: src/components/geometry-drafts.tsx:170
+msgid "Valid support"
+msgstr "有效支援"
+
 #: src/components/alignment-settings-fields.tsx:115
 msgid "Validated priors required"
 msgstr "需要已驗證的先驗資料"
@@ -3381,7 +3523,7 @@ msgstr "等待執行"
 msgid "Warning"
 msgstr "警告"
 
-#: src/components/task-detail.tsx:164
+#: src/components/task-detail.tsx:166
 msgid "Warnings"
 msgstr "警告"
 
@@ -3405,6 +3547,10 @@ msgstr "未指定自訂檔案時，執行環境會使用偵測到的相機型號
 #: src/components/app-chrome.tsx:59
 msgid "Window controls"
 msgstr "視窗控制項"
+
+#: src/components/geometry-drafts.tsx:120
+msgid "Windows GPU · 768 × 768 per perspective · 1,800 tokens. The model runs locally. An empty model path downloads the pinned 420 MB model on first generation."
+msgstr "Windows GPU · 每個透視視角 768 × 768 · 1,800 tokens。模型在本機執行；未指定模型路徑時，首次產生會下載指定版本的 420 MB 模型。"
 
 #: src/components/task-detail-panel.tsx:257
 msgid "Work summary"

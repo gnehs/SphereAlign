@@ -65,12 +65,12 @@ msgstr ""
 #~ msgstr "- Processors:"
 
 #. placeholder {0}: selectedTaskLogs.length
-#: src/components/task-detail.tsx:177
+#: src/components/task-detail.tsx:179
 msgid "{0, plural, one {# entry} other {# entries}}"
 msgstr "{0, plural, one {# entry} other {# entries}}"
 
 #. placeholder {0}: selectedTask.inputPaths.length
-#: src/components/task-detail.tsx:158
+#: src/components/task-detail.tsx:160
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
@@ -105,6 +105,12 @@ msgstr "{0} / {1}"
 msgid "{0} items/sec"
 msgstr "{0} items/sec"
 
+#. placeholder {0}: preflight.selected
+#. placeholder {1}: preflight.registered
+#: src/components/geometry-drafts.tsx:139
+msgid "{0} of {1} registered images"
+msgstr "{0} of {1} registered images"
+
 #. placeholder {0}: STAGES.length
 #. placeholder {1}: STAGES.length
 #: src/lib/pipeline.ts:1164
@@ -118,8 +124,8 @@ msgstr "{0} overall time progress"
 
 #. placeholder {0}: stageLabel(selectedStageDefinition)
 #. placeholder {0}: stageLabel(stage)
-#: src/components/task-detail.tsx:144
 #: src/components/task-detail.tsx:145
+#: src/components/task-detail.tsx:146
 #: src/components/task-list.tsx:251
 msgid "{0} progress"
 msgstr "{0} progress"
@@ -443,6 +449,10 @@ msgctxt "mask class"
 msgid "Bicycle"
 msgstr "Bicycle"
 
+#: src/components/geometry-drafts.tsx:171
+msgid "Blue → green → red: near → far, with a separate display scale for each image. Black pixels are invalid. Colours are not comparable between images."
+msgstr "Blue → green → red: near → far, with a separate display scale for each image. Black pixels are invalid. Colours are not comparable between images."
+
 #. Short label for the initial reconstruction bootstrap.
 #: src/lib/pipeline.ts:982
 msgctxt "pipeline phase"
@@ -490,6 +500,7 @@ msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 
+#: src/components/geometry-drafts.tsx:127
 #: src/components/processing-settings-fields.tsx:278
 #: src/components/processing-settings-fields.tsx:304
 msgid "Browse"
@@ -630,11 +641,16 @@ msgctxt "pipeline phase"
 msgid "Camera-rig estimation"
 msgstr "Camera-rig estimation"
 
+#: src/components/geometry-drafts.tsx:102
+msgid "Camera-space normals"
+msgstr "Camera-space normals"
+
 #. Short project recovery status indicating that processing can continue.
 #: src/lib/pipeline.ts:586
 msgid "Can be resumed"
 msgstr "Can be resumed"
 
+#: src/components/geometry-drafts.tsx:150
 #: src/components/task-alignment-settings.tsx:65
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
@@ -643,7 +659,7 @@ msgid "Cancel"
 msgstr "Cancel"
 
 #. Cancel the currently running stage for the whole selected task.
-#: src/components/task-detail.tsx:255
+#: src/components/task-detail.tsx:257
 msgctxt "task action"
 msgid "Cancel entire task"
 msgstr "Cancel entire task"
@@ -748,6 +764,10 @@ msgstr "Check again"
 msgid "Check existing model"
 msgstr "Check existing model"
 
+#: src/components/geometry-drafts.tsx:135
+msgid "Check inputs"
+msgstr "Check inputs"
+
 #: src/lib/pipeline.ts:643
 msgid "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
 msgstr "Check the COLMAP CUDA build and whether an NVIDIA GPU is available"
@@ -844,7 +864,7 @@ msgstr "Clear custom LUT"
 #. Label for the button that closes the dialog from the footer.
 #: src/components/settings-sheet.tsx:179
 #: src/components/task-detail-panel.tsx:231
-#: src/components/task-detail.tsx:256
+#: src/components/task-detail.tsx:258
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/dialog.tsx:116
 #: src/components/ui/sheet.tsx:84
@@ -950,6 +970,10 @@ msgstr "Complete {0} first"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "Complete {prerequisite} first"
 
+#: src/components/geometry-drafts.tsx:116
+msgid "Complete alignment to use the final registered cameras and original images."
+msgstr "Complete alignment to use the final registered cameras and original images."
+
 #: src/components/task-list.tsx:312
 #: src/lib/pipeline.ts:1863
 msgid "Completed"
@@ -1052,7 +1076,7 @@ msgid "CUDA status not confirmed"
 msgstr "CUDA status not confirmed"
 
 #. placeholder {0}: selectedStage.currentItem
-#: src/components/task-detail.tsx:141
+#: src/components/task-detail.tsx:142
 msgid "Current item: {0}"
 msgstr "Current item: {0}"
 
@@ -1061,7 +1085,7 @@ msgstr "Current item: {0}"
 msgid "Current stage: {0}"
 msgstr "Current stage: {0}"
 
-#: src/components/task-detail.tsx:135
+#: src/components/task-detail.tsx:136
 msgid "Current work"
 msgstr "Current work"
 
@@ -1125,6 +1149,14 @@ msgstr "Diagnostic actions"
 msgid "Diagnostics copied; you can paste them into a bug report"
 msgstr "Diagnostics copied; you can paste them into a bug report"
 
+#: src/components/geometry-drafts.tsx:123
+msgid "Download pinned model automatically"
+msgstr "Download pinned model automatically"
+
+#: src/components/geometry-drafts.tsx:153
+msgid "Draft runs"
+msgstr "Draft runs"
+
 #: src/App.tsx:2915
 #~ msgid "Drop OSV media or an unfinished project folder"
 #~ msgstr "Drop OSV media or an unfinished project folder"
@@ -1165,7 +1197,7 @@ msgid "Dual-fisheye frames, intrinsics, and IMU"
 msgstr "Dual-fisheye frames, intrinsics, and IMU"
 
 #. placeholder {0}: formatDuration(log.durationMs)
-#: src/components/task-detail.tsx:185
+#: src/components/task-detail.tsx:187
 msgid "Duration {0}"
 msgstr "Duration {0}"
 
@@ -1189,10 +1221,14 @@ msgctxt "queued task dialog"
 msgid "Edit queued task"
 msgstr "Edit queued task"
 
-#: src/components/task-detail.tsx:149
+#: src/components/task-detail.tsx:150
 #: src/components/task-list.tsx:224
 msgid "Elapsed"
 msgstr "Elapsed"
+
+#: src/components/geometry-drafts.tsx:114
+msgid "Enable Geometry generation"
+msgstr "Enable Geometry generation"
 
 #: src/components/alignment-settings-fields.tsx:155
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
@@ -1217,7 +1253,11 @@ msgstr "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls bac
 msgid "Error"
 msgstr "Error"
 
-#: src/components/task-detail.tsx:150
+#: src/components/geometry-drafts.tsx:139
+msgid "Estimated output"
+msgstr "Estimated output"
+
+#: src/components/task-detail.tsx:151
 #: src/components/task-list.tsx:225
 msgid "Estimated remaining"
 msgstr "Estimated remaining"
@@ -1272,6 +1312,10 @@ msgstr "Existing masks were discovered"
 #: src/components/processing-settings-fields.tsx:292
 msgid "Expand exclusions (inference pixels)"
 msgstr "Expand exclusions (inference pixels)"
+
+#: src/components/geometry-drafts.tsx:109
+msgid "Experimental draft"
+msgstr "Experimental draft"
 
 #. Progress message during final model export.
 #: src/lib/pipeline.ts:548
@@ -1466,6 +1510,10 @@ msgstr "Finalizing model"
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "First use: downloading the {model} model ({percent}%)"
 
+#: src/components/geometry-drafts.tsx:141
+msgid "First-run model storage"
+msgstr "First-run model storage"
+
 #: src/components/processing-settings-fields.tsx:264
 #: src/components/processing-settings-fields.tsx:269
 msgid "Five calibrated perspective views"
@@ -1554,6 +1602,14 @@ msgstr "Frame extraction: Running"
 msgid "Frames and telemetry completed for source {source}"
 msgstr "Frames and telemetry completed for source {source}"
 
+#: src/components/geometry-drafts.tsx:136
+msgid "Generate / resume draft"
+msgstr "Generate / resume draft"
+
+#: src/components/geometry-drafts.tsx:111
+msgid "Generate native-resolution normals and range for quality review. These drafts are unverified and are not enabled for training."
+msgstr "Generate native-resolution normals and range for quality review. These drafts are unverified and are not enabled for training."
+
 #. Progress message during final report generation.
 #: src/lib/pipeline.ts:549
 msgid "Generating the final reconstruction quality report"
@@ -1589,6 +1645,10 @@ msgctxt "pipeline phase"
 msgid "Gravity alignment"
 msgstr "Gravity alignment"
 
+#: src/components/geometry-drafts.tsx:172
+msgid "Green: valid · black: outside lens · amber: source mask · grey: model/recovery invalid · magenta: perspective disagreement"
+msgstr "Green: valid · black: outside lens · amber: source mask · grey: model/recovery invalid · magenta: perspective disagreement"
+
 #: src/components/source-media.tsx:46
 msgid "Ground correction may be unavailable"
 msgstr "Ground correction may be unavailable"
@@ -1614,6 +1674,10 @@ msgstr "Hardware decoding status not reported"
 msgid "Image feature extraction completed"
 msgstr "Image feature extraction completed"
 
+#: src/components/geometry-drafts.tsx:130
+msgid "Image limit (0 = all)"
+msgstr "Image limit (0 = all)"
+
 #. Short label for matching images.
 #: src/lib/pipeline.ts:979
 msgctxt "pipeline phase"
@@ -1624,6 +1688,10 @@ msgstr "Image matching"
 #: src/lib/pipeline.ts:590
 msgid "Image matching completed"
 msgstr "Image matching completed"
+
+#: src/components/geometry-drafts.tsx:133
+msgid "Images are selected in name order. Validity measures model support, not accuracy. Range has not been aligned to the reconstruction scale."
+msgstr "Images are selected in name order. Validity measures model support, not accuracy. Range has not been aligned to the reconstruction scale."
 
 #. Backend alignment progress message while importing constrained matches.
 #: src/lib/pipeline.ts:591
@@ -1655,6 +1723,10 @@ msgstr "In progress"
 #: src/App.tsx:2781
 #~ msgid "In progress and finished"
 #~ msgstr "In progress and finished"
+
+#: src/components/geometry-drafts.tsx:173
+msgid "Inference details"
+msgstr "Inference details"
 
 #: src/lib/pipeline.ts:756
 msgid "Initial-model coverage is low; trying a more reliable starting position ({current} / {total})"
@@ -1952,6 +2024,11 @@ msgstr "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded 
 msgid "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 msgstr "Missing required tools will block some stages. Address the items marked “Needs attention” below first."
 
+#: src/components/geometry-drafts.tsx:122
+#: src/components/geometry-drafts.tsx:123
+msgid "Model file (optional)"
+msgstr "Model file (optional)"
+
 #: src/lib/pipeline.ts:806
 msgid "Model loaded with {provider}; CPU inference fallback is disabled"
 msgstr "Model loaded with {provider}; CPU inference fallback is disabled"
@@ -1961,6 +2038,14 @@ msgstr "Model loaded with {provider}; CPU inference fallback is disabled"
 msgctxt "pipeline phase"
 msgid "Model validation"
 msgstr "Model validation"
+
+#: src/components/geometry-drafts.tsx:103
+msgid "Model validity"
+msgstr "Model validity"
+
+#: src/components/geometry-drafts.tsx:131
+msgid "Model validity threshold"
+msgstr "Model validity threshold"
 
 #. Object class that can be excluded from reconstruction masks.
 #: src/lib/pipeline.ts:287
@@ -2091,7 +2176,7 @@ msgstr "Not recorded yet"
 msgid "Not reported"
 msgstr "Not reported"
 
-#: src/components/task-detail.tsx:148
+#: src/components/task-detail.tsx:149
 #: src/components/task-list.tsx:223
 msgid "Not reported yet"
 msgstr "Not reported yet"
@@ -2100,7 +2185,7 @@ msgstr "Not reported yet"
 msgid "Not run yet"
 msgstr "Not run yet"
 
-#: src/components/task-detail.tsx:152
+#: src/components/task-detail.tsx:153
 msgid "Not specified"
 msgstr "Not specified"
 
@@ -2136,6 +2221,10 @@ msgstr "Only lens and camera-body masks are generated; no detection model is nee
 #: src/components/task-editor-dialog.tsx:206
 msgid "Only the task and queue state are removed; the existing output folder is not deleted."
 msgstr "Only the task and queue state are removed; the existing output folder is not deleted."
+
+#: src/components/geometry-drafts.tsx:161
+msgid "Open draft folder"
+msgstr "Open draft folder"
 
 #. Open an existing resumable project.
 #. Open an existing resumable project.
@@ -2176,6 +2265,10 @@ msgstr "Orientation bundle adjustment"
 msgid "Orientation metadata is unavailable"
 msgstr "Orientation metadata is unavailable"
 
+#: src/components/geometry-drafts.tsx:102
+msgid "Original RGB"
+msgstr "Original RGB"
+
 #. DJI Osmo 360 source media files.
 #: src/components/task-list.tsx:342
 msgid "Osmo 360 source files"
@@ -2186,7 +2279,7 @@ msgstr "Osmo 360 source files"
 #~ msgstr "OSV / dual-fisheye video"
 
 #. Output folder or artifact location.
-#: src/components/task-detail.tsx:152
+#: src/components/task-detail.tsx:153
 msgctxt "output metric"
 msgid "Output"
 msgstr "Output"
@@ -2197,7 +2290,7 @@ msgctxt "output destination"
 msgid "Output folder"
 msgstr "Output folder"
 
-#: src/components/task-detail.tsx:240
+#: src/components/task-detail.tsx:242
 #: src/components/task-list.tsx:158
 msgid "Output not specified"
 msgstr "Output not specified"
@@ -2259,6 +2352,10 @@ msgctxt "mask class"
 msgid "Person"
 msgstr "Person"
 
+#: src/components/geometry-drafts.tsx:104
+msgid "Perspective {f}"
+msgstr "Perspective {f}"
+
 #: src/components/processing-settings-fields.tsx:272
 msgid "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 msgstr "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
@@ -2294,6 +2391,10 @@ msgctxt "pipeline phase"
 msgid "Preparing"
 msgstr "Preparing"
 
+#: src/components/geometry-drafts.tsx:145
+msgid "Preparing Geometry"
+msgstr "Preparing Geometry"
+
 #: src/App.tsx:1832
 #: src/App.tsx:1975
 #~ msgid "Preparing work"
@@ -2305,6 +2406,7 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "Preparing work"
 
+#: src/components/geometry-drafts.tsx:166
 #: src/components/task-list.tsx:155
 msgid "Preview"
 msgstr "Preview"
@@ -2326,7 +2428,7 @@ msgstr "Preview task added: {name}"
 msgid "Preview task updated"
 msgstr "Preview task updated"
 
-#: src/components/task-detail.tsx:148
+#: src/components/task-detail.tsx:149
 #: src/components/task-list.tsx:223
 msgid "Processed"
 msgstr "Processed"
@@ -2341,8 +2443,8 @@ msgid "Processing pairing block {current} / {total}"
 msgstr "Processing pairing block {current} / {total}"
 
 #: src/components/task-detail-panel.tsx:257
-#: src/components/task-detail.tsx:177
-#: src/components/task-detail.tsx:178
+#: src/components/task-detail.tsx:179
+#: src/components/task-detail.tsx:180
 msgid "Processing records"
 msgstr "Processing records"
 
@@ -2355,6 +2457,10 @@ msgstr "Processing settings"
 msgid "Project folder"
 msgstr "Project folder"
 
+#: src/components/geometry-drafts.tsx:170
+msgid "Quality acceptance: not tested"
+msgstr "Quality acceptance: not tested"
+
 #: src/App.tsx:2780
 #~ msgid "Queued"
 #~ msgstr "Queued"
@@ -2364,7 +2470,7 @@ msgid "Queued task updated"
 msgstr "Queued task updated"
 
 #. Estimated processing throughput, not network speed.
-#: src/components/task-detail.tsx:151
+#: src/components/task-detail.tsx:152
 msgid "Rate (estimated)"
 msgstr "Rate (estimated)"
 
@@ -2388,6 +2494,22 @@ msgstr "Reconstruction quality"
 #: src/lib/pipeline.ts:585
 msgid "Recovering project information"
 msgstr "Recovering project information"
+
+#: src/components/geometry-drafts.tsx:165
+msgid "Registered image"
+msgstr "Registered image"
+
+#: src/components/geometry-drafts.tsx:174
+msgid "Rejection counts (lens / mask / model / overlap)"
+msgstr "Rejection counts (lens / mask / model / overlap)"
+
+#: src/components/geometry-drafts.tsx:103
+msgid "Rejection reasons"
+msgstr "Rejection reasons"
+
+#: src/components/geometry-drafts.tsx:102
+msgid "Relative range · false colour"
+msgstr "Relative range · false colour"
 
 #. FOV means field of view.
 #: src/lib/pipeline.ts:543
@@ -2441,6 +2563,10 @@ msgstr "Resume"
 #: src/components/task-list.tsx:344
 msgid "Resume an unfinished reconstruction task"
 msgstr "Resume an unfinished reconstruction task"
+
+#: src/components/geometry-drafts.tsx:162
+msgid "Resume this configuration"
+msgstr "Resume this configuration"
 
 #: src/lib/pipeline.ts:1854
 msgid "Retry"
@@ -2771,7 +2897,7 @@ msgid "Sources"
 msgstr "Sources"
 
 #. Source media included in this reconstruction task.
-#: src/components/task-detail.tsx:158
+#: src/components/task-detail.tsx:160
 msgctxt "source section"
 msgid "Sources"
 msgstr "Sources"
@@ -2859,6 +2985,10 @@ msgstr "Stop {0}"
 #: src/lib/pipeline.ts:1157
 msgid "Stopped at stage {0} of {1} · {label}"
 msgstr "Stopped at stage {0} of {1} · {label}"
+
+#: src/components/geometry-drafts.tsx:150
+msgid "Stopping after current GPU call…"
+msgstr "Stopping after current GPU call…"
 
 #. placeholder {0}: localiseUserMessage(doctor.summary)
 #: src/App.tsx:1603
@@ -2962,6 +3092,10 @@ msgstr "The executable was found, but the complete alignment workflow was not co
 #: src/components/source-media.tsx:62
 msgid "The file may have been moved, renamed, or deleted."
 msgstr "The file may have been moved, renamed, or deleted."
+
+#: src/components/geometry-drafts.tsx:159
+msgid "The final reconstruction has changed. Generate a new draft before reviewing this dataset."
+msgstr "The final reconstruction has changed. Generate a new draft before reviewing this dataset."
 
 #: src/lib/pipeline.ts:667
 msgid "The legacy diagnostic did not report the COLMAP build; FFmpeg CUDA/VideoToolbox does not imply COLMAP CUDA"
@@ -3085,7 +3219,7 @@ msgctxt "backend diagnostic warning"
 msgid "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 msgstr "The selected global_mapper does not provide the gravity rotation averaging option; global-gravity mode is unavailable"
 
-#: src/components/task-detail.tsx:187
+#: src/components/task-detail.tsx:189
 msgid "There are no processing records yet; each stage and its current position will appear here after execution starts."
 msgstr "There are no processing records yet; each stage and its current position will appear here after execution starts."
 
@@ -3103,6 +3237,10 @@ msgstr "This file type is not supported by the current source adapters."
 msgid "This folder has no source video; masking or alignment can run directly on existing frames"
 msgstr "This folder has no source video; masking or alignment can run directly on existing frames"
 
+#: src/components/geometry-drafts.tsx:148
+msgid "This job belongs to another process. Stop it in that process."
+msgstr "This job belongs to another process. Stop it in that process."
+
 #. Project metadata was reconstructed from files already on disk.
 #. Project metadata was reconstructed from files already on disk.
 #: src/lib/pipeline.ts:523
@@ -3119,7 +3257,7 @@ msgstr "This source format is not supported"
 msgid "This task has already started"
 msgstr "This task has already started"
 
-#: src/components/task-detail.tsx:159
+#: src/components/task-detail.tsx:161
 msgid "This task has no recorded source files."
 msgstr "This task has no recorded source files."
 
@@ -3306,6 +3444,10 @@ msgstr "Usually improves matching and camera registration in low-texture or diff
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 
+#: src/components/geometry-drafts.tsx:170
+msgid "Valid support"
+msgstr "Valid support"
+
 #: src/components/alignment-settings-fields.tsx:115
 msgid "Validated priors required"
 msgstr "Validated priors required"
@@ -3381,7 +3523,7 @@ msgstr "Waiting to run"
 msgid "Warning"
 msgstr "Warning"
 
-#: src/components/task-detail.tsx:164
+#: src/components/task-detail.tsx:166
 msgid "Warnings"
 msgstr "Warnings"
 
@@ -3405,6 +3547,10 @@ msgstr "When no custom file is specified, the runtime uses the detected model's 
 #: src/components/app-chrome.tsx:59
 msgid "Window controls"
 msgstr "Window controls"
+
+#: src/components/geometry-drafts.tsx:120
+msgid "Windows GPU · 768 × 768 per perspective · 1,800 tokens. The model runs locally. An empty model path downloads the pinned 420 MB model on first generation."
+msgstr "Windows GPU · 768 × 768 per perspective · 1,800 tokens. The model runs locally. An empty model path downloads the pinned 420 MB model on first generation."
 
 #: src/components/task-detail-panel.tsx:257
 msgid "Work summary"

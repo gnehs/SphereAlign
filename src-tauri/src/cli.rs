@@ -71,6 +71,7 @@ pub fn run(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
     match command {
         "abc" => run_abc(app, parse_abc(&args[1..])?),
         "rerun-align" => run_rerun_align(app, parse_rerun_align(&args[1..])?),
+        "geometry" => crate::geometry::cli::run(args[1..].to_vec()),
         "help" | "--help" | "-h" => {
             println!("{}", usage());
             Ok(())

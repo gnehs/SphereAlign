@@ -1,0 +1,71 @@
+{
+  "modelId": "moge2-vitb-normal-static768-t1800-experiment-v1",
+  "modelRevision": "2d247a122ada42ce700fe59273cd62e076da1f32",
+  "modelSha256": "0b33aa5249fdea9338b94276adbd700476cfde2aa0e5af24a8f26f1e39876ecf",
+  "provider": "DirectML",
+  "cpuFallback": false,
+  "status": "feasible_not_certified",
+  "error": null,
+  "elapsedMs": 15128,
+  "inputs": [
+    "image: Tensor { ty: Float32, shape: [1, 3, 768, 768], dimension_symbols: SymbolicDimensions([\"\", \"\", \"\", \"\"]) }"
+  ],
+  "outputs": [
+    "points: Tensor { ty: Float32, shape: [1, 768, 768, 3], dimension_symbols: SymbolicDimensions([\"\", \"\", \"\", \"\"]) }",
+    "normal: Tensor { ty: Float32, shape: [1, 768, 768, 3], dimension_symbols: SymbolicDimensions([\"\", \"\", \"\", \"\"]) }",
+    "mask: Tensor { ty: Float32, shape: [1, 768, 768], dimension_symbols: SymbolicDimensions([\"\", \"\", \"\"]) }",
+    "metric_scale: Tensor { ty: Float32, shape: [1], dimension_symbols: SymbolicDimensions([\"\"]) }"
+  ],
+  "runs": [
+    {
+      "width": 768,
+      "height": 768,
+      "tokens": 1800,
+      "elapsedMs": 5563,
+      "outputs": {
+        "points": {
+          "shape": [
+            1,
+            768,
+            768,
+            3
+          ],
+          "min": -0.6479684710502625,
+          "max": 1.640557885169983
+        },
+        "normal": {
+          "shape": [
+            1,
+            768,
+            768,
+            3
+          ],
+          "min": -1.0,
+          "max": 0.7273766994476318
+        },
+        "mask": {
+          "shape": [
+            1,
+            768,
+            768
+          ],
+          "min": 0.9896813035011292,
+          "max": 0.999940037727356
+        },
+        "metric_scale": {
+          "shape": [
+            1
+          ],
+          "min": 0.8188104629516602,
+          "max": 0.8188104629516602
+        }
+      }
+    }
+  ],
+  "runtime": "ORT Build Info: git-branch=rel-1.28.0, git-commit-id=da9b5e3, fp8-kv-cache=1, build type=Release",
+  "shapeOverride": [
+    768,
+    768,
+    1800
+  ]
+}

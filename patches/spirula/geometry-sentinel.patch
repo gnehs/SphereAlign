@@ -1,0 +1,64 @@
+--- a/src/data/DataManager.cpp
++++ b/src/data/DataManager.cpp
+@@ -214,7 +214,7 @@
+ // All resizers use half-pixel-center sampling, matching the device-side
+ // bilinear sampler in Interpolation.cuh.
+ 
+-template<typename T, int C>
++template<typename T, int C, bool Geometry = false>
+ inline void cpu_bilinear_resize(const T* src, int sh, int sw,
+                                 T* dst, int dh, int dw)
+ {
+@@ -241,6 +241,22 @@
+             const T* p01 = src + ((size_t)y1c * sw + x0c) * C;
+             const T* p11 = src + ((size_t)y1c * sw + x1c) * C;
+             T*       q   = dst + ((size_t)y   * dw + x  ) * C;
++            if constexpr (Geometry) {
++                auto valid = [](const T* p) {
++                    if constexpr (C == 1) return p[0] != 0;
++                    else {
++                        float x = float(p[0]) * (2.0f / 255.0f) - 1.0f;
++                        float y = float(p[1]) * (2.0f / 255.0f) - 1.0f;
++                        float z = float(p[2]) * (2.0f / 255.0f) - 1.0f;
++                        return x+y+z > -2.366f && x*x+y*y+z*z > 0.25f;
++                    }
++                };
++                if ((w00 > 0 && !valid(p00)) || (w10 > 0 && !valid(p10)) ||
++                    (w01 > 0 && !valid(p01)) || (w11 > 0 && !valid(p11))) {
++                    for (int c = 0; c < C; ++c) q[c] = 0;
++                    continue;
++                }
++            }
+             for (int c = 0; c < C; ++c) {
+                 float r = w00 * (float)p00[c] + w10 * (float)p10[c]
+                         + w01 * (float)p01[c] + w11 * (float)p11[c];
+@@ -571,7 +587,7 @@
+     if (w == dst_w && h == dst_h) {
+         std::memcpy(dst, img, (size_t)w * h * sizeof(stbi_us));
+     } else {
+-        cpu_bilinear_resize<stbi_us, 1>(img, h, w, (stbi_us*)dst, dst_h, dst_w);
++        cpu_bilinear_resize<stbi_us, 1, true>(img, h, w, (stbi_us*)dst, dst_h, dst_w);
+     }
+     stbi_image_free(img);
+ }
+@@ -586,7 +602,7 @@
+     if (w == dst_w && h == dst_h) {
+         std::memcpy(dst, img, (size_t)w * h * 3);
+     } else {
+-        cpu_bilinear_resize<stbi_uc, 3>(img, h, w, dst, dst_h, dst_w);
++        cpu_bilinear_resize<stbi_uc, 3, true>(img, h, w, dst, dst_h, dst_w);
+     }
+     stbi_image_free(img);
+ }
+--- a/src/core/Interpolation.cuh
++++ b/src/core/Interpolation.cuh
+@@ -56,6 +56,9 @@
+     bool v00, bool v10, bool v01, bool v11,
+     float& w00, float& w10, float& w01, float& w11
+ ) {
++    // Strict prior support: do not extend a valid neighbour into a rejected tap.
++    if ((!v00 && w00 > 0) || (!v10 && w10 > 0) ||
++        (!v01 && w01 > 0) || (!v11 && w11 > 0)) return false;
+     if (!v00) w00 = 0.0f;
+     if (!v10) w10 = 0.0f;
+     if (!v01) w01 = 0.0f;

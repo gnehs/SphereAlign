@@ -305,6 +305,16 @@ impl RegistrationSummary {
 #[derive(Clone, Default)]
 pub struct JobManager {
     jobs: Arc<Mutex<HashMap<String, JobControl>>>,
+    geometry: Arc<Mutex<Option<GeometryJob>>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeometryJob {
+    pub project_path: String,
+    pub job_id: String,
+    pub running: bool,
+    pub error: Option<String>,
 }
 
 struct JobCompletionGuard {
@@ -319,6 +329,32 @@ impl Drop for JobCompletionGuard {
 }
 
 impl JobManager {
+    pub fn geometry_job(&self) -> Option<GeometryJob> {
+        self.geometry.lock().ok().and_then(|v| v.clone())
+    }
+
+    pub fn start_geometry(&self, project_path: String, settings: crate::geometry::draft::Settings) -> Result<String, String> {
+        let _mutation_guard = project::lock_project_mutation()?;
+        let manifest = project::load(&project_path)?;
+        let root = PathBuf::from(&manifest.output_path);
+        crate::geometry::draft::preflight(&root, &settings)?;
+        let id = job_id();
+        let control = JobControl { cancelled: Arc::new(AtomicBool::new(false)), mask_cancel: CancelToken::new() };
+        let mut geometry = self.geometry.lock().map_err(|_| "Geometry state unavailable")?;
+        self.insert(id.clone(), control.clone())?;
+        *geometry = Some(GeometryJob { project_path, job_id: id.clone(), running: true, error: None });
+        drop(geometry);
+        let manager = self.clone();
+        let response = id.clone();
+        thread::spawn(move || {
+            let _guard = JobCompletionGuard { manager: manager.clone(), id: id.clone() };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::geometry::draft::run(&root, settings, &control.mask_cancel, Some(id.clone()), |_| {})))
+                .unwrap_or_else(|_| Err("Geometry worker stopped unexpectedly; completed frames can be resumed".into()));
+            if let Ok(mut job) = manager.geometry.lock() { if let Some(job) = job.as_mut() { job.running = false; job.error = result.err(); } }
+        });
+        Ok(response)
+    }
+
     pub fn is_running(&self) -> bool {
         self.jobs.lock().is_ok_and(|jobs| !jobs.is_empty())
     }

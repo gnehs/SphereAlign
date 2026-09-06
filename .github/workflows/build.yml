@@ -71,6 +71,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Geometry CPU contract tests (no model download or GPU)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib geometry::
+
       - name: Build and upload bundles
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:

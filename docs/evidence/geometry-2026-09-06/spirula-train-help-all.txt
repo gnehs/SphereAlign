@@ -1,0 +1,431 @@
+usage: C:\Users\gnehs\Downloads\spirula.exe train [<preset>] --data <dataset_dir> [--flag value ...]
+
+presets (given as the first argument; default: 3dgs):
+  3dgs               Generic method that works well for most datasets.
+  360-camera         Preset for training on original distorted images captured by 360 cameras. Recommended if your dataset contains very wide fisheye images with a circle visible.
+  in-the-wild        Preset for datasets consisting of internet images, with extreme lighting variation, with un-masked outliers, and/or shot with long focal lengths.
+  linear-color       Preset for training splats in linear color spaces (e.g. ACEScg).
+  synthetic          Preset for training splats on synthetic datasets rendered with constant exposure.
+  meshing            Preset for training splats for meshing, aimed at the quality of the mesh geometry rather than at how the splats themselves look.
+
+app flags:
+  --device <index|name substring>
+      Compute device to train on (default: auto). The device list prints at startup.
+
+flags ('-' and '_' interchangeable; bools take 0/1; 'none' clears optional values; defaults shown for the selected preset):
+
+  [Run & Output]
+  --data                                   [none]
+      Folder holding the dataset to train on.
+  --resume                                 [none]
+      Continue a previous run instead of starting from scratch.
+  --output-dir-prefix                      [outputs]
+      Folder that each run's output directory is created inside.
+  --output-dir-name                        [none]
+      Name of this run's folder inside the output prefix.
+  --num-iterations                         [30000]
+      How long to train, in steps.
+  --steps-per-save                         [2000]
+      How often a checkpoint is written, in steps.
+  --save-only-latest-checkpoint            [1]
+      Keep only the newest checkpoint and delete older ones as training goes.
+  --save-full-checkpoint                   [0]
+      Also store everything needed to resume training later, not just the finished splats.
+  --save-eval-images                       [0]
+      Write rendered and reference images for the held-out views when training finishes.
+  --viewer-port                            [7007]
+      Network port the built-in web viewer listens on.
+  --disable-viewer                         [0]
+      Do not start the web viewer.
+  --keep-viewer-alive                      [1]
+      Keep the program running after training finishes so the result stays open in the viewer.
+
+  [Dataset]
+  --data-format                            [none] {colmap|nerfstudio|metashape|none}
+      Which dataset layout to read.
+  --image-dir                              [images]
+      Subfolder holding the training images, for COLMAP and Metashape datasets.
+  --mask-dir                               [masks]
+      Subfolder holding the image masks, for COLMAP and Metashape datasets.
+  --load-masks                             [1]
+      Use the dataset's masks when they exist.
+  --apply-loss-for-mask                    [0]
+      Whether masked-out pixels are ignored or trained as empty space.
+  --flip-mask                              [0]
+      Swap what a mask keeps for what it hides.
+  --mask-boundary-offset                   [0]
+      Grow or shrink masks by this fraction of the image size.
+  --depth-dir                              [depths]
+      Subfolder holding depth maps, for COLMAP and Metashape datasets.
+  --normal-dir                             [normals]
+      Subfolder holding normal maps, for COLMAP and Metashape datasets.
+  --load-depths                            [1]
+      Use the dataset's depth maps when they exist.
+  --load-normals                           [1]
+      Use the dataset's normal maps when they exist.
+  --depth-unit-scale-factor                [0.001]
+      Multiplier that turns the stored depth values into scene units.
+  --colmap-recon-dir                       [none]
+      Which COLMAP reconstruction to read, relative to the dataset folder, such as sparse/0.
+  --metashape-xml                          [none]
+      Metashape camera export to read.
+  --metashape-ply                          [none]
+      Metashape point cloud export used to seed the splats.
+  --metashape-psx                          [none]
+      Metashape project file, used to resolve ambiguity when several images in the project share a file name.
+  --train-resolution-divisor               [0]
+      Train on smaller images than the ones on disk: 2 halves each side, 4 quarters it.
+  --downscale-rounding-mode                [floor] {floor|ceil|round}
+      How each side is rounded when the size is divided by train_resolution_divisor: `floor` never rounds a side ...
+  --eval-mode                              [all] {fraction|filename|interval|all}
+      How images are split between training and held-out evaluation.
+  --eval-interval                          [8]
+      Hold out every Nth image when eval_mode is `interval`.
+  --train-split-fraction                   [0.9]
+      Share of the images used for training when eval_mode is `fraction`; the rest are held out.
+  --validation-fraction                    [0]
+      Share of the training images set aside to watch for overfitting.
+  --warp-to-pinhole                        [0]
+      Split each fisheye image into five ordinary perspective views before training.
+  --warp-spherical-to-pinhole              [1]
+      Split each 360 panorama into six cube faces before training.
+  --warp-face-fit                          [uniform] {uniform|per-face}
+      Whether the pinhole faces a wide lens is split into all share one size.
+  --warp-back-face                         [0]
+      Whether a lens seen past 135 degrees also gets a sixth pinhole face pointing backwards.
+  --deblur-training-images                 [0]
+      Sharpen blurry photos with a learned deblurring model before training.
+
+  [Scene Placement]
+  --orientation-method                     [up] {pca|up|vertical|none|gsplat}
+      How the scene is rotated to stand upright.
+  --center-method                          [poses] {poses|focus|none|gsplat}
+      How the scene's origin is chosen.
+  --auto-scale-poses                       [1]
+      Normalize the scene so the cameras fit in a unit-sized box.
+  --outlier-threshold                      [inf]
+      Discard cameras that sit far outside the rest of the capture.
+  --relative-scale                         [none]
+      Multiply the whole scene by this factor before training.
+  --train-frame                            [points] {normalized|camera|points}
+      Coordinate frame the splats are trained in.
+
+  [Splat Model]
+  --primitive                              [3dgs] {3dgs|mip|3dgut}
+      Shape used for each splat.
+  --sh-degree                              [3]
+      How much the color of a splat may change with viewing angle.
+  --sh-degree-warmup-every                 [1000]
+      How many steps between each step up in view-dependent color detail.
+  --background-mode                        [black] {black|noise|sh}
+      What fills pixels no splat covers.
+  --background-sh-degree                   [4]
+      How detailed the learned skybox may be.
+  --background-noise-warmup                [2000]
+      How many steps the background noise takes to reach full strength.
+  --background-noise-pre-warmup            [0.25]
+      How strong the background noise is at the very start, from 0 to 1.
+  --scale-init                             [none]
+      How big each splat starts out.
+  --opacity-init                           [none]
+      How solid each splat starts out.
+  --suppress-initial-scales                [0]
+      Start splats small where the point cloud is sparse.
+  --use-camera-optimizer                   [0]
+      Let training nudge the camera poses to absorb small pose errors.
+
+  [Detail & Splat Count]
+  --quality                                [medium] {low|medium|high|ultra}
+      Overall detail level, setting the splat budget and how long training runs.
+  --cap-max                                [1000000]
+      Largest number of splats the scene may grow to.
+  --distraction-robustness                 [off] {off|mild|strong}
+      Ignore people, cars and anything else that moves between photos.
+  --min-init-fraction                      [0]
+      Smallest starting splat count, as a share of cap_max.
+  --growth-factor                          [1.05]
+      How fast the splat count grows at each round, as a multiplier.
+  --min-opacity                            [0.005]
+      Splats fainter than this get recycled into places that need them.
+  --refine-every                           [100]
+      How many steps between rounds of adding and relocating splats.
+  --refine-start-iter                      [500]
+      Step at which splats first start being added.
+  --refine-stop-num-iter                   [5000]
+      Stop adding splats this many steps before the end.
+  --refine-stop-iter                       [25000]
+      Earliest step at which splat growth may stop.
+  --noise-lr                               [80]
+      How much random jitter is applied to splat positions early in training.
+  --noise-lr-final                         [0.8]
+      How much position jitter is left at the end of training.
+  --use-revised-densification              [1]
+      Use the improved rule for deciding where new splats go.
+  --densify-score-mode                     [mean] {mean|max|median|geom}
+      How a splat's need-more-detail score builds up over time.
+  --densify-score-blend-world-grad         [0]
+      Balance between adding splats where the image looks wrong and where splats are physically large.
+  --densify-loss-map-mode                  [ssim_cs] {none|loss_full|ssim_full|ssim_cs|ssim_structure|edge_aware|robust_edge_aware|loss_full_nms|ssim_full_nms|ssim_cs_nms|ssim_structure_nms}
+      What kind of error decides where new splats are added.
+  --densify-robust-edge-aware-quantile     [0.9]
+      How much of the worst-matching image area is ignored when placing splats in `robust_edge_aware` mode.
+  --densify-nms-falloff                    [0.5]
+      Only used by the `_nms` error measures.
+  --densify-loss-map-normalize             [0]
+      Divide each photo's detail error by its own middle value before it decides where splats are added, so a dar...
+  --densify-loss-map-clip-quantile         [1]
+      Cap each photo's detail error at this share of its own pixels, so a handful of extreme pixels cannot pull e...
+  --densify-loss-map-power                 [4]
+      Raise every pixel's detail error to this power before splats are scored by it.
+  --densify-accum-mode                     [avg] {max|sum|avg}
+      How the error under one splat is turned into its score.
+  --densify-score-power                    [0.4]
+      Raise each splat's score for one step to this power before it is averaged over the steps between refinement...
+  --densify-score-clip-quantile            [1]
+      Cap the finished per-splat score at this share of the splats, so a few runaway splats cannot soak up every ...
+  --densify-final-score-power              [1]
+      Raise the finished per-splat score to this power just before the draw that picks which splats to split.
+  --densify-oversize-split-fraction        [0.15]
+      The share of each round's new splats spent on splats over the on-screen size limit rather than on the error...
+  --densify-oversize-score-blend           [0.5]
+      How much the error score still counts when picking which oversized splats to split.
+  --use-long-axis-split                    [1]
+      Split stretched splats along their long axis when adding detail, rather than splitting them evenly.
+  --long-axis-split-opacity-k              [0.5 0.6 15000]
+      How much opacity each half keeps when a splat is split.
+  --max-screen-size                        [0.3]
+      Shrink splats that cover more than this share of the screen instead of letting them stay huge.
+  --max-screen-size-clip-hardness          [1.5]
+      How firmly the screen-size limit is enforced, from 1 upward.
+  --max-screen-size-penalty                [1]
+      How hard the optimizer pushes a splat back under the on-screen size limit, per doubling past it.
+  --max-world-size                         [inf]
+      Shrink splats bigger than this in world units.
+
+  [Image Loss]
+  --ssim-lambda                            [0.2]
+      How much the loss cares about local structure instead of exact pixel color.
+  --l1-weight                              [1]
+      Weight of plain per-pixel color error.
+  --l2-weight                              [0]
+      Weight of squared per-pixel color error.
+  --l1-weight-y                            [0]
+      Extra weight on brightness error alone, ignoring hue.
+  --l2-weight-y                            [0]
+      Extra weight on squared brightness error.
+  --l2-weight-u                            [0]
+      Extra weight on the blue-versus-yellow color error.
+  --l2-weight-v                            [0]
+      Extra weight on the red-versus-cyan color error.
+  --loss-scale-min-pixels                  [1920]
+      Pick the number of loss scales automatically from image size.
+  --num-loss-scales                        [0]
+      How many progressively smaller copies of each image the loss also compares.
+  --alpha-loss-weight                      [0.1]
+      How firmly to clear splats out of areas the mask says should be empty.
+  --alpha-loss-weight-under                [0]
+      How firmly to fill in areas the mask says should be solid but the render leaves empty.
+
+  [Geometry & Surfaces]
+  --floater-suppression                    [off] {off|mild|strong}
+      Clean up floating blobs and see-through surfaces.
+  --depth-distortion-reg                   [0]
+      Encourage each pixel's depth to come from one surface and discourage floaters.
+  --normal-distortion-reg                  [0]
+      The same idea as depth distortion, applied to surface direction.
+  --rgb-distortion-reg                     [0]
+      Encourage each pixel's color to come from one surface rather than blended layers.
+  --distortion-reg-warmup                  [6000]
+      How many steps the distortion penalties take to reach full strength.
+  --normal-reg-weight                      [0.04]
+      Encourage splats to lie flat along the surfaces they represent.
+  --normal-reg-warmup                      [6000]
+      How many steps the surface-alignment penalty takes to reach full strength.
+  --alpha-reg-weight                       [0]
+      Push each pixel's coverage toward fully solid or fully empty instead of half transparent.
+  --alpha-reg-warmup                       [12000]
+      How many steps the coverage penalty takes to reach full strength.
+  --reg-warmup-length                      [0]
+      Hold the depth, normal and coverage penalties off for this many steps.
+  --depth-supervision-weight               [0]
+      How strongly AI-predicted depth guides the geometry.
+  --normal-supervision-weight              [0.01]
+      How strongly AI-predicted surface direction guides the geometry.
+  --input-depth-is-ray-depth               [none]
+      Whether the supplied depth maps measure distance along the camera ray instead of distance straight ahead.
+  --supervision-warmup                     [0]
+      Step at which AI-predicted depth and normals start guiding training.
+  --mean-median-depth-weight               [0]
+      Encourage a pixel's average depth and its most-solid depth to agree, which pulls splats onto a single surfa...
+  --median-depth-normal-reg-weight         [0]
+      Encourage surface direction to agree between the average depth and the most-solid depth.
+  --median-normal-supervision-weight       [0]
+      Match the surface direction at the most-solid depth to AI-predicted normals.
+  --median-render-normal-reg-weight        [0]
+      Match the surface direction at the most-solid depth to the rendered normals.
+  --median-warmup                          [6000]
+      How many steps the four most-solid-depth penalties take to reach full strength.
+
+  [Splat Shape]
+  --opacity-reg                            [0.01]
+      Gently push splat opacity down so weak splats get recycled where they are needed more.
+  --scale-reg                              [0.01]
+      Gently push splat size down.
+  --opacity-decay                          [0]
+      Fade every splat's opacity slightly each step, freeing weak ones for reuse.
+  --scale-decay                            [0]
+      Shrink every splat slightly each step.
+  --erank-reg                              [0.001]
+      Discourage needle-like splats in favor of rounder ones.
+  --erank-reg-s3                           [0]
+      Encourage splats to collapse into flat sheets, so they line up with surfaces better.
+  --scale-regularization-weight            [0]
+      Penalize splats that are far longer in one direction than another, which suppresses long spiky artifacts.
+  --max-gauss-ratio                        [10]
+      How stretched a splat may get before the spiky-splat penalty applies.
+  --dc-reg                                 [0.001]
+      Hold each splat's own base color -- the part that stays the same from every angle -- inside the 0 to 1 rang...
+  --sh-reg                                 [0.001]
+      Hold view-dependent color in check so it does not absorb shifts the per-photo correction should handle.
+  --overexposure-reg                       [0]
+      Penalize splat colors that fall outside the displayable range.
+  --quat-norm-reg                          [0.01]
+      Keep splat rotations well formed.
+
+  [Camera & Color Correction]
+  --use-bilateral-grid                     [1]
+      Give each photo its own smooth color correction, absorbing exposure and white balance drift between shots.
+  --bilagrid-type                          [ppisp] {affine|ppisp|loglinear}
+      What the per-photo color correction is allowed to do.
+  --bilagrid-shape                         [16 16 8]
+      How finely the per-photo color correction may vary, as width, height and brightness steps.
+  --bilagrid-tv-loss-weight                [10]
+      How smooth the per-photo color correction has to be.
+  --color-shift-reg-weight                 [0]
+      Keep the per-photo corrections from tinting the result overall.
+  --color-shift-reg-ema-period             [750]
+      How many steps the color-shift check averages over.
+  --use-bilateral-grid-for-geometry        [1]
+      Apply the same per-photo correction to depth and normal maps.
+  --bilagrid-shape-geometry                [8 8 4]
+      How finely the depth and normal correction may vary.
+  --bilagrid-tv-loss-weight-geometry       [10]
+      How smooth the depth and normal correction has to be.
+  --use-adagrad-bilagrid-optim             [1]
+      Use a steadier update rule for the per-photo color correction.
+  --use-ppisp                              [1]
+      Model per-pixel camera effects such as vignetting, exposure and lens color response.
+  --ppisp-param-type                       [no_crf] {original|rqs|no_crf}
+      Which camera effects get modeled.
+  --ppisp-exposure-from-exif               [0]
+      Seed each photo's exposure correction from the shutter, aperture and ISO its EXIF records, relative to the ...
+  --apply-ppisp-before-bilagrid            [1]
+      Run the camera-effect model before the per-photo color correction rather than after.
+  --use-adagrad-ppisp-optim                [1]
+      Use a steadier update rule for the camera-effect model.
+  --ppisp-reg-exposure-mean                [1]
+      Keep estimated exposures centered around neutral.
+  --ppisp-reg-color-mean                   [1]
+      Keep the per-photo color corrections centered, so no overall tint gets baked into the splats.
+  --ppisp-reg-vig-center                   [0.02]
+      Keep estimated vignetting centered near the middle of the image rather than drifting toward a corner.
+  --ppisp-reg-vig-non-pos                  [0.01]
+      Keep vignetting darkening the corners rather than brightening them, which is what real lenses do.
+  --ppisp-reg-vig-channel-var              [0.1]
+      Keep vignetting similar across red, green and blue, so image corners do not pick up a color cast.
+  --ppisp-reg-crf-channel-var              [0.1]
+      Keep the tone curve similar across red, green and blue, so brightness changes do not shift hue.
+  --bilagrid-adagrad-lr                    [0.04]
+      How fast the per-photo color correction adapts when use_adagrad_bilagrid_optim is on.
+  --bilagrid-adagrad-depth-lr              [0.04]
+      How fast the per-photo depth correction adapts when use_adagrad_bilagrid_optim is on.
+  --bilagrid-adagrad-normal-lr             [0.01]
+      How fast the per-photo normal correction adapts when use_adagrad_bilagrid_optim is on.
+  --ppisp-adagrad-lr                       [0.1]
+      How fast the camera-effect model adapts when use_adagrad_ppisp_optim is on.
+  --bilagrid-lr                            [0.002]
+      How fast the per-photo color correction adapts.
+  --bilagrid-lr-final                      [0.0001]
+      How fast the per-photo color correction adapts by the end of training.
+  --bilagrid-lr-warmup                     [1000]
+      How many steps the per-photo color correction takes to reach full adaptation speed.
+  --bilagrid-depth-lr                      [0.002]
+      How fast the per-photo depth correction adapts.
+  --bilagrid-depth-lr-final                [0.0001]
+      How fast the per-photo depth correction adapts by the end of training.
+  --bilagrid-depth-lr-warmup               [2000]
+      How many steps the per-photo depth correction takes to reach full adaptation speed.
+  --bilagrid-normal-lr                     [0.0005]
+      How fast the per-photo normal correction adapts.
+  --bilagrid-normal-lr-final               [4e-05]
+      How fast the per-photo normal correction adapts by the end of training.
+  --bilagrid-normal-lr-warmup              [2000]
+      How many steps the per-photo normal correction takes to reach full adaptation speed.
+  --ppisp-lr                               [0.002]
+      How fast the camera-effect model adapts.
+  --ppisp-lr-final                         [2e-05]
+      How fast the camera-effect model adapts by the end of training.
+  --ppisp-lr-warmup                        [500]
+      How many steps the camera-effect model takes to reach full adaptation speed.
+
+  [Color Space]
+  --image-color-is-linear                  [none]
+      Treat the input images as linear light rather than ordinary display-encoded photos.
+  --image-color-gamut                      [none] {Rec.709|ACES2065-1|ACEScg|Rec.2020|AdobeRGB|DCI-P3|none}
+      Color space the input images were captured in.
+  --splat-color-is-linear                  [none]
+      Train splat colors in linear light.
+  --splat-color-gamut                      [none] {Rec.709|ACES2065-1|ACEScg|Rec.2020|AdobeRGB|DCI-P3|none}
+      Color space the trained splats are stored in.
+  --convert-initial-point-cloud-color      [none]
+      Read the seed point cloud's colors as ordinary sRGB and convert them into the training color space.
+
+  [Speed & Memory]
+  --cache-images                           [disk] {cpu|gpu|disk}
+      Where decoded training images are kept between steps.
+  --max-batch-per-epoch                    [800]
+      Target number of steps per pass over the dataset, which decides how many images each step uses.
+  --split-batch                            [1]
+      Process a step's images one at a time inside the training step.
+  --use-fused-proj-bwd-optim               [1]
+      Merge the backward pass and the parameter update into one operation.
+  --packed                                 [1]
+      Store projection results compactly.
+  --quantization-level                     [1]
+      How compactly splat colors are stored during training.
+  --bin-tile-size                          [0]
+      Edge in pixels of the tiles splats are sorted into, a power of two from 8 to 128.
+  --preallocate-splat-tensors              [1]
+      Reserve memory for the maximum splat count up front.
+  --optimizer-offload                      [none] {sh|all|none}
+      Move optimizer state to system memory to free up GPU memory.
+  --use-bvh                                [0]
+      Use a spatial index for splat-tile intersection, which can help when batching many small patches.
+
+  [Learning Rates]
+  --means-lr                               [0.000128]
+      How fast splats move through space.
+  --means-lr-final                         [1.6e-06]
+      How fast splats move by the end of training.
+  --scales-lr                              [0.02]
+      How fast splats change size.
+  --scales-lr-final                        [0.005]
+      How fast splats change size by the end of training.
+  --quats-lr                               [0.0015]
+      How fast splats rotate, which sets how quickly they align themselves to surfaces.
+  --opacities-lr                           [0.025]
+      How fast splat transparency changes.
+  --features-dc-lr                         [0.005]
+      How fast the base color of a splat changes.
+  --features-sh-lr                         [0.00025]
+      How fast view-dependent color changes.
+  --background-dc-lr                       [0.0025]
+      How fast the skybox base color changes.
+  --background-sh-lr                       [0.0005]
+      How fast skybox detail changes.
+  --max-steps                              [none]
+      Length of the learning-rate schedule, in steps.
+  --use-scale-agnostic-mean                [1]
+      Make how fast splats move independent of how large the scene is, so one setting works across datasets.
+  --use-per-splat-bias-correction          [1]
+      Give newly created splats a fresh start in the optimizer.

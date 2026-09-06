@@ -1,0 +1,13 @@
+{
+  "modelId": "moge2-vitb-normal",
+  "modelRevision": "2d247a122ada42ce700fe59273cd62e076da1f32",
+  "modelSha256": "bbf14e07a30f11e69d36ab861590123f5598ababcbc8946a063eb4a966f35a21",
+  "provider": "DirectML",
+  "cpuFallback": false,
+  "status": "failed",
+  "error": "This session contains graph nodes that are assigned to the default CPU EP, but fallback to CPU EP has been explicitly disabled by the user.",
+  "elapsedMs": 7858,
+  "inputs": [],
+  "outputs": [],
+  "runs": []
+}

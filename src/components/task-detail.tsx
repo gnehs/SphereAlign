@@ -35,6 +35,7 @@ import {
 } from "@/lib/pipeline";
 import { TaskDetailPanel, type TaskDetailTab } from "@/components/task-detail-panel";
 import { ReconstructionQuality } from "@/components/reconstruction-quality";
+import { GeometryDrafts } from "@/components/geometry-drafts";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 
@@ -154,6 +155,7 @@ function TaskSummary({
       </section>}
 
       <ReconstructionQuality key={selectedTask.rootPath} task={selectedTask} />
+      <GeometryDrafts key={`geometry-${selectedTask.rootPath}`} task={selectedTask} />
       <section className="border-b py-5">
         <DetailSectionHeading title={<Trans context="source section" comment="Source media included in this reconstruction task.">Sources</Trans>} meta={<Plural value={selectedTask.inputPaths.length} one="# file" other="# files" />} />
         {selectedTaskSources.length > 0 ? <div className="overflow-hidden border-t">{selectedTaskSources.map((source) => <SourceListItem key={source.id} source={source} title={source.detail} detail={source.path} previewSide="left" />)}</div> : <p className="text-sm text-muted-foreground"><Trans>This task has no recorded source files.</Trans></p>}

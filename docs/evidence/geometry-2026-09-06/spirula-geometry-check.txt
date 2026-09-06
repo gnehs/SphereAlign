@@ -1,0 +1,20 @@
+  ok   pinhole + opencv               faces 1  normal 0.0133 deg  z 4.68e-04  ray 4.68e-04  realign 0.000
+  ok   fisheye + prism, one face      faces 1  normal 0.0133 deg  z 1.28e-03  ray 1.28e-03  realign 0.000
+  ok   fisheye + prism, split         faces 9  normal 0.0136 deg  z 1.25e-05  ray 1.25e-05  realign 0.000
+  ok   equisolid, split               faces 14  normal 0.0136 deg  z 2.24e-03  ray 2.24e-03  realign 0.000
+  ok   equirectangular, cube map      faces 6  normal 0.0133 deg  z 1.38e-04  ray 1.38e-04  realign 0.000
+
+  --split auto / --input-depth-is-ray-depth threshold at 0.75
+  ok   pinhole + opencv               coverage 1.0000  (by definition)   undistort
+  ok   fisheye + prism, one face      coverage 0.4784  (counted 0.4785)  split
+  ok   fisheye + prism, split         coverage 0.4784  (counted 0.4785)  split
+  ok   equisolid, split               coverage 0.2974  (counted 0.2974)  split
+  ok   equirectangular, cube map      coverage 0.0000  (by definition)   split
+
+  trainer split (camhost::plan_split_faces)
+  ok   fisheye + prism, one face      faces 5 of 548x548  pixels 100% of uncropped  uncovered 0 / 65536
+  ok   fisheye + prism, split         faces 5 of 548x548  pixels 100% of uncropped  uncovered 0 / 65536
+  ok   equisolid, split               faces 6 of 628x628  pixels 120% of uncropped  uncovered 0 / 62332
+  ok   equirectangular, cube map      faces 6 of 296x296  pixels 100% of uncropped  uncovered 0 / 65536
+
+camera round trip is exact

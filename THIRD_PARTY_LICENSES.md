@@ -50,4 +50,10 @@ Open-source license identifiers below are SPDX identifiers. The Ultralytics Ente
 
 ## Model and dependency changes
 
+### Geometry feasibility tools (2026-09-06)
+
+- **MoGe candidate:** [Ruicheng/moge-2-vitb-normal-onnx](https://huggingface.co/Ruicheng/moge-2-vitb-normal-onnx/tree/2d247a122ada42ce700fe59273cd62e076da1f32), downloaded only by an explicit developer command. No model weights are committed or automatically downloaded by the app. The [original model card](https://huggingface.co/Ruicheng/moge-2-vitb-normal/blob/ca5f0e07ff01d3e5a364c1d954ed12ee1814b368/README.md) declares MIT, while the pinned ONNX repository contains no separate model card/license. Artifact-specific provenance/notice remains a release check; see [model contract](docs/GEOMETRY_MODEL_CONTRACT.md).
+- **Spirula reference/patch:** Exact sampler functions are downloaded and compiled by a developer reproduction tool. The source is covered by [Spirula's pinned GNU GPL v3 LICENSE](https://github.com/harry7557558/spirula-studio/blob/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/LICENSE). The separate proposed patch retains upstream context and has [its own scope/notice](patches/spirula/README.md). It is not linked into SphereAlign and is not installed into another repository.
+- **Analytic and RGB-pattern fixtures:** Generated in this repository; they contain no third-party photos or user capture data. ONNX-generated small raw-head reference outputs are test evidence, not redistributed model weights or approved training priors.
+
 Replacing a model, or adding another third-party model, library, program, or asset, does not change the license of SphereAlign-developed source code. Update this document with the applicable third-party source and license information whenever such a component is replaced or added. SphereAlign remains licensed under `AGPL-3.0-only` unless its copyright holders explicitly change that license.

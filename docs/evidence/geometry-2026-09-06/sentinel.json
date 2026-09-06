@@ -1,0 +1,24 @@
+{
+  "stockCpuDepth": [
+    0,
+    250,
+    750,
+    1000
+  ],
+  "strictCpuDepth": [
+    0,
+    0,
+    0,
+    1000
+  ],
+  "stockGpuSupportExpanded": true,
+  "strictTestsPassed": true,
+  "rgbUnchanged": true,
+  "testScope": "exact_pinned_host_sampler_functions_not_trainer_gradients",
+  "spirulaCommit": "bddda193ee09f03ea1b0aad44b5c6b96f81e249a",
+  "sourceHashes": {
+    "src/data/DataManager.cpp": "9cede3dd716693c9bfd96d63e6a5f37485164177c21f748c4685486b5bbd7006",
+    "src/core/Interpolation.cuh": "5b7796ae21116c1dbd0f5a7ca715e5f1ec5a19589cefe2a6410d0a37b589b334"
+  },
+  "patchSha256": "656c7b1f634bd73f183e54434f13f6ff6040649038e809bbafd8d5632947930f"
+}

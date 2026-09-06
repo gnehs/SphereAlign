@@ -1,0 +1,8 @@
+Devices:
+  * [0] NVIDIA GeForce RTX 4070 Ti (discrete, 11994 MB)
+Cameras: 8 (8 after splitting), seed points: 416 (train_frame_scale=0.3)
+Output directory: D:\Repos\gs360studio\.work\geometry-spike\train-smoke\normals-depth
+step      1/3 ( 33%)  splats 416  [elapsed 0:03 | ETA 0:06]  rgb_loss=0.2  ssim=0  psnr=0
+step      3/3 (100%)  splats 416  [elapsed 0:04 | ETA 0:00]  rgb_loss=0.4814  ssim=0.2344  psnr=6.902
+Checkpoint saved to: D:\Repos\gs360studio\.work\geometry-spike\train-smoke\normals-depth
+Training complete. Steps: 3   Time: 0:04

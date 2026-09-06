@@ -1,0 +1,77 @@
+{
+  "scope": "single_probe_process_not_full_geometry_stage",
+  "argv": [
+    "src-tauri/target/debug/spherealign-geometry-probe.exe",
+    ".work/geometry-spike/rust-static-768.onnx",
+    "DirectML",
+    "--static-experiment"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 14.329803300002823,
+  "peakProcessWorkingSetBytes": 2613882880,
+  "maxSampledProcessPrivateBytes": 3760082944,
+  "processMemorySamples": 131,
+  "gpuSamples": [
+    {
+      "seconds": 0.0063596999971196055,
+      "deviceWideMiB": "9560, 12282"
+    },
+    {
+      "seconds": 1.0765537999977823,
+      "deviceWideMiB": "9548, 12282"
+    },
+    {
+      "seconds": 2.157309300004272,
+      "deviceWideMiB": "9477, 12282"
+    },
+    {
+      "seconds": 3.242823700013105,
+      "deviceWideMiB": "9531, 12282"
+    },
+    {
+      "seconds": 4.318628700013505,
+      "deviceWideMiB": "9545, 12282"
+    },
+    {
+      "seconds": 5.406845199991949,
+      "deviceWideMiB": "9540, 12282"
+    },
+    {
+      "seconds": 6.488944800017634,
+      "deviceWideMiB": "9445, 12282"
+    },
+    {
+      "seconds": 7.572738199989544,
+      "deviceWideMiB": "9669, 12282"
+    },
+    {
+      "seconds": 8.647641199990176,
+      "deviceWideMiB": "9630, 12282"
+    },
+    {
+      "seconds": 9.735150099993916,
+      "deviceWideMiB": "10801, 12282"
+    },
+    {
+      "seconds": 10.80653900001198,
+      "deviceWideMiB": "10787, 12282"
+    },
+    {
+      "seconds": 11.893708000017796,
+      "deviceWideMiB": "10775, 12282"
+    },
+    {
+      "seconds": 12.974416300014127,
+      "deviceWideMiB": "10752, 12282"
+    },
+    {
+      "seconds": 14.067594099993585,
+      "deviceWideMiB": "9642, 12282"
+    }
+  ],
+  "errors": [],
+  "limitations": [
+    "Device GPU memory includes unrelated jobs; not per-process peak VRAM.",
+    "Sampling can miss short peaks; this is not a full dataset stage."
+  ]
+}

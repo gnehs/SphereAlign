@@ -1,0 +1,31 @@
+Spirula Studio 2026.9.2 (4361a41)
+
+  spirula                        open the application
+  spirula <file-or-folder>       open it in the application
+  spirula <command> [options]
+
+Commands:
+  gui      the graphical application (the default)
+  sfm      structure from motion: photos or frames -> cameras
+  train    train a splat model on a dataset
+  sam      segmentation, tracking and frame extraction
+  geometry estimate depth and surface normals for a dataset
+  mesh     extract a mesh from a trained model
+
+`spirula <command> --help` describes one of them.
+
+Every command also takes --lang <code>, which sets the interface language (or SS_LANG in the environment):
+
+    en        English
+    ja        Japanese
+    zh-Hans   Chinese (Simplified)
+    zh-Hant   Chinese (Traditional)
+    ko        Korean
+    de        German
+    fr        French
+    es        Spanish
+    pt        Portuguese
+    it        Italian
+    nl        Dutch
+    ru        Russian
+    tr        Turkish

@@ -1,0 +1,59 @@
+{
+  "purpose": "explicit_cpu_reference_not_gpu_parity",
+  "modelSha256": "bbf14e07a30f11e69d36ab861590123f5598ababcbc8946a063eb4a966f35a21",
+  "ortVersion": "1.23.2",
+  "provider": "CPUExecutionProvider",
+  "width": 32,
+  "height": 32,
+  "tokens": 4,
+  "inferenceSeconds": 0.019972900016000494,
+  "inputSha256": "7db15322743b219dececa3127e7a36675f40cfd281c88a088343b93c36462de4",
+  "outputs": {
+    "points": {
+      "shape": [
+        1,
+        32,
+        32,
+        3
+      ],
+      "min": -0.8527188897132874,
+      "max": 2.8028404712677,
+      "mean": 0.8685697913169861,
+      "sha256": "7e77a0f578c80ecc9f7a9d0da8f5235a8e387a4c9297aadd127ac1f53a785dea"
+    },
+    "normal": {
+      "shape": [
+        1,
+        32,
+        32,
+        3
+      ],
+      "min": -0.9999714493751526,
+      "max": 0.255391001701355,
+      "mean": -0.40565618872642517,
+      "sha256": "2e91922fd0410314d97087d12d02034bf669297e27a03329e20f786d2afd3c96"
+    },
+    "mask": {
+      "shape": [
+        1,
+        32,
+        32
+      ],
+      "min": 0.999786376953125,
+      "max": 0.9999820590019226,
+      "mean": 0.9999455213546753,
+      "sha256": "7d4e194476a9611e271d7e6854ebff77b87395c13816f4ad2a5b47638dc3c8cd"
+    },
+    "metric_scale": {
+      "shape": [
+        1
+      ],
+      "min": 1.162535309791565,
+      "max": 1.162535309791565,
+      "mean": 1.162535309791565,
+      "sha256": "c839a0f3c0c249436b64e884990c09584584326fddaa30a13bfabd8bf5188db2"
+    }
+  },
+  "normalLengthMaxError": 1.1920928955078125e-07,
+  "validityAboveHalfFraction": 1.0
+}

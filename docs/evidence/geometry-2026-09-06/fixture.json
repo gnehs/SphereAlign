@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "kind": "analytic_fixture_not_AI_inference",
+  "camera": "OPENCV_FISHEYE",
+  "frames": [
+    {
+      "imageId": 101,
+      "name": "lens0/frame000.png",
+      "centerWorld": [
+        -0.27,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        1,
+        1,
+        1
+      ],
+      "priorCase": "slanted_hole",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 105,
+      "name": "lens1/frame000.png",
+      "centerWorld": [
+        -0.21000000000000002,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        -1,
+        1,
+        -1
+      ],
+      "priorCase": "slanted_hole",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 114,
+      "name": "lens0/frame001.png",
+      "centerWorld": [
+        -0.09,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        1,
+        1,
+        1
+      ],
+      "priorCase": "all_invalid",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 118,
+      "name": "lens1/frame001.png",
+      "centerWorld": [
+        -0.03,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        -1,
+        1,
+        -1
+      ],
+      "priorCase": "all_invalid",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 127,
+      "name": "lens0/frame002.png",
+      "centerWorld": [
+        0.09,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        1,
+        1,
+        1
+      ],
+      "priorCase": "missing",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 131,
+      "name": "lens1/frame002.png",
+      "centerWorld": [
+        0.15,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        -1,
+        1,
+        -1
+      ],
+      "priorCase": "missing",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 140,
+      "name": "lens0/frame003.png",
+      "centerWorld": [
+        0.27,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        1,
+        1,
+        1
+      ],
+      "priorCase": "slanted_hole",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    },
+    {
+      "imageId": 144,
+      "name": "lens1/frame003.png",
+      "centerWorld": [
+        0.33,
+        0,
+        0
+      ],
+      "cameraFromWorldDiagonal": [
+        -1,
+        1,
+        -1
+      ],
+      "priorCase": "slanted_hole",
+      "rangeScale": 16,
+      "quantizationStep": 0.00024414435034714275,
+      "normalConvention": "OpenCV source camera, oriented toward interior/camera"
+    }
+  ],
+  "depthRepresentation": "positive_ray_range",
+  "unit": "synthetic_scene_unit_not_metres",
+  "sourceSize": [
+    64,
+    64
+  ],
+  "trackLimitation": "one observation per point; importer fixture, intentionally insufficient for anchor certification",
+  "hashes": {
+    "depths/lens0/frame000.png": "10f670798ac1551ec969a4c6b94aa117e17bd2e93b13bb1da54484394679683e",
+    "depths/lens0/frame001.png": "9ae65f9f78ff2138a66c988a87afea9bd99047dc546843e35ce39a6b73183ee6",
+    "depths/lens0/frame003.png": "dcad5fe4006e05d8160abbb42dc0edac4f2dc031262d64e092235ddf9285cc6a",
+    "depths/lens1/frame000.png": "3ebb3131df661fdda633aa17f6badf17483b988cde08019396c9e4f3b3a72705",
+    "depths/lens1/frame001.png": "9ae65f9f78ff2138a66c988a87afea9bd99047dc546843e35ce39a6b73183ee6",
+    "depths/lens1/frame003.png": "5df9d5cf0f3fd9dc49d9b61d10939e7e6ab9df58f959fbbef699623c02659aaf",
+    "images/lens0/frame000.png": "ac43a07f96d0759ba6c74ef527f89990784132addda0fc0be455c691524cb58e",
+    "images/lens0/frame001.png": "da890ce3a8980ba5b52acd831089eea901b485535161a246908a89465c135462",
+    "images/lens0/frame002.png": "5a93cec56c1636b4e4d031cdeebe6072bdfa050313892cf6b760bef677bd1f7e",
+    "images/lens0/frame003.png": "ded5c82a38a7d82a41d8af81a3e3f07325696714313549729e4a61dda3a9a3da",
+    "images/lens1/frame000.png": "921432bcacf2164e0b1b3c8ae2ca7df4d27325e236f3524ec3b080cfffcdf38e",
+    "images/lens1/frame001.png": "537f94e0a7f98aed1af54e80875446bc90e65b0fc134bb679aa51bd8c90969dc",
+    "images/lens1/frame002.png": "c2f854351b346d5ab398b74f3e980b79c26c66de4e5f994902ba2266d3c4af8f",
+    "images/lens1/frame003.png": "2b3cb5f9d6ace756494b874d1e3355c510cc94c8056a415ffc6fd773992f8ed4",
+    "masks/lens0/frame000.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens0/frame001.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens0/frame002.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens0/frame003.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens1/frame000.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens1/frame001.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens1/frame002.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "masks/lens1/frame003.png": "cb4573a038904d1f3c3d3992e7feeb6d5058e4a5cd223dd36dd57f0c0fc8035a",
+    "normals/lens0/frame000.png": "2933caed0d1f4677274f506b13d975b0e8fbea24c876d9d2ffb94e0b2afa6e17",
+    "normals/lens0/frame001.png": "9c3fa26ef2eec6bae60e386221fd6121632cc8e224a339365bb7da9030a6945d",
+    "normals/lens0/frame003.png": "32684a33642b2f92ca6d8f61549048a57a28e7215492b8babe8171ad64737694",
+    "normals/lens1/frame000.png": "45a1c28669788fedc821328254b23248aa814263b15acbcd0fabf7d2ee11e613",
+    "normals/lens1/frame001.png": "9c3fa26ef2eec6bae60e386221fd6121632cc8e224a339365bb7da9030a6945d",
+    "normals/lens1/frame003.png": "3f9ea25dc11d6ae8e8c15377f3fb90f0c948025b1e1dbdfd7c8756c5e98b947d",
+    "sparse/0/cameras.txt": "48626ef57d080a52fcb4c6041438ee07d0148ff82d2de1ee15e7bd3643075daf",
+    "sparse/0/images.txt": "48e3b6b3244813990c73cf3c826351915d350ab747f0b7aade04367da825956a",
+    "sparse/0/points3D.txt": "7e6fac199ffba93579538a60ca5d7b71f87731b899423018e80fed2fd4e20661"
+  }
+}

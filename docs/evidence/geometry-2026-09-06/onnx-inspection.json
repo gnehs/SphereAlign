@@ -1,0 +1,3546 @@
+{
+  "sha256": "bbf14e07a30f11e69d36ab861590123f5598ababcbc8946a063eb4a966f35a21",
+  "bytes": 419411850,
+  "irVersion": 7,
+  "producer": [
+    "pytorch",
+    "2.7.0"
+  ],
+  "opsets": [
+    {
+      "domain": "",
+      "version": 14
+    }
+  ],
+  "inputs": [
+    {
+      "name": "image",
+      "dtype": "FLOAT",
+      "shape": [
+        "batch_size",
+        3,
+        "height",
+        "width"
+      ]
+    },
+    {
+      "name": "num_tokens",
+      "dtype": "INT64",
+      "shape": []
+    }
+  ],
+  "outputs": [
+    {
+      "name": "points",
+      "dtype": "FLOAT",
+      "shape": [
+        "Concatpoints_dim_0",
+        "Concatpoints_dim_1",
+        "Concatpoints_dim_2",
+        "Concatpoints_dim_3"
+      ]
+    },
+    {
+      "name": "normal",
+      "dtype": "FLOAT",
+      "shape": [
+        "Divnormal_dim_0",
+        "Divnormal_dim_1",
+        "Divnormal_dim_2",
+        "Divnormal_dim_3"
+      ]
+    },
+    {
+      "name": "mask",
+      "dtype": "FLOAT",
+      "shape": [
+        "Sigmoidmask_dim_0",
+        "Sigmoidmask_dim_1",
+        "Sigmoidmask_dim_2"
+      ]
+    },
+    {
+      "name": "metric_scale",
+      "dtype": "FLOAT",
+      "shape": [
+        "Expmetric_scale_dim_0"
+      ]
+    }
+  ],
+  "externalTensors": [],
+  "normalization": {
+    "encoder.image_mean": [
+      [
+        [
+          [
+            0.48500001430511475
+          ]
+        ],
+        [
+          [
+            0.4560000002384186
+          ]
+        ],
+        [
+          [
+            0.4059999883174896
+          ]
+        ]
+      ]
+    ],
+    "encoder.image_std": [
+      [
+        [
+          [
+            0.2290000021457672
+          ]
+        ],
+        [
+          [
+            0.2240000069141388
+          ]
+        ],
+        [
+          [
+            0.22499999403953552
+          ]
+        ]
+      ]
+    ]
+  },
+  "operators": {
+    "Constant": 855,
+    "Shape": 84,
+    "Gather": 46,
+    "Cast": 174,
+    "Div": 99,
+    "Pow": 30,
+    "Mul": 147,
+    "Round": 2,
+    "Unsqueeze": 111,
+    "Concat": 113,
+    "Slice": 66,
+    "Resize": 9,
+    "Sub": 57,
+    "Conv": 66,
+    "Reshape": 140,
+    "Transpose": 88,
+    "ConstantOfShape": 47,
+    "Equal": 8,
+    "Where": 7,
+    "Expand": 18,
+    "Add": 178,
+    "ReduceMean": 52,
+    "Sqrt": 62,
+    "MatMul": 72,
+    "Split": 13,
+    "Squeeze": 37,
+    "Softmax": 12,
+    "Erf": 12,
+    "Mod": 2,
+    "ReduceSum": 1,
+    "Reciprocal": 1,
+    "Neg": 2,
+    "Range": 10,
+    "ConvTranspose": 12,
+    "Pad": 40,
+    "Relu": 26,
+    "Gemm": 3,
+    "Exp": 2,
+    "ReduceL2": 1,
+    "Clip": 1,
+    "If": 1,
+    "Sigmoid": 1
+  },
+  "firstNodes": [
+    {
+      "name": "/Constant",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_output_0"
+      ]
+    },
+    {
+      "name": "/Shape",
+      "op": "Shape",
+      "in": [
+        "image"
+      ],
+      "out": [
+        "/Shape_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_1",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_1_output_0"
+      ]
+    },
+    {
+      "name": "/Gather",
+      "op": "Gather",
+      "in": [
+        "/Shape_output_0",
+        "/Constant_1_output_0"
+      ],
+      "out": [
+        "/Gather_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_1",
+      "op": "Shape",
+      "in": [
+        "image"
+      ],
+      "out": [
+        "/Shape_1_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_2",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_2_output_0"
+      ]
+    },
+    {
+      "name": "/Gather_1",
+      "op": "Gather",
+      "in": [
+        "/Shape_1_output_0",
+        "/Constant_2_output_0"
+      ],
+      "out": [
+        "/Gather_1_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_2",
+      "op": "Shape",
+      "in": [
+        "image"
+      ],
+      "out": [
+        "/Shape_2_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_3",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_3_output_0"
+      ]
+    },
+    {
+      "name": "/Gather_2",
+      "op": "Gather",
+      "in": [
+        "/Shape_2_output_0",
+        "/Constant_3_output_0"
+      ],
+      "out": [
+        "/Gather_2_output_0"
+      ]
+    },
+    {
+      "name": "/Cast",
+      "op": "Cast",
+      "in": [
+        "/Gather_2_output_0"
+      ],
+      "out": [
+        "/Cast_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_1",
+      "op": "Cast",
+      "in": [
+        "/Gather_1_output_0"
+      ],
+      "out": [
+        "/Cast_1_output_0"
+      ]
+    },
+    {
+      "name": "/Div",
+      "op": "Div",
+      "in": [
+        "/Cast_output_0",
+        "/Cast_1_output_0"
+      ],
+      "out": [
+        "/Div_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_2",
+      "op": "Cast",
+      "in": [
+        "num_tokens"
+      ],
+      "out": [
+        "/Cast_2_output_0"
+      ]
+    },
+    {
+      "name": "/Div_1",
+      "op": "Div",
+      "in": [
+        "/Cast_2_output_0",
+        "/Div_output_0"
+      ],
+      "out": [
+        "/Div_1_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_4",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_4_output_0"
+      ]
+    },
+    {
+      "name": "/Pow",
+      "op": "Pow",
+      "in": [
+        "/Div_1_output_0",
+        "/Constant_4_output_0"
+      ],
+      "out": [
+        "/Pow_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_3",
+      "op": "Cast",
+      "in": [
+        "num_tokens"
+      ],
+      "out": [
+        "/Cast_3_output_0"
+      ]
+    },
+    {
+      "name": "/Mul",
+      "op": "Mul",
+      "in": [
+        "/Cast_3_output_0",
+        "/Div_output_0"
+      ],
+      "out": [
+        "/Mul_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_5",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_5_output_0"
+      ]
+    },
+    {
+      "name": "/Pow_1",
+      "op": "Pow",
+      "in": [
+        "/Mul_output_0",
+        "/Constant_5_output_0"
+      ],
+      "out": [
+        "/Pow_1_output_0"
+      ]
+    },
+    {
+      "name": "/Round",
+      "op": "Round",
+      "in": [
+        "/Pow_output_0"
+      ],
+      "out": [
+        "/Round_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_4",
+      "op": "Cast",
+      "in": [
+        "/Round_output_0"
+      ],
+      "out": [
+        "/Cast_4_output_0"
+      ]
+    },
+    {
+      "name": "/Round_1",
+      "op": "Round",
+      "in": [
+        "/Pow_1_output_0"
+      ],
+      "out": [
+        "/Round_1_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_5",
+      "op": "Cast",
+      "in": [
+        "/Round_1_output_0"
+      ],
+      "out": [
+        "/Cast_5_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Constant",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/encoder/Constant_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Mul",
+      "op": "Mul",
+      "in": [
+        "/Cast_4_output_0",
+        "/encoder/Constant_output_0"
+      ],
+      "out": [
+        "/encoder/Mul_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Constant_1",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/encoder/Constant_1_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Mul_1",
+      "op": "Mul",
+      "in": [
+        "/Cast_5_output_0",
+        "/encoder/Constant_1_output_0"
+      ],
+      "out": [
+        "/encoder/Mul_1_output_0"
+      ]
+    },
+    {
+      "name": "Constant_884",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "onnx::Unsqueeze_369"
+      ]
+    },
+    {
+      "name": "/encoder/Unsqueeze",
+      "op": "Unsqueeze",
+      "in": [
+        "/encoder/Mul_output_0",
+        "onnx::Unsqueeze_369"
+      ],
+      "out": [
+        "/encoder/Unsqueeze_output_0"
+      ]
+    },
+    {
+      "name": "Constant_886",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "onnx::Unsqueeze_371"
+      ]
+    },
+    {
+      "name": "/encoder/Unsqueeze_1",
+      "op": "Unsqueeze",
+      "in": [
+        "/encoder/Mul_1_output_0",
+        "onnx::Unsqueeze_371"
+      ],
+      "out": [
+        "/encoder/Unsqueeze_1_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Concat",
+      "op": "Concat",
+      "in": [
+        "/encoder/Unsqueeze_output_0",
+        "/encoder/Unsqueeze_1_output_0"
+      ],
+      "out": [
+        "/encoder/Concat_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Shape",
+      "op": "Shape",
+      "in": [
+        "image"
+      ],
+      "out": [
+        "/encoder/Shape_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Constant_2",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/encoder/Constant_2_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Constant_3",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/encoder/Constant_3_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Constant_4",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/encoder/Constant_4_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Slice",
+      "op": "Slice",
+      "in": [
+        "/encoder/Shape_output_0",
+        "/encoder/Constant_3_output_0",
+        "/encoder/Constant_4_output_0",
+        "/encoder/Constant_2_output_0"
+      ],
+      "out": [
+        "/encoder/Slice_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Cast",
+      "op": "Cast",
+      "in": [
+        "/encoder/Concat_output_0"
+      ],
+      "out": [
+        "/encoder/Cast_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Concat_1",
+      "op": "Concat",
+      "in": [
+        "/encoder/Slice_output_0",
+        "/encoder/Cast_output_0"
+      ],
+      "out": [
+        "/encoder/Concat_1_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Resize",
+      "op": "Resize",
+      "in": [
+        "image",
+        "",
+        "",
+        "/encoder/Concat_1_output_0"
+      ],
+      "out": [
+        "/encoder/Resize_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Sub",
+      "op": "Sub",
+      "in": [
+        "/encoder/Resize_output_0",
+        "encoder.image_mean"
+      ],
+      "out": [
+        "/encoder/Sub_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Div",
+      "op": "Div",
+      "in": [
+        "/encoder/Sub_output_0",
+        "encoder.image_std"
+      ],
+      "out": [
+        "/encoder/Div_output_0"
+      ]
+    },
+    {
+      "name": "/encoder/Shape_1",
+      "op": "Shape",
+      "in": [
+        "/encoder/Div_output_0"
+      ],
+      "out": [
+        "/encoder/Shape_1_output_0"
+      ]
+    }
+  ],
+  "lastNodes": [
+    {
+      "name": "/Constant_123",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_123_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_124",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_124_output_0"
+      ]
+    },
+    {
+      "name": "/Slice",
+      "op": "Slice",
+      "in": [
+        "/Shape_18_output_0",
+        "/Constant_123_output_0",
+        "/Constant_124_output_0",
+        "/Constant_122_output_0"
+      ],
+      "out": [
+        "/Slice_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_76",
+      "op": "Cast",
+      "in": [
+        "/Concat_26_output_0"
+      ],
+      "out": [
+        "/Cast_76_output_0"
+      ]
+    },
+    {
+      "name": "/Concat_29",
+      "op": "Concat",
+      "in": [
+        "/Slice_output_0",
+        "/Cast_76_output_0"
+      ],
+      "out": [
+        "/Concat_29_output_0"
+      ]
+    },
+    {
+      "name": "/Resize",
+      "op": "Resize",
+      "in": [
+        "/points_head/output_blocks.4/Conv_output_0",
+        "",
+        "",
+        "/Concat_29_output_0"
+      ],
+      "out": [
+        "/Resize_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_19",
+      "op": "Shape",
+      "in": [
+        "/normal_head/output_blocks.4/Conv_output_0"
+      ],
+      "out": [
+        "/Shape_19_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_125",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_125_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_126",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_126_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_127",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_127_output_0"
+      ]
+    },
+    {
+      "name": "/Slice_1",
+      "op": "Slice",
+      "in": [
+        "/Shape_19_output_0",
+        "/Constant_126_output_0",
+        "/Constant_127_output_0",
+        "/Constant_125_output_0"
+      ],
+      "out": [
+        "/Slice_1_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_77",
+      "op": "Cast",
+      "in": [
+        "/Concat_27_output_0"
+      ],
+      "out": [
+        "/Cast_77_output_0"
+      ]
+    },
+    {
+      "name": "/Concat_30",
+      "op": "Concat",
+      "in": [
+        "/Slice_1_output_0",
+        "/Cast_77_output_0"
+      ],
+      "out": [
+        "/Concat_30_output_0"
+      ]
+    },
+    {
+      "name": "/Resize_1",
+      "op": "Resize",
+      "in": [
+        "/normal_head/output_blocks.4/Conv_output_0",
+        "",
+        "",
+        "/Concat_30_output_0"
+      ],
+      "out": [
+        "/Resize_1_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_20",
+      "op": "Shape",
+      "in": [
+        "/mask_head/output_blocks.4/Conv_output_0"
+      ],
+      "out": [
+        "/Shape_20_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_128",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_128_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_129",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_129_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_130",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_130_output_0"
+      ]
+    },
+    {
+      "name": "/Slice_2",
+      "op": "Slice",
+      "in": [
+        "/Shape_20_output_0",
+        "/Constant_129_output_0",
+        "/Constant_130_output_0",
+        "/Constant_128_output_0"
+      ],
+      "out": [
+        "/Slice_2_output_0"
+      ]
+    },
+    {
+      "name": "/Cast_78",
+      "op": "Cast",
+      "in": [
+        "/Concat_28_output_0"
+      ],
+      "out": [
+        "/Cast_78_output_0"
+      ]
+    },
+    {
+      "name": "/Concat_31",
+      "op": "Concat",
+      "in": [
+        "/Slice_2_output_0",
+        "/Cast_78_output_0"
+      ],
+      "out": [
+        "/Concat_31_output_0"
+      ]
+    },
+    {
+      "name": "/Resize_2",
+      "op": "Resize",
+      "in": [
+        "/mask_head/output_blocks.4/Conv_output_0",
+        "",
+        "",
+        "/Concat_31_output_0"
+      ],
+      "out": [
+        "/Resize_2_output_0"
+      ]
+    },
+    {
+      "name": "/Transpose_5",
+      "op": "Transpose",
+      "in": [
+        "/Resize_output_0"
+      ],
+      "out": [
+        "/Transpose_5_output_0"
+      ]
+    },
+    {
+      "name": "Constant_3541",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "onnx::Split_3437"
+      ]
+    },
+    {
+      "name": "/Split",
+      "op": "Split",
+      "in": [
+        "/Transpose_5_output_0",
+        "onnx::Split_3437"
+      ],
+      "out": [
+        "/Split_output_0",
+        "/Split_output_1"
+      ]
+    },
+    {
+      "name": "/Exp",
+      "op": "Exp",
+      "in": [
+        "/Split_output_1"
+      ],
+      "out": [
+        "/Exp_output_0"
+      ]
+    },
+    {
+      "name": "/Mul_44",
+      "op": "Mul",
+      "in": [
+        "/Split_output_0",
+        "/Exp_output_0"
+      ],
+      "out": [
+        "/Mul_44_output_0"
+      ]
+    },
+    {
+      "name": "/Concat_32",
+      "op": "Concat",
+      "in": [
+        "/Mul_44_output_0",
+        "/Exp_output_0"
+      ],
+      "out": [
+        "points"
+      ]
+    },
+    {
+      "name": "/Transpose_6",
+      "op": "Transpose",
+      "in": [
+        "/Resize_1_output_0"
+      ],
+      "out": [
+        "/Transpose_6_output_0"
+      ]
+    },
+    {
+      "name": "/ReduceL2",
+      "op": "ReduceL2",
+      "in": [
+        "/Transpose_6_output_0"
+      ],
+      "out": [
+        "/ReduceL2_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_131",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_131_output_0"
+      ]
+    },
+    {
+      "name": "/Clip",
+      "op": "Clip",
+      "in": [
+        "/ReduceL2_output_0",
+        "/Constant_131_output_0",
+        ""
+      ],
+      "out": [
+        "/Clip_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_21",
+      "op": "Shape",
+      "in": [
+        "/Transpose_6_output_0"
+      ],
+      "out": [
+        "/Shape_21_output_0"
+      ]
+    },
+    {
+      "name": "/Expand_15",
+      "op": "Expand",
+      "in": [
+        "/Clip_output_0",
+        "/Shape_21_output_0"
+      ],
+      "out": [
+        "/Expand_15_output_0"
+      ]
+    },
+    {
+      "name": "/Div_33",
+      "op": "Div",
+      "in": [
+        "/Transpose_6_output_0",
+        "/Expand_15_output_0"
+      ],
+      "out": [
+        "normal"
+      ]
+    },
+    {
+      "name": "/Constant_132",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_132_output_0"
+      ]
+    },
+    {
+      "name": "/Shape_22",
+      "op": "Shape",
+      "in": [
+        "/Resize_2_output_0"
+      ],
+      "out": [
+        "/Shape_22_output_0"
+      ]
+    },
+    {
+      "name": "/Gather_3",
+      "op": "Gather",
+      "in": [
+        "/Shape_22_output_0",
+        "/Constant_132_output_0"
+      ],
+      "out": [
+        "/Gather_3_output_0"
+      ]
+    },
+    {
+      "name": "/Constant_133",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_133_output_0"
+      ]
+    },
+    {
+      "name": "/Equal_5",
+      "op": "Equal",
+      "in": [
+        "/Gather_3_output_0",
+        "/Constant_133_output_0"
+      ],
+      "out": [
+        "/Equal_5_output_0"
+      ]
+    },
+    {
+      "name": "/If",
+      "op": "If",
+      "in": [
+        "/Equal_5_output_0"
+      ],
+      "out": [
+        "/If_output_0"
+      ]
+    },
+    {
+      "name": "/Sigmoid",
+      "op": "Sigmoid",
+      "in": [
+        "/If_output_0"
+      ],
+      "out": [
+        "mask"
+      ]
+    },
+    {
+      "name": "/Constant_135",
+      "op": "Constant",
+      "in": [],
+      "out": [
+        "/Constant_135_output_0"
+      ]
+    },
+    {
+      "name": "/Squeeze_1",
+      "op": "Squeeze",
+      "in": [
+        "/scale_head/scale_head.4/Gemm_output_0",
+        "/Constant_135_output_0"
+      ],
+      "out": [
+        "/Squeeze_1_output_0"
+      ]
+    },
+    {
+      "name": "/Exp_1",
+      "op": "Exp",
+      "in": [
+        "/Squeeze_1_output_0"
+      ],
+      "out": [
+        "metric_scale"
+      ]
+    }
+  ],
+  "smallConstants": {
+    "/Constant": 0,
+    "/Constant_1": 0,
+    "/Constant_2": 2,
+    "/Constant_3": 3,
+    "/Constant_4": 0.5,
+    "/Constant_5": 0.5,
+    "/encoder/Constant": 14,
+    "/encoder/Constant_1": 14,
+    "Constant_884": [
+      0
+    ],
+    "Constant_886": [
+      0
+    ],
+    "/encoder/Constant_2": [
+      0
+    ],
+    "/encoder/Constant_3": [
+      0
+    ],
+    "/encoder/Constant_4": [
+      2
+    ],
+    "/encoder/Constant_5": 2,
+    "/encoder/Constant_6": 3,
+    "/encoder/patch_embed/Constant": [
+      0
+    ],
+    "/encoder/patch_embed/Constant_1": [
+      0
+    ],
+    "/encoder/patch_embed/Constant_2": [
+      2
+    ],
+    "/encoder/patch_embed/Constant_3": [
+      -1
+    ],
+    "/encoder/Constant_7": 0,
+    "/encoder/Constant_8": [
+      0
+    ],
+    "/encoder/Constant_9": [
+      -1
+    ],
+    "/encoder/Constant_10": [
+      -1
+    ],
+    "/encoder/Constant_11": [
+      -1
+    ],
+    "/encoder/ConstantOfShape": [
+      1
+    ],
+    "/encoder/Constant_12": -1,
+    "/encoder/Constant_13": 2,
+    "/encoder/Constant_14": 14,
+    "/encoder/Constant_15": 14,
+    "/encoder/Constant_16": [
+      1
+    ],
+    "/encoder/Constant_17": [
+      37
+    ],
+    "/encoder/Constant_18": [
+      37
+    ],
+    "Constant_947": [
+      0
+    ],
+    "Constant_952": [
+      0
+    ],
+    "Constant_954": [
+      0
+    ],
+    "/encoder/Constant_19": [
+      0
+    ],
+    "/encoder/Constant_20": [
+      0
+    ],
+    "/encoder/Constant_21": [
+      2
+    ],
+    "/encoder/Constant_22": [
+      0
+    ],
+    "/encoder/Constant_23": [
+      0
+    ],
+    "/encoder/Constant_24": [
+      1
+    ],
+    "/encoder/Constant_25": [
+      0
+    ],
+    "/encoder/Constant_26": [
+      3
+    ],
+    "/encoder/Constant_27": [
+      4
+    ],
+    "/encoder/Constant_28": [
+      -1
+    ],
+    "/encoder/Constant_29": 0,
+    "/encoder/Constant_30": [
+      0
+    ],
+    "/encoder/Constant_31": [
+      -1
+    ],
+    "/encoder/Constant_32": [
+      -1
+    ],
+    "/encoder/Constant_33": [
+      -1
+    ],
+    "/encoder/ConstantOfShape_1": [
+      1
+    ],
+    "/encoder/Constant_34": -1,
+    "/encoder/blocks.0/norm1/Constant": 2.0,
+    "/encoder/blocks.0/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.0/attn/Constant": 0,
+    "/encoder/blocks.0/attn/Constant_1": 1,
+    "/encoder/blocks.0/attn/Constant_2": 2,
+    "/encoder/blocks.0/attn/Constant_3": 12,
+    "Constant_1024": [
+      0
+    ],
+    "Constant_1026": [
+      0
+    ],
+    "/encoder/blocks.0/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.0/attn/Constant_5": [
+      12
+    ],
+    "Constant_1030": [
+      0
+    ],
+    "/encoder/blocks.0/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.0/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.0/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.0/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.0/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.0/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.0/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1061": [
+      0
+    ],
+    "Constant_1063": [
+      0
+    ],
+    "Constant_1065": [
+      0
+    ],
+    "/encoder/blocks.0/norm2/Constant": 2.0,
+    "/encoder/blocks.0/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.0/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.0/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.0/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.1/norm1/Constant": 2.0,
+    "/encoder/blocks.1/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.1/attn/Constant": 0,
+    "/encoder/blocks.1/attn/Constant_1": 1,
+    "/encoder/blocks.1/attn/Constant_2": 2,
+    "/encoder/blocks.1/attn/Constant_3": 12,
+    "Constant_1124": [
+      0
+    ],
+    "Constant_1126": [
+      0
+    ],
+    "/encoder/blocks.1/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.1/attn/Constant_5": [
+      12
+    ],
+    "Constant_1130": [
+      0
+    ],
+    "/encoder/blocks.1/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.1/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.1/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.1/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.1/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.1/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.1/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1161": [
+      0
+    ],
+    "Constant_1163": [
+      0
+    ],
+    "Constant_1165": [
+      0
+    ],
+    "/encoder/blocks.1/norm2/Constant": 2.0,
+    "/encoder/blocks.1/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.1/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.1/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.1/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.2/norm1/Constant": 2.0,
+    "/encoder/blocks.2/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.2/attn/Constant": 0,
+    "/encoder/blocks.2/attn/Constant_1": 1,
+    "/encoder/blocks.2/attn/Constant_2": 2,
+    "/encoder/blocks.2/attn/Constant_3": 12,
+    "Constant_1224": [
+      0
+    ],
+    "Constant_1226": [
+      0
+    ],
+    "/encoder/blocks.2/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.2/attn/Constant_5": [
+      12
+    ],
+    "Constant_1230": [
+      0
+    ],
+    "/encoder/blocks.2/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.2/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.2/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.2/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.2/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.2/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.2/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1261": [
+      0
+    ],
+    "Constant_1263": [
+      0
+    ],
+    "Constant_1265": [
+      0
+    ],
+    "/encoder/blocks.2/norm2/Constant": 2.0,
+    "/encoder/blocks.2/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.2/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.2/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.2/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.3/norm1/Constant": 2.0,
+    "/encoder/blocks.3/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.3/attn/Constant": 0,
+    "/encoder/blocks.3/attn/Constant_1": 1,
+    "/encoder/blocks.3/attn/Constant_2": 2,
+    "/encoder/blocks.3/attn/Constant_3": 12,
+    "Constant_1324": [
+      0
+    ],
+    "Constant_1326": [
+      0
+    ],
+    "/encoder/blocks.3/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.3/attn/Constant_5": [
+      12
+    ],
+    "Constant_1330": [
+      0
+    ],
+    "/encoder/blocks.3/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.3/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.3/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.3/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.3/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.3/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.3/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1361": [
+      0
+    ],
+    "Constant_1363": [
+      0
+    ],
+    "Constant_1365": [
+      0
+    ],
+    "/encoder/blocks.3/norm2/Constant": 2.0,
+    "/encoder/blocks.3/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.3/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.3/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.3/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.4/norm1/Constant": 2.0,
+    "/encoder/blocks.4/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.4/attn/Constant": 0,
+    "/encoder/blocks.4/attn/Constant_1": 1,
+    "/encoder/blocks.4/attn/Constant_2": 2,
+    "/encoder/blocks.4/attn/Constant_3": 12,
+    "Constant_1424": [
+      0
+    ],
+    "Constant_1426": [
+      0
+    ],
+    "/encoder/blocks.4/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.4/attn/Constant_5": [
+      12
+    ],
+    "Constant_1430": [
+      0
+    ],
+    "/encoder/blocks.4/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.4/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.4/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.4/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.4/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.4/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.4/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1461": [
+      0
+    ],
+    "Constant_1463": [
+      0
+    ],
+    "Constant_1465": [
+      0
+    ],
+    "/encoder/blocks.4/norm2/Constant": 2.0,
+    "/encoder/blocks.4/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.4/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.4/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.4/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.5/norm1/Constant": 2.0,
+    "/encoder/blocks.5/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.5/attn/Constant": 0,
+    "/encoder/blocks.5/attn/Constant_1": 1,
+    "/encoder/blocks.5/attn/Constant_2": 2,
+    "/encoder/blocks.5/attn/Constant_3": 12,
+    "Constant_1524": [
+      0
+    ],
+    "Constant_1526": [
+      0
+    ],
+    "/encoder/blocks.5/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.5/attn/Constant_5": [
+      12
+    ],
+    "Constant_1530": [
+      0
+    ],
+    "/encoder/blocks.5/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.5/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.5/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.5/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.5/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.5/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.5/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1561": [
+      0
+    ],
+    "Constant_1563": [
+      0
+    ],
+    "Constant_1565": [
+      0
+    ],
+    "/encoder/blocks.5/norm2/Constant": 2.0,
+    "/encoder/blocks.5/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.5/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.5/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.5/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.6/norm1/Constant": 2.0,
+    "/encoder/blocks.6/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.6/attn/Constant": 0,
+    "/encoder/blocks.6/attn/Constant_1": 1,
+    "/encoder/blocks.6/attn/Constant_2": 2,
+    "/encoder/blocks.6/attn/Constant_3": 12,
+    "Constant_1624": [
+      0
+    ],
+    "Constant_1626": [
+      0
+    ],
+    "/encoder/blocks.6/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.6/attn/Constant_5": [
+      12
+    ],
+    "Constant_1630": [
+      0
+    ],
+    "/encoder/blocks.6/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.6/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.6/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.6/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.6/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.6/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.6/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1661": [
+      0
+    ],
+    "Constant_1663": [
+      0
+    ],
+    "Constant_1665": [
+      0
+    ],
+    "/encoder/blocks.6/norm2/Constant": 2.0,
+    "/encoder/blocks.6/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.6/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.6/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.6/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.7/norm1/Constant": 2.0,
+    "/encoder/blocks.7/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.7/attn/Constant": 0,
+    "/encoder/blocks.7/attn/Constant_1": 1,
+    "/encoder/blocks.7/attn/Constant_2": 2,
+    "/encoder/blocks.7/attn/Constant_3": 12,
+    "Constant_1724": [
+      0
+    ],
+    "Constant_1726": [
+      0
+    ],
+    "/encoder/blocks.7/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.7/attn/Constant_5": [
+      12
+    ],
+    "Constant_1730": [
+      0
+    ],
+    "/encoder/blocks.7/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.7/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.7/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.7/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.7/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.7/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.7/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1761": [
+      0
+    ],
+    "Constant_1763": [
+      0
+    ],
+    "Constant_1765": [
+      0
+    ],
+    "/encoder/blocks.7/norm2/Constant": 2.0,
+    "/encoder/blocks.7/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.7/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.7/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.7/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.8/norm1/Constant": 2.0,
+    "/encoder/blocks.8/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.8/attn/Constant": 0,
+    "/encoder/blocks.8/attn/Constant_1": 1,
+    "/encoder/blocks.8/attn/Constant_2": 2,
+    "/encoder/blocks.8/attn/Constant_3": 12,
+    "Constant_1824": [
+      0
+    ],
+    "Constant_1826": [
+      0
+    ],
+    "/encoder/blocks.8/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.8/attn/Constant_5": [
+      12
+    ],
+    "Constant_1830": [
+      0
+    ],
+    "/encoder/blocks.8/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.8/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.8/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.8/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.8/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.8/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.8/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1861": [
+      0
+    ],
+    "Constant_1863": [
+      0
+    ],
+    "Constant_1865": [
+      0
+    ],
+    "/encoder/blocks.8/norm2/Constant": 2.0,
+    "/encoder/blocks.8/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.8/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.8/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.8/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.9/norm1/Constant": 2.0,
+    "/encoder/blocks.9/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.9/attn/Constant": 0,
+    "/encoder/blocks.9/attn/Constant_1": 1,
+    "/encoder/blocks.9/attn/Constant_2": 2,
+    "/encoder/blocks.9/attn/Constant_3": 12,
+    "Constant_1924": [
+      0
+    ],
+    "Constant_1926": [
+      0
+    ],
+    "/encoder/blocks.9/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.9/attn/Constant_5": [
+      12
+    ],
+    "Constant_1930": [
+      0
+    ],
+    "/encoder/blocks.9/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.9/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.9/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.9/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.9/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.9/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.9/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_1961": [
+      0
+    ],
+    "Constant_1963": [
+      0
+    ],
+    "Constant_1965": [
+      0
+    ],
+    "/encoder/blocks.9/norm2/Constant": 2.0,
+    "/encoder/blocks.9/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.9/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.9/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.9/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.10/norm1/Constant": 2.0,
+    "/encoder/blocks.10/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.10/attn/Constant": 0,
+    "/encoder/blocks.10/attn/Constant_1": 1,
+    "/encoder/blocks.10/attn/Constant_2": 2,
+    "/encoder/blocks.10/attn/Constant_3": 12,
+    "Constant_2024": [
+      0
+    ],
+    "Constant_2026": [
+      0
+    ],
+    "/encoder/blocks.10/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.10/attn/Constant_5": [
+      12
+    ],
+    "Constant_2030": [
+      0
+    ],
+    "/encoder/blocks.10/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.10/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.10/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.10/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.10/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.10/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.10/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_2061": [
+      0
+    ],
+    "Constant_2063": [
+      0
+    ],
+    "Constant_2065": [
+      0
+    ],
+    "/encoder/blocks.10/norm2/Constant": 2.0,
+    "/encoder/blocks.10/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.10/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.10/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.10/mlp/act/Constant_2": 0.5,
+    "/encoder/blocks.11/norm1/Constant": 2.0,
+    "/encoder/blocks.11/norm1/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.11/attn/Constant": 0,
+    "/encoder/blocks.11/attn/Constant_1": 1,
+    "/encoder/blocks.11/attn/Constant_2": 2,
+    "/encoder/blocks.11/attn/Constant_3": 12,
+    "Constant_2124": [
+      0
+    ],
+    "Constant_2126": [
+      0
+    ],
+    "/encoder/blocks.11/attn/Constant_4": [
+      3
+    ],
+    "/encoder/blocks.11/attn/Constant_5": [
+      12
+    ],
+    "Constant_2130": [
+      0
+    ],
+    "/encoder/blocks.11/attn/Constant_6": [
+      1,
+      1,
+      1
+    ],
+    "/encoder/blocks.11/attn/Constant_7": [
+      0
+    ],
+    "/encoder/blocks.11/attn/Constant_8": [
+      0
+    ],
+    "/encoder/blocks.11/attn/Constant_9": [
+      0
+    ],
+    "/encoder/blocks.11/attn/Constant_10": [
+      -1
+    ],
+    "/encoder/blocks.11/attn/Constant_11": [
+      9223372036854775807
+    ],
+    "/encoder/blocks.11/attn/Constant_12": [
+      1.0
+    ],
+    "Constant_2161": [
+      0
+    ],
+    "Constant_2163": [
+      0
+    ],
+    "Constant_2165": [
+      0
+    ],
+    "/encoder/blocks.11/norm2/Constant": 2.0,
+    "/encoder/blocks.11/norm2/Constant_1": 9.999999974752427e-07,
+    "/encoder/blocks.11/mlp/act/Constant": 1.4142135381698608,
+    "/encoder/blocks.11/mlp/act/Constant_1": 1.0,
+    "/encoder/blocks.11/mlp/act/Constant_2": 0.5,
+    "/encoder/norm/Constant": 2.0,
+    "/encoder/norm/Constant_1": 9.999999974752427e-07,
+    "/encoder/norm_1/Constant": 2.0,
+    "/encoder/norm_1/Constant_1": 9.999999974752427e-07,
+    "/encoder/Constant_35": [
+      1
+    ],
+    "/encoder/Constant_36": [
+      1
+    ],
+    "/encoder/Constant_37": [
+      9223372036854775807
+    ],
+    "/encoder/Constant_38": [
+      1
+    ],
+    "/encoder/Constant_39": [
+      1
+    ],
+    "/encoder/Constant_40": [
+      1
+    ],
+    "/encoder/Constant_41": [
+      9223372036854775807
+    ],
+    "/encoder/Constant_42": [
+      1
+    ],
+    "Constant_2232": [
+      0
+    ],
+    "Constant_2234": [
+      0
+    ],
+    "Constant_2237": [
+      0
+    ],
+    "Constant_2239": [
+      0
+    ],
+    "/encoder/Constant_43": [
+      5
+    ],
+    "/encoder/Constant_44": [
+      3
+    ],
+    "/encoder/Constant_45": [
+      0
+    ],
+    "/encoder/Constant_46": [
+      1
+    ],
+    "/encoder/Constant_47": [
+      1
+    ],
+    "/encoder/Constant_48": [
+      1
+    ],
+    "/encoder/Constant_49": [
+      9223372036854775807
+    ],
+    "/encoder/Constant_50": [
+      5
+    ],
+    "/encoder/Constant_51": [
+      3
+    ],
+    "/encoder/Constant_52": [
+      0
+    ],
+    "/encoder/Constant_53": [
+      1
+    ],
+    "/encoder/Constant_54": [
+      1
+    ],
+    "/encoder/Constant_55": [
+      1
+    ],
+    "/encoder/Constant_56": [
+      9223372036854775807
+    ],
+    "/encoder/Constant_57": [
+      1
+    ],
+    "/encoder/Constant_58": [
+      1
+    ],
+    "Constant_2282": [
+      1
+    ],
+    "/Constant_6": 2.0,
+    "/Constant_7": 1.0,
+    "/Constant_8": 0.5,
+    "/Constant_9": 1,
+    "/Constant_10": 0,
+    "/Constant_11": 1,
+    "/Constant_12": 1,
+    "/Constant_13": 1,
+    "/Constant_14": 0,
+    "/Constant_15": 1,
+    "/Constant_16": 1,
+    "/Constant_17": [
+      -1
+    ],
+    "/Constant_18": [
+      -1
+    ],
+    "/Constant_19": [
+      1
+    ],
+    "/Constant_20": [
+      1
+    ],
+    "/Constant_21": [
+      -1
+    ],
+    "/Constant_22": [
+      -1
+    ],
+    "/Constant_23": [
+      0
+    ],
+    "/Constant_24": [
+      0
+    ],
+    "/Constant_25": [
+      -1
+    ],
+    "/Constant_26": [
+      -1
+    ],
+    "/Constant_27": [
+      -1
+    ],
+    "/Constant_28": [
+      -1
+    ],
+    "/ConstantOfShape": [
+      1
+    ],
+    "/Constant_29": -1,
+    "/Constant_30": 2,
+    "/Constant_31": 2,
+    "/Constant_32": 1,
+    "/Constant_33": 0,
+    "/Constant_34": 1,
+    "/Constant_35": 1,
+    "/Constant_36": 1,
+    "/Constant_37": 0,
+    "/Constant_38": 1,
+    "/Constant_39": 1,
+    "/Constant_40": [
+      -1
+    ],
+    "/Constant_41": [
+      -1
+    ],
+    "/Constant_42": [
+      1
+    ],
+    "/Constant_43": [
+      1
+    ],
+    "/Constant_44": [
+      -1
+    ],
+    "/Constant_45": [
+      -1
+    ],
+    "/Constant_46": [
+      0
+    ],
+    "/Constant_47": [
+      0
+    ],
+    "/Constant_48": [
+      -1
+    ],
+    "/Constant_49": [
+      -1
+    ],
+    "/Constant_50": [
+      -1
+    ],
+    "/Constant_51": [
+      -1
+    ],
+    "/ConstantOfShape_1": [
+      1
+    ],
+    "/Constant_52": -1,
+    "/Constant_53": 4,
+    "/Constant_54": 4,
+    "/Constant_55": 1,
+    "/Constant_56": 0,
+    "/Constant_57": 1,
+    "/Constant_58": 1,
+    "/Constant_59": 1,
+    "/Constant_60": 0,
+    "/Constant_61": 1,
+    "/Constant_62": 1,
+    "/Constant_63": [
+      -1
+    ],
+    "/Constant_64": [
+      -1
+    ],
+    "/Constant_65": [
+      1
+    ],
+    "/Constant_66": [
+      1
+    ],
+    "/Constant_67": [
+      -1
+    ],
+    "/Constant_68": [
+      -1
+    ],
+    "/Constant_69": [
+      0
+    ],
+    "/Constant_70": [
+      0
+    ],
+    "/Constant_71": [
+      -1
+    ],
+    "/Constant_72": [
+      -1
+    ],
+    "/Constant_73": [
+      -1
+    ],
+    "/Constant_74": [
+      -1
+    ],
+    "/ConstantOfShape_2": [
+      1
+    ],
+    "/Constant_75": -1,
+    "/Constant_76": 8,
+    "/Constant_77": 8,
+    "/Constant_78": 1,
+    "/Constant_79": 0,
+    "/Constant_80": 1,
+    "/Constant_81": 1,
+    "/Constant_82": 1,
+    "/Constant_83": 0,
+    "/Constant_84": 1,
+    "/Constant_85": 1,
+    "/Constant_86": [
+      -1
+    ],
+    "/Constant_87": [
+      -1
+    ],
+    "/Constant_88": [
+      1
+    ],
+    "/Constant_89": [
+      1
+    ],
+    "/Constant_90": [
+      -1
+    ],
+    "/Constant_91": [
+      -1
+    ],
+    "/Constant_92": [
+      0
+    ],
+    "/Constant_93": [
+      0
+    ],
+    "/Constant_94": [
+      -1
+    ],
+    "/Constant_95": [
+      -1
+    ],
+    "/Constant_96": [
+      -1
+    ],
+    "/Constant_97": [
+      -1
+    ],
+    "/ConstantOfShape_3": [
+      1
+    ],
+    "/Constant_98": -1,
+    "/Constant_99": 16,
+    "/Constant_100": 16,
+    "/Constant_101": 1,
+    "/Constant_102": 0,
+    "/Constant_103": 1,
+    "/Constant_104": 1,
+    "/Constant_105": 1,
+    "/Constant_106": 0,
+    "/Constant_107": 1,
+    "/Constant_108": 1,
+    "/Constant_109": [
+      -1
+    ],
+    "/Constant_110": [
+      -1
+    ],
+    "/Constant_111": [
+      1
+    ],
+    "/Constant_112": [
+      1
+    ],
+    "/Constant_113": [
+      -1
+    ],
+    "/Constant_114": [
+      -1
+    ],
+    "/Constant_115": [
+      0
+    ],
+    "/Constant_116": [
+      0
+    ],
+    "/Constant_117": [
+      -1
+    ],
+    "/Constant_118": [
+      -1
+    ],
+    "/Constant_119": [
+      -1
+    ],
+    "/Constant_120": [
+      -1
+    ],
+    "/ConstantOfShape_4": [
+      1
+    ],
+    "/Constant_121": -1,
+    "/neck/resamplers.0/resamplers.0.1/Constant": [
+      4
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/resamplers.0/resamplers.0.1/ConstantOfShape": [
+      0
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_3": [
+      0
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_4": [
+      -1
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_6": [
+      -1
+    ],
+    "/neck/resamplers.0/resamplers.0.1/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant": [
+      4
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/resamplers.1/resamplers.1.1/ConstantOfShape": [
+      0
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_3": [
+      0
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_4": [
+      -1
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_6": [
+      -1
+    ],
+    "/neck/resamplers.1/resamplers.1.1/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant": [
+      4
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/resamplers.2/resamplers.2.1/ConstantOfShape": [
+      0
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_3": [
+      0
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_4": [
+      -1
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_6": [
+      -1
+    ],
+    "/neck/resamplers.2/resamplers.2.1/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/neck/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/neck/resamplers.3/resamplers.3.0/Constant": [
+      1.0,
+      1.0,
+      2.0,
+      2.0
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant": [
+      4
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/neck/resamplers.3/resamplers.3.1/ConstantOfShape": [
+      0
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_3": [
+      0
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_4": [
+      -1
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_6": [
+      -1
+    ],
+    "/neck/resamplers.3/resamplers.3.1/Constant_7": [
+      -1
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant": [
+      4
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/ConstantOfShape": [
+      0
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_3": [
+      0
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_4": [
+      -1
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_6": [
+      -1
+    ],
+    "/points_head/resamplers.0/resamplers.0.1/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant": [
+      4
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/ConstantOfShape": [
+      0
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_3": [
+      0
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_4": [
+      -1
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_6": [
+      -1
+    ],
+    "/points_head/resamplers.1/resamplers.1.1/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant": [
+      4
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/ConstantOfShape": [
+      0
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_3": [
+      0
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_4": [
+      -1
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_6": [
+      -1
+    ],
+    "/points_head/resamplers.2/resamplers.2.1/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/points_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/points_head/resamplers.3/resamplers.3.0/Constant": [
+      1.0,
+      1.0,
+      2.0,
+      2.0
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant": [
+      4
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/ConstantOfShape": [
+      0
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_3": [
+      0
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_4": [
+      -1
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_6": [
+      -1
+    ],
+    "/points_head/resamplers.3/resamplers.3.1/Constant_7": [
+      -1
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant": [
+      4
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_3": [
+      0
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_4": [
+      -1
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_6": [
+      -1
+    ],
+    "/normal_head/resamplers.0/resamplers.0.1/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant": [
+      4
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_3": [
+      0
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_4": [
+      -1
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_6": [
+      -1
+    ],
+    "/normal_head/resamplers.1/resamplers.1.1/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant": [
+      4
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_3": [
+      0
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_4": [
+      -1
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_6": [
+      -1
+    ],
+    "/normal_head/resamplers.2/resamplers.2.1/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/normal_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/normal_head/resamplers.3/resamplers.3.0/Constant": [
+      1.0,
+      1.0,
+      2.0,
+      2.0
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant": [
+      4
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/ConstantOfShape": [
+      0
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_3": [
+      0
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_4": [
+      -1
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_6": [
+      -1
+    ],
+    "/normal_head/resamplers.3/resamplers.3.1/Constant_7": [
+      -1
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant": [
+      4
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_3": [
+      0
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_4": [
+      -1
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_6": [
+      -1
+    ],
+    "/mask_head/resamplers.0/resamplers.0.1/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.1/res_blocks.1.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant": [
+      4
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_3": [
+      0
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_4": [
+      -1
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_6": [
+      -1
+    ],
+    "/mask_head/resamplers.1/resamplers.1.1/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.2/res_blocks.2.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant": [
+      4
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_3": [
+      0
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_4": [
+      -1
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_6": [
+      -1
+    ],
+    "/mask_head/resamplers.2/resamplers.2.1/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.2/Constant_7": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant": [
+      4
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_3": [
+      0
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_4": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_6": [
+      -1
+    ],
+    "/mask_head/res_blocks.3/res_blocks.3.0/layers/layers.5/Constant_7": [
+      -1
+    ],
+    "/mask_head/resamplers.3/resamplers.3.0/Constant": [
+      1.0,
+      1.0,
+      2.0,
+      2.0
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant": [
+      4
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_1": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/ConstantOfShape": [
+      0
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_2": [
+      -1,
+      2
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_3": [
+      0
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_4": [
+      -1
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_5": [
+      -9223372036854775807
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_6": [
+      -1
+    ],
+    "/mask_head/resamplers.3/resamplers.3.1/Constant_7": [
+      -1
+    ],
+    "Constant_3501": [
+      0
+    ],
+    "Constant_3503": [
+      0
+    ],
+    "Constant_3506": [
+      0
+    ],
+    "Constant_3508": [
+      0
+    ],
+    "Constant_3511": [
+      0
+    ],
+    "Constant_3513": [
+      0
+    ],
+    "/Constant_122": [
+      0
+    ],
+    "/Constant_123": [
+      0
+    ],
+    "/Constant_124": [
+      2
+    ],
+    "/Constant_125": [
+      0
+    ],
+    "/Constant_126": [
+      0
+    ],
+    "/Constant_127": [
+      2
+    ],
+    "/Constant_128": [
+      0
+    ],
+    "/Constant_129": [
+      0
+    ],
+    "/Constant_130": [
+      2
+    ],
+    "Constant_3541": [
+      2,
+      1
+    ],
+    "/Constant_131": 9.999999960041972e-13,
+    "/Constant_132": [
+      1
+    ],
+    "/Constant_133": [
+      1
+    ],
+    "/Constant_135": [
+      1
+    ]
+  }
+}

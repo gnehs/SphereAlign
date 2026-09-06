@@ -1,0 +1,11 @@
+    Checking spherealign v0.1.0 (D:\Repos\gs360studio\src-tauri)
+warning: function `parse_and_write` is never used
+    --> src\telemetry.rs:1846:8
+     |
+1846 | pub fn parse_and_write(
+     |        ^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `spherealign` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.50s

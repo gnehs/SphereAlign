@@ -1,0 +1,110 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/LICENSE",
+    "path": ".work\\geometry-spike\\spirula\\LICENSE",
+    "bytes": 35149,
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/app/GeometryWarp.h",
+    "path": ".work\\geometry-spike\\spirula\\src\\app\\GeometryWarp.h",
+    "bytes": 5254,
+    "sha256": "fc6cd1576101936c66ea51bcec42d1950ae5c00d1fc78afd30aad104c1764151"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/app/TrainerCore.cpp",
+    "path": ".work\\geometry-spike\\spirula\\src\\app\\TrainerCore.cpp",
+    "bytes": 70039,
+    "sha256": "f90d352e2f1978b80c6611e414468e225c5a2ca71672a3fcf8f130f0787f5fe6"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/moge/README.md",
+    "path": ".work\\geometry-spike\\spirula\\src\\moge\\README.md",
+    "bytes": 11857,
+    "sha256": "afc8361735536d61bdf8f4b453e1a09e0abe471ed12032ae6ffa6a24a267e7fe"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/moge/model/Fetch.cpp",
+    "path": ".work\\geometry-spike\\spirula\\src\\moge\\model\\Fetch.cpp",
+    "bytes": 1854,
+    "sha256": "12cb0ca7badb0b484ad81c315ac7a5e334ed9cca2e988a634ea2be3639dc307e"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/config/TrainConfig.h",
+    "path": ".work\\geometry-spike\\spirula\\src\\config\\TrainConfig.h",
+    "bytes": 34057,
+    "sha256": "52066b9ed497f6c297dbbf6ef28f17ae236df8e7aad97a421cf692bf7f645753"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/data/DataManager.cpp",
+    "path": ".work\\geometry-spike\\spirula\\src\\data\\DataManager.cpp",
+    "bytes": 101796,
+    "sha256": "9cede3dd716693c9bfd96d63e6a5f37485164177c21f748c4685486b5bbd7006"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/shaders/per_pixel_losses.slang",
+    "path": ".work\\geometry-spike\\spirula\\src\\shaders\\per_pixel_losses.slang",
+    "bytes": 18107,
+    "sha256": "7978c859478f068dc564ac9d929b96dc283ce9d9e0e5d6c6b81c5751d2183bbf"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/app/GeometryWarp.cpp",
+    "path": ".work\\geometry-spike\\spirula\\src\\app\\GeometryWarp.cpp",
+    "bytes": 29550,
+    "sha256": "01410bcff7cf3312255e0e74d20242c903e0862664861794a8066a17957fd980"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/core/Interpolation.cuh",
+    "path": ".work\\geometry-spike\\spirula\\src\\core\\Interpolation.cuh",
+    "bytes": 9411,
+    "sha256": "5b7796ae21116c1dbd0f5a7ca715e5f1ec5a19589cefe2a6410d0a37b589b334"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/moge/model/Recover.cpp",
+    "path": ".work\\geometry-spike\\spirula\\src\\moge\\model\\Recover.cpp",
+    "bytes": 3670,
+    "sha256": "0713bae6f9de03838d2d7c3b0c4323be357659d9caf35a26da91d2fc79d4fda5"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/harry7557558/spirula-studio/bddda193ee09f03ea1b0aad44b5c6b96f81e249a/src/data/DatasetParser.h",
+    "path": ".work\\geometry-spike\\spirula\\src\\data\\DatasetParser.h",
+    "bytes": 16807,
+    "sha256": "0dc2bd9d5c2d936691ad6a1388c50bd05369750a86c8461f87d97f7e91b374fd"
+  },
+  {
+    "url": "https://huggingface.co/api/models/Ruicheng/moge-2-vitb-normal-onnx",
+    "path": ".work\\geometry-spike\\model-repository.json",
+    "bytes": 487,
+    "sha256": "9e0cdd13ca839317be23ae122401b55996afbc11ae03d8129b1304ed404e1a69"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/microsoft/MoGe/74fbce054ebed49800de42d0ad0e83495065719a/LICENSE",
+    "path": ".work\\geometry-spike\\moge\\LICENSE",
+    "bytes": 12500,
+    "sha256": "ad7d951c80c5fc2b2bce035f2041bc0a0dbf9028c8ecc4c9a8e1fba8130b6b59"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/microsoft/MoGe/74fbce054ebed49800de42d0ad0e83495065719a/moge/model/v2.py",
+    "path": ".work\\geometry-spike\\moge\\moge\\model\\v2.py",
+    "bytes": 15372,
+    "sha256": "d70c1be8c7c62770a98bbf9e7c84e7c6d536eb1cf31ac78fcc136d36a0eaab3f"
+  },
+  {
+    "url": "https://raw.githubusercontent.com/microsoft/MoGe/74fbce054ebed49800de42d0ad0e83495065719a/moge/utils/geometry_torch.py",
+    "path": ".work\\geometry-spike\\moge\\moge\\utils\\geometry_torch.py",
+    "bytes": 16850,
+    "sha256": "1fd013761c30a411dc48b08031925518b980ab53c323a85e9d86e8a95c98c43f"
+  },
+  {
+    "url": "https://huggingface.co/Ruicheng/moge-2-vitb-normal/resolve/ca5f0e07ff01d3e5a364c1d954ed12ee1814b368/README.md",
+    "path": ".work\\geometry-spike\\original-model-card.md",
+    "bytes": 86,
+    "sha256": "dea7121794bfe9e6312f0ef48a5433d48ceef16b63673e720ed89af50a0329d6"
+  },
+  {
+    "url": "https://huggingface.co/Ruicheng/moge-2-vitb-normal-onnx/resolve/2d247a122ada42ce700fe59273cd62e076da1f32/model.onnx",
+    "path": ".work\\geometry-spike\\model.onnx",
+    "bytes": 419411850,
+    "sha256": "bbf14e07a30f11e69d36ab861590123f5598ababcbc8946a063eb4a966f35a21"
+  }
+]
