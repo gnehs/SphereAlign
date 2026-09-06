@@ -38,8 +38,7 @@ import {
   taskProgress,
   taskProgressSummary,
   taskStageDuration,
-  type FeaturePipeline,
-  type MapperMode,
+  type PipelineSettings,
   type StageKey,
   type StageStatus,
   type Task,
@@ -51,7 +50,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TaskAlignmentSettings } from "@/components/task-alignment-settings";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 
@@ -76,8 +75,7 @@ export interface TaskWorkspaceProps {
   onEditTask: (task: Task) => void;
   onOpenTaskDetail: (task: Task, trigger: HTMLButtonElement) => void;
   onStageAction: (task: Task, stageKey: StageKey) => void;
-  onFeaturePipelineChange: (task: Task, pipeline: FeaturePipeline) => void;
-  onMapperModeChange: (task: Task, mode: MapperMode) => void;
+  onAlignmentSettingsSave: (task: Task, align: PipelineSettings["align"]) => Promise<void>;
 }
 
 function StageStatusBadge({ status }: { status: StageStatus }) {
@@ -116,8 +114,7 @@ function TaskCard({
   onEditTask,
   onOpenTaskDetail,
   onStageAction,
-  onFeaturePipelineChange,
-  onMapperModeChange,
+  onAlignmentSettingsSave,
 }: {
   task: Task;
   clockMs: number;
@@ -130,8 +127,7 @@ function TaskCard({
   onEditTask: (task: Task) => void;
   onOpenTaskDetail: (task: Task, trigger: HTMLButtonElement) => void;
   onStageAction: (task: Task, stageKey: StageKey) => void;
-  onFeaturePipelineChange: (task: Task, pipeline: FeaturePipeline) => void;
-  onMapperModeChange: (task: Task, mode: MapperMode) => void;
+  onAlignmentSettingsSave: (task: Task, align: PipelineSettings["align"]) => Promise<void>;
 }) {
   const setDeletingTaskId = useAppStore((state) => state.setDeletingTaskId);
   const overall = taskProgress(task);
@@ -258,45 +254,8 @@ function TaskCard({
                       )}
                     </div>
                   </div>
-                  {stage.key === "align" && current.status !== "running" && (
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Select
-                        items={[
-                          { value: "sift", label: t`SIFT (fast default)` },
-                          { value: "aliked-n32-lightglue", label: t`ALIKED-N32 + LightGlue` },
-                          { value: "aliked-n16rot-lightglue", label: t`ALIKED-N16Rot + LightGlue` },
-                        ]}
-                        value={task.settings.align.featurePipeline}
-                        onValueChange={(value) => onFeaturePipelineChange(task, (value ?? "sift") as FeaturePipeline)}
-                      >
-                        <SelectTrigger className="w-58" aria-label={t`Feature matching method`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="sift"><Trans>SIFT (fast default)</Trans></SelectItem>
-                            <SelectItem value="aliked-n32-lightglue"><Trans>ALIKED-N32 + LightGlue</Trans></SelectItem>
-                            <SelectItem value="aliked-n16rot-lightglue"><Trans>ALIKED-N16Rot + LightGlue</Trans></SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        items={[
-                          { value: "incremental", label: t`COLMAP incremental` },
-                          { value: "auto", label: t`GLOMAP (validated fallback)` },
-                          { value: "global", label: t`GLOMAP only` },
-                        ]}
-                        value={task.settings.align.mapperMode}
-                        onValueChange={(value) => onMapperModeChange(task, (value ?? "incremental") as MapperMode)}
-                      >
-                        <SelectTrigger className="w-56" aria-label={t`Camera pose solver`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="incremental"><Trans>COLMAP incremental</Trans></SelectItem>
-                            <SelectItem value="auto"><Trans>GLOMAP (validated fallback)</Trans></SelectItem>
-                            <SelectItem value="global"><Trans>GLOMAP only</Trans></SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  {stage.key === "align" && (
+                    <TaskAlignmentSettings task={task} disabled={hasRunningStage} onSave={onAlignmentSettingsSave} />
                   )}
                   <StageStatusBadge status={current.status} />
                   <Button aria-describedby={stageLabelId} variant={current.status === "running" ? "destructive" : "ghost"} size="sm" disabled={current.status !== "running" && action.blocked} onClick={() => onStageAction(task, stage.key)}>
@@ -328,8 +287,7 @@ export function TaskWorkspace({
   onEditTask,
   onOpenTaskDetail,
   onStageAction,
-  onFeaturePipelineChange,
-  onMapperModeChange,
+  onAlignmentSettingsSave,
 }: TaskWorkspaceProps) {
   const { tasks, selectedTaskId, taskDetailOpen } = useAppStore(useShallow((state) => ({
     tasks: state.tasks,
@@ -437,8 +395,7 @@ export function TaskWorkspace({
                       onEditTask={onEditTask}
                       onOpenTaskDetail={onOpenTaskDetail}
                       onStageAction={onStageAction}
-                      onFeaturePipelineChange={onFeaturePipelineChange}
-                      onMapperModeChange={onMapperModeChange}
+                      onAlignmentSettingsSave={onAlignmentSettingsSave}
                     />
                   ))}
                 </div>

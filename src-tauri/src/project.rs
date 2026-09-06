@@ -1185,6 +1185,27 @@ pub fn save_manifest(manifest: &ProjectManifest) -> Result<(), String> {
     write_json_atomic(&manifest.manifest_path(), manifest)
 }
 
+/// The caller holds PROJECT_MUTATION_LOCK and has checked the active job manager.
+/// Read without `load` so an active stage in another app instance is not recovered
+/// as cancelled just because the user opened its settings.
+pub fn update_alignment_settings_locked(project_path: &str, align: Value) -> Result<ProjectManifest, String> {
+    let path = absolute_path(Path::new(project_path));
+    let manifest_path = locate_manifest(&path).ok_or("No project manifest found")?;
+    let mut manifest: ProjectManifest = serde_json::from_slice(
+        &fs::read(&manifest_path).map_err(|error| error.to_string())?,
+    ).map_err(|error| error.to_string())?;
+    if manifest.stages.values().any(|stage| matches!(stage.status, StageStatus::Running)) {
+        return Err("Wait for the running stage to finish before saving settings.".into());
+    }
+    let settings = manifest.settings.as_object_mut().ok_or("Invalid project settings")?;
+    let current = settings.entry("align").or_insert_with(|| json!({}));
+    let current = current.as_object_mut().ok_or("Invalid alignment settings")?;
+    current.extend(align.as_object().ok_or("Invalid alignment settings")?.clone());
+    manifest.updated_at = now_timestamp();
+    write_json_atomic(&manifest_path, &manifest)?;
+    Ok(manifest)
+}
+
 pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
     let path = absolute_path(path.as_ref());
     let manifest_path = match locate_manifest(&path) {

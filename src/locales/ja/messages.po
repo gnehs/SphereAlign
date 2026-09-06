@@ -75,7 +75,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {#ファイル} other {#ファイル}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/components/task-list.tsx:201
+#: src/components/task-list.tsx:197
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {#ソース} other {#ソース}}"
 
@@ -112,7 +112,7 @@ msgid "{0} of {1} stages complete"
 msgstr "{0}/{1} ステージ完了"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:220
+#: src/components/task-list.tsx:216
 msgid "{0} overall time progress"
 msgstr "{0} の全体時間進捗"
 
@@ -120,7 +120,7 @@ msgstr "{0} の全体時間進捗"
 #. placeholder {0}: stageLabel(stage)
 #: src/components/task-detail.tsx:144
 #: src/components/task-detail.tsx:145
-#: src/components/task-list.tsx:255
+#: src/components/task-list.tsx:251
 msgid "{0} progress"
 msgstr "{0} の進捗"
 
@@ -245,7 +245,7 @@ msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} ソース · {valid} 件が検査に合格"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:524
+#: src/App.tsx:523
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT (Cube)"
@@ -292,12 +292,12 @@ msgid "Add only panoramic source media captured in the same scene. A scene may i
 msgstr "同じシーンで撮影したパノラマソースメディアのみを追加してください。1つのシーンに複数のソースを含められます。シーンごとに別の再構成タスクを作成してください。"
 
 #. Add a queued task to the automatic execution queue.
-#: src/components/task-list.tsx:170
+#: src/components/task-list.tsx:166
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "キューに追加"
 
-#: src/components/processing-settings-fields.tsx:311
+#: src/components/processing-settings-fields.tsx:299
 msgid "Additional reviewed masks"
 msgstr ""
 
@@ -332,7 +332,7 @@ msgid "Alignment"
 msgstr "アライメント"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:330
+#: src/components/processing-settings-fields.tsx:318
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "アライメント"
@@ -340,6 +340,15 @@ msgstr "アライメント"
 #: src/lib/pipeline.ts:810
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "アライメント完了: {registered}/{total} カメラリグフレームを登録 ({percentage}%)"
+
+#: src/components/task-alignment-settings.tsx:49
+#: src/components/task-alignment-settings.tsx:53
+msgid "Alignment settings"
+msgstr "位置合わせ設定"
+
+#: src/App.tsx:835
+msgid "Alignment settings saved. They will apply on the next run."
+msgstr "位置合わせ設定を保存しました。次回の実行時に適用されます。"
 
 #. placeholder {0}: alignCapability.text
 #: src/App.tsx:984
@@ -371,15 +380,11 @@ msgstr "アライメント: 保留中"
 msgid "Alignment: Running"
 msgstr "アライメント: 実行中"
 
-#: src/components/processing-settings-fields.tsx:81
-#: src/components/task-list.tsx:267
-#: src/components/task-list.tsx:277
+#: src/components/alignment-settings-fields.tsx:25
 msgid "ALIKED-N16Rot + LightGlue"
 msgstr "ALIKED-N16Rot + LightGlue"
 
-#: src/components/processing-settings-fields.tsx:80
-#: src/components/task-list.tsx:266
-#: src/components/task-list.tsx:276
+#: src/components/alignment-settings-fields.tsx:24
 msgid "ALIKED-N32 + LightGlue"
 msgstr "ALIKED-N32 + LightGlue"
 
@@ -387,7 +392,7 @@ msgstr "ALIKED-N32 + LightGlue"
 msgid "All required capabilities are available"
 msgstr "必要な機能をすべて利用できます"
 
-#: src/components/processing-settings-fields.tsx:267
+#: src/components/processing-settings-fields.tsx:255
 msgid "Apply crowded-scene settings"
 msgstr ""
 
@@ -400,6 +405,11 @@ msgstr ""
 #: src/lib/pipeline.ts:595
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "アライメントには一致するlens0/lens1フレームペアが2つ以上必要です"
+
+#: src/components/alignment-settings-fields.tsx:162
+#: src/components/alignment-settings-fields.tsx:170
+msgid "Automatic GPU selection"
+msgstr "GPU を自動選択"
 
 #: src/lib/pipeline.ts:728
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
@@ -415,7 +425,7 @@ msgid "Available"
 msgstr "利用可能"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:98
+#: src/components/processing-settings-fields.tsx:86
 msgid "Base frame rate (FPS)"
 msgstr "基本フレームレート (FPS)"
 
@@ -480,8 +490,8 @@ msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpegのメモリ内候補でハードウェアとソフトウェアの両方のデコードに失敗しました: ハードウェアエラー: {0}、ソフトウェアエラー: {1}"
 
-#: src/components/processing-settings-fields.tsx:290
-#: src/components/processing-settings-fields.tsx:316
+#: src/components/processing-settings-fields.tsx:278
+#: src/components/processing-settings-fields.tsx:304
 msgid "Browse"
 msgstr ""
 
@@ -559,7 +569,7 @@ msgstr ""
 msgid "Building the image pair graph"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:408
+#: src/components/alignment-settings-fields.tsx:110
 msgid "Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass."
 msgstr ""
 
@@ -590,7 +600,7 @@ msgstr ""
 msgid "Calibrating and validating the view-graph focal prior"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:287
+#: src/components/processing-settings-fields.tsx:275
 msgid "Calibration model folder"
 msgstr ""
 
@@ -599,13 +609,12 @@ msgid "Camera metadata could not be decoded from this file."
 msgstr "このファイルのカメラメタデータをデコードできませんでした。"
 
 #. Camera model and explicit media profile metadata selected a verified LUT.
-#: src/components/processing-settings-fields.tsx:166
+#: src/components/processing-settings-fields.tsx:154
 msgid "Camera model and Log profile detected; the matching LUT is enabled."
 msgstr "カメラモデルとLogプロファイルを検出しました。一致するLUTを有効にしました。"
 
 #. Select the mapper that estimates camera poses after feature matching.
-#: src/components/processing-settings-fields.tsx:385
-#: src/components/task-list.tsx:290
+#: src/components/alignment-settings-fields.tsx:87
 msgid "Camera pose solver"
 msgstr ""
 
@@ -626,6 +635,7 @@ msgstr "カメラリグ推定"
 msgid "Can be resumed"
 msgstr "再開できます"
 
+#: src/components/task-alignment-settings.tsx:65
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
 #: src/lib/pipeline.ts:1852
@@ -695,7 +705,7 @@ msgid "Cancelled; you can resume later"
 msgstr "キャンセル済み。後で再開できます"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:126
+#: src/components/processing-settings-fields.tsx:114
 msgid "Candidate frame rate"
 msgstr "候補フレームレート"
 
@@ -767,15 +777,15 @@ msgstr ""
 msgid "Checking quality…"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:194
+#: src/components/processing-settings-fields.tsx:182
 msgid "Choose .cube"
 msgstr ".cubeを選択"
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr ".cube拡張子の3D LUTを選択してください。"
 
-#: src/components/processing-settings-fields.tsx:291
+#: src/components/processing-settings-fields.tsx:279
 msgid "Choose a COLMAP text model with cameras.txt and images.txt from these captures. Camera dimensions and source/lens bindings must match."
 msgstr ""
 
@@ -794,7 +804,7 @@ msgstr "別の出力先を選択"
 #~ msgstr "英語、簡体字中国語、繁体字中国語、または日本語を選択してください。"
 
 #. Button opens a file picker for source media.
-#: src/components/task-list.tsx:378
+#: src/components/task-list.tsx:336
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "ファイルを選択"
@@ -825,7 +835,7 @@ msgstr "1つ以上のパノラマソースファイルを選択してくださ�
 msgid "Choose sources"
 msgstr "ソースを選択"
 
-#: src/components/processing-settings-fields.tsx:195
+#: src/components/processing-settings-fields.tsx:183
 msgid "Clear custom LUT"
 msgstr "カスタムLUTをクリア"
 
@@ -880,17 +890,17 @@ msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA機能の確認結果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:504
+#: src/App.tsx:503
 #: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP実行ファイル"
 
 #: src/components/task-list.tsx:283
 #: src/components/task-list.tsx:293
-msgid "COLMAP incremental"
-msgstr ""
+#~ msgid "COLMAP incremental"
+#~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:84
+#: src/components/alignment-settings-fields.tsx:28
 msgid "COLMAP incremental mapper"
 msgstr ""
 
@@ -940,7 +950,7 @@ msgstr "{0}を先に完了してください"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "{prerequisite} を先に完了してください"
 
-#: src/components/task-list.tsx:354
+#: src/components/task-list.tsx:312
 #: src/lib/pipeline.ts:1863
 msgid "Completed"
 msgstr "完了"
@@ -951,7 +961,7 @@ msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "完了"
 
-#: src/components/task-list.tsx:450
+#: src/components/task-list.tsx:407
 msgid "Completed reconstruction tasks will appear here."
 msgstr "完了した再構築タスクがここに表示されます。"
 
@@ -985,7 +995,7 @@ msgstr "診断情報をコピー"
 msgid "Copying selected frame pair"
 msgstr "選択したフレームペアをコピー中"
 
-#: src/components/processing-settings-fields.tsx:337
+#: src/components/alignment-settings-fields.tsx:39
 msgid "Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification."
 msgstr ""
 
@@ -1047,7 +1057,7 @@ msgid "Current item: {0}"
 msgstr "現在の項目: {0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/components/task-list.tsx:223
+#: src/components/task-list.tsx:219
 msgid "Current stage: {0}"
 msgstr "現在のステージ: {0}"
 
@@ -1056,7 +1066,7 @@ msgid "Current work"
 msgstr "現在の処理"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:182
+#: src/components/processing-settings-fields.tsx:170
 msgid "Custom LUT (optional)"
 msgstr "カスタムLUT (任意)"
 
@@ -1086,7 +1096,7 @@ msgstr ""
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "最初のソースの隣にデフォルト保存: colmap-file-name"
 
-#: src/components/processing-settings-fields.tsx:301
+#: src/components/processing-settings-fields.tsx:289
 msgid "Detect objects in four orientations"
 msgstr ""
 
@@ -1099,11 +1109,11 @@ msgstr "検出済み"
 #~ msgid "Detected from the _D filename suffix or media metadata and enabled."
 #~ msgstr "_Dファイル名サフィックスまたはメディアメタデータから検出して有効化しました。"
 
-#: src/components/processing-settings-fields.tsx:294
+#: src/components/processing-settings-fields.tsx:282
 msgid "Detection confidence"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:273
+#: src/components/processing-settings-fields.tsx:261
 msgid "Detection views"
 msgstr ""
 
@@ -1134,13 +1144,13 @@ msgstr "診断情報をコピーしました。バグレポートに貼り付け
 #~ msgstr "OSVまたはデュアルフィッシュアイメディアをここにドロップするか、<0/>「プロジェクトを開く」を使用して既存のプロジェクトを再開してください。"
 
 #: src/components/task-editor-dialog.tsx:160
+#: src/components/task-list.tsx:331
 #: src/components/task-list.tsx:373
-#: src/components/task-list.tsx:415
 msgid "Drop panoramic source media"
 msgstr "パノラマソースメディアをドロップ"
 
 #. Drop panoramic source media here or choose files below. Existing projects are opened separately.
-#: src/components/task-list.tsx:376
+#: src/components/task-list.tsx:334
 msgid "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 msgstr "パノラマソースメディアをここにドロップするか、<0/>「プロジェクトを開く」を使用して既存のプロジェクトを再開してください。"
 
@@ -1166,7 +1176,7 @@ msgid "Dynamic-object and sky masks"
 msgstr "動的オブジェクトと空のマスク"
 
 #. Edit a task that has not started.
-#: src/components/task-list.tsx:177
+#: src/components/task-list.tsx:173
 msgctxt "task action"
 msgid "Edit"
 msgstr "編集"
@@ -1180,11 +1190,11 @@ msgid "Edit queued task"
 msgstr "キュー待ちタスクを編集"
 
 #: src/components/task-detail.tsx:149
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Elapsed"
 msgstr "経過時間"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "CUDA対応NVIDIA GPUが検出されるとデフォルトで有効になります。実行に失敗した場合はCPUにフォールバックします。"
 
@@ -1208,7 +1218,7 @@ msgid "Error"
 msgstr "エラー"
 
 #: src/components/task-detail.tsx:150
-#: src/components/task-list.tsx:229
+#: src/components/task-list.tsx:225
 msgid "Estimated remaining"
 msgstr "推定残り時間"
 
@@ -1223,7 +1233,7 @@ msgstr "推定中"
 msgid "Estimating and validating IMU time offset, hand-eye calibration, and focal priors"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:211
+#: src/components/processing-settings-fields.tsx:199
 msgid "Exclude lens border and camera body"
 msgstr ""
 
@@ -1259,7 +1269,7 @@ msgstr "既存のデュアルフィッシュアイフレームを検出しまし
 msgid "Existing masks were discovered"
 msgstr "既存のマスクを検出しました"
 
-#: src/components/processing-settings-fields.tsx:304
+#: src/components/processing-settings-fields.tsx:292
 msgid "Expand exclusions (inference pixels)"
 msgstr ""
 
@@ -1268,7 +1278,7 @@ msgstr ""
 msgid "Exporting and checking the final model report"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:313
+#: src/components/processing-settings-fields.tsx:301
 msgid "Extra exclusion folder"
 msgstr ""
 
@@ -1309,12 +1319,16 @@ msgstr "プロジェクトを開けませんでした"
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "FFmpeg rawvideoの読み込みに失敗しました: {error}"
 
+#: src/App.tsx:832
+msgid "Failed to save alignment settings"
+msgstr "位置合わせ設定を保存できませんでした"
+
 #: src/lib/pipeline.ts:716
 msgid "Failed to save task changes; check the runtime message"
 msgstr "タスクの変更を保存できませんでした。ランタイムメッセージを確認してください"
 
 #. Explain the default SIFT feature matching option.
-#: src/components/processing-settings-fields.tsx:364
+#: src/components/alignment-settings-fields.tsx:66
 msgid "Fastest and most mature option for typical scenes."
 msgstr "一般的なシーン向けの最速かつ最も成熟したオプションです。"
 
@@ -1329,8 +1343,7 @@ msgid "Feature extraction"
 msgstr "特徴抽出"
 
 #. Select the local feature extractor and matcher used by COLMAP alignment.
-#: src/components/processing-settings-fields.tsx:340
-#: src/components/task-list.tsx:272
+#: src/components/alignment-settings-fields.tsx:42
 msgid "Feature matching method"
 msgstr "特徴マッチング方式"
 
@@ -1453,8 +1466,8 @@ msgstr ""
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "初回使用: {model}モデルをダウンロード中 ({percent}%)"
 
-#: src/components/processing-settings-fields.tsx:276
-#: src/components/processing-settings-fields.tsx:281
+#: src/components/processing-settings-fields.tsx:264
+#: src/components/processing-settings-fields.tsx:269
 msgid "Five calibrated perspective views"
 msgstr ""
 
@@ -1483,7 +1496,7 @@ msgid "Frame extraction"
 msgstr "フレーム抽出"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:95
+#: src/components/processing-settings-fields.tsx:83
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "フレーム抽出"
@@ -1559,16 +1572,14 @@ msgstr ""
 
 #: src/components/task-list.tsx:284
 #: src/components/task-list.tsx:294
-msgid "GLOMAP (validated fallback)"
-msgstr ""
+#~ msgid "GLOMAP (validated fallback)"
+#~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:86
-#: src/components/task-list.tsx:285
-#: src/components/task-list.tsx:295
+#: src/components/alignment-settings-fields.tsx:30
 msgid "GLOMAP only"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:85
+#: src/components/alignment-settings-fields.tsx:29
 msgid "GLOMAP with validated fallback"
 msgstr ""
 
@@ -1637,7 +1648,7 @@ msgstr "IMU サンプルは見つかりましたが、融合姿勢サンプル�
 msgid "IMU-assisted orientation may be unavailable"
 msgstr "IMU 支援の姿勢推定を使用できない可能性があります"
 
-#: src/components/task-list.tsx:353
+#: src/components/task-list.tsx:311
 msgid "In progress"
 msgstr "進行中"
 
@@ -1654,7 +1665,7 @@ msgid "Inspect quality findings"
 msgstr ""
 
 #. Insta360 source media files.
-#: src/components/task-list.tsx:385
+#: src/components/task-list.tsx:343
 msgid "Insta360 source files"
 msgstr "Insta360 ソースファイル"
 
@@ -1677,7 +1688,7 @@ msgstr "インターフェーステーマ"
 msgid "Invalid extraction input: "
 msgstr "抽出入力が無効です: "
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Invalid LUT file format"
 msgstr "LUTファイル形式が無効です"
 
@@ -1727,7 +1738,7 @@ msgstr "最終確認: {0}"
 msgid "Leave blank to detect from PATH"
 msgstr "空欄にするとPATHから検出します"
 
-#: src/components/processing-settings-fields.tsx:187
+#: src/components/processing-settings-fields.tsx:175
 msgid "Leave blank to use the detected camera's official LUT"
 msgstr "空欄にすると、検出したカメラの公式LUTを使用します"
 
@@ -1786,7 +1797,7 @@ msgid "Low pixel error and connected matches do not prove room topology or scale
 msgstr ""
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:152
+#: src/components/processing-settings-fields.tsx:140
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT 設定"
@@ -1832,7 +1843,7 @@ msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "マスク操作はキャンセルされました"
 
-#: src/components/processing-settings-fields.tsx:270
+#: src/components/processing-settings-fields.tsx:258
 msgid "Mask refinement"
 msgstr ""
 
@@ -1847,7 +1858,7 @@ msgid "Masking"
 msgstr "マスキング"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:206
+#: src/components/processing-settings-fields.tsx:194
 msgctxt "settings section"
 msgid "Masking"
 msgstr "マスキング"
@@ -1873,7 +1884,7 @@ msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "マスキングが完了しました"
 
-#: src/components/processing-settings-fields.tsx:325
+#: src/components/processing-settings-fields.tsx:313
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "マスキングは無効です。フレーム抽出後にアライメントを開始します。"
 
@@ -1929,11 +1940,11 @@ msgstr "ウィンドウを最大化または元に戻す"
 msgid "Minimize window"
 msgstr "ウィンドウを最小化"
 
-#: src/components/processing-settings-fields.tsx:381
+#: src/components/alignment-settings-fields.tsx:83
 msgid "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "aliked-n16rot.onnx または aliked-lightglue.onnx がない場合は、共有の YOLO モデルフォルダーへ自動的にダウンロードされます。検証済みの高速化経路では NVIDIA CUDA GPU を使用します。"
 
-#: src/components/processing-settings-fields.tsx:380
+#: src/components/alignment-settings-fields.tsx:82
 msgid "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "aliked-n32.onnx または aliked-lightglue.onnx がない場合は、共有の YOLO モデルフォルダーへ自動的にダウンロードされます。検証済みの高速化経路では NVIDIA CUDA GPU を使用します。"
 
@@ -1977,8 +1988,8 @@ msgstr "ネイティブデュアルフィッシュアイのカメラリグアラ
 msgid "Native error · median / P95"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:275
-#: src/components/processing-settings-fields.tsx:280
+#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:268
 msgid "Native fisheye"
 msgstr ""
 
@@ -1987,7 +1998,7 @@ msgstr ""
 msgid "Needs attention"
 msgstr "要対応"
 
-#: src/components/processing-settings-fields.tsx:334
+#: src/components/alignment-settings-fields.tsx:36
 msgid "Neighboring frame pairs"
 msgstr ""
 
@@ -2014,7 +2025,7 @@ msgstr "新しい再構成タスク"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "新しいタスクはフレーム抽出、マスキング、アライメントを順に実行します。各ステージは個別にキャンセルまたは再試行できます。"
 
-#: src/components/task-list.tsx:449
+#: src/components/task-list.tsx:406
 msgid "No completed tasks yet"
 msgstr "完了したタスクはまだありません"
 
@@ -2033,12 +2044,12 @@ msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "COLMAPで使用可能なNVIDIA GPUが検出されないため、CPUを使用します"
 
 #. Empty task list heading.
-#: src/components/task-list.tsx:375
+#: src/components/task-list.tsx:333
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "タスクはまだありません"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "使用可能なCOLMAP CUDAアクセラレーションが検出されないため、CPUを使用します。"
 
@@ -2081,7 +2092,7 @@ msgid "Not reported"
 msgstr "未報告"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Not reported yet"
 msgstr "まだ報告されていません"
 
@@ -2093,7 +2104,7 @@ msgstr "未実行"
 msgid "Not specified"
 msgstr "未指定"
 
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Not started"
 msgstr "未開始"
 
@@ -2106,7 +2117,7 @@ msgid "Not timed yet"
 msgstr "時間未計測"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:231
+#: src/components/processing-settings-fields.tsx:219
 msgid "Objects to mask (multiple selection)"
 msgstr "マスク対象オブジェクト (複数選択)"
 
@@ -2114,11 +2125,11 @@ msgstr "マスク対象オブジェクト (複数選択)"
 msgid "Observations inside masks"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:176
+#: src/components/processing-settings-fields.tsx:164
 msgid "Official source"
 msgstr "公式ソース"
 
-#: src/components/processing-settings-fields.tsx:322
+#: src/components/processing-settings-fields.tsx:310
 msgid "Only lens and camera-body masks are generated; no detection model is needed."
 msgstr ""
 
@@ -2129,7 +2140,7 @@ msgstr "タスクとキューの状態のみ削除され、既存の出力フォ
 #. Open an existing resumable project.
 #. Open an existing resumable project.
 #: src/components/app-chrome.tsx:108
-#: src/components/task-list.tsx:379
+#: src/components/task-list.tsx:337
 msgctxt "project action"
 msgid "Open project"
 msgstr "プロジェクトを開く"
@@ -2151,7 +2162,7 @@ msgstr ""
 msgid "Opened {name}"
 msgstr "{name}を開きました"
 
-#: src/components/processing-settings-fields.tsx:317
+#: src/components/processing-settings-fields.tsx:305
 msgid "Optional binary PNGs at original resolution, arranged in lens folders. Black regions are added to the generated exclusions."
 msgstr ""
 
@@ -2166,7 +2177,7 @@ msgid "Orientation metadata is unavailable"
 msgstr "姿勢メタデータを使用できません"
 
 #. DJI Osmo 360 source media files.
-#: src/components/task-list.tsx:384
+#: src/components/task-list.tsx:342
 msgid "Osmo 360 source files"
 msgstr "Osmo 360ソースファイル"
 
@@ -2187,14 +2198,14 @@ msgid "Output folder"
 msgstr "出力フォルダー"
 
 #: src/components/task-detail.tsx:240
-#: src/components/task-list.tsx:162
+#: src/components/task-list.tsx:158
 msgid "Output not specified"
 msgstr "出力未指定"
 
 #. Overall progress weighted by observed stage durations.
 #. Overall progress weighted by observed stage durations.
-#: src/components/task-list.tsx:208
-#: src/components/task-list.tsx:213
+#: src/components/task-list.tsx:204
+#: src/components/task-list.tsx:209
 msgid "Overall progress"
 msgstr "全体の進捗"
 
@@ -2216,7 +2227,7 @@ msgstr ""
 msgid "Pairing block {current} / {total} completed"
 msgstr "ペアリングブロック {current}/{total} 完了"
 
-#: src/App.tsx:417
+#: src/App.tsx:416
 msgid "Panoramic source video"
 msgstr "パノラマソース動画"
 
@@ -2248,7 +2259,7 @@ msgctxt "mask class"
 msgid "Person"
 msgstr "人物"
 
-#: src/components/processing-settings-fields.tsx:284
+#: src/components/processing-settings-fields.tsx:272
 msgid "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 msgstr ""
 
@@ -2269,11 +2280,11 @@ msgstr "プラットフォーム未確認"
 msgid "Possible impact"
 msgstr "考えられる影響"
 
-#: src/components/processing-settings-fields.tsx:434
+#: src/components/alignment-settings-fields.tsx:136
 msgid "Possible incorrect matches"
 msgstr "誤ったマッチングの可能性"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Preparing"
 msgstr "準備中"
 
@@ -2294,7 +2305,7 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "処理を準備中"
 
-#: src/components/task-list.tsx:159
+#: src/components/task-list.tsx:155
 msgid "Preview"
 msgstr "プレビュー"
 
@@ -2316,7 +2327,7 @@ msgid "Preview task updated"
 msgstr "プレビュータスクを更新しました"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Processed"
 msgstr "処理済み"
 
@@ -2335,12 +2346,12 @@ msgstr "ペアリングブロック {current}/{total} を処理中"
 msgid "Processing records"
 msgstr "処理記録"
 
-#: src/components/processing-settings-fields.tsx:92
+#: src/components/processing-settings-fields.tsx:80
 msgid "Processing settings"
 msgstr "処理設定"
 
 #. A project folder containing a resumable reconstruction.
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Project folder"
 msgstr "プロジェクトフォルダー"
 
@@ -2361,7 +2372,7 @@ msgstr "レート (推定)"
 msgid "Reconstruction acceleration may be unavailable"
 msgstr "再構成の高速化を使用できない可能性があります"
 
-#: src/components/task-list.tsx:233
+#: src/components/task-list.tsx:229
 msgid "Reconstruction pipeline"
 msgstr "再構成パイプライン"
 
@@ -2384,7 +2395,7 @@ msgid "Rematching features using the calibrated FOV"
 msgstr ""
 
 #. Remove a queued task without deleting its output folder.
-#: src/components/task-list.tsx:181
+#: src/components/task-list.tsx:177
 msgctxt "task action"
 msgid "Remove"
 msgstr "キューから除外"
@@ -2419,7 +2430,7 @@ msgstr "必要な機能に要対応"
 #~ msgstr ""
 
 #. Automatically select a verified camera-specific LUT for detected Log footage.
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:152
 msgid "Restore Log color with the matching LUT"
 msgstr "一致するLUTでLogカラーを復元"
 
@@ -2427,7 +2438,7 @@ msgstr "一致するLUTでLogカラーを復元"
 msgid "Resume"
 msgstr "再開"
 
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Resume an unfinished reconstruction task"
 msgstr "未完了の再構成タスクを再開"
 
@@ -2481,7 +2492,7 @@ msgstr ""
 msgid "Running YOLO11/SkySeg inference"
 msgstr "YOLO11/SkySeg推論を実行中"
 
-#: src/components/processing-settings-fields.tsx:414
+#: src/components/alignment-settings-fields.tsx:116
 msgid "Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors."
 msgstr ""
 
@@ -2491,7 +2502,7 @@ msgid "Runtime environment"
 msgstr "ランタイム環境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:146
+#: src/components/processing-settings-fields.tsx:134
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "基本フレームレートの倍数で候補をサンプリングし、より鮮明なフレームを選択します。"
 
@@ -2500,6 +2511,14 @@ msgstr "基本フレームレートの倍数で候補をサンプリングし、
 msgctxt "task action"
 msgid "Save changes"
 msgstr "変更を保存"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Save settings"
+msgstr "設定を保存"
+
+#: src/components/task-alignment-settings.tsx:55
+msgid "Save settings for the next alignment run. Existing reconstruction outputs are kept until you rerun alignment."
+msgstr "次回の位置合わせに使用する設定を保存します。位置合わせを再実行するまで、既存の再構築結果は保持されます。"
 
 #: src/components/task-editor-dialog.tsx:167
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
@@ -2519,6 +2538,10 @@ msgstr "タスクの変更の保存と出力フォルダーの復元に失敗し
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "タスクの変更の保存に失敗しました。出力フォルダーは復元されました: {0}"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Saving…"
+msgstr "保存中…"
 
 #. Short label for a scan phase.
 #: src/lib/pipeline.ts:970
@@ -2573,7 +2596,7 @@ msgid "Select at least one panoramic source first"
 msgstr "パノラマソースを1つ以上選択してください"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:458
+#: src/components/alignment-settings-fields.tsx:160
 msgid "Select GPU"
 msgstr "GPUを選択"
 
@@ -2606,7 +2629,7 @@ msgid "Settings"
 msgstr "設定"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:121
+#: src/components/processing-settings-fields.tsx:109
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "鮮明度フィルタリング"
@@ -2620,9 +2643,7 @@ msgstr "ソースの問題を {0} 件表示"
 msgid "Show source issue"
 msgstr "ソースの問題を表示"
 
-#: src/components/processing-settings-fields.tsx:79
-#: src/components/task-list.tsx:265
-#: src/components/task-list.tsx:275
+#: src/components/alignment-settings-fields.tsx:23
 msgid "SIFT (fast default)"
 msgstr "SIFT（高速な既定値）"
 
@@ -2653,7 +2674,7 @@ msgid "SIFT matching: Unsupported"
 msgstr "SIFTマッチング: 非対応"
 
 #. Warn that visually repetitive scenes can cause a false loop closure.
-#: src/components/processing-settings-fields.tsx:435
+#: src/components/alignment-settings-fields.tsx:137
 msgid "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
 msgstr "外観が似た廊下や物体を再訪と誤認し、誤ったマッチングが生じる場合があります。"
 
@@ -2664,17 +2685,17 @@ msgstr "外観が似た廊下や物体を再訪と誤認し、誤ったマッチ
 #~ msgstr "簡体字中国語"
 
 #. Find long-distance revisits within one source video to help close a reconstruction loop.
-#: src/components/processing-settings-fields.tsx:429
+#: src/components/alignment-settings-fields.tsx:131
 msgid "Single-video loop closure"
 msgstr "単一動画の長距離ループ閉じ込み"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:261
+#: src/components/processing-settings-fields.tsx:249
 msgid "Sky filtering"
 msgstr "空のフィルタリング"
 
 #. Heading for the learned feature matching performance tradeoff.
-#: src/components/processing-settings-fields.tsx:368
+#: src/components/alignment-settings-fields.tsx:70
 msgid "Slower, with a higher matching rate"
 msgstr "処理は遅くなりますが、マッチング率が向上します"
 
@@ -2764,7 +2785,7 @@ msgstr "ソースを出力フォルダー内に置くことはできません。
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "ソースが見つかりました。新しい再構成タスクを作成できます"
 
-#: src/components/processing-settings-fields.tsx:201
+#: src/components/processing-settings-fields.tsx:189
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr ".cubeファイルは公式LUTを上書きする場合のみ指定してください。"
 
@@ -2787,7 +2808,7 @@ msgstr "ステージ {0}/{1} · {label}"
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/components/task-list.tsx:241
+#: src/components/task-list.tsx:237
 msgid "Stage {0} of {1}: {2}"
 msgstr "ステージ {0}/{1}: {2}"
 
@@ -2848,7 +2869,7 @@ msgstr "ステージ {0}/{1} で停止 · {label}"
 msgid "Supported"
 msgstr "対応"
 
-#: src/components/task-list.tsx:382
+#: src/components/task-list.tsx:340
 msgid "Supported inputs"
 msgstr "対応入力"
 
@@ -2952,7 +2973,7 @@ msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "ローカルランタイムで予期しないエラーが発生しました。詳細は診断情報を確認してください。"
 
-#: src/components/processing-settings-fields.tsx:405
+#: src/components/alignment-settings-fields.tsx:107
 msgid "The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity."
 msgstr ""
 
@@ -2994,7 +3015,7 @@ msgid "The project root in the manifest does not match its actual location; rena
 msgstr "マニフェスト内のプロジェクトルートが実際の場所と一致しません。名前変更をキャンセルしました"
 
 #. Queued tasks run automatically in creation order.
-#: src/components/task-list.tsx:200
+#: src/components/task-list.tsx:196
 msgid "The queue runs automatically in creation order"
 msgstr "キューは作成順に自動実行されます"
 
@@ -3136,7 +3157,7 @@ msgid "Trying bootstrap initial pair ({current} / {total})"
 msgstr ""
 
 #. Explain when the optional single-video loop-closure setting is useful.
-#: src/components/processing-settings-fields.tsx:430
+#: src/components/alignment-settings-fields.tsx:132
 msgid "Turn this on if the video passes through the same place again."
 msgstr "動画内で同じ場所を再び通る場合にオンにしてください。"
 
@@ -3232,11 +3253,11 @@ msgstr "一時メタデータ{path}を同期できません: {error}"
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "一時メタデータ{path}を書き込めません: {error}"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown camera"
 msgstr "不明なカメラ"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown color profile"
 msgstr "不明なカラープロファイル"
 
@@ -3253,7 +3274,7 @@ msgid "Unsupported source format"
 msgstr "対応していないソース形式"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:452
+#: src/components/alignment-settings-fields.tsx:154
 msgid "Use CUDA acceleration for alignment"
 msgstr "アライメントにCUDAアクセラレーションを使用"
 
@@ -3263,7 +3284,7 @@ msgstr "アライメントにCUDAアクセラレーションを使用"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:251
 msgid "Use SkySeg to generate sky masks."
 msgstr "SkySegで空のマスクを生成します。"
 
@@ -3271,21 +3292,21 @@ msgstr "SkySegで空のマスクを生成します。"
 msgid "Use the points training frame and save evaluation views. Check ghosting, people and floaters from original camera positions."
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:268
+#: src/components/processing-settings-fields.tsx:256
 msgid "Uses four orientations and a 2-pixel expansion. Confidence is 0.50 for native views or 0.10 for calibrated views. Review people and static scene detail before alignment."
 msgstr ""
 
 #. Explain the ALIKED-N32 and LightGlue option.
-#: src/components/processing-settings-fields.tsx:371
+#: src/components/alignment-settings-fields.tsx:73
 msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
 msgstr "低テクスチャーまたは難しいシーンで、マッチングとカメラ登録率が通常向上します。N32 は推奨の ALIKED オプションですが、位置合わせに時間がかかります。"
 
 #. Explain the rotation-aware ALIKED-N16Rot and LightGlue option.
-#: src/components/processing-settings-fields.tsx:372
+#: src/components/alignment-settings-fields.tsx:74
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "大きな視点変化や回転変化でのマッチングが通常向上しますが、位置合わせに時間がかかります。"
 
-#: src/components/processing-settings-fields.tsx:413
+#: src/components/alignment-settings-fields.tsx:115
 msgid "Validated priors required"
 msgstr ""
 
@@ -3320,7 +3341,7 @@ msgid "View details"
 msgstr "詳細を表示"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:188
+#: src/components/task-list.tsx:184
 msgid "View details for {0}"
 msgstr "{0}の詳細を表示"
 
@@ -3336,8 +3357,13 @@ msgstr "{prerequisite}の完了を待機"
 msgid "Wait for the current stage to finish"
 msgstr "現在のステージの完了を待機"
 
+#: src/App.tsx:823
+#: src/components/task-alignment-settings.tsx:62
+msgid "Wait for the running stage to finish before saving settings."
+msgstr "実行中の処理が完了してから設定を保存してください。"
+
 #. placeholder {0}: action.prerequisite
-#: src/components/task-list.tsx:252
+#: src/components/task-list.tsx:248
 msgid "Waiting for {0} to finish"
 msgstr "{0}の完了を待機"
 
@@ -3347,7 +3373,7 @@ msgstr "{0}の完了を待機"
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "ステージ {0}/{1} の完了を待機 · {label}"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Waiting to run"
 msgstr "実行待ち"
 
@@ -3363,12 +3389,12 @@ msgstr "警告"
 msgid "Weak frames / possible jumps"
 msgstr ""
 
-#: src/components/task-list.tsx:211
-#: src/components/task-list.tsx:214
+#: src/components/task-list.tsx:207
+#: src/components/task-list.tsx:210
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "観測された3回の実行時間で加重: フレーム抽出22%、マスキング4%、アライメント74%"
 
-#: src/components/processing-settings-fields.tsx:200
+#: src/components/processing-settings-fields.tsx:188
 msgid "When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file."
 msgstr "カスタムファイルを指定しない場合、ランタイムは検出したモデルの検証済みLUTを使用します。それ以外の場合はこの.cubeファイルを使用します。"
 
@@ -3400,6 +3426,6 @@ msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLOと空のフィルタリングは無効です。マスキングをスキップしました"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:226
+#: src/components/processing-settings-fields.tsx:214
 msgid "YOLO object filtering"
 msgstr "YOLOオブジェクトフィルタリング"

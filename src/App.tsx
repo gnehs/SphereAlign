@@ -49,8 +49,7 @@ import {
   taskProgress,
   taskStageDuration,
   type AutoPipelineRun,
-  type FeaturePipeline,
-  type MapperMode,
+  type PipelineSettings,
   type LogEventPayload,
   type ProgressEventPayload,
   type StageKey,
@@ -819,34 +818,21 @@ function App() {
     }
   }, [bindJobToTask, colmapPath, settingsDraft, updateTaskStage]);
 
-  const changeTaskFeaturePipeline = useCallback((task: Task, featurePipeline: FeaturePipeline) => {
-    updateTask(task.projectId, (current) => ({
-      ...current,
-      settings: {
-        ...current.settings,
-        align: {
-          ...current.settings.align,
-          featurePipeline,
-          ...(featurePipeline !== "sift" ? { useGpu: true } : {}),
-        },
-      },
-    }));
-    setToast(featurePipeline === "sift" ? "Alignment will use SIFT on the next run" : "Alignment will use ALIKED and LightGlue on the next run");
-  }, [setToast, updateTask]);
-
-  const changeTaskMapperMode = useCallback((task: Task, mapperMode: MapperMode) => {
-    updateTask(task.projectId, (current) => ({
-      ...current,
-      settings: {
-        ...current.settings,
-        align: { ...current.settings.align, mapperMode },
-      },
-    }));
-    setToast(mapperMode === "incremental"
-      ? "Alignment will use the COLMAP incremental mapper on the next run"
-      : mapperMode === "auto"
-        ? "Alignment will try validated GLOMAP and preserve the incremental fallback"
-        : "Alignment will require GLOMAP and validated priors on the next run");
+  const saveTaskAlignmentSettings = useCallback(async (task: Task, align: PipelineSettings["align"]) => {
+    if (activeJobIds.current[task.projectId] || autoPipelineRuns.current[task.projectId] || pendingStageStarts.current[task.projectId]) {
+      throw new Error(t`Wait for the running stage to finish before saving settings.`);
+    }
+    if (!IS_TAURI_RUNTIME || task.previewOnly) {
+      updateTask(task.projectId, (current) => ({ ...current, settings: { ...current.settings, align } }));
+    } else {
+      const result = await invoke("update_alignment_settings", {
+        request: { projectPath: task.rootPath || task.outputPath, align },
+      });
+      const manifest = manifestFromUnknown(result);
+      if (!manifest) throw new Error(t`Failed to save alignment settings`);
+      updateTask(task.projectId, (current) => ({ ...current, settings: manifest.settings }));
+    }
+    setToast(t`Alignment settings saved. They will apply on the next run.`);
   }, [setToast, updateTask]);
 
   const cancelStage = useCallback(async (task: Task, stageKey: StageKey) => {
@@ -1032,8 +1018,7 @@ function App() {
             setTaskDetailOpen(true);
           }}
           onStageAction={handleStageAction}
-          onFeaturePipelineChange={changeTaskFeaturePipeline}
-          onMapperModeChange={changeTaskMapperMode}
+          onAlignmentSettingsSave={saveTaskAlignmentSettings}
         />
       </main>
 

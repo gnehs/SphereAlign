@@ -18,13 +18,13 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlignmentSettingsFields } from "@/components/alignment-settings-fields";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   candidateMultiplierFor,
   customLutPathIsInvalid,
-  gpuDeviceLabel,
   MASK_CLASSES,
   MASK_CLASS_LABELS,
   MAX_CANDIDATE_MULTIPLIER,
@@ -32,8 +32,6 @@ import {
   type ColorInspectionSummary,
   type DoctorReport,
   type PipelineSettings,
-  type FeaturePipeline,
-  type MapperMode,
 } from "@/lib/pipeline";
 
 export interface ProcessingSettingsFieldsProps {
@@ -74,17 +72,7 @@ export function ProcessingSettingsFields({
   const detectedSources = sourceColorInspection?.files?.filter((file) => file.cameraModel || file.detectedProfile || file.recommendedLut) ?? [];
   const lutPath = settings.extract.lutPath?.trim() ?? "";
   const lutPathInvalid = customLutPathIsInvalid(lutPath);
-  const featurePipeline = settings.align.featurePipeline;
-  const featurePipelineItems: Array<{ value: FeaturePipeline; label: string }> = [
-    { value: "sift", label: t`SIFT (fast default)` },
-    { value: "aliked-n32-lightglue", label: t`ALIKED-N32 + LightGlue` },
-    { value: "aliked-n16rot-lightglue", label: t`ALIKED-N16Rot + LightGlue` },
-  ];
-  const mapperModeItems: Array<{ value: MapperMode; label: string }> = [
-    { value: "incremental", label: t`COLMAP incremental mapper` },
-    { value: "auto", label: t`GLOMAP with validated fallback` },
-    { value: "global", label: t`GLOMAP only` },
-  ];
+
 
   return (
     <section className="min-h-0 overflow-hidden border-l max-[920px]:overflow-visible max-[920px]:border-t max-[920px]:border-l-0" aria-labelledby="task-processing-settings-title">
@@ -329,149 +317,7 @@ export function ProcessingSettingsFields({
           <Field aria-labelledby="alignment-settings-title">
             <FieldTitle id="alignment-settings-title"><Trans context="settings section" comment="Pipeline stage settings for aligning source images and camera rigs.">Alignment</Trans></FieldTitle>
             <FieldContent>
-              <div className="flex flex-col gap-2">
-                <Field>
-                  <FieldLabel htmlFor="temporal-window"><Trans>Neighboring frame pairs</Trans></FieldLabel>
-                  <Input id="temporal-window" type="number" min={2} max={30} step={1} value={settings.align.temporalWindow}
-                    onChange={(event) => onSettingsChange((current) => ({ ...current, align: { ...current.align, temporalWindow: Math.round(Math.min(30, Math.max(2, Number(event.target.value) || 2))) } }))} />
-                  <FieldDescription><Trans>Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification.</Trans></FieldDescription>
-                </Field>
-                <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
-                  <FieldLabel htmlFor="feature-pipeline"><Trans comment="Select the local feature extractor and matcher used by COLMAP alignment.">Feature matching method</Trans></FieldLabel>
-                  <Select
-                    items={featurePipelineItems}
-                    value={featurePipeline}
-                    onValueChange={(value) => {
-                      const nextPipeline = (value ?? "sift") as FeaturePipeline;
-                      onSettingsChange((current) => ({
-                        ...current,
-                        align: {
-                          ...current.align,
-                          featurePipeline: nextPipeline,
-                          ...(nextPipeline !== "sift" && doctor.gpuAvailable === true ? { useGpu: true } : {}),
-                        },
-                      }));
-                    }}
-                  >
-                    <SelectTrigger id="feature-pipeline" className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {featurePipelineItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {featurePipeline === "sift" ? (
-                    <FieldDescription><Trans comment="Explain the default SIFT feature matching option.">Fastest and most mature option for typical scenes.</Trans></FieldDescription>
-                  ) : (
-                    <Alert>
-                      <AlertTriangle />
-                      <AlertTitle><Trans comment="Heading for the learned feature matching performance tradeoff.">Slower, with a higher matching rate</Trans></AlertTitle>
-                      <AlertDescription>
-                        {featurePipeline === "aliked-n32-lightglue"
-                          ? <Trans comment="Explain the ALIKED-N32 and LightGlue option.">Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer.</Trans>
-                          : <Trans comment="Explain the rotation-aware ALIKED-N16Rot and LightGlue option.">Usually improves matching under large viewpoint or rotation changes, but alignment takes longer.</Trans>}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </Field>
-                {featurePipeline !== "sift" && (
-                  <FieldDescription>
-                    {featurePipeline === "aliked-n32-lightglue"
-                      ? <Trans>Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>
-                      : <Trans>Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU.</Trans>}
-                  </FieldDescription>
-                )}
-                <Field className="min-h-7 border-0 bg-transparent px-0 py-0.5">
-                  <FieldLabel htmlFor="mapper-mode"><Trans comment="Select the mapper that estimates camera poses after feature matching.">Camera pose solver</Trans></FieldLabel>
-                  <Select
-                    items={mapperModeItems}
-                    value={settings.align.mapperMode}
-                    onValueChange={(value) => {
-                      const nextMode = (value ?? "incremental") as MapperMode;
-                      onSettingsChange((current) => ({
-                        ...current,
-                        align: { ...current.align, mapperMode: nextMode },
-                      }));
-                    }}
-                  >
-                    <SelectTrigger id="mapper-mode" className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {mapperModeItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {settings.align.mapperMode === "incremental" && (
-                    <FieldDescription><Trans>The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity.</Trans></FieldDescription>
-                  )}
-                  {settings.align.mapperMode === "auto" && (
-                    <FieldDescription><Trans>Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass.</Trans></FieldDescription>
-                  )}
-                  {settings.align.mapperMode === "global" && (
-                    <Alert>
-                      <AlertTriangle />
-                      <AlertTitle><Trans>Validated priors required</Trans></AlertTitle>
-                      <AlertDescription><Trans>Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors.</Trans></AlertDescription>
-                    </Alert>
-                  )}
-                </Field>
-                <Field orientation="horizontal" className="min-h-7 border-0 bg-transparent px-0 py-0.5">
-                  <Switch
-                    id="use-intra-source-loop-closure"
-                    size="sm"
-                    checked={settings.align.useIntraSourceLoopClosure}
-                    onCheckedChange={(checked) => onSettingsChange((current) => ({
-                      ...current,
-                      align: { ...current.align, useIntraSourceLoopClosure: checked },
-                    }))}
-                  />
-                  <FieldContent>
-                    <FieldLabel htmlFor="use-intra-source-loop-closure"><Trans comment="Find long-distance revisits within one source video to help close a reconstruction loop.">Single-video loop closure</Trans></FieldLabel>
-                    <FieldDescription><Trans comment="Explain when the optional single-video loop-closure setting is useful.">Turn this on if the video passes through the same place again.</Trans></FieldDescription>
-                    {settings.align.useIntraSourceLoopClosure && (
-                      <Alert>
-                        <AlertTriangle />
-                        <AlertTitle><Trans>Possible incorrect matches</Trans></AlertTitle>
-                        <AlertDescription><Trans comment="Warn that visually repetitive scenes can cause a false loop closure.">Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches.</Trans></AlertDescription>
-                      </Alert>
-                    )}
-                  </FieldContent>
-                </Field>
-                <Field orientation="horizontal" className="mt-2.5 min-h-7 border-0 bg-transparent px-0 py-0.5 [&_[data-slot=field-label]]:cursor-pointer [&_[data-slot=field-label]]:font-normal" data-disabled={doctor.gpuAvailable === false || undefined}>
-                  <Switch
-                    id="use-gpu"
-                    size="sm"
-                    disabled={doctor.gpuAvailable === false}
-                    checked={settings.align.useGpu}
-                    onCheckedChange={(checked) => {
-                      onGpuPreferenceTouched();
-                      onSettingsChange((current) => ({ ...current, align: { ...current.align, useGpu: checked } }));
-                    }}
-                  />
-                  <FieldContent>
-                    <FieldLabel htmlFor="use-gpu"><Trans comment="Use CUDA acceleration for the COLMAP alignment stage.">Use CUDA acceleration for alignment</Trans></FieldLabel>
-                    <FieldDescription>{doctor.gpuAvailable === false ? t`No usable COLMAP CUDA acceleration was detected, so the CPU will be used.` : t`Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails.`}</FieldDescription>
-                  </FieldContent>
-                </Field>
-                {doctor.gpuAvailable === true && doctor.gpuDevices.length > 1 && (
-                  <Field data-disabled={!settings.align.useGpu || undefined}>
-                    <FieldLabel htmlFor="gpu-index"><Trans comment="Select which detected GPU should run alignment.">Select GPU</Trans></FieldLabel>
-                    <Select
-                      items={doctor.gpuDevices.map((device) => ({ value: String(device.index), label: gpuDeviceLabel(device, doctor.gpuDevices) }))}
-                      value={settings.align.gpuIndex}
-                      onValueChange={(gpuIndex) => onSettingsChange((current) => ({ ...current, align: { ...current.align, gpuIndex: gpuIndex ?? String(doctor.gpuDevices[0].index) } }))}
-                      disabled={!settings.align.useGpu}
-                    >
-                      <SelectTrigger id="gpu-index" className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {doctor.gpuDevices.map((device) => <SelectItem key={device.index} value={String(device.index)}>{gpuDeviceLabel(device, doctor.gpuDevices)}</SelectItem>)}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                )}
-              </div>
+              <AlignmentSettingsFields settings={settings} onSettingsChange={onSettingsChange} doctor={doctor} onGpuPreferenceTouched={onGpuPreferenceTouched} />
             </FieldContent>
           </Field>
         </FieldGroup>

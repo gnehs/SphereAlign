@@ -680,6 +680,41 @@ impl CandidateProgressReporter<'_> {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditableAlignmentSettings {
+    use_gpu: bool,
+    gpu_index: String,
+    use_intra_source_loop_closure: bool,
+    feature_pipeline: String,
+    mapper_mode: String,
+    temporal_window: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAlignmentSettingsRequest {
+    project_path: String,
+    align: EditableAlignmentSettings,
+}
+
+pub fn update_alignment_settings(manager: &JobManager, request: UpdateAlignmentSettingsRequest) -> Result<ProjectManifest, String> {
+    let _mutation_guard = project::lock_project_mutation()?;
+    if manager.is_running() {
+        return Err("Wait for the running stage to finish before saving settings.".into());
+    }
+    if !matches!(request.align.feature_pipeline.as_str(), "sift" | "aliked-n32-lightglue" | "aliked-n16rot-lightglue") {
+        return Err("Invalid feature matching method".into());
+    }
+    if !(2..=30).contains(&request.align.temporal_window) {
+        return Err("Neighboring frame pairs must be between 2 and 30".into());
+    }
+    let mut settings = json!({"align": request.align});
+    mapper_mode(&settings)?;
+    settings["align"]["gpuIndex"] = Value::String(parse_gpu_index(&settings)?);
+    project::update_alignment_settings_locked(&request.project_path, settings["align"].clone())
+}
+
 pub fn start_stage(
     app: AppHandle,
     manager: &JobManager,
@@ -14373,6 +14408,63 @@ mod tests {
         };
         assert!(low.low_coverage_warning().is_some());
         assert!(healthy.low_coverage_warning().is_none());
+    }
+
+    #[test]
+    fn existing_alignment_settings_persist_without_changing_completed_outputs() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("project.json");
+        let original = json!({
+            "manifestVersion": 1, "projectId": "existing", "name": "Room",
+            "rootPath": temp.path(), "outputPath": temp.path(),
+            "inputPaths": ["capture.osv"], "createdAt": "1", "updatedAt": "1",
+            "settings": {"extract": {"baseFps": 3}, "mask": {"lensValid": true},
+                "align": {"featurePipeline": "sift", "colmapQualityProfile": "baseline"}},
+            "stages": {"align": {"status": "completed", "progress": 1.0,
+                "message": "done", "artifacts": ["sparse/0"], "durationMs": 100}},
+            "capabilities": {"nativeFisheye": true}, "warnings": []
+        });
+        fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+        fs::create_dir(temp.path().join("sparse")).unwrap();
+        fs::write(temp.path().join("sparse/images.bin"), b"keep reconstruction").unwrap();
+        let request: super::UpdateAlignmentSettingsRequest = serde_json::from_value(json!({
+            "projectPath": temp.path(), "align": {"useGpu": false, "gpuIndex": " 0, 1 ",
+                "useIntraSourceLoopClosure": true, "featurePipeline": "aliked-n32-lightglue",
+                "mapperMode": "auto", "temporalWindow": 15}
+        })).unwrap();
+        super::update_alignment_settings(&JobManager::default(), request).unwrap();
+        let saved = crate::project::load(temp.path()).unwrap();
+        assert_eq!(saved.settings["align"]["temporalWindow"], 15);
+        assert_eq!(saved.settings["align"]["gpuIndex"], "0,1");
+        assert_eq!(saved.settings["align"]["mapperMode"], "auto");
+        assert_eq!(saved.settings["align"]["useIntraSourceLoopClosure"], true);
+        assert_eq!(saved.settings["align"]["useGpu"], false);
+        assert_eq!(saved.settings["align"]["colmapQualityProfile"], "baseline");
+        assert_eq!(saved.settings["extract"], original["settings"]["extract"]);
+        assert_eq!(saved.settings["mask"], original["settings"]["mask"]);
+        let stage = saved.stages.get("align").unwrap();
+        assert!(matches!(stage.status, crate::project::StageStatus::Completed));
+        assert_eq!(stage.artifacts, vec!["sparse/0"]);
+        assert_eq!(stage.duration_ms, Some(100));
+        assert_eq!(fs::read(temp.path().join("sparse/images.bin")).unwrap(), b"keep reconstruction");
+
+        let bytes = fs::read(&path).unwrap();
+        for (key, value) in [("temporalWindow", json!(31)), ("gpuIndex", json!("bad")),
+            ("mapperMode", json!("unknown")), ("featurePipeline", json!("unknown"))] {
+            let mut align = saved.settings["align"].clone();
+            align[key] = value;
+            let request = serde_json::from_value(json!({"projectPath": temp.path(), "align": align})).unwrap();
+            assert!(super::update_alignment_settings(&JobManager::default(), request).is_err());
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+
+        let mut running: Value = serde_json::from_slice(&bytes).unwrap();
+        running["stages"]["align"]["status"] = json!("running");
+        fs::write(&path, serde_json::to_vec(&running).unwrap()).unwrap();
+        let running_bytes = fs::read(&path).unwrap();
+        let request = serde_json::from_value(json!({"projectPath": temp.path(), "align": saved.settings["align"]})).unwrap();
+        assert!(super::update_alignment_settings(&JobManager::default(), request).is_err());
+        assert_eq!(fs::read(&path).unwrap(), running_bytes);
     }
 
     #[test]

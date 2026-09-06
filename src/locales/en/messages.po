@@ -75,7 +75,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/components/task-list.tsx:201
+#: src/components/task-list.tsx:197
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# source} other {# sources}}"
 
@@ -112,7 +112,7 @@ msgid "{0} of {1} stages complete"
 msgstr "{0} of {1} stages complete"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:220
+#: src/components/task-list.tsx:216
 msgid "{0} overall time progress"
 msgstr "{0} overall time progress"
 
@@ -120,7 +120,7 @@ msgstr "{0} overall time progress"
 #. placeholder {0}: stageLabel(stage)
 #: src/components/task-detail.tsx:144
 #: src/components/task-detail.tsx:145
-#: src/components/task-list.tsx:255
+#: src/components/task-list.tsx:251
 msgid "{0} progress"
 msgstr "{0} progress"
 
@@ -245,7 +245,7 @@ msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} sources · {valid} passed inspection"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:524
+#: src/App.tsx:523
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT (Cube)"
@@ -292,12 +292,12 @@ msgid "Add only panoramic source media captured in the same scene. A scene may i
 msgstr "Add only panoramic source media captured in the same scene. A scene may include multiple sources. Create separate reconstruction tasks for different scenes."
 
 #. Add a queued task to the automatic execution queue.
-#: src/components/task-list.tsx:170
+#: src/components/task-list.tsx:166
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "Add to queue"
 
-#: src/components/processing-settings-fields.tsx:311
+#: src/components/processing-settings-fields.tsx:299
 msgid "Additional reviewed masks"
 msgstr "Additional reviewed masks"
 
@@ -332,7 +332,7 @@ msgid "Alignment"
 msgstr "Alignment"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:330
+#: src/components/processing-settings-fields.tsx:318
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "Alignment"
@@ -340,6 +340,15 @@ msgstr "Alignment"
 #: src/lib/pipeline.ts:810
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
+
+#: src/components/task-alignment-settings.tsx:49
+#: src/components/task-alignment-settings.tsx:53
+msgid "Alignment settings"
+msgstr "Alignment settings"
+
+#: src/App.tsx:835
+msgid "Alignment settings saved. They will apply on the next run."
+msgstr "Alignment settings saved. They will apply on the next run."
 
 #. placeholder {0}: alignCapability.text
 #: src/App.tsx:984
@@ -371,15 +380,11 @@ msgstr "Alignment: Pending"
 msgid "Alignment: Running"
 msgstr "Alignment: Running"
 
-#: src/components/processing-settings-fields.tsx:81
-#: src/components/task-list.tsx:267
-#: src/components/task-list.tsx:277
+#: src/components/alignment-settings-fields.tsx:25
 msgid "ALIKED-N16Rot + LightGlue"
 msgstr "ALIKED-N16Rot + LightGlue"
 
-#: src/components/processing-settings-fields.tsx:80
-#: src/components/task-list.tsx:266
-#: src/components/task-list.tsx:276
+#: src/components/alignment-settings-fields.tsx:24
 msgid "ALIKED-N32 + LightGlue"
 msgstr "ALIKED-N32 + LightGlue"
 
@@ -387,7 +392,7 @@ msgstr "ALIKED-N32 + LightGlue"
 msgid "All required capabilities are available"
 msgstr "All required capabilities are available"
 
-#: src/components/processing-settings-fields.tsx:267
+#: src/components/processing-settings-fields.tsx:255
 msgid "Apply crowded-scene settings"
 msgstr "Apply crowded-scene settings"
 
@@ -400,6 +405,11 @@ msgstr "Apply crowded-scene settings"
 #: src/lib/pipeline.ts:595
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "At least two matching lens0/lens1 frame pairs are required for alignment"
+
+#: src/components/alignment-settings-fields.tsx:162
+#: src/components/alignment-settings-fields.tsx:170
+msgid "Automatic GPU selection"
+msgstr "Automatic GPU selection"
 
 #: src/lib/pipeline.ts:728
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
@@ -415,7 +425,7 @@ msgid "Available"
 msgstr "Available"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:98
+#: src/components/processing-settings-fields.tsx:86
 msgid "Base frame rate (FPS)"
 msgstr "Base frame rate (FPS)"
 
@@ -480,8 +490,8 @@ msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 
-#: src/components/processing-settings-fields.tsx:290
-#: src/components/processing-settings-fields.tsx:316
+#: src/components/processing-settings-fields.tsx:278
+#: src/components/processing-settings-fields.tsx:304
 msgid "Browse"
 msgstr "Browse"
 
@@ -559,7 +569,7 @@ msgstr "Building the global mapper candidate: about {registered} / {total} frame
 msgid "Building the image pair graph"
 msgstr "Building the image pair graph"
 
-#: src/components/processing-settings-fields.tsx:408
+#: src/components/alignment-settings-fields.tsx:110
 msgid "Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass."
 msgstr "Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass."
 
@@ -590,7 +600,7 @@ msgstr "Calibrated matching"
 msgid "Calibrating and validating the view-graph focal prior"
 msgstr "Calibrating and validating the view-graph focal prior"
 
-#: src/components/processing-settings-fields.tsx:287
+#: src/components/processing-settings-fields.tsx:275
 msgid "Calibration model folder"
 msgstr "Calibration model folder"
 
@@ -599,13 +609,12 @@ msgid "Camera metadata could not be decoded from this file."
 msgstr "Camera metadata could not be decoded from this file."
 
 #. Camera model and explicit media profile metadata selected a verified LUT.
-#: src/components/processing-settings-fields.tsx:166
+#: src/components/processing-settings-fields.tsx:154
 msgid "Camera model and Log profile detected; the matching LUT is enabled."
 msgstr "Camera model and Log profile detected; the matching LUT is enabled."
 
 #. Select the mapper that estimates camera poses after feature matching.
-#: src/components/processing-settings-fields.tsx:385
-#: src/components/task-list.tsx:290
+#: src/components/alignment-settings-fields.tsx:87
 msgid "Camera pose solver"
 msgstr "Camera pose solver"
 
@@ -626,6 +635,7 @@ msgstr "Camera-rig estimation"
 msgid "Can be resumed"
 msgstr "Can be resumed"
 
+#: src/components/task-alignment-settings.tsx:65
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
 #: src/lib/pipeline.ts:1852
@@ -695,7 +705,7 @@ msgid "Cancelled; you can resume later"
 msgstr "Cancelled; you can resume later"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:126
+#: src/components/processing-settings-fields.tsx:114
 msgid "Candidate frame rate"
 msgstr "Candidate frame rate"
 
@@ -767,15 +777,15 @@ msgstr "Checking bootstrap submodels and selecting shared camera-rig frames"
 msgid "Checking quality…"
 msgstr "Checking quality…"
 
-#: src/components/processing-settings-fields.tsx:194
+#: src/components/processing-settings-fields.tsx:182
 msgid "Choose .cube"
 msgstr "Choose .cube"
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "Choose a 3D LUT with the .cube extension."
 
-#: src/components/processing-settings-fields.tsx:291
+#: src/components/processing-settings-fields.tsx:279
 msgid "Choose a COLMAP text model with cameras.txt and images.txt from these captures. Camera dimensions and source/lens bindings must match."
 msgstr "Choose a COLMAP text model with cameras.txt and images.txt from these captures. Camera dimensions and source/lens bindings must match."
 
@@ -794,7 +804,7 @@ msgstr "Choose another"
 #~ msgstr "Choose English, Simplified Chinese, Traditional Chinese, or Japanese."
 
 #. Button opens a file picker for source media.
-#: src/components/task-list.tsx:378
+#: src/components/task-list.tsx:336
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "Choose files"
@@ -825,7 +835,7 @@ msgstr "Choose one or more panoramic source files."
 msgid "Choose sources"
 msgstr "Choose sources"
 
-#: src/components/processing-settings-fields.tsx:195
+#: src/components/processing-settings-fields.tsx:183
 msgid "Clear custom LUT"
 msgstr "Clear custom LUT"
 
@@ -880,17 +890,17 @@ msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA capability check result"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:504
+#: src/App.tsx:503
 #: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP executable"
 
 #: src/components/task-list.tsx:283
 #: src/components/task-list.tsx:293
-msgid "COLMAP incremental"
-msgstr "COLMAP incremental"
+#~ msgid "COLMAP incremental"
+#~ msgstr "COLMAP incremental"
 
-#: src/components/processing-settings-fields.tsx:84
+#: src/components/alignment-settings-fields.tsx:28
 msgid "COLMAP incremental mapper"
 msgstr "COLMAP incremental mapper"
 
@@ -940,7 +950,7 @@ msgstr "Complete {0} first"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "Complete {prerequisite} first"
 
-#: src/components/task-list.tsx:354
+#: src/components/task-list.tsx:312
 #: src/lib/pipeline.ts:1863
 msgid "Completed"
 msgstr "Completed"
@@ -951,7 +961,7 @@ msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "Completed"
 
-#: src/components/task-list.tsx:450
+#: src/components/task-list.tsx:407
 msgid "Completed reconstruction tasks will appear here."
 msgstr "Completed reconstruction tasks will appear here."
 
@@ -985,7 +995,7 @@ msgstr "Copy diagnostics"
 msgid "Copying selected frame pair"
 msgstr "Copying selected frame pair"
 
-#: src/components/processing-settings-fields.tsx:337
+#: src/components/alignment-settings-fields.tsx:39
 msgid "Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification."
 msgstr "Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification."
 
@@ -1047,7 +1057,7 @@ msgid "Current item: {0}"
 msgstr "Current item: {0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/components/task-list.tsx:223
+#: src/components/task-list.tsx:219
 msgid "Current stage: {0}"
 msgstr "Current stage: {0}"
 
@@ -1056,7 +1066,7 @@ msgid "Current work"
 msgstr "Current work"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:182
+#: src/components/processing-settings-fields.tsx:170
 msgid "Custom LUT (optional)"
 msgstr "Custom LUT (optional)"
 
@@ -1086,7 +1096,7 @@ msgstr "Decoding source {source} again at native resolution ({completed} / {tota
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "Defaults beside the first source: colmap-file-name"
 
-#: src/components/processing-settings-fields.tsx:301
+#: src/components/processing-settings-fields.tsx:289
 msgid "Detect objects in four orientations"
 msgstr "Detect objects in four orientations"
 
@@ -1099,11 +1109,11 @@ msgstr "Detected"
 #~ msgid "Detected from the _D filename suffix or media metadata and enabled."
 #~ msgstr "Detected from the _D filename suffix or media metadata and enabled."
 
-#: src/components/processing-settings-fields.tsx:294
+#: src/components/processing-settings-fields.tsx:282
 msgid "Detection confidence"
 msgstr "Detection confidence"
 
-#: src/components/processing-settings-fields.tsx:273
+#: src/components/processing-settings-fields.tsx:261
 msgid "Detection views"
 msgstr "Detection views"
 
@@ -1134,13 +1144,13 @@ msgstr "Diagnostics copied; you can paste them into a bug report"
 #~ msgstr "Drop OSV or dual-fisheye media here,<0/>or use Open project to resume an existing project."
 
 #: src/components/task-editor-dialog.tsx:160
+#: src/components/task-list.tsx:331
 #: src/components/task-list.tsx:373
-#: src/components/task-list.tsx:415
 msgid "Drop panoramic source media"
 msgstr "Drop panoramic source media"
 
 #. Drop panoramic source media here or choose files below. Existing projects are opened separately.
-#: src/components/task-list.tsx:376
+#: src/components/task-list.tsx:334
 msgid "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 msgstr "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 
@@ -1166,7 +1176,7 @@ msgid "Dynamic-object and sky masks"
 msgstr "Dynamic-object and sky masks"
 
 #. Edit a task that has not started.
-#: src/components/task-list.tsx:177
+#: src/components/task-list.tsx:173
 msgctxt "task action"
 msgid "Edit"
 msgstr "Edit"
@@ -1180,11 +1190,11 @@ msgid "Edit queued task"
 msgstr "Edit queued task"
 
 #: src/components/task-detail.tsx:149
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Elapsed"
 msgstr "Elapsed"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 
@@ -1208,7 +1218,7 @@ msgid "Error"
 msgstr "Error"
 
 #: src/components/task-detail.tsx:150
-#: src/components/task-list.tsx:229
+#: src/components/task-list.tsx:225
 msgid "Estimated remaining"
 msgstr "Estimated remaining"
 
@@ -1223,7 +1233,7 @@ msgstr "Estimating"
 msgid "Estimating and validating IMU time offset, hand-eye calibration, and focal priors"
 msgstr "Estimating and validating IMU time offset, hand-eye calibration, and focal priors"
 
-#: src/components/processing-settings-fields.tsx:211
+#: src/components/processing-settings-fields.tsx:199
 msgid "Exclude lens border and camera body"
 msgstr "Exclude lens border and camera body"
 
@@ -1259,7 +1269,7 @@ msgstr "Existing dual-fisheye frames were discovered"
 msgid "Existing masks were discovered"
 msgstr "Existing masks were discovered"
 
-#: src/components/processing-settings-fields.tsx:304
+#: src/components/processing-settings-fields.tsx:292
 msgid "Expand exclusions (inference pixels)"
 msgstr "Expand exclusions (inference pixels)"
 
@@ -1268,7 +1278,7 @@ msgstr "Expand exclusions (inference pixels)"
 msgid "Exporting and checking the final model report"
 msgstr "Exporting and checking the final model report"
 
-#: src/components/processing-settings-fields.tsx:313
+#: src/components/processing-settings-fields.tsx:301
 msgid "Extra exclusion folder"
 msgstr "Extra exclusion folder"
 
@@ -1309,12 +1319,16 @@ msgstr "Failed to open project"
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "Failed to read FFmpeg rawvideo: {error}"
 
+#: src/App.tsx:832
+msgid "Failed to save alignment settings"
+msgstr "Failed to save alignment settings"
+
 #: src/lib/pipeline.ts:716
 msgid "Failed to save task changes; check the runtime message"
 msgstr "Failed to save task changes; check the runtime message"
 
 #. Explain the default SIFT feature matching option.
-#: src/components/processing-settings-fields.tsx:364
+#: src/components/alignment-settings-fields.tsx:66
 msgid "Fastest and most mature option for typical scenes."
 msgstr "Fastest and most mature option for typical scenes."
 
@@ -1329,8 +1343,7 @@ msgid "Feature extraction"
 msgstr "Feature extraction"
 
 #. Select the local feature extractor and matcher used by COLMAP alignment.
-#: src/components/processing-settings-fields.tsx:340
-#: src/components/task-list.tsx:272
+#: src/components/alignment-settings-fields.tsx:42
 msgid "Feature matching method"
 msgstr "Feature matching method"
 
@@ -1453,8 +1466,8 @@ msgstr "Finalizing model"
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "First use: downloading the {model} model ({percent}%)"
 
-#: src/components/processing-settings-fields.tsx:276
-#: src/components/processing-settings-fields.tsx:281
+#: src/components/processing-settings-fields.tsx:264
+#: src/components/processing-settings-fields.tsx:269
 msgid "Five calibrated perspective views"
 msgstr "Five calibrated perspective views"
 
@@ -1483,7 +1496,7 @@ msgid "Frame extraction"
 msgstr "Frame extraction"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:95
+#: src/components/processing-settings-fields.tsx:83
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "Frame extraction"
@@ -1559,16 +1572,14 @@ msgstr "Global reconstruction"
 
 #: src/components/task-list.tsx:284
 #: src/components/task-list.tsx:294
-msgid "GLOMAP (validated fallback)"
-msgstr "GLOMAP (validated fallback)"
+#~ msgid "GLOMAP (validated fallback)"
+#~ msgstr "GLOMAP (validated fallback)"
 
-#: src/components/processing-settings-fields.tsx:86
-#: src/components/task-list.tsx:285
-#: src/components/task-list.tsx:295
+#: src/components/alignment-settings-fields.tsx:30
 msgid "GLOMAP only"
 msgstr "GLOMAP only"
 
-#: src/components/processing-settings-fields.tsx:85
+#: src/components/alignment-settings-fields.tsx:29
 msgid "GLOMAP with validated fallback"
 msgstr "GLOMAP with validated fallback"
 
@@ -1637,7 +1648,7 @@ msgstr "IMU samples were found, but fused-attitude samples were not available."
 msgid "IMU-assisted orientation may be unavailable"
 msgstr "IMU-assisted orientation may be unavailable"
 
-#: src/components/task-list.tsx:353
+#: src/components/task-list.tsx:311
 msgid "In progress"
 msgstr "In progress"
 
@@ -1654,7 +1665,7 @@ msgid "Inspect quality findings"
 msgstr "Inspect quality findings"
 
 #. Insta360 source media files.
-#: src/components/task-list.tsx:385
+#: src/components/task-list.tsx:343
 msgid "Insta360 source files"
 msgstr "Insta360 source files"
 
@@ -1677,7 +1688,7 @@ msgstr "Interface theme"
 msgid "Invalid extraction input: "
 msgstr "Invalid extraction input: "
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Invalid LUT file format"
 msgstr "Invalid LUT file format"
 
@@ -1727,7 +1738,7 @@ msgstr "Last checked: {0}"
 msgid "Leave blank to detect from PATH"
 msgstr "Leave blank to detect from PATH"
 
-#: src/components/processing-settings-fields.tsx:187
+#: src/components/processing-settings-fields.tsx:175
 msgid "Leave blank to use the detected camera's official LUT"
 msgstr "Leave blank to use the detected camera's official LUT"
 
@@ -1786,7 +1797,7 @@ msgid "Low pixel error and connected matches do not prove room topology or scale
 msgstr "Low pixel error and connected matches do not prove room topology or scale. Compare doors and walls with the original captures before training."
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:152
+#: src/components/processing-settings-fields.tsx:140
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT settings"
@@ -1832,7 +1843,7 @@ msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "Mask operation cancelled"
 
-#: src/components/processing-settings-fields.tsx:270
+#: src/components/processing-settings-fields.tsx:258
 msgid "Mask refinement"
 msgstr "Mask refinement"
 
@@ -1847,7 +1858,7 @@ msgid "Masking"
 msgstr "Masking"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:206
+#: src/components/processing-settings-fields.tsx:194
 msgctxt "settings section"
 msgid "Masking"
 msgstr "Masking"
@@ -1873,7 +1884,7 @@ msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "Masking completed"
 
-#: src/components/processing-settings-fields.tsx:325
+#: src/components/processing-settings-fields.tsx:313
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "Masking is disabled; alignment starts after frame extraction."
 
@@ -1929,11 +1940,11 @@ msgstr "Maximize or restore window"
 msgid "Minimize window"
 msgstr "Minimize window"
 
-#: src/components/processing-settings-fields.tsx:381
+#: src/components/alignment-settings-fields.tsx:83
 msgid "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 
-#: src/components/processing-settings-fields.tsx:380
+#: src/components/alignment-settings-fields.tsx:82
 msgid "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 
@@ -1977,8 +1988,8 @@ msgstr "Native dual-fisheye camera-rig alignment is available"
 msgid "Native error · median / P95"
 msgstr "Native error · median / P95"
 
-#: src/components/processing-settings-fields.tsx:275
-#: src/components/processing-settings-fields.tsx:280
+#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:268
 msgid "Native fisheye"
 msgstr "Native fisheye"
 
@@ -1987,7 +1998,7 @@ msgstr "Native fisheye"
 msgid "Needs attention"
 msgstr "Needs attention"
 
-#: src/components/processing-settings-fields.tsx:334
+#: src/components/alignment-settings-fields.tsx:36
 msgid "Neighboring frame pairs"
 msgstr "Neighboring frame pairs"
 
@@ -2014,7 +2025,7 @@ msgstr "New reconstruction task"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 
-#: src/components/task-list.tsx:449
+#: src/components/task-list.tsx:406
 msgid "No completed tasks yet"
 msgstr "No completed tasks yet"
 
@@ -2033,12 +2044,12 @@ msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 
 #. Empty task list heading.
-#: src/components/task-list.tsx:375
+#: src/components/task-list.tsx:333
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "No tasks yet"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 
@@ -2081,7 +2092,7 @@ msgid "Not reported"
 msgstr "Not reported"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Not reported yet"
 msgstr "Not reported yet"
 
@@ -2093,7 +2104,7 @@ msgstr "Not run yet"
 msgid "Not specified"
 msgstr "Not specified"
 
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Not started"
 msgstr "Not started"
 
@@ -2106,7 +2117,7 @@ msgid "Not timed yet"
 msgstr "Not timed yet"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:231
+#: src/components/processing-settings-fields.tsx:219
 msgid "Objects to mask (multiple selection)"
 msgstr "Objects to mask (multiple selection)"
 
@@ -2114,11 +2125,11 @@ msgstr "Objects to mask (multiple selection)"
 msgid "Observations inside masks"
 msgstr "Observations inside masks"
 
-#: src/components/processing-settings-fields.tsx:176
+#: src/components/processing-settings-fields.tsx:164
 msgid "Official source"
 msgstr "Official source"
 
-#: src/components/processing-settings-fields.tsx:322
+#: src/components/processing-settings-fields.tsx:310
 msgid "Only lens and camera-body masks are generated; no detection model is needed."
 msgstr "Only lens and camera-body masks are generated; no detection model is needed."
 
@@ -2129,7 +2140,7 @@ msgstr "Only the task and queue state are removed; the existing output folder is
 #. Open an existing resumable project.
 #. Open an existing resumable project.
 #: src/components/app-chrome.tsx:108
-#: src/components/task-list.tsx:379
+#: src/components/task-list.tsx:337
 msgctxt "project action"
 msgid "Open project"
 msgstr "Open project"
@@ -2151,7 +2162,7 @@ msgstr "Open quality report"
 msgid "Opened {name}"
 msgstr "Opened {name}"
 
-#: src/components/processing-settings-fields.tsx:317
+#: src/components/processing-settings-fields.tsx:305
 msgid "Optional binary PNGs at original resolution, arranged in lens folders. Black regions are added to the generated exclusions."
 msgstr "Optional binary PNGs at original resolution, arranged in lens folders. Black regions are added to the generated exclusions."
 
@@ -2166,7 +2177,7 @@ msgid "Orientation metadata is unavailable"
 msgstr "Orientation metadata is unavailable"
 
 #. DJI Osmo 360 source media files.
-#: src/components/task-list.tsx:384
+#: src/components/task-list.tsx:342
 msgid "Osmo 360 source files"
 msgstr "Osmo 360 source files"
 
@@ -2187,14 +2198,14 @@ msgid "Output folder"
 msgstr "Output folder"
 
 #: src/components/task-detail.tsx:240
-#: src/components/task-list.tsx:162
+#: src/components/task-list.tsx:158
 msgid "Output not specified"
 msgstr "Output not specified"
 
 #. Overall progress weighted by observed stage durations.
 #. Overall progress weighted by observed stage durations.
-#: src/components/task-list.tsx:208
-#: src/components/task-list.tsx:213
+#: src/components/task-list.tsx:204
+#: src/components/task-list.tsx:209
 msgid "Overall progress"
 msgstr "Overall progress"
 
@@ -2216,7 +2227,7 @@ msgstr "Packaging telemetry stream for source {source} ({current} / {total})"
 msgid "Pairing block {current} / {total} completed"
 msgstr "Pairing block {current} / {total} completed"
 
-#: src/App.tsx:417
+#: src/App.tsx:416
 msgid "Panoramic source video"
 msgstr "Panoramic source video"
 
@@ -2248,7 +2259,7 @@ msgctxt "mask class"
 msgid "Person"
 msgstr "Person"
 
-#: src/components/processing-settings-fields.tsx:284
+#: src/components/processing-settings-fields.tsx:272
 msgid "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 msgstr "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 
@@ -2269,11 +2280,11 @@ msgstr "Platform not checked yet"
 msgid "Possible impact"
 msgstr "Possible impact"
 
-#: src/components/processing-settings-fields.tsx:434
+#: src/components/alignment-settings-fields.tsx:136
 msgid "Possible incorrect matches"
 msgstr "Possible incorrect matches"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Preparing"
 msgstr "Preparing"
 
@@ -2294,7 +2305,7 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "Preparing work"
 
-#: src/components/task-list.tsx:159
+#: src/components/task-list.tsx:155
 msgid "Preview"
 msgstr "Preview"
 
@@ -2316,7 +2327,7 @@ msgid "Preview task updated"
 msgstr "Preview task updated"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Processed"
 msgstr "Processed"
 
@@ -2335,12 +2346,12 @@ msgstr "Processing pairing block {current} / {total}"
 msgid "Processing records"
 msgstr "Processing records"
 
-#: src/components/processing-settings-fields.tsx:92
+#: src/components/processing-settings-fields.tsx:80
 msgid "Processing settings"
 msgstr "Processing settings"
 
 #. A project folder containing a resumable reconstruction.
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Project folder"
 msgstr "Project folder"
 
@@ -2361,7 +2372,7 @@ msgstr "Rate (estimated)"
 msgid "Reconstruction acceleration may be unavailable"
 msgstr "Reconstruction acceleration may be unavailable"
 
-#: src/components/task-list.tsx:233
+#: src/components/task-list.tsx:229
 msgid "Reconstruction pipeline"
 msgstr "Reconstruction pipeline"
 
@@ -2384,7 +2395,7 @@ msgid "Rematching features using the calibrated FOV"
 msgstr "Rematching features using the calibrated FOV"
 
 #. Remove a queued task without deleting its output folder.
-#: src/components/task-list.tsx:181
+#: src/components/task-list.tsx:177
 msgctxt "task action"
 msgid "Remove"
 msgstr "Remove"
@@ -2419,7 +2430,7 @@ msgstr "Required capabilities need attention"
 #~ msgstr "Rerun alignment to generate the detailed quality report for this project."
 
 #. Automatically select a verified camera-specific LUT for detected Log footage.
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:152
 msgid "Restore Log color with the matching LUT"
 msgstr "Restore Log color with the matching LUT"
 
@@ -2427,7 +2438,7 @@ msgstr "Restore Log color with the matching LUT"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Resume an unfinished reconstruction task"
 msgstr "Resume an unfinished reconstruction task"
 
@@ -2481,7 +2492,7 @@ msgstr "Running and validating external orientation-aware BA"
 msgid "Running YOLO11/SkySeg inference"
 msgstr "Running YOLO11/SkySeg inference"
 
-#: src/components/processing-settings-fields.tsx:414
+#: src/components/alignment-settings-fields.tsx:116
 msgid "Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors."
 msgstr "Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors."
 
@@ -2491,7 +2502,7 @@ msgid "Runtime environment"
 msgstr "Runtime environment"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:146
+#: src/components/processing-settings-fields.tsx:134
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 
@@ -2500,6 +2511,14 @@ msgstr "Sample candidates at a multiple of the base frame rate, then select shar
 msgctxt "task action"
 msgid "Save changes"
 msgstr "Save changes"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Save settings"
+msgstr "Save settings"
+
+#: src/components/task-alignment-settings.tsx:55
+msgid "Save settings for the next alignment run. Existing reconstruction outputs are kept until you rerun alignment."
+msgstr "Save settings for the next alignment run. Existing reconstruction outputs are kept until you rerun alignment."
 
 #: src/components/task-editor-dialog.tsx:167
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
@@ -2519,6 +2538,10 @@ msgstr "Saving task changes failed, and the output folder could not be restored:
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "Saving task changes failed; the output folder was restored: {0}"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Saving…"
+msgstr "Saving…"
 
 #. Short label for a scan phase.
 #: src/lib/pipeline.ts:970
@@ -2573,7 +2596,7 @@ msgid "Select at least one panoramic source first"
 msgstr "Select at least one panoramic source first"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:458
+#: src/components/alignment-settings-fields.tsx:160
 msgid "Select GPU"
 msgstr "Select GPU"
 
@@ -2606,7 +2629,7 @@ msgid "Settings"
 msgstr "Settings"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:121
+#: src/components/processing-settings-fields.tsx:109
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "Sharpness filtering"
@@ -2620,9 +2643,7 @@ msgstr "Show {0} source issues"
 msgid "Show source issue"
 msgstr "Show source issue"
 
-#: src/components/processing-settings-fields.tsx:79
-#: src/components/task-list.tsx:265
-#: src/components/task-list.tsx:275
+#: src/components/alignment-settings-fields.tsx:23
 msgid "SIFT (fast default)"
 msgstr "SIFT (fast default)"
 
@@ -2653,7 +2674,7 @@ msgid "SIFT matching: Unsupported"
 msgstr "SIFT matching: Unsupported"
 
 #. Warn that visually repetitive scenes can cause a false loop closure.
-#: src/components/processing-settings-fields.tsx:435
+#: src/components/alignment-settings-fields.tsx:137
 msgid "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
 msgstr "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
 
@@ -2664,17 +2685,17 @@ msgstr "Similar-looking corridors or objects may be mistaken for a revisit, crea
 #~ msgstr "Simplified Chinese"
 
 #. Find long-distance revisits within one source video to help close a reconstruction loop.
-#: src/components/processing-settings-fields.tsx:429
+#: src/components/alignment-settings-fields.tsx:131
 msgid "Single-video loop closure"
 msgstr "Single-video loop closure"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:261
+#: src/components/processing-settings-fields.tsx:249
 msgid "Sky filtering"
 msgstr "Sky filtering"
 
 #. Heading for the learned feature matching performance tradeoff.
-#: src/components/processing-settings-fields.tsx:368
+#: src/components/alignment-settings-fields.tsx:70
 msgid "Slower, with a higher matching rate"
 msgstr "Slower, with a higher matching rate"
 
@@ -2764,7 +2785,7 @@ msgstr "Sources cannot be inside the output folder; move them elsewhere first"
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "Sources found; you can create a new reconstruction task"
 
-#: src/components/processing-settings-fields.tsx:201
+#: src/components/processing-settings-fields.tsx:189
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "Specify a .cube file only when you need to override the official LUT."
 
@@ -2787,7 +2808,7 @@ msgstr "Stage {0} of {1} · {label}"
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/components/task-list.tsx:241
+#: src/components/task-list.tsx:237
 msgid "Stage {0} of {1}: {2}"
 msgstr "Stage {0} of {1}: {2}"
 
@@ -2848,7 +2869,7 @@ msgstr "Stopped at stage {0} of {1} · {label}"
 msgid "Supported"
 msgstr "Supported"
 
-#: src/components/task-list.tsx:382
+#: src/components/task-list.tsx:340
 msgid "Supported inputs"
 msgstr "Supported inputs"
 
@@ -2952,7 +2973,7 @@ msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "The local runtime returned an unexpected error. See diagnostics for details."
 
-#: src/components/processing-settings-fields.tsx:405
+#: src/components/alignment-settings-fields.tsx:107
 msgid "The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity."
 msgstr "The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity."
 
@@ -2994,7 +3015,7 @@ msgid "The project root in the manifest does not match its actual location; rena
 msgstr "The project root in the manifest does not match its actual location; rename cancelled"
 
 #. Queued tasks run automatically in creation order.
-#: src/components/task-list.tsx:200
+#: src/components/task-list.tsx:196
 msgid "The queue runs automatically in creation order"
 msgstr "The queue runs automatically in creation order"
 
@@ -3136,7 +3157,7 @@ msgid "Trying bootstrap initial pair ({current} / {total})"
 msgstr "Trying bootstrap initial pair ({current} / {total})"
 
 #. Explain when the optional single-video loop-closure setting is useful.
-#: src/components/processing-settings-fields.tsx:430
+#: src/components/alignment-settings-fields.tsx:132
 msgid "Turn this on if the video passes through the same place again."
 msgstr "Turn this on if the video passes through the same place again."
 
@@ -3232,11 +3253,11 @@ msgstr "Unable to sync temporary metadata {path}: {error}"
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "Unable to write temporary metadata {path}: {error}"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown camera"
 msgstr "Unknown camera"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown color profile"
 msgstr "Unknown color profile"
 
@@ -3253,7 +3274,7 @@ msgid "Unsupported source format"
 msgstr "Unsupported source format"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:452
+#: src/components/alignment-settings-fields.tsx:154
 msgid "Use CUDA acceleration for alignment"
 msgstr "Use CUDA acceleration for alignment"
 
@@ -3263,7 +3284,7 @@ msgstr "Use CUDA acceleration for alignment"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr "Use Open project to open a project folder"
 
-#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:251
 msgid "Use SkySeg to generate sky masks."
 msgstr "Use SkySeg to generate sky masks."
 
@@ -3271,21 +3292,21 @@ msgstr "Use SkySeg to generate sky masks."
 msgid "Use the points training frame and save evaluation views. Check ghosting, people and floaters from original camera positions."
 msgstr "Use the points training frame and save evaluation views. Check ghosting, people and floaters from original camera positions."
 
-#: src/components/processing-settings-fields.tsx:268
+#: src/components/processing-settings-fields.tsx:256
 msgid "Uses four orientations and a 2-pixel expansion. Confidence is 0.50 for native views or 0.10 for calibrated views. Review people and static scene detail before alignment."
 msgstr "Uses four orientations and a 2-pixel expansion. Confidence is 0.50 for native views or 0.10 for calibrated views. Review people and static scene detail before alignment."
 
 #. Explain the ALIKED-N32 and LightGlue option.
-#: src/components/processing-settings-fields.tsx:371
+#: src/components/alignment-settings-fields.tsx:73
 msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
 msgstr "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
 
 #. Explain the rotation-aware ALIKED-N16Rot and LightGlue option.
-#: src/components/processing-settings-fields.tsx:372
+#: src/components/alignment-settings-fields.tsx:74
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 
-#: src/components/processing-settings-fields.tsx:413
+#: src/components/alignment-settings-fields.tsx:115
 msgid "Validated priors required"
 msgstr "Validated priors required"
 
@@ -3320,7 +3341,7 @@ msgid "View details"
 msgstr "View details"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:188
+#: src/components/task-list.tsx:184
 msgid "View details for {0}"
 msgstr "View details for {0}"
 
@@ -3336,8 +3357,13 @@ msgstr "Wait for {prerequisite} to finish"
 msgid "Wait for the current stage to finish"
 msgstr "Wait for the current stage to finish"
 
+#: src/App.tsx:823
+#: src/components/task-alignment-settings.tsx:62
+msgid "Wait for the running stage to finish before saving settings."
+msgstr "Wait for the running stage to finish before saving settings."
+
 #. placeholder {0}: action.prerequisite
-#: src/components/task-list.tsx:252
+#: src/components/task-list.tsx:248
 msgid "Waiting for {0} to finish"
 msgstr "Waiting for {0} to finish"
 
@@ -3347,7 +3373,7 @@ msgstr "Waiting for {0} to finish"
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "Waiting for stage {0} of {1} · {label}"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Waiting to run"
 msgstr "Waiting to run"
 
@@ -3363,12 +3389,12 @@ msgstr "Warnings"
 msgid "Weak frames / possible jumps"
 msgstr "Weak frames / possible jumps"
 
-#: src/components/task-list.tsx:211
-#: src/components/task-list.tsx:214
+#: src/components/task-list.tsx:207
+#: src/components/task-list.tsx:210
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 
-#: src/components/processing-settings-fields.tsx:200
+#: src/components/processing-settings-fields.tsx:188
 msgid "When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file."
 msgstr "When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file."
 
@@ -3400,6 +3426,6 @@ msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO and sky filtering are disabled; masking was skipped"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:226
+#: src/components/processing-settings-fields.tsx:214
 msgid "YOLO object filtering"
 msgstr "YOLO object filtering"

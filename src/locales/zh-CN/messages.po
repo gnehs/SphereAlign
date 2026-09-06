@@ -75,7 +75,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# 个文件} other {# 个文件}}"
 
 #. placeholder {0}: task.inputPaths.length
-#: src/components/task-list.tsx:201
+#: src/components/task-list.tsx:197
 msgid "{0, plural, one {# source} other {# sources}}"
 msgstr "{0, plural, one {# 个来源} other {# 个来源}}"
 
@@ -112,7 +112,7 @@ msgid "{0} of {1} stages complete"
 msgstr "已完成 {0}/{1} 个阶段"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:220
+#: src/components/task-list.tsx:216
 msgid "{0} overall time progress"
 msgstr "{0} 总体时间进度"
 
@@ -120,7 +120,7 @@ msgstr "{0} 总体时间进度"
 #. placeholder {0}: stageLabel(stage)
 #: src/components/task-detail.tsx:144
 #: src/components/task-detail.tsx:145
-#: src/components/task-list.tsx:255
+#: src/components/task-list.tsx:251
 msgid "{0} progress"
 msgstr "{0} 进度"
 
@@ -245,7 +245,7 @@ msgid "{total} sources · {valid} passed inspection"
 msgstr "{total} 个来源 · {valid} 个通过检查"
 
 #. Filter label for a 3D lookup table file using the .cube format.
-#: src/App.tsx:524
+#: src/App.tsx:523
 msgctxt "file picker filter"
 msgid "3D LUT (Cube)"
 msgstr "3D LUT（Cube）"
@@ -292,12 +292,12 @@ msgid "Add only panoramic source media captured in the same scene. A scene may i
 msgstr "仅添加在同一场景中拍摄的全景来源媒体。一个场景可以包含多个来源。不同场景请创建单独的重建任务。"
 
 #. Add a queued task to the automatic execution queue.
-#: src/components/task-list.tsx:170
+#: src/components/task-list.tsx:166
 msgctxt "queue action"
 msgid "Add to queue"
 msgstr "加入队列"
 
-#: src/components/processing-settings-fields.tsx:311
+#: src/components/processing-settings-fields.tsx:299
 msgid "Additional reviewed masks"
 msgstr ""
 
@@ -332,7 +332,7 @@ msgid "Alignment"
 msgstr "对齐"
 
 #. Pipeline stage settings for aligning source images and camera rigs.
-#: src/components/processing-settings-fields.tsx:330
+#: src/components/processing-settings-fields.tsx:318
 msgctxt "settings section"
 msgid "Alignment"
 msgstr "对齐"
@@ -340,6 +340,15 @@ msgstr "对齐"
 #: src/lib/pipeline.ts:810
 msgid "Alignment completed: {registered} / {total} camera-rig frames registered ({percentage}%)"
 msgstr "对齐已完成：已注册 {registered} / {total} 个相机组帧（{percentage}%）"
+
+#: src/components/task-alignment-settings.tsx:49
+#: src/components/task-alignment-settings.tsx:53
+msgid "Alignment settings"
+msgstr "对齐设置"
+
+#: src/App.tsx:835
+msgid "Alignment settings saved. They will apply on the next run."
+msgstr "已保存对齐设置，下次运行时生效。"
 
 #. placeholder {0}: alignCapability.text
 #: src/App.tsx:984
@@ -371,15 +380,11 @@ msgstr "对齐：待处理"
 msgid "Alignment: Running"
 msgstr "对齐：运行中"
 
-#: src/components/processing-settings-fields.tsx:81
-#: src/components/task-list.tsx:267
-#: src/components/task-list.tsx:277
+#: src/components/alignment-settings-fields.tsx:25
 msgid "ALIKED-N16Rot + LightGlue"
 msgstr "ALIKED-N16Rot + LightGlue"
 
-#: src/components/processing-settings-fields.tsx:80
-#: src/components/task-list.tsx:266
-#: src/components/task-list.tsx:276
+#: src/components/alignment-settings-fields.tsx:24
 msgid "ALIKED-N32 + LightGlue"
 msgstr "ALIKED-N32 + LightGlue"
 
@@ -387,7 +392,7 @@ msgstr "ALIKED-N32 + LightGlue"
 msgid "All required capabilities are available"
 msgstr "所有必需能力均可用"
 
-#: src/components/processing-settings-fields.tsx:267
+#: src/components/processing-settings-fields.tsx:255
 msgid "Apply crowded-scene settings"
 msgstr ""
 
@@ -400,6 +405,11 @@ msgstr ""
 #: src/lib/pipeline.ts:595
 msgid "At least two matching lens0/lens1 frame pairs are required for alignment"
 msgstr "对齐至少需要两对匹配的 lens0/lens1 帧对"
+
+#: src/components/alignment-settings-fields.tsx:162
+#: src/components/alignment-settings-fields.tsx:170
+msgid "Automatic GPU selection"
+msgstr "自动选择 GPU"
 
 #: src/lib/pipeline.ts:728
 msgid "Automatic pipeline completed frame extraction, masking, and alignment"
@@ -415,7 +425,7 @@ msgid "Available"
 msgstr "可用"
 
 #. Base frames-per-second setting for source media extraction.
-#: src/components/processing-settings-fields.tsx:98
+#: src/components/processing-settings-fields.tsx:86
 msgid "Base frame rate (FPS)"
 msgstr "基础帧率 (FPS)"
 
@@ -480,8 +490,8 @@ msgctxt "backend error"
 msgid "Both hardware and software decoding failed for FFmpeg in-memory candidates: hardware error: {0}; software error: {1}"
 msgstr "FFmpeg 内存中候选帧的硬件和软件解码均失败：硬件错误：{0}；软件错误：{1}"
 
-#: src/components/processing-settings-fields.tsx:290
-#: src/components/processing-settings-fields.tsx:316
+#: src/components/processing-settings-fields.tsx:278
+#: src/components/processing-settings-fields.tsx:304
 msgid "Browse"
 msgstr ""
 
@@ -559,7 +569,7 @@ msgstr ""
 msgid "Building the image pair graph"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:408
+#: src/components/alignment-settings-fields.tsx:110
 msgid "Builds a safe incremental calibration seed when needed, then keeps the GLOMAP result only if rig coverage and geometry validation pass."
 msgstr ""
 
@@ -590,7 +600,7 @@ msgstr ""
 msgid "Calibrating and validating the view-graph focal prior"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:287
+#: src/components/processing-settings-fields.tsx:275
 msgid "Calibration model folder"
 msgstr ""
 
@@ -599,13 +609,12 @@ msgid "Camera metadata could not be decoded from this file."
 msgstr "无法解码此文件中的相机元数据。"
 
 #. Camera model and explicit media profile metadata selected a verified LUT.
-#: src/components/processing-settings-fields.tsx:166
+#: src/components/processing-settings-fields.tsx:154
 msgid "Camera model and Log profile detected; the matching LUT is enabled."
 msgstr "已检测到相机型号和 Log 配置文件；已启用匹配的 LUT。"
 
 #. Select the mapper that estimates camera poses after feature matching.
-#: src/components/processing-settings-fields.tsx:385
-#: src/components/task-list.tsx:290
+#: src/components/alignment-settings-fields.tsx:87
 msgid "Camera pose solver"
 msgstr ""
 
@@ -626,6 +635,7 @@ msgstr "相机组估计"
 msgid "Can be resumed"
 msgstr "可以恢复"
 
+#: src/components/task-alignment-settings.tsx:65
 #: src/components/task-editor-dialog.tsx:186
 #: src/components/task-editor-dialog.tsx:207
 #: src/lib/pipeline.ts:1852
@@ -695,7 +705,7 @@ msgid "Cancelled; you can resume later"
 msgstr "已取消；你可以稍后恢复"
 
 #. Frame rate used to sample candidate frames before selecting the sharpest ones.
-#: src/components/processing-settings-fields.tsx:126
+#: src/components/processing-settings-fields.tsx:114
 msgid "Candidate frame rate"
 msgstr "候选帧率"
 
@@ -767,15 +777,15 @@ msgstr ""
 msgid "Checking quality…"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:194
+#: src/components/processing-settings-fields.tsx:182
 msgid "Choose .cube"
 msgstr "选择 .cube"
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Choose a 3D LUT with the .cube extension."
 msgstr "选择扩展名为 .cube 的 3D LUT。"
 
-#: src/components/processing-settings-fields.tsx:291
+#: src/components/processing-settings-fields.tsx:279
 msgid "Choose a COLMAP text model with cameras.txt and images.txt from these captures. Camera dimensions and source/lens bindings must match."
 msgstr ""
 
@@ -794,7 +804,7 @@ msgstr "选择其他"
 #~ msgstr "选择英语、简体中文、繁体中文或日语。"
 
 #. Button opens a file picker for source media.
-#: src/components/task-list.tsx:378
+#: src/components/task-list.tsx:336
 msgctxt "file picker action"
 msgid "Choose files"
 msgstr "选择文件"
@@ -825,7 +835,7 @@ msgstr "选择一个或多个全景来源文件。"
 msgid "Choose sources"
 msgstr "选择来源"
 
-#: src/components/processing-settings-fields.tsx:195
+#: src/components/processing-settings-fields.tsx:183
 msgid "Clear custom LUT"
 msgstr "清除自定义 LUT"
 
@@ -880,17 +890,17 @@ msgid "COLMAP CUDA capability check result"
 msgstr "COLMAP CUDA 能力检查结果"
 
 #. Path to the COLMAP executable used by the Windows runtime.
-#: src/App.tsx:504
+#: src/App.tsx:503
 #: src/components/settings-sheet.tsx:173
 msgid "COLMAP executable"
 msgstr "COLMAP 可执行文件"
 
 #: src/components/task-list.tsx:283
 #: src/components/task-list.tsx:293
-msgid "COLMAP incremental"
-msgstr ""
+#~ msgid "COLMAP incremental"
+#~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:84
+#: src/components/alignment-settings-fields.tsx:28
 msgid "COLMAP incremental mapper"
 msgstr ""
 
@@ -940,7 +950,7 @@ msgstr "先完成 {0}"
 #~ msgid "Complete {prerequisite} first"
 #~ msgstr "先完成 {prerequisite}"
 
-#: src/components/task-list.tsx:354
+#: src/components/task-list.tsx:312
 #: src/lib/pipeline.ts:1863
 msgid "Completed"
 msgstr "已完成"
@@ -951,7 +961,7 @@ msgctxt "pipeline phase status"
 msgid "Completed"
 msgstr "已完成"
 
-#: src/components/task-list.tsx:450
+#: src/components/task-list.tsx:407
 msgid "Completed reconstruction tasks will appear here."
 msgstr "完成的重建任务会显示在这里。"
 
@@ -985,7 +995,7 @@ msgstr "复制诊断信息"
 msgid "Copying selected frame pair"
 msgstr "正在复制选定的帧对"
 
-#: src/components/processing-settings-fields.tsx:337
+#: src/components/alignment-settings-fields.tsx:39
 msgid "Count selected physical frames within each capture. Try 15 for difficult sections; larger windows add work and need geometric verification."
 msgstr ""
 
@@ -1047,7 +1057,7 @@ msgid "Current item: {0}"
 msgstr "当前项：{0}"
 
 #. placeholder {0}: stageLabel(currentStageDefinition)
-#: src/components/task-list.tsx:223
+#: src/components/task-list.tsx:219
 msgid "Current stage: {0}"
 msgstr "当前阶段：{0}"
 
@@ -1056,7 +1066,7 @@ msgid "Current work"
 msgstr "当前工作"
 
 #. Optional user-provided 3D LUT file path.
-#: src/components/processing-settings-fields.tsx:182
+#: src/components/processing-settings-fields.tsx:170
 msgid "Custom LUT (optional)"
 msgstr "自定义 LUT（可选）"
 
@@ -1086,7 +1096,7 @@ msgstr ""
 msgid "Defaults beside the first source: colmap-file-name"
 msgstr "默认位于第一个来源旁：colmap-file-name"
 
-#: src/components/processing-settings-fields.tsx:301
+#: src/components/processing-settings-fields.tsx:289
 msgid "Detect objects in four orientations"
 msgstr ""
 
@@ -1099,11 +1109,11 @@ msgstr "已检测到"
 #~ msgid "Detected from the _D filename suffix or media metadata and enabled."
 #~ msgstr "已从 _D 文件名后缀或媒体元数据中检测到并启用。"
 
-#: src/components/processing-settings-fields.tsx:294
+#: src/components/processing-settings-fields.tsx:282
 msgid "Detection confidence"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:273
+#: src/components/processing-settings-fields.tsx:261
 msgid "Detection views"
 msgstr ""
 
@@ -1134,13 +1144,13 @@ msgstr "诊断信息已复制；你可以将其粘贴到错误报告中"
 #~ msgstr "将 OSV 或双鱼眼媒体拖到此处，<0/>或使用“打开项目”继续现有项目。"
 
 #: src/components/task-editor-dialog.tsx:160
+#: src/components/task-list.tsx:331
 #: src/components/task-list.tsx:373
-#: src/components/task-list.tsx:415
 msgid "Drop panoramic source media"
 msgstr "拖放全景来源媒体"
 
 #. Drop panoramic source media here or choose files below. Existing projects are opened separately.
-#: src/components/task-list.tsx:376
+#: src/components/task-list.tsx:334
 msgid "Drop panoramic source media here,<0/>or use Open project to resume an existing project."
 msgstr "将全景来源媒体拖到此处，<0/>或使用“打开项目”继续现有项目。"
 
@@ -1166,7 +1176,7 @@ msgid "Dynamic-object and sky masks"
 msgstr "动态对象和天空掩码"
 
 #. Edit a task that has not started.
-#: src/components/task-list.tsx:177
+#: src/components/task-list.tsx:173
 msgctxt "task action"
 msgid "Edit"
 msgstr "编辑"
@@ -1180,11 +1190,11 @@ msgid "Edit queued task"
 msgstr "编辑排队中的任务"
 
 #: src/components/task-detail.tsx:149
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Elapsed"
 msgstr "已用时间"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "Enabled by default when a CUDA-capable NVIDIA GPU is detected; falls back to the CPU if execution fails."
 msgstr "检测到支持 CUDA 的 NVIDIA GPU 时默认启用；如果执行失败则回退到 CPU。"
 
@@ -1208,7 +1218,7 @@ msgid "Error"
 msgstr "错误"
 
 #: src/components/task-detail.tsx:150
-#: src/components/task-list.tsx:229
+#: src/components/task-list.tsx:225
 msgid "Estimated remaining"
 msgstr "预计剩余时间"
 
@@ -1223,7 +1233,7 @@ msgstr "估算中"
 msgid "Estimating and validating IMU time offset, hand-eye calibration, and focal priors"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:211
+#: src/components/processing-settings-fields.tsx:199
 msgid "Exclude lens border and camera body"
 msgstr ""
 
@@ -1259,7 +1269,7 @@ msgstr "发现现有双鱼眼帧"
 msgid "Existing masks were discovered"
 msgstr "发现现有掩码"
 
-#: src/components/processing-settings-fields.tsx:304
+#: src/components/processing-settings-fields.tsx:292
 msgid "Expand exclusions (inference pixels)"
 msgstr ""
 
@@ -1268,7 +1278,7 @@ msgstr ""
 msgid "Exporting and checking the final model report"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:313
+#: src/components/processing-settings-fields.tsx:301
 msgid "Extra exclusion folder"
 msgstr ""
 
@@ -1309,12 +1319,16 @@ msgstr "打开项目失败"
 msgid "Failed to read FFmpeg rawvideo: {error}"
 msgstr "读取 FFmpeg rawvideo 失败：{error}"
 
+#: src/App.tsx:832
+msgid "Failed to save alignment settings"
+msgstr "无法保存对齐设置"
+
 #: src/lib/pipeline.ts:716
 msgid "Failed to save task changes; check the runtime message"
 msgstr "保存任务更改失败；请检查运行时消息"
 
 #. Explain the default SIFT feature matching option.
-#: src/components/processing-settings-fields.tsx:364
+#: src/components/alignment-settings-fields.tsx:66
 msgid "Fastest and most mature option for typical scenes."
 msgstr "一般场景中最快且最成熟的选项。"
 
@@ -1329,8 +1343,7 @@ msgid "Feature extraction"
 msgstr "特征提取"
 
 #. Select the local feature extractor and matcher used by COLMAP alignment.
-#: src/components/processing-settings-fields.tsx:340
-#: src/components/task-list.tsx:272
+#: src/components/alignment-settings-fields.tsx:42
 msgid "Feature matching method"
 msgstr "特征匹配方式"
 
@@ -1453,8 +1466,8 @@ msgstr ""
 msgid "First use: downloading the {model} model ({percent}%)"
 msgstr "首次使用：正在下载 {model} 模型（{percent}%）"
 
-#: src/components/processing-settings-fields.tsx:276
-#: src/components/processing-settings-fields.tsx:281
+#: src/components/processing-settings-fields.tsx:264
+#: src/components/processing-settings-fields.tsx:269
 msgid "Five calibrated perspective views"
 msgstr ""
 
@@ -1483,7 +1496,7 @@ msgid "Frame extraction"
 msgstr "帧提取"
 
 #. Pipeline stage settings for extracting frames.
-#: src/components/processing-settings-fields.tsx:95
+#: src/components/processing-settings-fields.tsx:83
 msgctxt "settings section"
 msgid "Frame extraction"
 msgstr "帧提取"
@@ -1559,16 +1572,14 @@ msgstr ""
 
 #: src/components/task-list.tsx:284
 #: src/components/task-list.tsx:294
-msgid "GLOMAP (validated fallback)"
-msgstr ""
+#~ msgid "GLOMAP (validated fallback)"
+#~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:86
-#: src/components/task-list.tsx:285
-#: src/components/task-list.tsx:295
+#: src/components/alignment-settings-fields.tsx:30
 msgid "GLOMAP only"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:85
+#: src/components/alignment-settings-fields.tsx:29
 msgid "GLOMAP with validated fallback"
 msgstr ""
 
@@ -1637,7 +1648,7 @@ msgstr "已找到 IMU 样本，但融合姿态样本不可用。"
 msgid "IMU-assisted orientation may be unavailable"
 msgstr "IMU 辅助方向估计可能无法使用"
 
-#: src/components/task-list.tsx:353
+#: src/components/task-list.tsx:311
 msgid "In progress"
 msgstr "进行中"
 
@@ -1654,7 +1665,7 @@ msgid "Inspect quality findings"
 msgstr ""
 
 #. Insta360 source media files.
-#: src/components/task-list.tsx:385
+#: src/components/task-list.tsx:343
 msgid "Insta360 source files"
 msgstr "Insta360 来源文件"
 
@@ -1677,7 +1688,7 @@ msgstr "界面主题"
 msgid "Invalid extraction input: "
 msgstr "提取输入无效： "
 
-#: src/components/processing-settings-fields.tsx:198
+#: src/components/processing-settings-fields.tsx:186
 msgid "Invalid LUT file format"
 msgstr "LUT 文件格式无效"
 
@@ -1727,7 +1738,7 @@ msgstr "上次检查：{0}"
 msgid "Leave blank to detect from PATH"
 msgstr "留空以从 PATH 检测"
 
-#: src/components/processing-settings-fields.tsx:187
+#: src/components/processing-settings-fields.tsx:175
 msgid "Leave blank to use the detected camera's official LUT"
 msgstr "留空以使用检测到的相机官方 LUT"
 
@@ -1786,7 +1797,7 @@ msgid "Low pixel error and connected matches do not prove room topology or scale
 msgstr ""
 
 #. Lookup table settings for restoring source media color.
-#: src/components/processing-settings-fields.tsx:152
+#: src/components/processing-settings-fields.tsx:140
 msgctxt "settings section"
 msgid "LUT settings"
 msgstr "LUT 设置"
@@ -1832,7 +1843,7 @@ msgctxt "backend stage status"
 msgid "Mask operation cancelled"
 msgstr "掩码操作已取消"
 
-#: src/components/processing-settings-fields.tsx:270
+#: src/components/processing-settings-fields.tsx:258
 msgid "Mask refinement"
 msgstr ""
 
@@ -1847,7 +1858,7 @@ msgid "Masking"
 msgstr "掩码"
 
 #. Pipeline stage settings for creating masks.
-#: src/components/processing-settings-fields.tsx:206
+#: src/components/processing-settings-fields.tsx:194
 msgctxt "settings section"
 msgid "Masking"
 msgstr "掩码"
@@ -1873,7 +1884,7 @@ msgctxt "backend stage status"
 msgid "Masking completed"
 msgstr "掩码已完成"
 
-#: src/components/processing-settings-fields.tsx:325
+#: src/components/processing-settings-fields.tsx:313
 msgid "Masking is disabled; alignment starts after frame extraction."
 msgstr "掩码已禁用；帧提取后开始对齐。"
 
@@ -1929,11 +1940,11 @@ msgstr "最大化或还原窗口"
 msgid "Minimize window"
 msgstr "最小化窗口"
 
-#: src/components/processing-settings-fields.tsx:381
+#: src/components/alignment-settings-fields.tsx:83
 msgid "Missing aliked-n16rot.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "缺少 aliked-n16rot.onnx 或 aliked-lightglue.onnx 时会自动下载到共享的 YOLO 模型文件夹。经过验证的加速方案使用 NVIDIA CUDA GPU。"
 
-#: src/components/processing-settings-fields.tsx:380
+#: src/components/alignment-settings-fields.tsx:82
 msgid "Missing aliked-n32.onnx and aliked-lightglue.onnx models are downloaded automatically into the shared YOLO model folder. The verified accelerated path uses an NVIDIA CUDA GPU."
 msgstr "缺少 aliked-n32.onnx 或 aliked-lightglue.onnx 时会自动下载到共享的 YOLO 模型文件夹。经过验证的加速方案使用 NVIDIA CUDA GPU。"
 
@@ -1977,8 +1988,8 @@ msgstr "原生双鱼眼相机组对齐可用"
 msgid "Native error · median / P95"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:275
-#: src/components/processing-settings-fields.tsx:280
+#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:268
 msgid "Native fisheye"
 msgstr ""
 
@@ -1987,7 +1998,7 @@ msgstr ""
 msgid "Needs attention"
 msgstr "需要注意"
 
-#: src/components/processing-settings-fields.tsx:334
+#: src/components/alignment-settings-fields.tsx:36
 msgid "Neighboring frame pairs"
 msgstr ""
 
@@ -2014,7 +2025,7 @@ msgstr "新建重建任务"
 #~ msgid "New tasks run frame extraction, masking, and alignment in order; each stage can still be cancelled or retried independently."
 #~ msgstr "新任务按帧提取、掩码和对齐的顺序运行；每个阶段仍可单独取消或重试。"
 
-#: src/components/task-list.tsx:449
+#: src/components/task-list.tsx:406
 msgid "No completed tasks yet"
 msgstr "暂无已完成的任务"
 
@@ -2033,12 +2044,12 @@ msgid "No NVIDIA GPU usable by COLMAP was detected; the CPU will be used"
 msgstr "未检测到 COLMAP 可用的 NVIDIA GPU；将使用 CPU"
 
 #. Empty task list heading.
-#: src/components/task-list.tsx:375
+#: src/components/task-list.tsx:333
 msgctxt "empty state"
 msgid "No tasks yet"
 msgstr "暂无任务"
 
-#: src/components/processing-settings-fields.tsx:453
+#: src/components/alignment-settings-fields.tsx:155
 msgid "No usable COLMAP CUDA acceleration was detected, so the CPU will be used."
 msgstr "未检测到可用的 COLMAP CUDA 加速，因此将使用 CPU。"
 
@@ -2081,7 +2092,7 @@ msgid "Not reported"
 msgstr "未报告"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Not reported yet"
 msgstr "尚未报告"
 
@@ -2093,7 +2104,7 @@ msgstr "尚未运行"
 msgid "Not specified"
 msgstr "未指定"
 
-#: src/components/task-list.tsx:228
+#: src/components/task-list.tsx:224
 msgid "Not started"
 msgstr "尚未开始"
 
@@ -2106,7 +2117,7 @@ msgid "Not timed yet"
 msgstr "尚未计时"
 
 #. Select one or more object classes to exclude from reconstruction.
-#: src/components/processing-settings-fields.tsx:231
+#: src/components/processing-settings-fields.tsx:219
 msgid "Objects to mask (multiple selection)"
 msgstr "要掩码的对象（可多选）"
 
@@ -2114,11 +2125,11 @@ msgstr "要掩码的对象（可多选）"
 msgid "Observations inside masks"
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:176
+#: src/components/processing-settings-fields.tsx:164
 msgid "Official source"
 msgstr "官方来源"
 
-#: src/components/processing-settings-fields.tsx:322
+#: src/components/processing-settings-fields.tsx:310
 msgid "Only lens and camera-body masks are generated; no detection model is needed."
 msgstr ""
 
@@ -2129,7 +2140,7 @@ msgstr "仅移除任务和队列状态；不会删除现有输出文件夹。"
 #. Open an existing resumable project.
 #. Open an existing resumable project.
 #: src/components/app-chrome.tsx:108
-#: src/components/task-list.tsx:379
+#: src/components/task-list.tsx:337
 msgctxt "project action"
 msgid "Open project"
 msgstr "打开项目"
@@ -2151,7 +2162,7 @@ msgstr ""
 msgid "Opened {name}"
 msgstr "已打开 {name}"
 
-#: src/components/processing-settings-fields.tsx:317
+#: src/components/processing-settings-fields.tsx:305
 msgid "Optional binary PNGs at original resolution, arranged in lens folders. Black regions are added to the generated exclusions."
 msgstr ""
 
@@ -2166,7 +2177,7 @@ msgid "Orientation metadata is unavailable"
 msgstr "方向元数据不可用"
 
 #. DJI Osmo 360 source media files.
-#: src/components/task-list.tsx:384
+#: src/components/task-list.tsx:342
 msgid "Osmo 360 source files"
 msgstr "Osmo 360 源文件"
 
@@ -2187,14 +2198,14 @@ msgid "Output folder"
 msgstr "输出文件夹"
 
 #: src/components/task-detail.tsx:240
-#: src/components/task-list.tsx:162
+#: src/components/task-list.tsx:158
 msgid "Output not specified"
 msgstr "未指定输出"
 
 #. Overall progress weighted by observed stage durations.
 #. Overall progress weighted by observed stage durations.
-#: src/components/task-list.tsx:208
-#: src/components/task-list.tsx:213
+#: src/components/task-list.tsx:204
+#: src/components/task-list.tsx:209
 msgid "Overall progress"
 msgstr "总体进度"
 
@@ -2216,7 +2227,7 @@ msgstr ""
 msgid "Pairing block {current} / {total} completed"
 msgstr "配对区块 {current} / {total} 已完成"
 
-#: src/App.tsx:417
+#: src/App.tsx:416
 msgid "Panoramic source video"
 msgstr "全景来源视频"
 
@@ -2248,7 +2259,7 @@ msgctxt "mask class"
 msgid "Person"
 msgstr "人员"
 
-#: src/components/processing-settings-fields.tsx:284
+#: src/components/processing-settings-fields.tsx:272
 msgid "Perspective views reduce fisheye distortion during detection. Exclusions are mapped back to the original images."
 msgstr ""
 
@@ -2269,11 +2280,11 @@ msgstr "尚未检查平台"
 msgid "Possible impact"
 msgstr "可能的影响"
 
-#: src/components/processing-settings-fields.tsx:434
+#: src/components/alignment-settings-fields.tsx:136
 msgid "Possible incorrect matches"
 msgstr "可能产生错误匹配"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Preparing"
 msgstr "准备中"
 
@@ -2294,7 +2305,7 @@ msgctxt "pipeline stage status"
 msgid "Preparing work"
 msgstr "准备工作"
 
-#: src/components/task-list.tsx:159
+#: src/components/task-list.tsx:155
 msgid "Preview"
 msgstr "预览"
 
@@ -2316,7 +2327,7 @@ msgid "Preview task updated"
 msgstr "预览任务已更新"
 
 #: src/components/task-detail.tsx:148
-#: src/components/task-list.tsx:227
+#: src/components/task-list.tsx:223
 msgid "Processed"
 msgstr "已处理"
 
@@ -2335,12 +2346,12 @@ msgstr "正在处理配对区块 {current} / {total}"
 msgid "Processing records"
 msgstr "处理记录"
 
-#: src/components/processing-settings-fields.tsx:92
+#: src/components/processing-settings-fields.tsx:80
 msgid "Processing settings"
 msgstr "处理设置"
 
 #. A project folder containing a resumable reconstruction.
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Project folder"
 msgstr "项目文件夹"
 
@@ -2361,7 +2372,7 @@ msgstr "速率（估算）"
 msgid "Reconstruction acceleration may be unavailable"
 msgstr "重建加速可能无法使用"
 
-#: src/components/task-list.tsx:233
+#: src/components/task-list.tsx:229
 msgid "Reconstruction pipeline"
 msgstr "重建流水线"
 
@@ -2384,7 +2395,7 @@ msgid "Rematching features using the calibrated FOV"
 msgstr ""
 
 #. Remove a queued task without deleting its output folder.
-#: src/components/task-list.tsx:181
+#: src/components/task-list.tsx:177
 msgctxt "task action"
 msgid "Remove"
 msgstr "移除"
@@ -2419,7 +2430,7 @@ msgstr "必需能力需要注意"
 #~ msgstr ""
 
 #. Automatically select a verified camera-specific LUT for detected Log footage.
-#: src/components/processing-settings-fields.tsx:164
+#: src/components/processing-settings-fields.tsx:152
 msgid "Restore Log color with the matching LUT"
 msgstr "使用匹配的 LUT 还原 Log 色彩"
 
@@ -2427,7 +2438,7 @@ msgstr "使用匹配的 LUT 还原 Log 色彩"
 msgid "Resume"
 msgstr "恢复"
 
-#: src/components/task-list.tsx:386
+#: src/components/task-list.tsx:344
 msgid "Resume an unfinished reconstruction task"
 msgstr "恢复未完成的重建任务"
 
@@ -2481,7 +2492,7 @@ msgstr ""
 msgid "Running YOLO11/SkySeg inference"
 msgstr "正在运行 YOLO11/SkySeg 推理"
 
-#: src/components/processing-settings-fields.tsx:414
+#: src/components/alignment-settings-fields.tsx:116
 msgid "Runs GLOMAP directly and stops if this project does not already contain compatible focal and rig priors."
 msgstr ""
 
@@ -2491,7 +2502,7 @@ msgid "Runtime environment"
 msgstr "运行时环境"
 
 #. Candidate frames are sampled at a multiple of the base frame rate, then sharper frames are selected.
-#: src/components/processing-settings-fields.tsx:146
+#: src/components/processing-settings-fields.tsx:134
 msgid "Sample candidates at a multiple of the base frame rate, then select sharper frames."
 msgstr "以基础帧率的倍数采样候选帧，然后选择更清晰的帧。"
 
@@ -2500,6 +2511,14 @@ msgstr "以基础帧率的倍数采样候选帧，然后选择更清晰的帧。
 msgctxt "task action"
 msgid "Save changes"
 msgstr "保存更改"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Save settings"
+msgstr "保存设置"
+
+#: src/components/task-alignment-settings.tsx:55
+msgid "Save settings for the next alignment run. Existing reconstruction outputs are kept until you rerun alignment."
+msgstr "保存下次对齐使用的设置。重新运行对齐前，会保留现有重建结果。"
 
 #: src/components/task-editor-dialog.tsx:167
 msgid "Saving a new task name also renames the output folder; unsupported filename characters become hyphens."
@@ -2519,6 +2538,10 @@ msgstr "保存任务更改失败，且无法恢复输出文件夹：{0}；回滚
 msgctxt "project edit error"
 msgid "Saving task changes failed; the output folder was restored: {0}"
 msgstr "保存任务更改失败；输出文件夹已恢复：{0}"
+
+#: src/components/task-alignment-settings.tsx:68
+msgid "Saving…"
+msgstr "保存中…"
 
 #. Short label for a scan phase.
 #: src/lib/pipeline.ts:970
@@ -2573,7 +2596,7 @@ msgid "Select at least one panoramic source first"
 msgstr "请先至少选择一个全景来源"
 
 #. Select which detected GPU should run alignment.
-#: src/components/processing-settings-fields.tsx:458
+#: src/components/alignment-settings-fields.tsx:160
 msgid "Select GPU"
 msgstr "选择 GPU"
 
@@ -2606,7 +2629,7 @@ msgid "Settings"
 msgstr "设置"
 
 #. Whether blurry candidate frames should be filtered out.
-#: src/components/processing-settings-fields.tsx:121
+#: src/components/processing-settings-fields.tsx:109
 msgctxt "frame extraction setting"
 msgid "Sharpness filtering"
 msgstr "清晰度过滤"
@@ -2620,9 +2643,7 @@ msgstr "显示 {0} 个来源问题"
 msgid "Show source issue"
 msgstr "显示来源问题"
 
-#: src/components/processing-settings-fields.tsx:79
-#: src/components/task-list.tsx:265
-#: src/components/task-list.tsx:275
+#: src/components/alignment-settings-fields.tsx:23
 msgid "SIFT (fast default)"
 msgstr "SIFT（快速默认）"
 
@@ -2653,7 +2674,7 @@ msgid "SIFT matching: Unsupported"
 msgstr "SIFT 匹配：不支持"
 
 #. Warn that visually repetitive scenes can cause a false loop closure.
-#: src/components/processing-settings-fields.tsx:435
+#: src/components/alignment-settings-fields.tsx:137
 msgid "Similar-looking corridors or objects may be mistaken for a revisit, creating incorrect matches."
 msgstr "外观相似的走廊或物体可能被误认为重访，从而产生错误匹配。"
 
@@ -2664,17 +2685,17 @@ msgstr "外观相似的走廊或物体可能被误认为重访，从而产生错
 #~ msgstr "简体中文"
 
 #. Find long-distance revisits within one source video to help close a reconstruction loop.
-#: src/components/processing-settings-fields.tsx:429
+#: src/components/alignment-settings-fields.tsx:131
 msgid "Single-video loop closure"
 msgstr "单个视频长距离闭环"
 
 #. Enable SkySeg sky masks.
-#: src/components/processing-settings-fields.tsx:261
+#: src/components/processing-settings-fields.tsx:249
 msgid "Sky filtering"
 msgstr "天空过滤"
 
 #. Heading for the learned feature matching performance tradeoff.
-#: src/components/processing-settings-fields.tsx:368
+#: src/components/alignment-settings-fields.tsx:70
 msgid "Slower, with a higher matching rate"
 msgstr "速度较慢，但匹配率较高"
 
@@ -2764,7 +2785,7 @@ msgstr "来源不能位于输出文件夹内；请先将其移到其他位置"
 msgid "Sources found; you can create a new reconstruction task"
 msgstr "已找到来源；你可以创建新的重建任务"
 
-#: src/components/processing-settings-fields.tsx:201
+#: src/components/processing-settings-fields.tsx:189
 msgid "Specify a .cube file only when you need to override the official LUT."
 msgstr "仅在需要覆盖官方 LUT 时指定 .cube 文件。"
 
@@ -2787,7 +2808,7 @@ msgstr "阶段 {0}/{1} · {label}"
 #. placeholder {0}: stageIndex + 1
 #. placeholder {1}: STAGES.length
 #. placeholder {2}: stageLabel(stage)
-#: src/components/task-list.tsx:241
+#: src/components/task-list.tsx:237
 msgid "Stage {0} of {1}: {2}"
 msgstr "阶段 {0}/{1}：{2}"
 
@@ -2848,7 +2869,7 @@ msgstr "已停止于第 {0}/{1} 个阶段 · {label}"
 msgid "Supported"
 msgstr "支持"
 
-#: src/components/task-list.tsx:382
+#: src/components/task-list.tsx:340
 msgid "Supported inputs"
 msgstr "支持的输入"
 
@@ -2952,7 +2973,7 @@ msgctxt "backend error fallback"
 msgid "The local runtime returned an unexpected error. See diagnostics for details."
 msgstr "本地运行时返回了意外错误。请查看诊断信息。"
 
-#: src/components/processing-settings-fields.tsx:405
+#: src/components/alignment-settings-fields.tsx:107
 msgid "The mature sequential COLMAP mapper; usually slower but tolerant of incomplete global connectivity."
 msgstr ""
 
@@ -2994,7 +3015,7 @@ msgid "The project root in the manifest does not match its actual location; rena
 msgstr "清单中的项目根目录与实际位置不匹配；已取消重命名"
 
 #. Queued tasks run automatically in creation order.
-#: src/components/task-list.tsx:200
+#: src/components/task-list.tsx:196
 msgid "The queue runs automatically in creation order"
 msgstr "队列按创建顺序自动运行"
 
@@ -3136,7 +3157,7 @@ msgid "Trying bootstrap initial pair ({current} / {total})"
 msgstr ""
 
 #. Explain when the optional single-video loop-closure setting is useful.
-#: src/components/processing-settings-fields.tsx:430
+#: src/components/alignment-settings-fields.tsx:132
 msgid "Turn this on if the video passes through the same place again."
 msgstr "如果视频中有再次经过同一地点，请开启此选项。"
 
@@ -3232,11 +3253,11 @@ msgstr "无法同步临时元数据 {path}：{error}"
 msgid "Unable to write temporary metadata {path}: {error}"
 msgstr "无法写入临时元数据 {path}：{error}"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown camera"
 msgstr "未知相机"
 
-#: src/components/processing-settings-fields.tsx:172
+#: src/components/processing-settings-fields.tsx:160
 msgid "Unknown color profile"
 msgstr "未知色彩配置文件"
 
@@ -3253,7 +3274,7 @@ msgid "Unsupported source format"
 msgstr "不支持的来源格式"
 
 #. Use CUDA acceleration for the COLMAP alignment stage.
-#: src/components/processing-settings-fields.tsx:452
+#: src/components/alignment-settings-fields.tsx:154
 msgid "Use CUDA acceleration for alignment"
 msgstr "使用 CUDA 加速进行对齐"
 
@@ -3263,7 +3284,7 @@ msgstr "使用 CUDA 加速进行对齐"
 #~ msgid "Use Open project to open a project folder"
 #~ msgstr ""
 
-#: src/components/processing-settings-fields.tsx:263
+#: src/components/processing-settings-fields.tsx:251
 msgid "Use SkySeg to generate sky masks."
 msgstr "使用 SkySeg 生成天空掩码。"
 
@@ -3271,21 +3292,21 @@ msgstr "使用 SkySeg 生成天空掩码。"
 msgid "Use the points training frame and save evaluation views. Check ghosting, people and floaters from original camera positions."
 msgstr ""
 
-#: src/components/processing-settings-fields.tsx:268
+#: src/components/processing-settings-fields.tsx:256
 msgid "Uses four orientations and a 2-pixel expansion. Confidence is 0.50 for native views or 0.10 for calibrated views. Review people and static scene detail before alignment."
 msgstr ""
 
 #. Explain the ALIKED-N32 and LightGlue option.
-#: src/components/processing-settings-fields.tsx:371
+#: src/components/alignment-settings-fields.tsx:73
 msgid "Usually improves matching and camera registration in low-texture or difficult scenes. N32 is the recommended ALIKED option, but alignment takes longer."
 msgstr "通常能改善低纹理或困难场景的匹配与相机注册率。N32 是推荐的 ALIKED 选项，但对齐耗时更长。"
 
 #. Explain the rotation-aware ALIKED-N16Rot and LightGlue option.
-#: src/components/processing-settings-fields.tsx:372
+#: src/components/alignment-settings-fields.tsx:74
 msgid "Usually improves matching under large viewpoint or rotation changes, but alignment takes longer."
 msgstr "通常能改善大视角或旋转变化下的匹配，但对齐耗时更长。"
 
-#: src/components/processing-settings-fields.tsx:413
+#: src/components/alignment-settings-fields.tsx:115
 msgid "Validated priors required"
 msgstr ""
 
@@ -3320,7 +3341,7 @@ msgid "View details"
 msgstr "查看详细信息"
 
 #. placeholder {0}: task.name
-#: src/components/task-list.tsx:188
+#: src/components/task-list.tsx:184
 msgid "View details for {0}"
 msgstr "查看 {0} 的详细信息"
 
@@ -3336,8 +3357,13 @@ msgstr "等待 {prerequisite} 完成"
 msgid "Wait for the current stage to finish"
 msgstr "等待当前阶段完成"
 
+#: src/App.tsx:823
+#: src/components/task-alignment-settings.tsx:62
+msgid "Wait for the running stage to finish before saving settings."
+msgstr "请等待当前运行中的阶段完成后，再保存设置。"
+
 #. placeholder {0}: action.prerequisite
-#: src/components/task-list.tsx:252
+#: src/components/task-list.tsx:248
 msgid "Waiting for {0} to finish"
 msgstr "等待 {0} 完成"
 
@@ -3347,7 +3373,7 @@ msgstr "等待 {0} 完成"
 msgid "Waiting for stage {0} of {1} · {label}"
 msgstr "等待阶段 {0}/{1} · {label}"
 
-#: src/components/task-list.tsx:158
+#: src/components/task-list.tsx:154
 msgid "Waiting to run"
 msgstr "等待运行"
 
@@ -3363,12 +3389,12 @@ msgstr "警告"
 msgid "Weak frames / possible jumps"
 msgstr ""
 
-#: src/components/task-list.tsx:211
-#: src/components/task-list.tsx:214
+#: src/components/task-list.tsx:207
+#: src/components/task-list.tsx:210
 msgid "Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%"
 msgstr "根据三次观察到的运行时长加权：帧提取 22%、掩码 4%、对齐 74%"
 
-#: src/components/processing-settings-fields.tsx:200
+#: src/components/processing-settings-fields.tsx:188
 msgid "When no custom file is specified, the runtime uses the detected model's verified LUT; otherwise it uses this .cube file."
 msgstr "未指定自定义文件时，运行时使用检测到的型号对应的已验证 LUT；否则使用此 .cube 文件。"
 
@@ -3400,6 +3426,6 @@ msgid "YOLO and sky filtering are disabled; masking was skipped"
 msgstr "YOLO 和天空过滤已禁用；已跳过掩码"
 
 #. Enable object detection masks from YOLO11.
-#: src/components/processing-settings-fields.tsx:226
+#: src/components/processing-settings-fields.tsx:214
 msgid "YOLO object filtering"
 msgstr "YOLO 对象过滤"

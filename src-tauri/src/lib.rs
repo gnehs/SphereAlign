@@ -59,6 +59,11 @@ fn update_queued_project(request: UpdateQueuedProjectRequest) -> Result<ProjectM
 }
 
 #[tauri::command]
+fn update_alignment_settings(jobs: tauri::State<'_, JobManager>, request: pipeline::UpdateAlignmentSettingsRequest) -> Result<ProjectManifest, String> {
+    pipeline::update_alignment_settings(&jobs, request)
+}
+
+#[tauri::command]
 fn load_project(path: String) -> Result<ProjectManifest, String> {
     project::load(path)
 }
@@ -123,6 +128,7 @@ pub fn run() {
             source_preview,
             create_project,
             update_queued_project,
+            update_alignment_settings,
             load_project,
             read_reconstruction_quality,
             audit_existing_alignment,
