@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-const ENGINE: &str = "native-draft-v1-100deg-known-focal-nearest-seam-reject";
+const ENGINE: &str = "native-draft-v2-invertible-fisheye-domain";
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {

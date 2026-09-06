@@ -48,6 +48,8 @@ src-tauri/target/debug/spherealign-geometry-cli.exe inspect "D:/data/project"
 
 PNG 預覽包括 rgb／normal／range／validity／reasons 及 face0–5。原生回填採最近有效面像素，不在深度邊界內插；重疊不同意直接排除。每張 range 圖使用自己的偽彩顯示尺度，不能跨圖比较顏色。一次保留一張來源及其六個面，順序推論，不將整個場景載入 RAM。相機最大 64 MP；預估磁碟空間是保守估算，尚未完成完整場景峰值資源基準。
 
+魚眼有效範圍是來源圓形範圍與相機多項式中央可逆區間的交集。若標定曲線在影像邊緣前反折，只排除超出第一個導數零點的像素，不拒絕整個相機，也不把不可逆像素 clamp 到邊界。2026-09-07 修正以導數多項式根隔離取代固定角度掃描，涵蓋窄反折與重根；以實際 3840² 雙鏡頭標定參數加入回歸測試。投影語意更新使用 `native-draft-v2-invertible-fisheye-domain` run identity，避免沿用舊版投影快取。
+
 ## 執行已實作的原生工具
 
 以下是保留的開發者 probe 路徑。一般 app 推論不需 Python，也不會因開專案而下載。

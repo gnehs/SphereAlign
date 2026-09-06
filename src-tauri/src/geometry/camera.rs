@@ -8,6 +8,71 @@ pub fn unit(a: V3) -> Option<V3> {
     let n = dot(a, a).sqrt();
     (n.is_finite() && n > 1e-12).then(|| a.map(|v| v / n))
 }
+
+// Isolate polynomial roots using derivative roots as monotonic partitions.
+// A fixed angle scan can skip a narrow fold or a tangent (double) root.
+fn polynomial_roots(coefficients: &[f64], lo: f64, hi: f64) -> Vec<f64> {
+    let mut coefficients = coefficients;
+    while coefficients.len() > 1 && coefficients.last() == Some(&0.) {
+        coefficients = &coefficients[..coefficients.len() - 1];
+    }
+    if coefficients.len() <= 1 {
+        return vec![];
+    }
+    if coefficients.len() == 2 {
+        let root = -coefficients[0] / coefficients[1];
+        return if root.is_finite() && root >= lo && root <= hi {
+            vec![root]
+        } else {
+            vec![]
+        };
+    }
+    let evaluate = |x: f64| coefficients.iter().rev().fold(0., |y, a| y * x + a);
+    let near_zero = |x: f64| {
+        let scale = coefficients
+            .iter()
+            .rev()
+            .fold(0., |y, a| y * x.abs() + a.abs());
+        evaluate(x).abs() <= 1e-13 * scale
+    };
+    let derivative: Vec<f64> = coefficients
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(i, a)| *a * i as f64)
+        .collect();
+    let mut partitions = vec![lo];
+    partitions.extend(polynomial_roots(&derivative, lo, hi));
+    partitions.push(hi);
+    partitions.sort_by(f64::total_cmp);
+    let mut roots: Vec<f64> = partitions
+        .iter()
+        .copied()
+        .filter(|x| near_zero(*x))
+        .collect();
+    for interval in partitions.windows(2) {
+        let (mut a, mut b) = (interval[0], interval[1]);
+        if near_zero(a)
+            || near_zero(b)
+            || evaluate(a).is_sign_positive() == evaluate(b).is_sign_positive()
+        {
+            continue;
+        }
+        let positive = evaluate(a).is_sign_positive();
+        for _ in 0..64 {
+            let mid = (a + b) / 2.;
+            if evaluate(mid).is_sign_positive() == positive {
+                a = mid;
+            } else {
+                b = mid;
+            }
+        }
+        roots.push((a + b) / 2.);
+    }
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    roots
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Camera {
     pub id: u32,
@@ -47,21 +112,43 @@ impl Camera {
                 + s * (self.params[5] + s * (self.params[6] + s * self.params[7]))))
     }
     fn theta_limit(&self) -> Result<f64, String> {
-        // Stop at the first fold; the optical circle must fit entirely before it.
-        let max_r = (self.width.min(self.height) as f64 / 2.) / self.params[0].min(self.params[1]);
-        let mut previous = 0.;
-        for i in 1..=4096 {
-            let t = (std::f64::consts::PI - 1e-5) * i as f64 / 4096.;
-            let r = self.radial(t);
-            if !r.is_finite() || r <= previous {
-                return Err("Fisheye polynomial folds inside the optical circle".into());
-            }
-            if r >= max_r {
-                return Ok(t);
-            }
-            previous = r;
+        // dr/dtheta is a quartic in theta². Only the central, increasing
+        // branch is invertible; an unreachable outer rim must not reject the
+        // usable camera or be clamped onto this branch by ray().
+        let derivative = [
+            1.,
+            3. * self.params[4],
+            5. * self.params[5],
+            7. * self.params[6],
+            9. * self.params[7],
+        ];
+        if derivative.iter().any(|v| !v.is_finite()) {
+            return Err("Non-finite fisheye derivative".into());
         }
-        Err("Fisheye optical circle exceeds invertible angular domain".into())
+        let angular_max = std::f64::consts::PI - 1e-5;
+        let branch_end = polynomial_roots(&derivative, 0., angular_max * angular_max)
+            .into_iter()
+            .find(|s| *s > 0.)
+            .map(f64::sqrt)
+            .unwrap_or(angular_max);
+        let branch_radius = self.radial(branch_end);
+        if !branch_radius.is_finite() || branch_radius <= 0. {
+            return Err("Fisheye camera has no finite invertible domain".into());
+        }
+        let max_r = (self.width.min(self.height) as f64 / 2.) / self.params[0].min(self.params[1]);
+        if branch_radius <= max_r {
+            return Ok(branch_end);
+        }
+        let (mut lo, mut hi) = (0., branch_end);
+        for _ in 0..64 {
+            let t = (lo + hi) / 2.;
+            if self.radial(t) < max_r {
+                lo = t;
+            } else {
+                hi = t;
+            }
+        }
+        Ok((lo + hi) / 2.)
     }
     pub fn ray(&self, x: f64, y: f64) -> Option<V3> {
         let [fx, fy, cx, cy] = [
@@ -70,7 +157,13 @@ impl Camera {
             self.params[2],
             self.params[3],
         ];
-        if x < 0. || y < 0. || x >= self.width as f64 || y >= self.height as f64 {
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.
+            || y < 0.
+            || x >= self.width as f64
+            || y >= self.height as f64
+        {
             return None;
         }
         let u = (x - cx) / fx;
@@ -82,10 +175,13 @@ impl Camera {
             return None;
         }
         let r = u.hypot(v);
+        if r >= self.radial(self.theta_max) {
+            return None;
+        }
         if r < 1e-12 {
             return Some([0., 0., 1.]);
         }
-        // Validated monotonic interval; Newton remains bounded by bisection.
+        // Solve only inside the validated central monotonic interval.
         let mut lo = 0.;
         let mut hi = self.theta_max;
         for _ in 0..35 {
@@ -102,7 +198,7 @@ impl Camera {
     pub fn pixel(&self, r: V3) -> Option<[f64; 2]> {
         let r = unit(r)?;
         let d = r[0].hypot(r[1]);
-        if self.model == "OPENCV_FISHEYE" && d.atan2(r[2]) > self.theta_max {
+        if self.model == "OPENCV_FISHEYE" && d.atan2(r[2]) >= self.theta_max {
             return None;
         }
         let k = if self.model == "PINHOLE" {
@@ -212,6 +308,83 @@ mod tests {
             }
         }
         c.params[4] = -1.;
-        assert!(c.validate().is_err());
+        c.validate().unwrap();
+        assert!(c.ray(32., 32.).is_some());
+        assert!(c.ray(48., 32.).is_none());
+    }
+
+    #[test]
+    fn real_calibration_clips_unreachable_rim_without_rejecting_camera() {
+        // Calibrated 3840² dataset: first branch misses the assumed circle
+        // by less than one pixel on one axis for each physical lens.
+        for params in [
+            vec![
+                1052.40428525708,
+                1053.83941556301,
+                1920.,
+                1920.,
+                0.058281605659520064,
+                0.003136722719621677,
+                -0.004200184664444925,
+                -0.0006035981682356756,
+            ],
+            vec![
+                1048.3157799019473,
+                1047.6682856355524,
+                1920.,
+                1920.,
+                0.059284058108084764,
+                0.00024617085149156013,
+                -0.0031916201073061683,
+                -0.0006390165595437247,
+            ],
+        ] {
+            let mut c = Camera {
+                id: 1,
+                model: "OPENCV_FISHEYE".into(),
+                width: 3840,
+                height: 3840,
+                params,
+                theta_max: 0.,
+            };
+            c.validate().unwrap();
+            assert!((104. ..106.).contains(&c.theta_max.to_degrees()));
+            let max_radius = c.radial(c.theta_max) * c.params[0].min(c.params[1]);
+            assert!((1919. ..1920.).contains(&max_radius));
+            let axis = if c.params[0] < c.params[1] { 0 } else { 1 };
+            let mut p = [1920., 1920.];
+            p[axis] += max_radius + 0.05;
+            assert!(
+                c.ray(p[0], p[1]).is_none(),
+                "Unreachable rim must not clamp to the last valid ray"
+            );
+            p[axis] -= 0.1;
+            let r = c.ray(p[0], p[1]).unwrap();
+            let back = c.pixel(r).unwrap();
+            assert!((back[0] - p[0]).hypot(back[1] - p[1]) < 0.1);
+            let folded = c.theta_max + 0.05;
+            assert!(c.pixel([folded.sin(), 0., folded.cos()]).is_none());
+            for y in (0..3840).step_by(61) {
+                for x in (0..3840).step_by(61) {
+                    if let Some(r) = c.ray(x as f64 + 0.5, y as f64 + 0.5) {
+                        let back = c.pixel(r).unwrap();
+                        assert!((back[0] - x as f64 - 0.5).hypot(back[1] - y as f64 - 0.5) < 0.1);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn derivative_roots_include_narrow_folds_and_tangencies() {
+        let a = 1.;
+        let b = 1.0001;
+        let roots = polynomial_roots(&[a * b, -a - b, 1.], 0., 10.);
+        assert_eq!(roots.len(), 2);
+        assert!((roots[0] - a).abs() < 1e-9);
+        assert!((roots[1] - b).abs() < 1e-9);
+        let roots = polynomial_roots(&[1., -2., 1.], 0., 10.);
+        assert_eq!(roots.len(), 1);
+        assert!((roots[0] - 1.).abs() < 1e-9);
     }
 }
