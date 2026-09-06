@@ -10448,6 +10448,10 @@ fn run_align(
                 );
             },
         )?;
+        // Stop and join the mapper's periodic reporter before validation or
+        // seed recovery starts. Otherwise its stale final-mapping events keep
+        // overwriting the active phase and move the displayed progress back.
+        drop(final_mapper_heartbeat);
         if !sparse_rig_model_exists(&sparse) {
             return Err("COLMAP 最終建模結束但未產生含 rigs/frames 的有效 sparse model".into());
         }
