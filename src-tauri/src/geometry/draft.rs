@@ -1,6 +1,7 @@
 //! Resumable, isolated native-grid drafts. No training activation or accepted pixels.
 use super::{
     camera::{self, Camera, SIZE},
+    cleanup::{self, IntermediateState},
     dataset::{self, Frame},
     model::{self, GeometryModel, Heads},
     specialize,
@@ -25,6 +26,8 @@ pub struct Settings {
     pub frame_limit: usize,
     #[serde(default = "default_threshold")]
     pub validity_threshold: f32,
+    #[serde(default)]
+    pub keep_intermediates: bool,
 }
 fn default_limit() -> usize {
     8
@@ -38,6 +41,7 @@ impl Default for Settings {
             model_path: String::new(),
             frame_limit: 8,
             validity_threshold: 0.5,
+            keep_intermediates: false,
         }
     }
 }
@@ -60,6 +64,7 @@ pub struct Preflight {
     pub selected: usize,
     pub native_pixels: u64,
     pub estimated_output_bytes: u64,
+    pub estimated_peak_bytes: u64,
     pub model_download_bytes: u64,
     pub cameras: Vec<Camera>,
     pub model_identity: String,
@@ -79,6 +84,10 @@ pub struct FrameReport {
     pub rejection_counts: [u64; 5],
     pub faces: Vec<FaceReport>,
     pub files: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub intermediate_state: IntermediateState,
+    #[serde(default)]
+    pub removed_intermediate_bytes: u64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,14 +131,14 @@ fn now() -> u64 {
 fn io<T>(r: std::io::Result<T>) -> Result<T, String> {
     r.map_err(|e| e.to_string())
 }
-fn check(cancel: &CancelToken) -> Result<(), String> {
+pub(super) fn check(cancel: &CancelToken) -> Result<(), String> {
     if cancel.is_cancelled() {
         Err("Geometry cancelled; completed frames can be resumed".into())
     } else {
         Ok(())
     }
 }
-fn guard_output(root: &Path, path: &Path) -> Result<(), String> {
+pub(super) fn guard_output(root: &Path, path: &Path) -> Result<(), String> {
     let relative = path
         .strip_prefix(root)
         .map_err(|_| "Output escapes dataset")?;
@@ -148,7 +157,7 @@ fn guard_output(root: &Path, path: &Path) -> Result<(), String> {
     }
     Ok(())
 }
-fn save<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
+pub(super) fn save<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
     let tmp = path.with_extension("json.partial");
     let mut f = io(File::create(&tmp))?;
     io(f.write_all(&serde_json::to_vec_pretty(data).map_err(|e| e.to_string())?))?;
@@ -197,7 +206,9 @@ pub fn preflight(root: &Path, settings: &Settings) -> Result<Preflight, String> 
         registered: d.frames.len(),
         selected,
         native_pixels: pixels,
-        estimated_output_bytes: pixels * 32 + selected as u64 * 20_000_000,
+        estimated_output_bytes: pixels * if settings.keep_intermediates { 32 } else { 15 }
+            + selected as u64 * 20_000_000,
+        estimated_peak_bytes: pixels * 32 + selected as u64 * 20_000_000,
         model_download_bytes: if settings.model_path.is_empty() {
             model::BYTES
         } else {
@@ -332,7 +343,7 @@ fn resolve_model(
     check(cancel)?;
     Ok(derived)
 }
-fn mask_path(root: &Path, name: &str) -> Result<Option<PathBuf>, String> {
+pub(super) fn mask_path(root: &Path, name: &str) -> Result<Option<PathBuf>, String> {
     let native = Path::new(name)
         .with_extension("png")
         .to_string_lossy()
@@ -698,32 +709,27 @@ fn predict_frame(
         rejection_counts: counts,
         faces: reports,
         files,
+        intermediate_state: IntermediateState::Retained,
+        removed_intermediate_bytes: 0,
     };
     save(&out.join("frame.json"), &report)?;
     Ok(report)
 }
-fn reusable(dir: &Path, input: &str, mask: &Option<String>) -> Option<FrameReport> {
+fn reusable(
+    dir: &Path,
+    input: &str,
+    mask: &Option<String>,
+    keep_intermediates: bool,
+) -> Option<FrameReport> {
     let r: FrameReport = serde_json::from_slice(&fs::read(dir.join("frame.json")).ok()?).ok()?;
-    if r.input_sha256 != input || &r.mask_sha256 != mask || r.files.len() != 13 {
+    if r.input_sha256 != input || &r.mask_sha256 != mask {
         return None;
     }
-    for (name, hash) in &r.files {
-        let p = dataset::safe_join(dir, name).ok()?;
-        if dataset::hash(&p).ok().as_ref() != Some(hash) {
-            return None;
-        }
-    }
+    cleanup::verify_cache(dir, &r, keep_intermediates).ok()?;
     Some(r)
 }
-pub fn run(
-    root: &Path,
-    settings: Settings,
-    cancel: &CancelToken,
-    job_id: Option<String>,
-    mut notify: impl FnMut(&Report),
-) -> Result<Report, String> {
-    settings.validate()?;
-    let d = dataset::read(root)?;
+
+pub(super) fn writer_lock(root: &Path) -> Result<File, String> {
     let base = root.join("geometry");
     guard_output(root, &base)?;
     guard_output(root, &base.join("writer.lock"))?;
@@ -736,6 +742,126 @@ pub fn run(
         .open(base.join("writer.lock")))?;
     lock.try_lock()
         .map_err(|_| "Geometry is already running for this dataset")?;
+    Ok(lock)
+}
+
+fn clean_report(
+    root: &Path,
+    dir: &Path,
+    report: &mut Report,
+    cancel: &CancelToken,
+    notify: &mut impl FnMut(&Report),
+) -> Result<(), String> {
+    if report.completed != report.total || report.frames.len() != report.total {
+        return Err("Only a complete Geometry run can be cleaned".into());
+    }
+    if report
+        .frames
+        .iter()
+        .map(|f| f.id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        != report.total
+    {
+        return Err("Duplicate Geometry frame IDs".into());
+    }
+    guard_output(root, &dir.join("run.json"))?;
+    guard_output(root, &dir.join("run.json.partial"))?;
+    for index in 0..report.frames.len() {
+        check(cancel)?;
+        report.message = format!(
+            "Verifying outputs and cleaning intermediate files ({}/{})",
+            index + 1,
+            report.total
+        );
+        notify(report);
+        let frame = &mut report.frames[index];
+        let target = dir.join("frames").join(frame.id.to_string());
+        guard_output(root, &target.join("frame.json"))?;
+        let current: FrameReport =
+            serde_json::from_slice(&io(fs::read(target.join("frame.json")))?)
+                .map_err(|e| e.to_string())?;
+        if current.id != frame.id
+            || current.name != frame.name
+            || current.camera_id != frame.camera_id
+            || current.width != frame.width
+            || current.height != frame.height
+            || current.input_sha256 != frame.input_sha256
+            || current.mask_sha256 != frame.mask_sha256
+            || current.files != frame.files
+        {
+            return Err("Geometry frame manifest changed before cleanup".into());
+        }
+        // frame.json is committed first, so its cleanup intent may be newer after a crash.
+        *frame = current;
+        cleanup::clean_frame(root, &target, frame, cancel)?;
+        report.updated_ms = now();
+        save(&dir.join("run.json"), report)?;
+    }
+    Ok(())
+}
+
+/// Explicit cleanup for an existing completed run, without loading a model or touching inputs.
+pub fn clean_completed(
+    root: &Path,
+    run_id: &str,
+    cancel: &CancelToken,
+    mut notify: impl FnMut(&Report),
+) -> Result<Report, String> {
+    if run_id.len() != 32 || !run_id.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid run ID".into());
+    }
+    let _lock = writer_lock(root)?;
+    let dir = root.join("geometry/runs").join(run_id);
+    guard_output(root, &dir.join("run.json"))?;
+    let mut report: Report =
+        serde_json::from_slice(&io(fs::read(dir.join("run.json")))?).map_err(|e| e.to_string())?;
+    if report.id != run_id || report.status != "completed" {
+        return Err("Only a completed Geometry run can be cleaned".into());
+    }
+    let result = clean_report(root, &dir, &mut report, cancel, &mut notify);
+    report.updated_ms = now();
+    report.message = result.as_ref().err().cloned().unwrap_or_else(|| {
+        "Intermediate files cleaned; PNG maps, previews and run history retained".into()
+    });
+    save(&dir.join("run.json"), &report)?;
+    notify(&report);
+    result.map(|_| report)
+}
+pub fn run(
+    root: &Path,
+    settings: Settings,
+    cancel: &CancelToken,
+    job_id: Option<String>,
+    notify: impl FnMut(&Report),
+) -> Result<Report, String> {
+    run_impl(root, settings, cancel, job_id, false, notify)
+}
+
+/// Production stage: all registered images, verified PNG export, then cleanup.
+pub fn run_normals(
+    root: &Path,
+    mut settings: Settings,
+    cancel: &CancelToken,
+    job_id: Option<String>,
+    notify: impl FnMut(&Report),
+) -> Result<Report, String> {
+    settings.frame_limit = 0;
+    run_impl(root, settings, cancel, job_id, true, notify)
+}
+
+fn run_impl(
+    root: &Path,
+    settings: Settings,
+    cancel: &CancelToken,
+    job_id: Option<String>,
+    publish_normals: bool,
+    mut notify: impl FnMut(&Report),
+) -> Result<Report, String> {
+    settings.validate()?;
+    let d = dataset::read(root)?;
+    let base = root.join("geometry");
+    let _lock = writer_lock(root)?;
     let total = if settings.frame_limit == 0 {
         d.frames.len()
     } else {
@@ -790,23 +916,31 @@ pub fn run(
     save(&dir.join("run.json"), &report)?;
     notify(&report);
     let result = (|| -> Result<(), String> {
-        let path = resolve_model(root, &settings, cancel, &mut |message| {
-            report.message = message.into();
-            report.updated_ms = now();
-            let _ = save(&dir.join("run.json"), &report);
-            notify(&report);
-        })?;
         let mut model: Option<GeometryModel> = None;
         for (index, frame) in d.frames.iter().take(total).enumerate() {
             check(cancel)?;
             report.current = Some(frame.name.clone());
+            report.message = "Checking completed normal maps".into();
             let target = dir.join("frames").join(frame.id.to_string());
             let (input_hash, mask_hash) = &hashes[index];
             guard_output(root, &target)?;
-            let frame_report = if let Some(r) = reusable(&target, input_hash, mask_hash) {
+            let frame_report = if let Some(r) =
+                reusable(&target, input_hash, mask_hash, settings.keep_intermediates).filter(|r| {
+                    r.id == frame.id
+                        && r.name == frame.name
+                        && r.camera_id == frame.camera_id
+                        && r.width == d.cameras[&frame.camera_id].width
+                        && r.height == d.cameras[&frame.camera_id].height
+                }) {
                 r
             } else {
                 if model.is_none() {
+                    let path = resolve_model(root, &settings, cancel, &mut |message| {
+                        report.message = message.into();
+                        report.updated_ms = now();
+                        let _ = save(&dir.join("run.json"), &report);
+                        notify(&report);
+                    })?;
                     report.message = "Loading DirectML session".into();
                     save(&dir.join("run.json"), &report)?;
                     notify(&report);
@@ -861,8 +995,19 @@ pub fn run(
             save(&dir.join("run.json"), &report)?;
             notify(&report);
         }
+        drop(model);
         if dataset::read(root)?.identity != d.identity {
             return Err("Final COLMAP model changed during inference".into());
+        }
+        if publish_normals {
+            report.message = "Verifying and exporting training normals".into();
+            notify(&report);
+            super::export::publish(root, &report, cancel)?;
+            report.active_for_training = true;
+            report.quality_status = "production_normal_prior".into();
+        }
+        if !settings.keep_intermediates {
+            clean_report(root, &dir, &mut report, cancel, &mut notify)?;
         }
         Ok(())
     })();
@@ -877,11 +1022,13 @@ pub fn run(
     report.job_id = None;
     report.current = None;
     report.updated_ms = now();
-    report.message = result
-        .as_ref()
-        .err()
-        .cloned()
-        .unwrap_or_else(|| "Draft ready for quality review; training remains disabled".into());
+    report.message = result.as_ref().err().cloned().unwrap_or_else(|| {
+        if publish_normals {
+            "Training normals ready".into()
+        } else {
+            "Draft ready for quality review; training remains disabled".into()
+        }
+    });
     save(&dir.join("run.json"), &report)?;
     notify(&report);
     result.map(|_| report)
@@ -954,15 +1101,19 @@ mod tests {
         assert!(result.err().unwrap().contains("already running"));
         assert!(!d.path().join("geometry/models").exists());
     }
-    #[test]
-    fn corrupted_cache_is_not_reused() {
-        let d = tempfile::tempdir().unwrap();
+    fn cached_frame(dir: &Path) -> FrameReport {
+        fs::create_dir_all(dir).unwrap();
         let mut files = std::collections::BTreeMap::new();
-        for i in 0..13 {
-            let n = format!("part{i}");
-            let p = d.path().join(&n);
-            fs::write(&p, [i as u8]).unwrap();
-            files.insert(n, dataset::hash(&p).unwrap());
+        for n in cleanup::OUTPUTS {
+            let p = dir.join(n);
+            match n {
+                "native.f32" => fs::write(&p, vec![0; 32 * 32 * 16]).unwrap(),
+                "reasons.u8" => fs::write(&p, vec![1; 32 * 32]).unwrap(),
+                _ => RgbImage::from_pixel(32, 32, Rgb([80, 100, 120]))
+                    .save(&p)
+                    .unwrap(),
+            }
+            files.insert(n.to_owned(), dataset::hash(&p).unwrap());
         }
         let report = FrameReport {
             id: 101,
@@ -977,12 +1128,282 @@ mod tests {
             rejection_counts: [0, 1024, 0, 0, 0],
             faces: vec![],
             files,
+            intermediate_state: IntermediateState::Retained,
+            removed_intermediate_bytes: 0,
         };
-        save(&d.path().join("frame.json"), &report).unwrap();
-        assert!(reusable(d.path(), "input", &None).is_some());
-        assert!(reusable(d.path(), "changed source", &None).is_none());
-        fs::write(d.path().join("part3"), b"tampered").unwrap();
-        assert!(reusable(d.path(), "input", &None).is_none());
+        save(&dir.join("frame.json"), &report).unwrap();
+        report
+    }
+    fn seed_cached_run(root: &Path) -> (Settings, Report) {
+        fixture(root);
+        let settings = Settings {
+            model_path: root.join("not-a-model.onnx").to_string_lossy().into_owned(),
+            frame_limit: 2,
+            ..Settings::default()
+        };
+        assert!(run(root, settings.clone(), &CancelToken::new(), None, |_| {}).is_err());
+        let report = list(root).unwrap().remove(0);
+        for f in dataset::read(root).unwrap().frames {
+            let dir = PathBuf::from(&report.output_path)
+                .join("frames")
+                .join(f.id.to_string());
+            let mut r = cached_frame(&dir);
+            r.id = f.id;
+            r.camera_id = f.camera_id;
+            r.input_sha256 = dataset::hash(&root.join("images").join(&f.name)).unwrap();
+            r.name = f.name;
+            save(&dir.join("frame.json"), &r).unwrap();
+        }
+        (settings, report)
+    }
+    #[test]
+    fn production_normals_export_all_frames_resume_and_invalidate_without_gpu() {
+        let d = tempfile::tempdir().unwrap();
+        let (mut settings, _) = seed_cached_run(d.path());
+        settings.frame_limit = 1; // production must ignore preview limits
+        let report = run_normals(
+            d.path(),
+            settings.clone(),
+            &CancelToken::new(),
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert!(report.active_for_training);
+        assert_eq!(report.completed, 2);
+        let normal = d.path().join("normals/lens0/frame.png");
+        let hash = dataset::hash(&normal).unwrap();
+        let timestamp = fs::metadata(&normal).unwrap().modified().unwrap();
+        assert_eq!(hash, report.frames[0].files["normal.png"]);
+        assert!(!Path::new(&report.output_path)
+            .join("frames/101/native.f32")
+            .exists());
+        let config: serde_json::Value = serde_json::from_slice(
+            &fs::read(d.path().join("geometry/spirula-normals.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["normal_supervision_weight"], 0.01);
+        assert_eq!(config["load_depths"], false);
+        assert_eq!(config["load_normals"], true);
+        run_normals(
+            d.path(),
+            settings.clone(),
+            &CancelToken::new(),
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            timestamp,
+            fs::metadata(&normal).unwrap().modified().unwrap()
+        );
+        assert!(!d.path().join("geometry/exports/previous").exists());
+        super::super::export::invalidate(d.path()).unwrap();
+        assert!(!normal.exists());
+        assert_eq!(
+            fs::read_dir(d.path().join("geometry/exports/previous"))
+                .unwrap()
+                .count(),
+            1
+        );
+        run_normals(d.path(), settings, &CancelToken::new(), None, |_| {}).unwrap();
+        assert_eq!(hash, dataset::hash(&normal).unwrap());
+    }
+
+    #[test]
+    fn production_export_failure_retains_intermediates_and_foreign_normals() {
+        let d = tempfile::tempdir().unwrap();
+        let (settings, seeded) = seed_cached_run(d.path());
+        fs::create_dir(d.path().join("normals")).unwrap();
+        fs::write(d.path().join("normals/user-file"), b"keep").unwrap();
+        let error = run_normals(
+            d.path(),
+            settings.clone(),
+            &CancelToken::new(),
+            None,
+            |_| {},
+        )
+        .err()
+        .unwrap();
+        assert!(error.contains("not managed"), "{error}");
+        assert!(Path::new(&seeded.output_path)
+            .join("frames/101/native.f32")
+            .exists());
+        assert_eq!(
+            fs::read(d.path().join("normals/user-file")).unwrap(),
+            b"keep"
+        );
+        let report = list(d.path()).unwrap().remove(0);
+        assert!(!report.active_for_training);
+        assert!(super::super::export::publish(
+            d.path(),
+            &Report {
+                completed: 1,
+                ..report.clone()
+            },
+            &CancelToken::new()
+        )
+        .is_err());
+        fs::write(d.path().join("images/lens0/frame.png"), b"changed").unwrap();
+        assert!(
+            super::super::export::publish(d.path(), &report, &CancelToken::new())
+                .err()
+                .unwrap()
+                .contains("source")
+        );
+    }
+    #[test]
+    fn corrupted_cache_is_not_reused() {
+        let d = tempfile::tempdir().unwrap();
+        cached_frame(d.path());
+        assert!(reusable(d.path(), "input", &None, false).is_some());
+        assert!(reusable(d.path(), "changed source", &None, false).is_none());
+        fs::write(d.path().join("normal.png"), b"tampered").unwrap();
+        assert!(reusable(d.path(), "input", &None, false).is_none());
+    }
+    #[test]
+    fn default_cleanup_waits_for_completion_and_pruned_cache_resumes_without_a_model() {
+        let d = tempfile::tempdir().unwrap();
+        let (settings, seeded) = seed_cached_run(d.path());
+        let dir = PathBuf::from(&seeded.output_path);
+        let normal = dir.join("frames/101/normal.png");
+        let before = fs::metadata(&normal).unwrap().modified().unwrap();
+        let cancel = CancelToken::new();
+        assert!(run(d.path(), settings.clone(), &cancel, None, |r| {
+            if r.completed == 1 {
+                cancel.cancel();
+            }
+        })
+        .is_err());
+        for id in [101, 901] {
+            assert!(dir.join(format!("frames/{id}/native.f32")).exists());
+        }
+        let done = run(
+            d.path(),
+            settings.clone(),
+            &CancelToken::new(),
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(done.status, "completed");
+        for frame in &done.frames {
+            assert_eq!(frame.intermediate_state, IntermediateState::Removed);
+            assert_eq!(frame.removed_intermediate_bytes, 32 * 32 * 17);
+            assert!(!dir.join(format!("frames/{}/native.f32", frame.id)).exists());
+            assert!(!dir.join(format!("frames/{}/reasons.u8", frame.id)).exists());
+            assert_eq!(
+                frame.files.len(),
+                13,
+                "original output hashes remain in the ledger"
+            );
+        }
+        let resumed = run(
+            d.path(),
+            settings.clone(),
+            &CancelToken::new(),
+            None,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(resumed.id, done.id);
+        assert_eq!(fs::metadata(normal).unwrap().modified().unwrap(), before);
+        // The deliberately missing model proves both runs only used validated PNG caches.
+        let debug_settings = Settings {
+            keep_intermediates: true,
+            ..settings
+        };
+        assert!(run(d.path(), debug_settings, &CancelToken::new(), None, |_| {}).is_err());
+    }
+    #[test]
+    fn keep_intermediates_and_completed_cleanup_preserve_products() {
+        let d = tempfile::tempdir().unwrap();
+        let (settings, seeded) = seed_cached_run(d.path());
+        let settings = Settings {
+            keep_intermediates: true,
+            ..settings
+        };
+        let done = run(d.path(), settings, &CancelToken::new(), None, |_| {}).unwrap();
+        assert!(done
+            .frames
+            .iter()
+            .all(|f| f.intermediate_state == IntermediateState::Retained));
+        let dir = PathBuf::from(&seeded.output_path);
+        assert!(dir.join("frames/101/native.f32").exists());
+        // Simulate a process death after the per-frame intent was saved, but before
+        // the enclosing run.json could record it. Explicit cleanup must also resume.
+        let mut pending = done.frames.iter().find(|f| f.id == 101).unwrap().clone();
+        pending.intermediate_state = IntermediateState::CleanupPending;
+        save(&dir.join("frames/101/frame.json"), &pending).unwrap();
+        fs::remove_file(dir.join("frames/101/native.f32")).unwrap();
+        let clean = clean_completed(d.path(), &done.id, &CancelToken::new(), |_| {}).unwrap();
+        assert_eq!(clean.status, "completed");
+        assert!(clean
+            .frames
+            .iter()
+            .all(|f| f.intermediate_state == IntermediateState::Removed));
+        assert!(preview(d.path(), &done.id, 101, "normal").is_ok());
+        assert!(preview(d.path(), &done.id, 101, "face5").is_ok());
+        assert!(clean_completed(d.path(), "../../images", &CancelToken::new(), |_| {}).is_err());
+    }
+    #[test]
+    fn cleanup_recovers_partial_deletion_and_refuses_broken_products() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("geometry/runs/test/frames/101");
+        let mut frame = cached_frame(&dir);
+        fs::write(dir.join("normal.png"), b"damaged").unwrap();
+        assert!(cleanup::clean_frame(d.path(), &dir, &mut frame, &CancelToken::new()).is_err());
+        assert!(dir.join("native.f32").exists());
+        assert!(dir.join("reasons.u8").exists());
+        frame = cached_frame(&dir);
+        frame.intermediate_state = IntermediateState::CleanupPending;
+        save(&dir.join("frame.json"), &frame).unwrap();
+        fs::remove_file(dir.join("native.f32")).unwrap();
+        assert!(reusable(&dir, "input", &None, false).is_some());
+        cleanup::clean_frame(d.path(), &dir, &mut frame, &CancelToken::new()).unwrap();
+        assert_eq!(frame.intermediate_state, IntermediateState::Removed);
+        assert!(!dir.join("reasons.u8").exists());
+        assert!(reusable(&dir, "input", &None, false).is_some());
+        assert!(reusable(&dir, "input", &None, true).is_none());
+    }
+    #[test]
+    fn legacy_settings_default_to_cleanup_and_preflight_shows_peak_space() {
+        let settings: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!settings.keep_intermediates);
+        let d = tempfile::tempdir().unwrap();
+        fixture(d.path());
+        let normal = preflight(d.path(), &settings).unwrap();
+        let debug = preflight(
+            d.path(),
+            &Settings {
+                keep_intermediates: true,
+                ..settings
+            },
+        )
+        .unwrap();
+        assert_eq!(normal.estimated_peak_bytes, debug.estimated_output_bytes);
+        assert_eq!(
+            normal.estimated_peak_bytes - normal.estimated_output_bytes,
+            2 * 32 * 32 * 17
+        );
+    }
+    #[test]
+    fn cleanup_refuses_outside_paths_and_unexpected_file_lists() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let mut frame = cached_frame(outside.path());
+        assert!(
+            cleanup::clean_frame(root.path(), outside.path(), &mut frame, &CancelToken::new())
+                .is_err()
+        );
+        assert!(outside.path().join("native.f32").exists());
+        let dir = root.path().join("geometry/runs/test/frames/101");
+        frame = cached_frame(&dir);
+        let hash = frame.files.remove("face5.png").unwrap();
+        frame.files.insert("../../images/source.jpg".into(), hash);
+        assert!(cleanup::clean_frame(root.path(), &dir, &mut frame, &CancelToken::new()).is_err());
+        assert!(dir.join("native.f32").exists());
+        assert!(dir.join("reasons.u8").exists());
     }
     #[test]
     #[ignore = "Requires explicit GEOMETRY_TEST_MODEL and Windows DirectML GPU"]
@@ -995,6 +1416,7 @@ mod tests {
             model_path,
             frame_limit: 2,
             validity_threshold: 0.5,
+            keep_intermediates: true,
         };
         let source_before = dataset::hash(&d.path().join("images/lens0/frame.png")).unwrap();
         let cancel = CancelToken::new();

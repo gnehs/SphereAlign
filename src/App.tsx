@@ -607,7 +607,9 @@ function App() {
       };
       return {
         ...task,
-        stages: { ...task.stages, [stageKey]: nextStage },
+        stages: { ...task.stages,
+          ...(status === "running" && stageKey !== "normals" ? { normals: { status: "pending" as const, progress: 0, message: "" } } : {}),
+          [stageKey]: nextStage },
         logs: mergeProgressLog(task.logs, task.projectId, stageKey, previous, payload, status, eventTime),
       };
     });
@@ -907,7 +909,7 @@ function App() {
           const nextStage = currentIndex >= 0 ? STAGES[currentIndex + 1] : undefined;
           if (!nextStage) {
             delete autoPipelineRuns.current[targetProjectId];
-            addTaskMessage(targetProjectId, "Automatic pipeline completed frame extraction, masking, and alignment");
+            addTaskMessage(targetProjectId, t`Automatic pipeline completed frame extraction, masking, alignment and normals`);
             queueMicrotask(() => pumpAutoPipelineRef.current());
             return;
           }

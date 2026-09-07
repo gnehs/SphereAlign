@@ -4,7 +4,7 @@ use super::{
 };
 pub fn run(args: Vec<String>) -> Result<(), String> {
     let mut args = args.into_iter();
-    let command=args.next().ok_or("Usage: spherealign-cli geometry <preflight|run|inspect> DATASET [--model ONNX] [--frames N; 0=all]")?;
+    let command=args.next().ok_or("Usage: spherealign-cli geometry <preflight|run|normals|inspect|cleanup> DATASET [--model ONNX] [--frames N; 0=all] [--keep-intermediates] [--run RUN_ID]")?;
     let root = args
         .next()
         .ok_or("Missing dataset root or --project PATH")?;
@@ -14,13 +14,27 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         root
     };
     let mut root = std::path::PathBuf::from(root);
-    if root.join("project.json").exists() {
-        root = std::path::PathBuf::from(crate::project::load(&root)?.output_path);
-    }
     let mut settings = Settings::default();
+    if root.join("project.json").exists() {
+        let project = crate::project::snapshot(&root)?;
+        if command == "normals" {
+            settings = serde_json::from_value(
+                project
+                    .settings
+                    .get("normals")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        root = std::path::PathBuf::from(project.output_path);
+    }
+    let mut run_id = None;
     while let Some(flag) = args.next() {
         match flag.as_str() {
             "--model" => settings.model_path = args.next().ok_or("Missing model path")?,
+            "--keep-intermediates" => settings.keep_intermediates = true,
+            "--run" => run_id = Some(args.next().ok_or("Missing run ID")?),
             "--frames" => {
                 settings.frame_limit = args
                     .next()
@@ -41,15 +55,36 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
             "{}",
             serde_json::to_string_pretty(&draft::list(&root)?).map_err(|e| e.to_string())?
         ),
-        "run" => {
-            draft::run(&root, settings, &CancelToken::new(), None, |r| {
+        "run" | "normals" => {
+            let runner = if command == "normals" {
+                draft::run_normals
+            } else {
+                draft::run
+            };
+            runner(
+                &root,
+                settings,
+                &CancelToken::new(),
+                None,
+                |r: &draft::Report| {
+                    println!(
+                        "{}",
+                        serde_json::json!({"id":r.id,"status":r.status,"completed":r.completed,"total":r.total,"message":r.message})
+                    )
+                },
+            )?;
+        }
+        "cleanup" => {
+            let run_id = run_id.ok_or("cleanup requires --run RUN_ID")?;
+            draft::clean_completed(&root, &run_id, &CancelToken::new(), |r| {
                 println!(
                     "{}",
-                    serde_json::json!({"id":r.id,"status":r.status,"completed":r.completed,"total":r.total,"message":r.message})
-                )
+                    serde_json::json!({"id":r.id,"message":r.message,
+                    "removedIntermediateBytes":r.frames.iter().map(|f| f.removed_intermediate_bytes).sum::<u64>()})
+                );
             })?;
         }
-        _ => return Err("Expected preflight, run or inspect".into()),
+        _ => return Err("Expected preflight, run, normals, inspect or cleanup".into()),
     }
     Ok(())
 }

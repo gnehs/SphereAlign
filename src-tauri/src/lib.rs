@@ -65,14 +65,14 @@ fn update_alignment_settings(jobs: tauri::State<'_, JobManager>, request: pipeli
 }
 
 #[tauri::command]
-fn load_project(path: String) -> Result<ProjectManifest, String> {
-    project::load(path)
+fn load_project(jobs: tauri::State<'_, JobManager>, path: String) -> Result<ProjectManifest, String> {
+    if jobs.is_running() { project::snapshot(path) } else { project::load(path) }
 }
 
 #[tauri::command]
 async fn read_reconstruction_quality(project_path: String) -> Result<Option<reconstruction_quality::QualityReport>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let manifest = project::load(project_path)?;
+        let manifest = project::snapshot(project_path)?;
         reconstruction_quality::read_report(std::path::Path::new(&manifest.output_path))
     }).await.map_err(|e| e.to_string())?
 }
@@ -101,7 +101,7 @@ fn cancel_job(jobs: tauri::State<'_, JobManager>, job_id: String) -> bool {
 #[tauri::command]
 async fn geometry_preflight(project_path: String, settings: geometry::draft::Settings) -> Result<geometry::draft::Preflight, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let manifest = project::load(project_path)?;
+        let manifest = project::snapshot(project_path)?;
         geometry::draft::preflight(std::path::Path::new(&manifest.output_path), &settings)
     }).await.map_err(|e| e.to_string())?
 }
@@ -116,7 +116,7 @@ async fn start_geometry(jobs: tauri::State<'_, JobManager>, project_path: String
 async fn geometry_status(jobs: tauri::State<'_, JobManager>, project_path: String) -> Result<serde_json::Value, String> {
     let manager = jobs.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let manifest = project::load(&project_path)?;
+        let manifest = project::snapshot(&project_path)?;
         let runs = geometry::draft::list(std::path::Path::new(&manifest.output_path))?;
         Ok(serde_json::json!({"runs": runs, "busy": manager.is_running(), "job": manager.geometry_job().filter(|j| j.project_path == project_path)}))
     }).await.map_err(|e| e.to_string())?
@@ -125,7 +125,7 @@ async fn geometry_status(jobs: tauri::State<'_, JobManager>, project_path: Strin
 #[tauri::command]
 async fn geometry_preview(project_path: String, run_id: String, frame_id: u32, kind: String) -> Result<tauri::ipc::Response, String> {
     let bytes = tauri::async_runtime::spawn_blocking(move || {
-        let manifest = project::load(project_path)?;
+        let manifest = project::snapshot(project_path)?;
         geometry::draft::preview(std::path::Path::new(&manifest.output_path), &run_id, frame_id, &kind)
     }).await.map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(bytes))

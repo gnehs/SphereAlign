@@ -62,6 +62,7 @@ pub enum StageName {
     Extract,
     Mask,
     Align,
+    Normals,
 }
 
 impl StageName {
@@ -70,6 +71,7 @@ impl StageName {
             Self::Extract => "extract",
             Self::Mask => "mask",
             Self::Align => "align",
+            Self::Normals => "normals",
         }
     }
 }
@@ -88,6 +90,7 @@ impl std::str::FromStr for StageName {
             "extract" | "capture" => Ok(Self::Extract),
             "mask" | "masks" => Ok(Self::Mask),
             "align" | "sfm" | "colmap" => Ok(Self::Align),
+            "normals" => Ok(Self::Normals),
             other => Err(format!("unknown pipeline stage: {other}")),
         }
     }
@@ -188,7 +191,7 @@ fn manifest_version() -> u32 {
 }
 
 fn default_stages() -> BTreeMap<String, StageCheckpoint> {
-    ["extract", "mask", "align"]
+    ["extract", "mask", "align", "normals"]
         .into_iter()
         .map(|name| (name.to_owned(), StageCheckpoint::default()))
         .collect()
@@ -1206,6 +1209,21 @@ pub fn update_alignment_settings_locked(project_path: &str, align: Value) -> Res
     Ok(manifest)
 }
 
+/// Read-only inspection for polling/previews; never recover a live stage.
+pub fn snapshot(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
+    let path = absolute_path(path.as_ref());
+    let manifest_path = locate_manifest(&path).ok_or("No project manifest found")?;
+    let mut manifest: ProjectManifest = serde_json::from_slice(
+        &fs::read(&manifest_path).map_err(|e| e.to_string())?
+    ).map_err(|e| e.to_string())?;
+    if manifest.root_path.is_empty() {
+        manifest.root_path = root_for_manifest_path(&manifest_path).unwrap_or(path).to_string_lossy().into_owned();
+    }
+    if manifest.output_path.is_empty() { manifest.output_path = manifest.root_path.clone(); }
+    manifest.stages.entry("normals".into()).or_default();
+    Ok(manifest)
+}
+
 pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
     let path = absolute_path(path.as_ref());
     let manifest_path = match locate_manifest(&path) {
@@ -1262,6 +1280,8 @@ pub fn load(path: impl AsRef<Path>) -> Result<ProjectManifest, String> {
     if manifest.stages.is_empty() {
         manifest.stages = default_stages();
     }
+    // Existing Align checkpoints remain complete; only the new stage is pending.
+    manifest.stages.entry("normals".into()).or_default();
     let mut recovered_running_stage = false;
     let recovery_finished_at_ms = now_timestamp_ms();
     for checkpoint in manifest.stages.values_mut() {
@@ -2179,9 +2199,20 @@ mod tests {
             updated_at: now_timestamp(),
         };
         manifest.stages.get_mut("mask").unwrap().status = StageStatus::Running;
+        manifest.stages.get_mut("align").unwrap().status = StageStatus::Completed;
+        manifest.stages.remove("normals"); // pre-normal-stage manifest
         save_manifest(&manifest).unwrap();
 
+        let bytes = fs::read(manifest.manifest_path()).unwrap();
+        let inspected = snapshot(&root).unwrap();
+        assert!(matches!(inspected.stages["mask"].status, StageStatus::Running));
+        assert!(matches!(inspected.stages["align"].status, StageStatus::Completed));
+        assert!(matches!(inspected.stages["normals"].status, StageStatus::Pending));
+        assert_eq!(fs::read(manifest.manifest_path()).unwrap(), bytes);
+
         let recovered = load(&root).unwrap();
+        assert!(matches!(recovered.stages["align"].status, StageStatus::Completed));
+        assert!(matches!(recovered.stages["normals"].status, StageStatus::Pending));
         assert!(matches!(
             recovered.stages["mask"].status,
             StageStatus::Cancelled

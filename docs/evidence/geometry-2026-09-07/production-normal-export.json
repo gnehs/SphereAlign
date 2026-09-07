@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-07",
+  "dataset": "disney_cruise_room",
+  "geometryRun": "a2be078549013eab4a79135114ac3fa3",
+  "status": "completed",
+  "normalCount": 202,
+  "activeForTraining": true,
+  "exportHashesMatchPreviouslyTrainedNormals": true,
+  "trainingConfigFieldsMatchPreviouslyVerifiedRun": true,
+  "intermediatesAbsent": true,
+  "removedIntermediateBytes": 50636390400,
+  "cliExitCode": 0,
+  "reusedInferenceCache": true,
+  "validationScope": "Production CLI export using existing full-resolution inference cache; no second training run. Final header-only PNG inspection and cancellation refinements covered by CPU export tests.",
+  "frontend": "Traditional Chinese component and stage normalization check with mocked Tauri IPC; production build passed.",
+  "rustTests": {
+    "fullSuitePassed": 360,
+    "fullSuiteIgnored": 16,
+    "latestGeometryPassed": 25,
+    "latestGeometryIgnored": 1
+  }
+}

@@ -1,3 +1,15 @@
+# Production normal-map integration — 2026-09-07
+
+- `disney_cruise_room`: 202 normal maps, 20,000 training steps, about 39m50s, exported PLY 2,801,390 splats. Source COLMAP hashes and exported normal hashes verified; finite PLY attributes checked.
+- User inspection of the trained scene reported a substantial reduction in floaters and explicitly requested production integration. Six fixed novel-view A/B renders had shown mixed results; that limited static review is not a substitute for the user's scene inspection. No new claim of quantitative or universally improved quality is made.
+- Completed cleanup removed 50,636,390,400 bytes in 404 reproducible intermediate files. All normal PNGs, previews, source data and training outputs were retained.
+- Production integration CPU suite: 360 passed, 16 environment-dependent tests ignored. This includes all-frame export, no-GPU cache reuse, intermediate cleanup, foreign-output preservation and read-only polling/legacy-stage migration. Frontend production build passed.
+- Browser component check passed in Traditional Chinese: fourth-stage description, original-resolution normal preview, advanced sample controls, default automatic cleanup and preflight disk estimates. Tauri IPC was mocked; this was not a complete desktop automation run.
+- Production CLI export on the real 202-frame dataset completed with exit code 0. Every export-manifest hash matches the previously trained normal PNGs; all emitted training configuration fields match that verified run. Cached inference was reused and raw intermediates remained absent. [Verification record](evidence/geometry-2026-09-07/production-normal-export.json).
+- The current workflow is documented in [GEOMETRY_PRIORS.md](GEOMETRY_PRIORS.md). The measurements below describe the preceding inference prototype.
+
+---
+
 # Geometry Phase 0：實測、命令與未完成驗收
 
 ## 2026-09-07 界面與原生草稿接線

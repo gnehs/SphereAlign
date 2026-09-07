@@ -16,7 +16,7 @@ import { getEnglishI18n, getLocale, localeLabels, supportedLocales } from "@/i18
 export const LANGUAGE_OPTIONS = supportedLocales.map((value) => ({ value, label: localeLabels[value] }));
 export const APP_NOTICE_EASE = [0.22, 1, 0.36, 1] as const;
 
-type StageKey = "extract" | "mask" | "align";
+type StageKey = "extract" | "mask" | "align" | "normals";
 type StageStatus = "pending" | "running" | "completed" | "cancelled" | "failed";
 type DiagnosticStatus = "ready" | "warning" | "unknown";
 type ExtractColorMode = "auto" | "logRec709" | "dlogMRec709" | "native";
@@ -61,6 +61,7 @@ interface StageState {
 }
 
 interface PipelineSettings {
+  normals: { modelPath: string; keepIntermediates: boolean };
   extract: {
     baseFps: number;
     denseFps: number;
@@ -249,6 +250,12 @@ const STAGES: StageDefinition[] = [
     description: msg({ message: "Multi-source panoramic camera-rig alignment", context: "pipeline stage description", comment: "Technical description of the alignment stage for multiple panoramic source formats." }),
     icon: Workflow,
   },
+  {
+    key: "normals",
+    label: msg`Normals`,
+    description: msg`Camera-space normal maps for training`,
+    icon: ScanSearch,
+  },
 ];
 
 function stageLabel(stage?: StageDefinition) {
@@ -275,6 +282,8 @@ const STAGE_OBSERVED_DURATION_MS: Record<StageKey, number> = {
   extract: 1_498_380,
   mask: 287_773,
   align: 4_941_579,
+  // Initial budget for native inference; runtime ETA uses actual frame progress.
+  normals: 4_941_579,
 };
 const TOTAL_OBSERVED_DURATION_MS = Object.values(STAGE_OBSERVED_DURATION_MS)
   .reduce((total, duration) => total + duration, 0);
@@ -292,6 +301,7 @@ const MIN_CANDIDATE_MULTIPLIER = 2;
 const MAX_CANDIDATE_MULTIPLIER = 10;
 const DEFAULT_CANDIDATE_MULTIPLIER = 4;
 const DEFAULT_SETTINGS: PipelineSettings = {
+  normals: { modelPath: "", keepIntermediates: false },
   extract: {
     baseFps: 3,
     denseFps: 12,
@@ -347,6 +357,7 @@ function candidateMultiplierFor(extract: PipelineSettings["extract"]): number {
 
 function normalisePipelineSettings(value: unknown): PipelineSettings {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const normals = source.normals && typeof source.normals === "object" ? source.normals as Record<string, unknown> : {};
   const extract = source.extract && typeof source.extract === "object" ? source.extract as Record<string, unknown> : {};
   const finiteNumber = (candidate: unknown, fallback: number, min: number, max: number) => {
     const parsed = typeof candidate === "number" ? candidate : Number.NaN;
@@ -370,6 +381,7 @@ function normalisePipelineSettings(value: unknown): PipelineSettings {
     ? extract.lutPath.trim()
     : undefined;
   return {
+    normals: { modelPath: typeof normals.modelPath === "string" ? normals.modelPath : "", keepIntermediates: normals.keepIntermediates === true },
     extract: {
       baseFps,
       denseFps: finiteNumber(extract.denseFps, baseFps * DEFAULT_CANDIDATE_MULTIPLIER, baseFps * MIN_CANDIDATE_MULTIPLIER, baseFps * MAX_CANDIDATE_MULTIPLIER),
@@ -730,6 +742,10 @@ const APP_MESSAGE_TRANSLATIONS: Record<string, MessageDescriptor> = {
 };
 
 function localiseUserMessage(value: string): string {
+  if (value === "Checking completed normal maps") return t`Checking completed normal maps`;
+  if (value === "Verifying and exporting training normals") return t`Verifying and exporting training normals`;
+  if (value === "Training normals ready" || value === "Training normals ready; intermediate cleanup complete") return t`Training normals ready`;
+  if (value === "Draft ready for quality review; training remains disabled") return t`Preview sample ready`;
   const exact = USER_MESSAGE_TRANSLATIONS[value];
   if (exact) return translate(exact);
   const stageSummary = STAGE_SUMMARY_TRANSLATIONS[value];
@@ -966,6 +982,7 @@ function normaliseLogLevel(value: unknown): TaskLogLevel {
 }
 
 const PHASE_LABELS: Record<string, MessageDescriptor> = {
+  "normal-generation": msg`Generating normals`,
   starting: msg({ message: "Preparing", context: "pipeline phase", comment: "Short label for the preparation phase." }),
   scanning: msg({ message: "Scanning", context: "pipeline phase", comment: "Short label for a scan phase." }),
   scoring: msg({ message: "Scoring candidates", context: "pipeline phase", comment: "Short label for scoring candidate frames." }),
@@ -1213,6 +1230,7 @@ function normaliseStageStatus(value: unknown): StageStatus {
 
 function normaliseStage(value: unknown): StageKey | undefined {
   const raw = String(value ?? "").toLowerCase();
+  if (raw === "normals") return "normals";
   if (raw.includes("extract") || raw.includes("feature")) return "extract";
   if (raw.includes("mask") || raw.includes("segment")) return "mask";
   if (raw.includes("align") || raw.includes("mapper") || raw.includes("register")) return "align";

@@ -8,22 +8,24 @@ import { Box, LoaderCircle, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Task } from "@/lib/pipeline";
+import { localiseUserMessage, type Task } from "@/lib/pipeline";
 
-interface Settings { modelPath: string; frameLimit: number; validityThreshold: number }
+interface Settings { modelPath: string; frameLimit: number; validityThreshold: number; keepIntermediates: boolean }
 interface Frame {
   id: number; name: string; cameraId: number; width: number; height: number;
   validPixels: number; totalPixels: number; rejectionCounts: number[];
+  intermediateState?: "retained" | "cleanupPending" | "removed"; removedIntermediateBytes?: number;
   faces: Array<{ face: number; shift: number | null; scale: number; error: string | null }>;
 }
 interface Run {
+  activeForTraining?: boolean;
   id: string; status: string; jobId: string | null; message: string;
   settings: Settings; total: number; completed: number; frames: Frame[];
   datasetSha256: string; outputPath: string; updatedMs: number;
 }
 interface Status { runs: Run[]; busy: boolean; job: { jobId: string; running: boolean; error: string | null } | null }
 interface Preflight {
-  registered: number; selected: number; estimatedOutputBytes: number; modelDownloadBytes: number;
+  registered: number; selected: number; estimatedOutputBytes: number; estimatedPeakBytes: number; modelDownloadBytes: number;
   modelIdentity: string; cameras: Array<{ id: number; model: string; width: number; height: number }>;
 }
 const selectClass = "h-9 min-w-0 rounded-md border bg-background px-2 text-sm";
@@ -31,7 +33,7 @@ const size = (n: number) => `${(n / 1024 ** 3).toFixed(2)} GiB`;
 
 export function GeometryDrafts({ task }: { task: Task }) {
   const [enabled, setEnabled] = useState(false);
-  const [settings, setSettings] = useState<Settings>({ modelPath: "", frameLimit: 8, validityThreshold: 0.5 });
+  const [settings, setSettings] = useState<Settings>({ modelPath: "", frameLimit: 8, validityThreshold: 0.5, keepIntermediates: false });
   const [status, setStatus] = useState<Status>({ runs: [], busy: false, job: null });
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [working, setWorking] = useState(false);
@@ -62,7 +64,7 @@ export function GeometryDrafts({ task }: { task: Task }) {
         if (!result.job?.running) setStopping(false);
         if (!initialized.current && result.runs[0]) {
           initialized.current = true;
-          setSettings(result.runs[0].settings);
+          setSettings({ ...result.runs[0].settings, keepIntermediates: result.runs[0].settings.keepIntermediates ?? false });
         }
       } catch (e) { if (active) setError(String(e)); }
       if (active) timer = setTimeout(() => void poll(), 2000);
@@ -105,13 +107,16 @@ export function GeometryDrafts({ task }: { task: Task }) {
   ];
   return <section className="border-b py-5" aria-labelledby="geometry-title">
     <div className="mb-3 flex items-center justify-between gap-3">
-      <h3 id="geometry-title" className="flex items-center gap-2 font-semibold"><Box className="size-4" />Geometry</h3>
-      <Badge variant="secondary"><Trans>Experimental draft</Trans></Badge>
+      <h3 id="geometry-title" className="flex items-center gap-2 font-semibold"><Box className="size-4" /><Trans>Normal maps</Trans></h3>
+      <Badge variant="secondary"><Trans>Pipeline stage 4</Trans></Badge>
     </div>
-    <p className="text-sm leading-relaxed text-muted-foreground"><Trans>Generate native-resolution normals and range for quality review. These drafts are unverified and are not enabled for training.</Trans></p>
+    <p className="text-sm leading-relaxed text-muted-foreground"><Trans>The Normals stage exports all registered images to the training normals folder. Inspect the maps here; relative range remains a preview.</Trans></p>
+    {task.stages.normals.status === "completed" && <Button className="mt-3" variant="outline" onClick={() => void act(async () => {
+      await openPath(`${task.outputPath}/geometry/spirula-normals.json`);
+    })}><Trans>Open Spirula training configuration</Trans></Button>}
     <label className="mt-4 flex items-center gap-2 text-sm">
       <input type="checkbox" checked={enabled} disabled={disabled} onChange={(e) => setEnabled(e.target.checked)} />
-      <Trans>Enable Geometry generation</Trans>
+      <Trans>Advanced: generate a separate preview sample</Trans>
     </label>
     {!available && <p className="mt-2 text-xs text-muted-foreground"><Trans>Complete alignment to use the final registered cameras and original images.</Trans></p>}
     {enabled && <div className="mt-4 space-y-3">
@@ -131,12 +136,18 @@ export function GeometryDrafts({ task }: { task: Task }) {
         <label className="text-xs"><Trans>Model validity threshold</Trans><Input className="mt-1" type="number" min={0.1} max={0.95} step={0.05} disabled={disabled} value={settings.validityThreshold} onChange={(e) => change({ ...settings, validityThreshold: Number(e.target.value) })} /></label>
       </div>
       <p className="text-xs text-muted-foreground"><Trans>Images are selected in name order. Validity measures model support, not accuracy. Range has not been aligned to the reconstruction scale.</Trans></p>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={settings.keepIntermediates} disabled={disabled} onChange={(e) => change({ ...settings, keepIntermediates: e.target.checked })} />
+        <Trans>Keep intermediate files for debugging</Trans>
+      </label>
+      <p className="text-xs text-muted-foreground"><Trans>After a complete, verified run, large intermediate files are removed automatically. PNG maps, previews and run history are kept. Regenerate with this option enabled if you later need the original floating-point data.</Trans></p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={disabled || !available} onClick={() => void act(async () => setPreflight(await invoke<Preflight>("geometry_preflight", { projectPath: root, settings })))}><Trans>Check inputs</Trans></Button>
         <Button disabled={disabled || !available || !preflight} onClick={() => void start(settings)}><Trans>Generate / resume draft</Trans></Button>
       </div>
       {preflight && <div className="rounded-md border p-3 text-xs leading-relaxed">
         <p><Trans>{preflight.selected} of {preflight.registered} registered images</Trans> · <Trans>Estimated output</Trans>: {size(preflight.estimatedOutputBytes)}</p>
+        <p><Trans>Estimated peak disk space during generation</Trans>: {size(preflight.estimatedPeakBytes)}</p>
         {preflight.cameras.map((c) => <p key={c.id}>Camera {c.id} · {c.model} · {c.width} × {c.height}</p>)}
         {preflight.modelDownloadBytes > 0 && <p><Trans>First-run model storage</Trans>: {size(preflight.modelDownloadBytes * 2)}</p>}
       </div>}
@@ -150,15 +161,16 @@ export function GeometryDrafts({ task }: { task: Task }) {
       })}><Square className="size-3" />{stopping ? t`Stopping after current GPU call…` : t`Cancel`}</Button>
     </div>}
     {run && <div className="mt-4 space-y-3">
-      <label className="flex flex-col gap-1 text-xs"><Trans>Draft runs</Trans>
+      <label className="flex flex-col gap-1 text-xs"><Trans>Generation history</Trans>
         <select className={selectClass} value={run.id} onChange={(e) => { setRunId(e.target.value); setFrameId(undefined); }}>
           {status.runs.map((r) => <option value={r.id} key={r.id}>{new Date(r.updatedMs).toLocaleString()} · {r.completed}/{r.total} · {r.status}</option>)}
         </select>
       </label>
-      <p className="break-words text-xs text-muted-foreground">{run.message}</p>
+      <p className="break-words text-xs text-muted-foreground">{localiseUserMessage(run.message)}</p>
+      {run.frames.some((f) => f.intermediateState === "removed") && <p className="text-xs text-muted-foreground"><Trans>Intermediate files cleaned</Trans> · {size(run.frames.reduce((total, f) => total + (f.removedIntermediateBytes ?? 0), 0))}</p>}
       {preflight && preflight.modelIdentity !== run.datasetSha256 && <p className="text-xs text-warning"><Trans>The final reconstruction has changed. Generate a new draft before reviewing this dataset.</Trans></p>}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={disabled} onClick={() => void act(async () => { await openPath(run.outputPath); })}><Trans>Open draft folder</Trans></Button>
+        <Button variant="outline" disabled={disabled} onClick={() => void act(async () => { await openPath(run.outputPath); })}><Trans>Open maps folder</Trans></Button>
         {run.status !== "running" && run.status !== "completed" && <Button variant="outline" disabled={disabled || !available || !enabled} onClick={() => { change(run.settings); void start(run.settings); }}><Trans>Resume this configuration</Trans></Button>}
       </div>
       {frame && <>
@@ -167,7 +179,7 @@ export function GeometryDrafts({ task }: { task: Task }) {
         <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-md border bg-black">
           {loadingImage ? <LoaderCircle className="size-5 animate-spin text-white" /> : image && <img src={image} alt={`${frame.name} — ${views.find(([id]) => id === kind)?.[1]}`} className="max-h-[30rem] w-full object-contain" />}
         </div>
-        <p className="text-xs text-muted-foreground">{frame.width} × {frame.height} · <Trans>Valid support</Trans>: {(100 * frame.validPixels / frame.totalPixels).toFixed(1)}% · <Trans>Quality acceptance: not tested</Trans></p>
+        <p className="text-xs text-muted-foreground">{frame.width} × {frame.height} · <Trans>Valid support</Trans>: {(100 * frame.validPixels / frame.totalPixels).toFixed(1)}% · <Trans>Review scene quality after training.</Trans></p>
         {kind === "range" && <p className="text-xs text-muted-foreground"><Trans>Blue → green → red: near → far, with a separate display scale for each image. Black pixels are invalid. Colours are not comparable between images.</Trans></p>}
         {kind === "reasons" && <p className="text-xs text-muted-foreground"><Trans>Green: valid · black: outside lens · amber: source mask · grey: model/recovery invalid · magenta: perspective disagreement</Trans></p>}
         <details className="rounded-md border p-2 text-xs"><summary className="cursor-pointer"><Trans>Inference details</Trans></summary>

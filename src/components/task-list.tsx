@@ -204,10 +204,10 @@ function TaskCard({
                 <Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans>
               </span>
               <Popover>
-                <PopoverTrigger render={<Button variant="ghost" size="icon-xs" aria-label={t`Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%`} />}><Info /></PopoverTrigger>
+                <PopoverTrigger render={<Button variant="ghost" size="icon-xs" aria-label={t`Overall progress includes extraction, masking, alignment and normals. Normal generation uses an initial time estimate.`} />}><Info /></PopoverTrigger>
                 <PopoverContent className="max-w-80" side="bottom" sideOffset={6}>
                   <PopoverTitle><Trans comment="Overall progress weighted by observed stage durations.">Overall progress</Trans></PopoverTitle>
-                  <p className="text-sm leading-relaxed text-muted-foreground"><Trans>Weighted by three observed run durations: frame extraction 22%, masking 4%, alignment 74%</Trans></p>
+                  <p className="text-sm leading-relaxed text-muted-foreground"><Trans>Overall progress includes extraction, masking, alignment and normals. Normal generation uses an initial time estimate.</Trans></p>
                 </PopoverContent>
               </Popover>
               <small className="text-muted-foreground">{taskProgressSummary(task)}</small>

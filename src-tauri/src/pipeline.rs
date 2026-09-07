@@ -335,7 +335,7 @@ impl JobManager {
 
     pub fn start_geometry(&self, project_path: String, settings: crate::geometry::draft::Settings) -> Result<String, String> {
         let _mutation_guard = project::lock_project_mutation()?;
-        let manifest = project::load(&project_path)?;
+        let manifest = project::snapshot(&project_path)?;
         let root = PathBuf::from(&manifest.output_path);
         crate::geometry::draft::preflight(&root, &settings)?;
         let id = job_id();
@@ -757,6 +757,7 @@ pub fn start_stage(
     request: StartStageRequest,
 ) -> Result<StartStageResponse, String> {
     let _mutation_guard = project::lock_project_mutation()?;
+    if manager.is_running() { return Err("Another pipeline stage is already running".into()); }
     let mut manifest = project::load(&request.project_path)?;
     replace_stage_settings(&mut manifest.settings, request.settings.clone());
     reset_capabilities_for_stage_start(&mut manifest, &request.stage);
@@ -766,6 +767,13 @@ pub fn start_stage(
         mask_cancel: CancelToken::new(),
     };
     manager.insert(id.clone(), control.clone())?;
+    if request.stage != StageName::Normals {
+        if let Err(error) = crate::geometry::export::invalidate(Path::new(&manifest.output_path)) {
+            manager.remove(&id);
+            return Err(error);
+        }
+        manifest.set_stage(&StageName::Normals, project::StageCheckpoint::default());
+    }
     let stage_started_at = Instant::now();
     let skipped_mask = request.stage == StageName::Mask && !mask_enabled(&manifest.settings);
     let starting_message = if skipped_mask {
@@ -811,6 +819,7 @@ pub fn start_stage(
                 run_extract(&app, &id, &manifest, &control).map(StageRunOutput::plain)
             }
             StageName::Mask => run_mask(&app, &id, &manifest, &control),
+            StageName::Normals => run_normals(&app, &id, &manifest, &control),
             StageName::Align => run_align(
                 &app,
                 &id,
@@ -1423,6 +1432,23 @@ where
         emit_log(app, id, "info", last.trim());
     }
     Ok(())
+}
+
+fn run_normals(app: &AppHandle, id: &str, manifest: &ProjectManifest, control: &JobControl) -> Result<StageRunOutput, String> {
+    if !matches!(manifest.stage(&StageName::Align).status, StageStatus::Completed) {
+        return Err("Complete prerequisite: align".into());
+    }
+    let settings: crate::geometry::draft::Settings = serde_json::from_value(
+        manifest.settings.get("normals").cloned().unwrap_or_else(|| json!({}))
+    ).map_err(|e| e.to_string())?;
+    let root = Path::new(&manifest.output_path);
+    let report = crate::geometry::draft::run_normals(root, settings, &control.mask_cancel, Some(id.to_owned()), |r| {
+        emit_progress_detailed(app, id, &StageName::Normals, "normal-generation",
+            (r.completed as f32 / r.total.max(1) as f32 * 0.95).min(0.95), &r.message,
+            "running", false, Some(r.completed as u64), Some(r.total as u64), r.current.clone(), None);
+    })?;
+    Ok(StageRunOutput::plain(vec![root.join("normals").to_string_lossy().into_owned(),
+        root.join("geometry/spirula-normals.json").to_string_lossy().into_owned(), report.output_path]))
 }
 
 fn child_failure_message(

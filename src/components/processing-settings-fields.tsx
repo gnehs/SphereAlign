@@ -320,6 +320,19 @@ export function ProcessingSettingsFields({
               <AlignmentSettingsFields settings={settings} onSettingsChange={onSettingsChange} doctor={doctor} onGpuPreferenceTouched={onGpuPreferenceTouched} />
             </FieldContent>
           </Field>
+          <Field>
+            <FieldTitle><Trans>Normals</Trans></FieldTitle>
+            <FieldContent>
+              <FieldDescription><Trans>After alignment, generate training normals for every registered image. Large intermediate files are removed after export.</Trans></FieldDescription>
+              <FieldLabel htmlFor="normals-model"><Trans>Model file (optional)</Trans></FieldLabel>
+              <Input id="normals-model" value={settings.normals.modelPath} placeholder={t`Download pinned model automatically`}
+                onChange={(event) => onSettingsChange((current) => ({ ...current, normals: { ...current.normals, modelPath: event.target.value } }))} />
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={settings.normals.keepIntermediates} onCheckedChange={(checked) => onSettingsChange((current) => ({ ...current, normals: { ...current.normals, keepIntermediates: checked === true } }))} />
+                <Trans>Keep intermediate files for debugging</Trans>
+              </label>
+            </FieldContent>
+          </Field>
         </FieldGroup>
       </div>
     </section>

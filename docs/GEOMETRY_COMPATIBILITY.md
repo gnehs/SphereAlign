@@ -1,6 +1,8 @@
 # Geometry compatibility — measured, not certified
 
-Date: 2026-09-06. **No Spirula training combination is certified for active geometry priors in this change.**
+Update 2026-09-07: the user reviewed the complete 20,000-step `disney_cruise_room` scene and confirmed a substantial reduction in floaters. Camera-space RGB8 normals are now integrated into the production pipeline with supervision weight 0.01, native fisheye cameras and depth loading disabled. See [the current workflow](GEOMETRY_PRIORS.md). The tested installed trainer SHA-256 is `263a45b3e4e9b91550f5d6d2ed94cf2fb9d73ff9869233ba7e257475138bae77`.
+
+This is an empirical normals-only rollout. It does not certify all sampler boundary/gradient semantics or enable metric depth. The dated findings below remain the record of the earlier compatibility investigation; their original “no activation” status has been superseded for this normal-map path by the user's scene review.
 
 ## Actual versions
 
