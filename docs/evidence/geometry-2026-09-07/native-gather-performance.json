@@ -1,0 +1,51 @@
+{
+  "measuredDate": "2026-09-07",
+  "platform": "Windows x86_64",
+  "mode": "release",
+  "referenceCommit": "424e059",
+  "samplesPerVariant": 1,
+  "hashComparisonOutsideTiming": true,
+  "command": "cargo test --manifest-path src-tauri/Cargo.toml --release --lib geometry::draft::tests::native_gather_benchmark --offline -- --ignored --nocapture",
+  "result": {
+    "width": 3840,
+    "height": 3840,
+    "serialMs": 7670,
+    "runs": [
+      {
+        "cache": "cold",
+        "elapsedMs": 1535,
+        "timings": {
+          "totalMs": 0,
+          "inferenceMs": 0,
+          "perspectiveMs": 0,
+          "rayCacheMs": 911,
+          "gatherMs": 345,
+          "outputMs": 0,
+          "rayCacheHit": false,
+          "rayCacheBytes": 353894400,
+          "nativeWorkers": 8
+        },
+        "speedupVsSerial": 4.996742671009772,
+        "allSevenFileHashesEqual": true
+      },
+      {
+        "cache": "warm",
+        "elapsedMs": 652,
+        "timings": {
+          "totalMs": 0,
+          "inferenceMs": 0,
+          "perspectiveMs": 0,
+          "rayCacheMs": 0,
+          "gatherMs": 375,
+          "outputMs": 0,
+          "rayCacheHit": true,
+          "rayCacheBytes": 353894400,
+          "nativeWorkers": 8
+        },
+        "speedupVsSerial": 11.763803680981596,
+        "allSevenFileHashesEqual": true
+      }
+    ],
+    "scope": "native gather and output writing with synthetic inference heads and real fisheye calibration; excludes GPU inference and perspective extraction"
+  }
+}

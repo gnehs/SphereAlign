@@ -1,3 +1,23 @@
+# Native normal-map CPU acceleration — 2026-09-07
+
+Release-mode comparison against the frozen serial implementation from commit `424e059`, on this Windows machine with 8 native workers. The fixture uses the real 3840×3840 fisheye calibration and synthetic six-face inference heads, RGB and mask, including invalid support and overlap disagreement. This is one run per variant, not a repeated statistical benchmark or an end-to-end model benchmark.
+
+| Variant | Native gather + seven output files | Relative to serial |
+| --- | --- | --- |
+| Previous serial implementation | 7,670 ms | 1× |
+| Parallel, cold ray cache | 1,535 ms | 5.00× |
+| Parallel, warm ray cache | 652 ms | 11.76× |
+
+The cold run spent 911 ms preparing 353,894,400 bytes of exact `f64` camera rays. Both new runs matched all seven reference file SHA-256 hashes (`native.f32`, `reasons.u8`, normal/range/validity/reasons/RGB PNGs) and all five reason counts. Hash comparisons run outside the timed interval. Timings include raw file flush/sync and PNG encoding, but exclude model inference, perspective extraction, shift recovery, production output hashing and final training export. The test-only `timings.totalMs` and `outputMs` remain zero because the production `predict_frame` wrapper is not called. [Machine-readable result](evidence/geometry-2026-09-07/native-gather-performance.json).
+
+Regular parity tests additionally cover PINHOLE and folded OPENCV_FISHEYE, changing masks, partial final stripes, and cancellation before output. Cache tests verify bit-exact rays, calibration-based identity, eviction and oversize fallback. The full current library suite passed: **363 passed, 0 failed, 18 ignored**; the explicit release benchmark also passed. Ignored tests include hardware-dependent checks and this opt-in benchmark. No new GPU inference or full-dataset elapsed-time measurement was performed for this optimization.
+
+Frontend build and the release NSIS package completed successfully. The release executable contains the new native worker and timing fields; executable/installer SHA-256 hashes are recorded in [package verification](evidence/geometry-2026-09-07/native-speed-package.json). The installer was built but not installed over the running application.
+
+```powershell
+cargo test --manifest-path src-tauri/Cargo.toml --release --lib geometry::draft::tests::native_gather_benchmark --offline -- --ignored --nocapture
+```
+
 # Production normal-map integration — 2026-09-07
 
 - `disney_cruise_room`: 202 normal maps, 20,000 training steps, about 39m50s, exported PLY 2,801,390 splats. Source COLMAP hashes and exported normal hashes verified; finite PLY attributes checked.

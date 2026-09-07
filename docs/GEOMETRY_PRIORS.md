@@ -62,6 +62,16 @@ src-tauri/target/debug/spherealign-geometry-cli.exe cleanup "D:/data/project" --
 
 本次正式採用的依據是指定室內場景的完整訓練和使用者實際場景檢視，並非宣告所有場景或所有 trainer 的逐像素 validity／gradient 契約都已認證。既有 stock sampler 邊界缺陷及尚未完成的跨影像 screening 仍記錄在 [GEOMETRY_COMPATIBILITY.md](GEOMETRY_COMPATIBILITY.md)。新的場景訓練後仍需檢視品質；法線有效支援比例不等於品質通過率。
 
+## 法線處理效能
+
+原始解析度的回填使用每個工作專屬的 CPU 執行緒池（最多 8 條），相機射線則依模型、尺寸及完整內參快取精確的 `f64` 結果。同一標定的後續影像可直接重用；不同 mask 仍逐張套用。射線快取採 LRU、上限 768 MiB，3840×3840 每組約 337.5 MiB，雙鏡頭約 675 MiB。這是額外的 CPU RAM；超出快取預算或配置失敗時，改為平行即時計算射線。工作結束即釋放快取。
+
+回填以 64 列為一個區塊並行計算，再依原始像素順序寫出浮點資料與原因標籤。模型、解析度、有效性／重疊門檻、法線量化及中間檔清理政策不變，也不改變 run ID。已完成快取可直接續用。
+
+每張新生成影像的 `frame.json` 增加 `timings`：`inferenceMs`、`perspectiveMs`、`rayCacheMs`、`gatherMs`、`outputMs`、`totalMs`，並記錄快取命中、目前快取 bytes 及 worker 數。`gatherMs` 包含原始浮點／標籤寫入與同步；`outputMs` 包含 PNG 編碼及輸出雜湊；總時間另含影像解碼、幾何恢復等工作，因此不等於這些分項的總和。舊紀錄沒有 timings 時以預設值讀取，不重新推論。
+
+3840×3840 release 模式的單次 CPU 回填與輸出測試：舊版 7.670 秒，新版首次 1.535 秒、快取命中 0.652 秒（約 5.0×／11.8×）。七個輸出檔案 SHA-256 全部與保留的舊版實作相同。此測試使用合成模型輸出與真實魚眼標定，不包含 GPU 推論、透視擷取或整批匯出，不能解讀為整個法線階段加速倍率。詳見 [實測紀錄](GEOMETRY_BENCHMARKS.md)。
+
 ## 驗證
 
 ```powershell

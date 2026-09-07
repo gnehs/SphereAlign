@@ -4,10 +4,12 @@ use super::{
     cleanup::{self, IntermediateState},
     dataset::{self, Frame},
     model::{self, GeometryModel, Heads},
+    rays::NativeProcessor,
     specialize,
 };
 use crate::masking::CancelToken;
 use image::{GrayImage, Luma, Rgb, RgbImage};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -88,6 +90,21 @@ pub struct FrameReport {
     pub intermediate_state: IntermediateState,
     #[serde(default)]
     pub removed_intermediate_bytes: u64,
+    #[serde(default)]
+    pub timings: FrameTimings,
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameTimings {
+    pub total_ms: u64,
+    pub inference_ms: u64,
+    pub perspective_ms: u64,
+    pub ray_cache_ms: u64,
+    pub gather_ms: u64,
+    pub output_ms: u64,
+    pub ray_cache_hit: bool,
+    pub ray_cache_bytes: u64,
+    pub native_workers: usize,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -449,6 +466,219 @@ fn sample_rgb(src: &RgbImage, p: [f64; 2]) -> Option<Rgb<u8>> {
         (a * (1. - ty) + b * ty).round() as u8
     })))
 }
+#[derive(Clone, Copy, Default)]
+struct NativePixel {
+    value: [f32; 4],
+    normal: [u8; 3],
+    range: [u8; 3],
+    reason: u8,
+}
+
+fn native_pixel(
+    ray: Option<camera::V3>,
+    mask_valid: bool,
+    faces: &[Option<Face>],
+    threshold: f32,
+    display_max: f64,
+) -> NativePixel {
+    let mut normal = [0; 3];
+    let mut range = [0; 3];
+    let mut reason = 1u8;
+    let mut value = [0f32; 4];
+    if let Some(ray) = ray {
+        reason = 2;
+        if mask_valid {
+            reason = 3;
+            let mut candidates = [(0f64, [0f64; 3], 0f64); 6];
+            let mut candidate_count = 0;
+            for (f, face) in faces.iter().enumerate() {
+                let Some(face) = face else {
+                    continue;
+                };
+                let Some((i, zray)) = camera::face_pixel(f, ray) else {
+                    continue;
+                };
+                let p = &face.heads;
+                let z = (p.points[3 * i + 2] as f64 + face.shift) * p.metric_scale as f64;
+                if !face.support[i]
+                    || !p.mask[i].is_finite()
+                    || p.mask[i] < threshold
+                    || !z.is_finite()
+                    || z <= 0.
+                    || z / zray > f32::MAX as f64
+                {
+                    continue;
+                }
+                let Some(n) = camera::unit([
+                    p.normal[3 * i] as f64,
+                    p.normal[3 * i + 1] as f64,
+                    p.normal[3 * i + 2] as f64,
+                ]) else {
+                    continue;
+                };
+                candidates[candidate_count] = (zray, camera::rotate(f, n), z / zray);
+                candidate_count += 1;
+            }
+            let candidates = &mut candidates[..candidate_count];
+            candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
+            if let Some(&(_, n, r)) = candidates.first() {
+                // Never blend depths/normals across disagreement at cube overlaps.
+                if candidates.iter().skip(1).any(|&(_, nn, rr)| {
+                    camera::dot(n, nn) < 30f64.to_radians().cos()
+                        || (r - rr).abs() / r.max(rr) > 0.20
+                }) {
+                    reason = 4;
+                } else {
+                    reason = 0;
+                    value = [n[0] as f32, n[1] as f32, n[2] as f32, r as f32];
+                    normal = n.map(|a| ((a * 0.5 + 0.5) * 255.).round() as u8);
+                    let t = (r / display_max).clamp(0., 1.);
+                    range = [
+                        (255. * t) as u8,
+                        (255. * (1. - (2. * t - 1.).abs())) as u8,
+                        (255. * (1. - t)) as u8,
+                    ];
+                }
+            }
+        }
+    }
+    NativePixel {
+        value,
+        normal,
+        range,
+        reason,
+    }
+}
+
+struct NativeMaps {
+    normal: RgbImage,
+    range: RgbImage,
+    validity: GrayImage,
+    reasons: RgbImage,
+    counts: [u64; 5],
+}
+
+fn gather_native(
+    out: &Path,
+    camera: &Camera,
+    mask: &Option<GrayImage>,
+    faces: &[Option<Face>],
+    settings: &Settings,
+    processor: &mut NativeProcessor,
+    cancel: &CancelToken,
+    timings: &mut FrameTimings,
+) -> Result<NativeMaps, String> {
+    let cache_start = std::time::Instant::now();
+    let (rays, hit) = processor.prepare(camera, cancel)?;
+    timings.ray_cache_ms = cache_start.elapsed().as_millis() as u64;
+    timings.ray_cache_hit = hit;
+    timings.ray_cache_bytes = processor.bytes() as u64;
+    timings.native_workers = processor.pool.current_num_threads();
+    let gather_start = std::time::Instant::now();
+    let mut normal = RgbImage::new(camera.width, camera.height);
+    let mut depth = RgbImage::new(camera.width, camera.height);
+    let mut validity = GrayImage::new(camera.width, camera.height);
+    let mut reasons = RgbImage::new(camera.width, camera.height);
+    let mut map = BufWriter::new(io(File::create(out.join("native.f32")))?);
+    let mut reason_file = BufWriter::new(io(File::create(out.join("reasons.u8")))?);
+    let mut counts = [0u64; 5];
+    let mut scale_samples: Vec<f64> = faces
+        .iter()
+        .flatten()
+        .flat_map(|f| {
+            f.heads
+                .points
+                .chunks_exact(3)
+                .step_by(1024)
+                .map(move |p| (p[2] as f64 + f.shift) * f.heads.metric_scale as f64)
+        })
+        .filter(|z| z.is_finite() && *z > 0.)
+        .collect();
+    scale_samples.sort_by(f64::total_cmp);
+    let display_max = scale_samples
+        .get(scale_samples.len() * 9 / 10)
+        .copied()
+        .unwrap_or(1.)
+        * 2.;
+
+    // Bound scratch memory independently of resolution and worker count. Workers never
+    // write files; stripes are serialized in source-row order after all rows succeed.
+    const STRIPE_ROWS: usize = 64;
+    let width = camera.width as usize;
+    let mut pixels = vec![NativePixel::default(); width * STRIPE_ROWS.min(camera.height as usize)];
+    let mut raw = vec![0u8; pixels.len() * 16];
+    let mut labels = vec![0u8; pixels.len()];
+    for first_y in (0..camera.height as usize).step_by(STRIPE_ROWS) {
+        check(cancel)?;
+        let rows = STRIPE_ROWS.min(camera.height as usize - first_y);
+        let stripe = &mut pixels[..rows * width];
+        processor.pool.install(|| {
+            stripe
+                .par_chunks_mut(width)
+                .enumerate()
+                .try_for_each(|(row_index, row)| {
+                    check(cancel)?;
+                    let y = first_y + row_index;
+                    for (x, pixel) in row.iter_mut().enumerate() {
+                        let ray = if let Some(rays) = &rays {
+                            let ray = rays[y * width + x];
+                            (ray != [0.; 3]).then_some(ray)
+                        } else {
+                            camera.ray(x as f64 + 0.5, y as f64 + 0.5)
+                        };
+                        *pixel = native_pixel(
+                            ray,
+                            mask.as_ref()
+                                .is_none_or(|m| m.get_pixel(x as u32, y as u32)[0] >= 128),
+                            faces,
+                            settings.validity_threshold,
+                            display_max,
+                        );
+                    }
+                    Ok::<_, String>(())
+                })
+        })?;
+        check(cancel)?;
+        for (i, pixel) in stripe.iter().enumerate() {
+            let x = (i % width) as u32;
+            let y = (first_y + i / width) as u32;
+            normal.put_pixel(x, y, Rgb(pixel.normal));
+            depth.put_pixel(x, y, Rgb(pixel.range));
+            validity.put_pixel(x, y, Luma([if pixel.reason == 0 { 255 } else { 0 }]));
+            reasons.put_pixel(
+                x,
+                y,
+                Rgb([
+                    [30, 160, 90],
+                    [0, 0, 0],
+                    [210, 140, 20],
+                    [100, 100, 100],
+                    [210, 50, 170],
+                ][pixel.reason as usize]),
+            );
+            counts[pixel.reason as usize] += 1;
+            labels[i] = pixel.reason;
+            for (c, value) in pixel.value.iter().enumerate() {
+                raw[i * 16 + c * 4..i * 16 + c * 4 + 4].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        io(map.write_all(&raw[..stripe.len() * 16]))?;
+        io(reason_file.write_all(&labels[..stripe.len()]))?;
+    }
+    io(map.flush())?;
+    io(map.get_ref().sync_all())?;
+    io(reason_file.flush())?;
+    io(reason_file.get_ref().sync_all())?;
+    timings.gather_ms = gather_start.elapsed().as_millis() as u64;
+    Ok(NativeMaps {
+        normal,
+        range: depth,
+        validity,
+        reasons,
+        counts,
+    })
+}
+
 fn predict_frame(
     root: &Path,
     out: &Path,
@@ -458,9 +688,12 @@ fn predict_frame(
     mask_hash: Option<String>,
     settings: &Settings,
     model: &mut GeometryModel,
+    processor: &mut NativeProcessor,
     cancel: &CancelToken,
     progress: &mut impl FnMut(&str),
 ) -> Result<FrameReport, String> {
+    let frame_start = std::time::Instant::now();
+    let mut timings = FrameTimings::default();
     let source = dataset::safe_join(&root.join("images"), &frame.name)?;
     let src = image::open(&source).map_err(|e| e.to_string())?.to_rgb8();
     if src.dimensions() != (camera.width, camera.height) {
@@ -485,6 +718,7 @@ fn predict_frame(
     let mut faces: Vec<Option<Face>> = (0..6).map(|_| None).collect();
     let mut reports = vec![];
     for face in 0..6 {
+        let perspective_start = std::time::Instant::now();
         check(cancel)?;
         progress(&format!("{} · perspective {}/6", frame.name, face + 1));
         let mut rgb = RgbImage::new(SIZE as u32, SIZE as u32);
@@ -518,6 +752,7 @@ fn predict_frame(
         }
         rgb.save(out.join(format!("face{face}.png")))
             .map_err(|e| e.to_string())?;
+        timings.perspective_ms += perspective_start.elapsed().as_millis() as u64;
         if n < SIZE * SIZE / 100 {
             reports.push(FaceReport {
                 face,
@@ -528,7 +763,9 @@ fn predict_frame(
             });
             continue;
         }
+        let inference_start = std::time::Instant::now();
         let heads = model.infer(tensor)?;
+        timings.inference_ms += inference_start.elapsed().as_millis() as u64;
         check(cancel)?;
         match recover_shift(&heads, &support, settings.validity_threshold) {
             Ok(shift) => {
@@ -556,126 +793,23 @@ fn predict_frame(
     }
     check(cancel)?;
     progress(&format!("{} · gathering native pixels", frame.name));
-    let mut normal = RgbImage::new(camera.width, camera.height);
-    let mut depth = RgbImage::new(camera.width, camera.height);
-    let mut validity = GrayImage::new(camera.width, camera.height);
-    let mut reasons = RgbImage::new(camera.width, camera.height);
-    let mut map = BufWriter::new(io(File::create(out.join("native.f32")))?);
-    let mut reason_file = BufWriter::new(io(File::create(out.join("reasons.u8")))?);
-    let mut counts = [0u64; 5];
-    let mut scale_samples: Vec<f64> = faces
-        .iter()
-        .flatten()
-        .flat_map(|f| {
-            f.heads
-                .points
-                .chunks_exact(3)
-                .step_by(1024)
-                .map(move |p| (p[2] as f64 + f.shift) * f.heads.metric_scale as f64)
-        })
-        .filter(|z| z.is_finite() && *z > 0.)
-        .collect();
-    scale_samples.sort_by(f64::total_cmp);
-    let display_max = scale_samples
-        .get(scale_samples.len() * 9 / 10)
-        .copied()
-        .unwrap_or(1.)
-        * 2.;
-    for y in 0..camera.height {
-        if y % 16 == 0 {
-            check(cancel)?;
-        }
-        for x in 0..camera.width {
-            let mut reason = 1u8;
-            let mut value = [0f32; 4];
-            if let Some(ray) = camera.ray(x as f64 + 0.5, y as f64 + 0.5) {
-                reason = 2;
-                if mask.as_ref().is_none_or(|m| m.get_pixel(x, y)[0] >= 128) {
-                    reason = 3;
-                    let mut candidates = [(0f64, [0f64; 3], 0f64); 6];
-                    let mut candidate_count = 0;
-                    for (f, face) in faces.iter().enumerate() {
-                        let Some(face) = face else {
-                            continue;
-                        };
-                        let Some((i, zray)) = camera::face_pixel(f, ray) else {
-                            continue;
-                        };
-                        let p = &face.heads;
-                        let z = (p.points[3 * i + 2] as f64 + face.shift) * p.metric_scale as f64;
-                        if !face.support[i]
-                            || !p.mask[i].is_finite()
-                            || p.mask[i] < settings.validity_threshold
-                            || !z.is_finite()
-                            || z <= 0.
-                            || z / zray > f32::MAX as f64
-                        {
-                            continue;
-                        }
-                        let Some(n) = camera::unit([
-                            p.normal[3 * i] as f64,
-                            p.normal[3 * i + 1] as f64,
-                            p.normal[3 * i + 2] as f64,
-                        ]) else {
-                            continue;
-                        };
-                        candidates[candidate_count] = (zray, camera::rotate(f, n), z / zray);
-                        candidate_count += 1;
-                    }
-                    let candidates = &mut candidates[..candidate_count];
-                    candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
-                    if let Some(&(_, n, r)) = candidates.first() {
-                        // Never blend depths/normals across disagreement at cube overlaps.
-                        if candidates.iter().skip(1).any(|&(_, nn, rr)| {
-                            camera::dot(n, nn) < 30f64.to_radians().cos()
-                                || (r - rr).abs() / r.max(rr) > 0.20
-                        }) {
-                            reason = 4;
-                        } else {
-                            reason = 0;
-                            value = [n[0] as f32, n[1] as f32, n[2] as f32, r as f32];
-                            normal.put_pixel(
-                                x,
-                                y,
-                                Rgb(n.map(|a| ((a * 0.5 + 0.5) * 255.).round() as u8)),
-                            );
-                            let t = (r / display_max).clamp(0., 1.);
-                            depth.put_pixel(
-                                x,
-                                y,
-                                Rgb([
-                                    (255. * t) as u8,
-                                    (255. * (1. - (2. * t - 1.).abs())) as u8,
-                                    (255. * (1. - t)) as u8,
-                                ]),
-                            );
-                            validity.put_pixel(x, y, Luma([255]));
-                        }
-                    }
-                }
-            }
-            counts[reason as usize] += 1;
-            reasons.put_pixel(
-                x,
-                y,
-                Rgb([
-                    [30, 160, 90],
-                    [0, 0, 0],
-                    [210, 140, 20],
-                    [100, 100, 100],
-                    [210, 50, 170],
-                ][reason as usize]),
-            );
-            for v in value {
-                io(map.write_all(&v.to_le_bytes()))?;
-            }
-            io(reason_file.write_all(&[reason]))?;
-        }
-    }
-    io(map.flush())?;
-    io(map.get_ref().sync_all())?;
-    io(reason_file.flush())?;
-    io(reason_file.get_ref().sync_all())?;
+    let NativeMaps {
+        normal,
+        range: depth,
+        validity,
+        reasons,
+        counts,
+    } = gather_native(
+        out,
+        camera,
+        &mask,
+        &faces,
+        settings,
+        processor,
+        cancel,
+        &mut timings,
+    )?;
+    let output_start = std::time::Instant::now();
     for (name, img) in [
         ("rgb", src),
         ("normal", normal),
@@ -696,6 +830,8 @@ fn predict_frame(
             dataset::hash(&entry.path())?,
         );
     }
+    timings.output_ms = output_start.elapsed().as_millis() as u64;
+    timings.total_ms = frame_start.elapsed().as_millis() as u64;
     let report = FrameReport {
         id: frame.id,
         name: frame.name.clone(),
@@ -711,6 +847,7 @@ fn predict_frame(
         files,
         intermediate_state: IntermediateState::Retained,
         removed_intermediate_bytes: 0,
+        timings,
     };
     save(&out.join("frame.json"), &report)?;
     Ok(report)
@@ -917,6 +1054,7 @@ fn run_impl(
     notify(&report);
     let result = (|| -> Result<(), String> {
         let mut model: Option<GeometryModel> = None;
+        let mut processor = None;
         for (index, frame) in d.frames.iter().take(total).enumerate() {
             check(cancel)?;
             report.current = Some(frame.name.clone());
@@ -952,6 +1090,9 @@ fn run_impl(
                     io(fs::remove_dir_all(&tmp))?;
                 }
                 io(fs::create_dir(&tmp))?;
+                if processor.is_none() {
+                    processor = Some(NativeProcessor::new()?);
+                }
                 let r = predict_frame(
                     root,
                     &tmp,
@@ -961,6 +1102,7 @@ fn run_impl(
                     mask_hash.clone(),
                     &settings,
                     model.as_mut().unwrap(),
+                    processor.as_mut().unwrap(),
                     cancel,
                     &mut |message| {
                         report.message = message.into();
@@ -1036,6 +1178,7 @@ fn run_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("native_reference.rs");
     fn fixture(root: &Path) {
         fs::create_dir_all(root.join("sparse/0")).unwrap();
         fs::write(root.join("sparse/0/cameras.txt"),"3 OPENCV_FISHEYE 32 32 8.5 8.5 16 16 0 0 0 0\n91 OPENCV_FISHEYE 32 32 8.5 8.5 16 16 0 0 0 0\n").unwrap();
@@ -1130,6 +1273,7 @@ mod tests {
             files,
             intermediate_state: IntermediateState::Retained,
             removed_intermediate_bytes: 0,
+            timings: FrameTimings::default(),
         };
         save(&dir.join("frame.json"), &report).unwrap();
         report

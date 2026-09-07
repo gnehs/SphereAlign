@@ -1,0 +1,17 @@
+{
+  "buildCommand": "node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis --ci -- --offline",
+  "exitCode": 0,
+  "newNativeWorkerCodeVerified": true,
+  "files": [
+    {
+      "path": "src-tauri\\target\\release\\spherealign.exe",
+      "bytes": 48149504,
+      "sha256": "6934992f98a486a16457c26d798346b02de71a2d87339e258a32afb5ebd87054"
+    },
+    {
+      "path": "src-tauri\\target\\release\\bundle\\nsis\\SphereAlign_0.1.0_x64-setup.exe",
+      "bytes": 22568702,
+      "sha256": "54361c0502096bf7b762986825dc348af126cf27975d71879c3e92ab8b5e33d7"
+    }
+  ]
+}
