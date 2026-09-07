@@ -82,7 +82,9 @@ export function GeometryDrafts({ task }: { task: Task }) {
     void invoke<ArrayBuffer>("geometry_preview", { projectPath: root, runId: run.id, frameId: frame.id, kind })
       .then((bytes) => {
         if (!active) return;
-        url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+        const header = new Uint8Array(bytes);
+        const type = header[0] === 0xff && header[1] === 0xd8 ? "image/jpeg" : "image/png";
+        url = URL.createObjectURL(new Blob([bytes], { type }));
         setImage(url);
       }).catch((e) => { if (active) setError(String(e)); })
       .finally(() => { if (active) setLoadingImage(false); });
@@ -140,7 +142,7 @@ export function GeometryDrafts({ task }: { task: Task }) {
         <input type="checkbox" checked={settings.keepIntermediates} disabled={disabled} onChange={(e) => change({ ...settings, keepIntermediates: e.target.checked })} />
         <Trans>Keep intermediate files for debugging</Trans>
       </label>
-      <p className="text-xs text-muted-foreground"><Trans>After a complete, verified run, large intermediate files are removed automatically. PNG maps, previews and run history are kept. Regenerate with this option enabled if you later need the original floating-point data.</Trans></p>
+      <p className="text-xs text-muted-foreground"><Trans>After a complete, verified run, large intermediate files are removed automatically. Normal maps, previews and run history are kept. Regenerate with this option enabled if you later need the original floating-point data.</Trans></p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={disabled || !available} onClick={() => void act(async () => setPreflight(await invoke<Preflight>("geometry_preflight", { projectPath: root, settings })))}><Trans>Check inputs</Trans></Button>
         <Button disabled={disabled || !available || !preflight} onClick={() => void start(settings)}><Trans>Generate / resume draft</Trans></Button>

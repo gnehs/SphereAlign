@@ -4,6 +4,8 @@ Update 2026-09-07: the user reviewed the complete 20,000-step `disney_cruise_roo
 
 This is an empirical normals-only rollout. It does not certify all sampler boundary/gradient semantics or enable metric depth. The dated findings below remain the record of the earlier compatibility investigation; their original “no activation” status has been superseded for this normal-map path by the user's scene review.
 
+Storage update 2026-09-07: at the user's request, new normals use lossy JPEG quality 90 with full chroma resolution. PNG cache conversion is resumable and avoids inference; previous training exports remain archived. The same installed trainer completed a JPEG-only normal-input three-step smoke. Measured compression and angular differences are recorded in [GEOMETRY_BENCHMARKS.md](GEOMETRY_BENCHMARKS.md). The earlier complete scene review used PNG, not JPEG; neither full-scene JPEG/PNG A/B quality nor exact invalid-pixel behavior after JPEG is newly certified.
+
 ## Actual versions
 
 | Component | Actual identity |

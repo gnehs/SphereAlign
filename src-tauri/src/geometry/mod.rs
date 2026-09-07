@@ -6,6 +6,7 @@ pub mod dataset;
 pub mod draft;
 pub mod export;
 pub mod model;
+mod normal;
 mod rays;
 pub mod specialize;
 pub use crate::masking::CancelToken;

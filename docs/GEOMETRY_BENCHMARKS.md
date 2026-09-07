@@ -1,3 +1,28 @@
+# JPEG normal storage — 2026-09-07
+
+The user accepted lossy storage for the weak normal prior. Production now writes original-resolution JPEG quality 90; the actual encoder's baseline frame header is tested to retain 4:4:4 chroma sampling. Existing source-matched PNG caches are converted once without model inference, using a committed JPEG + manifest before removal of the verified cache PNG. JPEG previews, mixed legacy manifests, export hashes, cleanup and interrupted conversion are covered by tests. Existing PNG training exports are archived using the established export policy, so historical backups still use disk space.
+
+Three real `20260904_clan_hotel_D` normal maps, all 3840×3840, were encoded in release mode. Original files were read only and their hashes were checked afterward. Angular differences below compare decoded JPEG against the existing quantized PNG, with every 16th non-black pixel sampled; they are not geometric ground-truth errors.
+
+| Frame | Original PNG | JPEG Q90 | Reduction | Median angle | P95 angle | Encode time |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 3,427,007 bytes | 1,284,227 bytes | 62.5% | 0.449° | 2.193° | 220 ms |
+| 10 | 3,156,423 bytes | 1,160,063 bytes | 63.2% | 0.448° | 1.801° | 218 ms |
+| 103 | 3,877,990 bytes | 1,180,339 bytes | 69.6% | 0.441° | 1.789° | 228 ms |
+
+The quality 80/90/95 comparison, P99 errors and black-pixel changes are saved in [the compression result](evidence/geometry-2026-09-07/jpeg-normal-compression.json). At Q90, 6,852–9,376 formerly black pixels per image had at least one decoded channel above 16. Exact diagnostic validity remains in `validity.png`; that separate image is not a new trainer validity channel. Model outputs, projection, source resolution, normal weight 0.01 and disabled depth loading are unchanged. No full-scene JPEG/PNG training A/B was run.
+
+The installed Spirula executable (`263a45…ae77`) completed three training steps with six JPEG normal images and no PNG fallback in the normal folder, normal weight 0.01 and depth disabled. The isolated analytic fixture and original fixture files were unchanged during training. This confirms a basic JPEG-input training path, not prior gradients or training quality. [Exact command and result](evidence/geometry-2026-09-07/jpeg-trainer-smoke.json).
+
+The full current Rust library suite passed: **366 passed, 0 failed, 19 ignored**. The real-image compression benchmark also passed when explicitly enabled:
+
+```powershell
+$env:GEOMETRY_JPEG_BENCH_INPUTS='D:/dataset/geometry/runs/RUN/frames/1/normal.png;D:/dataset/geometry/runs/RUN/frames/10/normal.png'
+cargo test --manifest-path src-tauri/Cargo.toml --release --lib geometry::normal::tests::real_normal_compression_benchmark --offline -- --ignored --nocapture
+```
+
+Frontend build and release NSIS packaging passed. The final executable contains the JPEG normal manifest/migration code; [package hashes](evidence/geometry-2026-09-07/jpeg-normal-package.json) identify this build. It was not installed over the running application, and the live scene datasets were not batch-converted during validation.
+
 # Native normal-map CPU acceleration — 2026-09-07
 
 Release-mode comparison against the frozen serial implementation from commit `424e059`, on this Windows machine with 8 native workers. The fixture uses the real 3840×3840 fisheye calibration and synthetic six-face inference heads, RGB and mask, including invalid support and overlap disagreement. This is one run per variant, not a repeated statistical benchmark or an end-to-end model benchmark.

@@ -1,7 +1,8 @@
-//! Only fixed, reproducible intermediates may be removed. PNG products remain hash-verified.
+//! Only fixed, reproducible intermediates may be removed. Image products remain hash-verified.
 use super::{
     dataset,
     draft::{check, guard_output, save, FrameReport},
+    normal,
     CancelToken,
 };
 use serde::{Deserialize, Serialize};
@@ -34,8 +35,11 @@ pub enum IntermediateState {
 }
 
 fn verify_manifest(frame: &FrameReport) -> Result<(), String> {
+    let normal_file = normal::filename(frame)?;
     if frame.files.len() != OUTPUTS.len()
-        || OUTPUTS.iter().any(|name| !frame.files.contains_key(*name))
+        || OUTPUTS.iter().any(|name| !frame.files.contains_key(
+            if *name == normal::PNG_FILE { normal_file } else { *name }
+        ))
     {
         return Err("Incomplete Geometry output manifest".into());
     }
@@ -66,6 +70,7 @@ pub(super) fn verify_cache(
         return Err("Intermediate files were cleaned; regenerate to retain them".into());
     }
     for name in OUTPUTS {
+        let name = if name == normal::PNG_FILE { normal::filename(frame)? } else { name };
         if INTERMEDIATES.contains(&name)
             && frame.intermediate_state != IntermediateState::Retained
             && !dir.join(name).exists()
@@ -91,6 +96,7 @@ pub(super) fn clean_frame(
     // Check every retained product before authorizing any deletion. The source/native hashes
     // were already checked by inference or cache reuse; no source file is ever a cleanup target.
     for name in OUTPUTS.into_iter().filter(|n| !INTERMEDIATES.contains(n)) {
+        let name = if name == normal::PNG_FILE { normal::filename(frame)? } else { name };
         check(cancel)?;
         verify_file(dir, frame, name)?;
     }

@@ -1,7 +1,8 @@
-//! Publish complete, source-matched camera-space normal PNGs for Spirula.
+//! Publish complete, source-matched camera-space normal images for Spirula.
 use super::{
     dataset,
     draft::{self, Report},
+    normal,
     CancelToken,
 };
 use image::ImageDecoder;
@@ -26,7 +27,7 @@ fn io<T>(result: std::io::Result<T>) -> Result<T, String> {
     result.map_err(|e| e.to_string())
 }
 
-fn normal_name(name: &str) -> Result<String, String> {
+fn normal_name(name: &str, normal_file: &str) -> Result<String, String> {
     if name.contains(['\\', ':'])
         || name.is_empty()
         || Path::new(name)
@@ -35,8 +36,13 @@ fn normal_name(name: &str) -> Result<String, String> {
     {
         return Err("Unsafe normal-map filename".into());
     }
+    let extension = match normal_file {
+        normal::PNG_FILE => "png",
+        normal::JPEG_FILE => "jpg",
+        _ => return Err("Unsupported normal image format".into()),
+    };
     Ok(Path::new(name)
-        .with_extension("png")
+        .with_extension(extension)
         .to_string_lossy()
         .replace('\\', "/"))
 }
@@ -61,11 +67,8 @@ pub(super) fn publish(root: &Path, report: &Report, cancel: &CancelToken) -> Res
         .iter()
         .map(|r| {
             Ok((
-                normal_name(&r.name)?,
-                r.files
-                    .get("normal.png")
-                    .ok_or("Normal PNG hash missing")?
-                    .clone(),
+                normal_name(&r.name, normal::filename(r)?)?,
+                r.files[normal::filename(r)?].clone(),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;
@@ -97,18 +100,19 @@ pub(super) fn publish(root: &Path, report: &Report, cancel: &CancelToken) -> Res
         {
             return Err("Normal-map source or calibration changed; regenerate normals".into());
         }
-        let name = normal_name(&frame.name)?;
-        let sha = r.files.get("normal.png").ok_or("Normal PNG hash missing")?;
+        let normal_file = normal::filename(r)?;
+        let name = normal_name(&frame.name, normal_file)?;
+        let sha = &r.files[normal_file];
         if files.insert(name.to_lowercase(), sha.clone()).is_some() {
             return Err("Normal-map filenames collide after replacing image extensions".into());
         }
         let source = run
             .join("frames")
             .join(frame.id.to_string())
-            .join("normal.png");
+            .join(normal_file);
         draft::guard_output(root, &source)?;
         if dataset::hash(&source)? != *sha {
-            return Err("Normal PNG hash mismatch".into());
+            return Err("Normal image hash mismatch".into());
         }
         let image = image::ImageReader::open(&source)
             .map_err(|e| e.to_string())?
@@ -116,7 +120,7 @@ pub(super) fn publish(root: &Path, report: &Report, cancel: &CancelToken) -> Res
             .map_err(|e| e.to_string())?;
         if image.color_type() != image::ColorType::Rgb8 || image.dimensions() != (r.width, r.height)
         {
-            return Err("Normal PNG must be RGB8 at the original camera resolution".into());
+            return Err("Normal image must be RGB8 at the original camera resolution".into());
         }
         if !reuse {
             let target = staging.join(&name);
@@ -124,7 +128,7 @@ pub(super) fn publish(root: &Path, report: &Report, cancel: &CancelToken) -> Res
             io(fs::create_dir_all(target.parent().unwrap()))?;
             io(fs::copy(&source, &target))?;
             if dataset::hash(&target)? != *sha {
-                return Err("Copied normal PNG hash mismatch".into());
+                return Err("Copied normal image hash mismatch".into());
             }
         }
     }
@@ -132,10 +136,10 @@ pub(super) fn publish(root: &Path, report: &Report, cancel: &CancelToken) -> Res
     let files = report
         .frames
         .iter()
-        .map(|r| Ok((normal_name(&r.name)?, r.files["normal.png"].clone())))
+        .map(|r| Ok((normal_name(&r.name, normal::filename(r)?)?, r.files[normal::filename(r)?].clone())))
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     let export = Export { schema: 1, run_id: report.id.clone(), dataset_sha256: data.identity.clone(), files,
-        convention: "RGB8 camera-space xyz = 2*rgb/255-1; invalid RGB=(0,0,0); source camera axes; no sign flip".into() };
+        convention: "RGB8 camera-space xyz = 2*rgb/255-1; source camera axes; no sign flip; new normals use JPEG quality 90; invalid RGB=(0,0,0) before lossy encoding, decoded boundary values may differ; exact diagnostic validity is retained in the run".into() };
     let manifest_dir = if reuse { &target } else { &staging };
     draft::guard_output(root, &manifest_dir.join(MANIFEST))?;
     draft::guard_output(root, &manifest_dir.join(".spherealign.json.partial"))?;
@@ -251,9 +255,10 @@ mod tests {
     use super::*;
     #[test]
     fn nested_names_keep_lens_identity_and_reject_traversal() {
-        assert_eq!(normal_name("lens1/房間.jpg").unwrap(), "lens1/房間.png");
+        assert_eq!(normal_name("lens1/房間.jpg", normal::PNG_FILE).unwrap(), "lens1/房間.png");
+        assert_eq!(normal_name("lens1/房間.png", normal::JPEG_FILE).unwrap(), "lens1/房間.jpg");
         for name in ["../a.png", "C:/a.jpg", "lens\\a.jpg", "/a.png", ""] {
-            assert!(normal_name(name).is_err());
+            assert!(normal_name(name, normal::JPEG_FILE).is_err());
         }
     }
 }

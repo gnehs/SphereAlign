@@ -4,6 +4,7 @@ use super::{
     cleanup::{self, IntermediateState},
     dataset::{self, Frame},
     model::{self, GeometryModel, Heads},
+    normal,
     rays::NativeProcessor,
     specialize,
 };
@@ -92,6 +93,8 @@ pub struct FrameReport {
     pub removed_intermediate_bytes: u64,
     #[serde(default)]
     pub timings: FrameTimings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_png_sha256: Option<String>,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -278,7 +281,16 @@ pub fn preview(root: &Path, run: &str, frame: u32, kind: &str) -> Result<Vec<u8>
     if !allowed.contains(&kind) {
         return Err("Unknown preview kind".into());
     }
-    let relative = format!("geometry/runs/{run}/frames/{frame}/{kind}.png");
+    let base = format!("geometry/runs/{run}/frames/{frame}");
+    let name = if kind == "normal" {
+        let report: FrameReport = serde_json::from_slice(&io(fs::read(
+            dataset::safe_join(root, &format!("{base}/frame.json"))?,
+        ))?).map_err(|e| e.to_string())?;
+        normal::filename(&report)?.to_owned()
+    } else {
+        format!("{kind}.png")
+    };
+    let relative = format!("{base}/{name}");
     let p = dataset::safe_join(root, &relative)?;
     if io(fs::metadata(&p))?.len() > 100_000_000 {
         return Err("Preview exceeds size limit".into());
@@ -810,9 +822,9 @@ fn predict_frame(
         &mut timings,
     )?;
     let output_start = std::time::Instant::now();
+    normal::write(&out.join(normal::JPEG_FILE), &normal)?;
     for (name, img) in [
         ("rgb", src),
-        ("normal", normal),
         ("range", depth),
         ("reasons", reasons),
     ] {
@@ -848,6 +860,7 @@ fn predict_frame(
         intermediate_state: IntermediateState::Retained,
         removed_intermediate_bytes: 0,
         timings,
+        normal_png_sha256: None,
     };
     save(&out.join("frame.json"), &report)?;
     Ok(report)
@@ -959,7 +972,7 @@ pub fn clean_completed(
     let result = clean_report(root, &dir, &mut report, cancel, &mut notify);
     report.updated_ms = now();
     report.message = result.as_ref().err().cloned().unwrap_or_else(|| {
-        "Intermediate files cleaned; PNG maps, previews and run history retained".into()
+        "Intermediate files cleaned; normal maps, previews and run history retained".into()
     });
     save(&dir.join("run.json"), &report)?;
     notify(&report);
@@ -975,7 +988,7 @@ pub fn run(
     run_impl(root, settings, cancel, job_id, false, notify)
 }
 
-/// Production stage: all registered images, verified PNG export, then cleanup.
+/// Production stage: all registered images, verified normal-image export, then cleanup.
 pub fn run_normals(
     root: &Path,
     mut settings: Settings,
@@ -1050,6 +1063,11 @@ fn run_impl(
         output_path: dir.to_string_lossy().into_owned(),
         conventions: serde_json::json!({"native.f32":"row-major little-endian float32 [height,width,4]: nx,ny,nz,ray_range; invalid=all zero","normalFrame":"source camera OpenCV axes; model sign not trainer-certified","rangeScale":"model estimate, not aligned to COLMAP, not certified metric","reasons.u8":{"0":"valid support, unverified quality","1":"outside source lens","2":"source mask","3":"model or recovery invalid","4":"perspective disagreement"},"faceSize":SIZE,"faceFovDegrees":100,"sourceFromFace":camera::FACES,"nativeSampling":"pixel-centre nearest valid face; no depth blending","overlapRangeTolerance":0.20,"overlapNormalDegrees":30,"engine":ENGINE}),
     };
+    report.conventions["normalEncoding"] = serde_json::json!({
+        "format": "JPEG", "quality": normal::JPEG_QUALITY,
+        "lossy": true, "invalidPixels": "black before encoding; JPEG boundary values can differ",
+        "exactValidity": "validity.png", "legacyCache": "PNG converted without inference"
+    });
     save(&dir.join("run.json"), &report)?;
     notify(&report);
     let result = (|| -> Result<(), String> {
@@ -1062,7 +1080,7 @@ fn run_impl(
             let target = dir.join("frames").join(frame.id.to_string());
             let (input_hash, mask_hash) = &hashes[index];
             guard_output(root, &target)?;
-            let frame_report = if let Some(r) =
+            let frame_report = if let Some(mut r) =
                 reusable(&target, input_hash, mask_hash, settings.keep_intermediates).filter(|r| {
                     r.id == frame.id
                         && r.name == frame.name
@@ -1070,6 +1088,7 @@ fn run_impl(
                         && r.width == d.cameras[&frame.camera_id].width
                         && r.height == d.cameras[&frame.camera_id].height
                 }) {
+                normal::compress_cached(root, &target, &mut r, cancel)?;
                 r
             } else {
                 if model.is_none() {
@@ -1274,6 +1293,7 @@ mod tests {
             intermediate_state: IntermediateState::Retained,
             removed_intermediate_bytes: 0,
             timings: FrameTimings::default(),
+            normal_png_sha256: None,
         };
         save(&dir.join("frame.json"), &report).unwrap();
         report
@@ -1315,10 +1335,12 @@ mod tests {
         .unwrap();
         assert!(report.active_for_training);
         assert_eq!(report.completed, 2);
-        let normal = d.path().join("normals/lens0/frame.png");
+        let normal = d.path().join("normals/lens0/frame.jpg");
         let hash = dataset::hash(&normal).unwrap();
         let timestamp = fs::metadata(&normal).unwrap().modified().unwrap();
-        assert_eq!(hash, report.frames[0].files["normal.png"]);
+        assert_eq!(hash, report.frames[0].files["normal.jpg"]);
+        assert!(preview(d.path(), &report.id, 101, "normal").unwrap().starts_with(&[0xff, 0xd8]));
+        assert!(!Path::new(&report.output_path).join("frames/101/normal.png").exists());
         assert!(!Path::new(&report.output_path)
             .join("frames/101/native.f32")
             .exists());
@@ -1352,6 +1374,67 @@ mod tests {
         );
         run_normals(d.path(), settings, &CancelToken::new(), None, |_| {}).unwrap();
         assert_eq!(hash, dataset::hash(&normal).unwrap());
+    }
+
+    #[test]
+    fn legacy_normal_compression_recovers_commit_boundaries_and_preserves_conflicts() {
+        let d = tempfile::tempdir().unwrap();
+        let mut frame = cached_frame(d.path());
+        let legacy = frame.clone();
+        let png = d.path().join("normal.png");
+        let jpg = d.path().join("normal.jpg");
+        let original = fs::read(&png).unwrap();
+        let cancelled = CancelToken::new();
+        cancelled.cancel();
+        assert!(normal::compress_cached(d.path(), d.path(), &mut frame, &cancelled).is_err());
+        assert!(png.exists() && !jpg.exists());
+        let cancel = CancelToken::new();
+        normal::compress_cached(d.path(), d.path(), &mut frame, &cancel).unwrap();
+        assert!(!png.exists());
+        assert_eq!(frame.normal_png_sha256.as_ref(), legacy.files.get("normal.png"));
+        assert!(reusable(d.path(), "input", &None, false).is_some());
+        let jpeg_hash = dataset::hash(&jpg).unwrap();
+        // Crash after the JPEG rename, before the frame manifest commit.
+        fs::write(&png, &original).unwrap();
+        save(&d.path().join("frame.json"), &legacy).unwrap();
+        frame = legacy.clone();
+        normal::compress_cached(d.path(), d.path(), &mut frame, &cancel).unwrap();
+        assert_eq!(dataset::hash(&jpg).unwrap(), jpeg_hash);
+        // Crash after committing the JPEG manifest, before deleting the PNG.
+        fs::write(&png, &original).unwrap();
+        normal::compress_cached(d.path(), d.path(), &mut frame, &cancel).unwrap();
+        assert!(!png.exists());
+        // A changed obsolete PNG must not be deleted.
+        fs::write(&png, b"user-modified").unwrap();
+        assert!(normal::compress_cached(d.path(), d.path(), &mut frame, &cancel).is_err());
+        assert_eq!(fs::read(&png).unwrap(), b"user-modified");
+        fs::write(&jpg, b"damaged").unwrap();
+        assert!(reusable(d.path(), "input", &None, false).is_none());
+        frame = legacy;
+        fs::write(&png, original).unwrap();
+        assert!(normal::compress_cached(d.path(), d.path(), &mut frame, &cancel).is_err());
+        assert_eq!(fs::read(&jpg).unwrap(), b"damaged");
+    }
+
+    #[test]
+    fn jpeg_replaces_legacy_export_without_gpu_and_preserves_previous_export() {
+        let d = tempfile::tempdir().unwrap();
+        let (settings, mut legacy) = seed_cached_run(d.path());
+        legacy.frames = [101, 901].map(|id| serde_json::from_slice(
+            &fs::read(Path::new(&legacy.output_path).join(format!("frames/{id}/frame.json"))).unwrap()
+        ).unwrap()).into_iter().collect();
+        legacy.completed = legacy.total;
+        let cancel = CancelToken::new();
+        super::super::export::publish(d.path(), &legacy, &cancel).unwrap();
+        let old_hash = dataset::hash(&d.path().join("normals/lens0/frame.png")).unwrap();
+        let report = run_normals(d.path(), settings, &cancel, None, |_| {}).unwrap();
+        assert!(report.active_for_training);
+        assert!(d.path().join("normals/lens0/frame.jpg").exists());
+        assert!(!d.path().join("normals/lens0/frame.png").exists());
+        let archive = fs::read_dir(d.path().join("geometry/exports/previous")).unwrap()
+            .next().unwrap().unwrap().path();
+        assert_eq!(dataset::hash(&archive.join("lens0/frame.png")).unwrap(), old_hash);
+        assert_eq!(report.frames[0].normal_png_sha256.as_deref(), Some(old_hash.as_str()));
     }
 
     #[test]
@@ -1410,8 +1493,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let (settings, seeded) = seed_cached_run(d.path());
         let dir = PathBuf::from(&seeded.output_path);
-        let normal = dir.join("frames/101/normal.png");
-        let before = fs::metadata(&normal).unwrap().modified().unwrap();
+        let normal = dir.join("frames/101/normal.jpg");
         let cancel = CancelToken::new();
         assert!(run(d.path(), settings.clone(), &cancel, None, |r| {
             if r.completed == 1 {
@@ -1422,6 +1504,7 @@ mod tests {
         for id in [101, 901] {
             assert!(dir.join(format!("frames/{id}/native.f32")).exists());
         }
+        let before = fs::metadata(&normal).unwrap().modified().unwrap();
         let done = run(
             d.path(),
             settings.clone(),
@@ -1452,7 +1535,7 @@ mod tests {
         .unwrap();
         assert_eq!(resumed.id, done.id);
         assert_eq!(fs::metadata(normal).unwrap().modified().unwrap(), before);
-        // The deliberately missing model proves both runs only used validated PNG caches.
+        // The missing model proves conversion and both resumes used only image caches.
         let debug_settings = Settings {
             keep_intermediates: true,
             ..settings

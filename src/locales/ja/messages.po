@@ -321,8 +321,8 @@ msgid "Advanced: generate a separate preview sample"
 msgstr "詳細設定：プレビュー用サンプルを別途生成"
 
 #: src/components/geometry-drafts.tsx:143
-msgid "After a complete, verified run, large intermediate files are removed automatically. PNG maps, previews and run history are kept. Regenerate with this option enabled if you later need the original floating-point data."
-msgstr "全処理が完了し、出力の整合性を確認した後、大きな中間ファイルを自動削除します。PNG、プレビュー、実行履歴は保持されます。元の浮動小数点データが必要な場合は、この設定を有効にして再生成してください。"
+msgid "After a complete, verified run, large intermediate files are removed automatically. Normal maps, previews and run history are kept. Regenerate with this option enabled if you later need the original floating-point data."
+msgstr "全処理が完了し、出力の整合性を確認した後、大きな中間ファイルを自動削除します。法線マップ、プレビュー、実行履歴は保持されます。元の浮動小数点データが必要な場合は、この設定を有効にして再生成してください。"
 
 #: src/components/processing-settings-fields.tsx:326
 msgid "After alignment, generate training normals for every registered image. Large intermediate files are removed after export."
